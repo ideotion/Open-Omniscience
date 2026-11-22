@@ -34,6 +34,44 @@ def _touch(p: Path, data: bytes = b"x") -> Path:
     return p
 
 
+def _skip_sub(monkeypatch, kind: str, on_sub=None) -> None:
+    """What the walk does with a folder it cannot list: it never hands it back. R783: the restore walks by
+    folder handle (``os.fwalk``) where the system can, and by path (``os.walk``) where it cannot; both are
+    driven here, so the rule holds on either."""
+    if kind == "path":
+        monkeypatch.setattr(folder_backup, "_FD_RELATIVE", False)
+        real_walk = os.walk
+
+        def fake_walk(top, topdown=True, onerror=None, followlinks=False):
+            for dirpath, dirnames, names in real_walk(top, topdown=topdown, onerror=onerror, followlinks=followlinks):
+                if os.path.basename(dirpath) == "sub":
+                    if on_sub is not None:
+                        on_sub(dirpath)
+                    dirnames.clear()
+                    continue
+                yield dirpath, dirnames, names
+
+        scope_os(monkeypatch, folder_backup, walk=fake_walk)
+        return
+    if not folder_backup._FD_RELATIVE:
+        pytest.skip("this system has no walk by folder handle")
+    real_fwalk = os.fwalk
+
+    def fake_fwalk(top=".", topdown=True, onerror=None, *, follow_symlinks=False, dir_fd=None):
+        for dirpath, dirnames, names, fd in real_fwalk(top, topdown, onerror, follow_symlinks=follow_symlinks, dir_fd=dir_fd):
+            if os.path.basename(dirpath) == "sub":
+                if on_sub is not None:
+                    on_sub(dirpath)
+                dirnames.clear()
+                continue
+            yield dirpath, dirnames, names, fd
+
+    scope_os(monkeypatch, folder_backup, fwalk=fake_fwalk)
+
+
+_WALKS = pytest.mark.parametrize("kind", ["fd", "path"])
+
+
 def _targets(tmp: Path) -> dict[str, Path]:
     return {c: tmp / "live" / c for c in ("wiki_dumps", "osm_regions", "models", "hf_models")}
 
@@ -150,21 +188,12 @@ def test_a_second_run_restores_exactly_the_files_the_first_could_not(tmp_path, m
     assert (tgt["wiki_dumps"] / "a.bz2").read_bytes() == b"aaa"
 
 
-def test_a_folder_that_cannot_be_listed_is_one_entry_and_the_walk_goes_on(tmp_path, monkeypatch):
+@_WALKS
+def test_a_folder_that_cannot_be_listed_is_one_entry_and_the_walk_goes_on(tmp_path, monkeypatch, kind):
     backup = _backup(tmp_path)
     _touch(backup / "wiki_dumps" / "sub" / "c.bz2", b"ccc")
     tgt = _targets(tmp_path)
-    real_walk = os.walk
-
-    def fake_walk(top, topdown=True, onerror=None, followlinks=False):
-        # What ``os.walk`` does with a folder it cannot list: it never hands it back.
-        for dirpath, dirnames, names in real_walk(top, topdown=topdown, onerror=onerror, followlinks=followlinks):
-            if os.path.basename(dirpath) == "sub":
-                dirnames.clear()
-                continue
-            yield dirpath, dirnames, names
-
-    scope_os(monkeypatch, folder_backup, walk=fake_walk)
+    _skip_sub(monkeypatch, kind)
     res = restore_folder_backup(backup, targets=tgt)
     assert {"category": "wiki_dumps", "rel": "sub", "why": "folder-unlisted"} in res["unread"]
     assert _files(tgt["wiki_dumps"]) == ["a.bz2", "b.bz2"] and res["incomplete"] is True
@@ -172,21 +201,12 @@ def test_a_folder_that_cannot_be_listed_is_one_entry_and_the_walk_goes_on(tmp_pa
     assert res["unread_folders"] == 1 and res["unread_total"] == 0
 
 
-def test_a_folder_that_vanishes_while_being_listed_is_not_counted(tmp_path, monkeypatch):
+@_WALKS
+def test_a_folder_that_vanishes_while_being_listed_is_not_counted(tmp_path, monkeypatch, kind):
     backup = _backup(tmp_path)
     _touch(backup / "wiki_dumps" / "sub" / "c.bz2", b"ccc")
     tgt = _targets(tmp_path)
-    real_walk = os.walk
-
-    def fake_walk(top, topdown=True, onerror=None, followlinks=False):
-        for dirpath, dirnames, names in real_walk(top, topdown=topdown, onerror=onerror, followlinks=followlinks):
-            if os.path.basename(dirpath) == "sub":
-                shutil.rmtree(dirpath)  # gone between the listing and the walk entering it
-                dirnames.clear()
-                continue
-            yield dirpath, dirnames, names
-
-    scope_os(monkeypatch, folder_backup, walk=fake_walk)
+    _skip_sub(monkeypatch, kind, shutil.rmtree)  # gone between the listing and the walk entering it
     res = restore_folder_backup(backup, targets=tgt)
     assert res["unread_folders"] == 0 and res["unread"] == [] and res["incomplete"] is False
 
@@ -284,19 +304,11 @@ def test_the_page_says_it_as_real_code():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_running_out_of_file_handles_during_the_walk_stops_too(tmp_path, monkeypatch):
+@_WALKS
+def test_running_out_of_file_handles_during_the_walk_stops_too(tmp_path, monkeypatch, kind):
     backup = _backup(tmp_path)
     _touch(backup / "wiki_dumps" / "sub" / "c.bz2", b"ccc")
-    real_walk = os.walk
-
-    def fake_walk(top, topdown=True, onerror=None, followlinks=False):
-        for dirpath, dirnames, names in real_walk(top, topdown=topdown, onerror=onerror, followlinks=followlinks):
-            if os.path.basename(dirpath) == "sub":
-                dirnames.clear()
-                continue  # what os.walk does with a folder it has no handle left to open
-            yield dirpath, dirnames, names
-
-    scope_os(monkeypatch, folder_backup, walk=fake_walk)
+    _skip_sub(monkeypatch, kind)  # what the walk does with a folder it has no handle left to open
     monkeypatch.setattr(folder_backup, "_process_can_open", lambda: False)
     with pytest.raises(OSError):
         restore_folder_backup(backup, targets=_targets(tmp_path))

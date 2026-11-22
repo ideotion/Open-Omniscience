@@ -34,6 +34,7 @@ and progress via ``progress_cb``. The pausable task-manager job + endpoints wrap
 from __future__ import annotations
 
 import errno
+import functools
 import hashlib
 import json
 import os
@@ -346,6 +347,7 @@ def _atomic_copy(
     digest: "hashlib._Hash | None" = None,
     nofollow_src: bool = False,
     expect: os.stat_result | None = None,
+    opener: Callable[[], int] | None = None,
 ) -> bool:
     """Stream ``src`` to ``dst`` via a temp file + rename (so a paused copy never leaves
     a corrupt destination). Returns True if it completed, False if ``should_stop`` fired
@@ -371,7 +373,11 @@ def _atomic_copy(
             # O_NONBLOCK too: a member swapped for a named pipe would otherwise block this open for
             # ever, before the fstat below could refuse it. It changes nothing for a regular file.
             guard = (getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)) if nofollow_src else 0
-            src_fd = os.open(src, os.O_RDONLY | binary | guard)
+            # R783: where the system can, the caller hands an opener that walks to the file by folder
+            # handle (``_open_member_fd``); it raises the refusals itself.
+            src_fd = opener() if opener is not None else os.open(src, os.O_RDONLY | binary | guard)
+        except (SourceChanged, SourceUnreadable):
+            raise
         except OSError as exc:
             if nofollow_src and _now_a_link(src):  # the name is now a link: refused, never read
                 raise SourceChanged("the file became a link after it was checked") from None
@@ -970,6 +976,83 @@ def _now_a_link(path: Path) -> bool:
         return False
 
 
+#: R783: whether this system can walk a folder by handle and open every name relative to its folder
+#: without following a link. Decided by what the system offers, never by its name: where any piece is
+#: missing (Windows has no ``os.fwalk`` and no ``dir_fd``), the restore keeps R779's checks by path and
+#: their stated limit.
+_FD_RELATIVE = bool(
+    hasattr(os, "fwalk")
+    and os.open in os.supports_dir_fd
+    and os.stat in os.supports_dir_fd
+    and getattr(os, "O_NOFOLLOW", 0)
+    and getattr(os, "O_DIRECTORY", 0)
+)
+
+
+def _fd_open_error(name: str, dir_fd: int, exc: OSError) -> OSError:
+    """What a failed fd-relative open of ``name`` means for the restore: a link there is refused, as
+    R779 refuses it (``SourceChanged``); anything else is counted as not read with R778's fixed reason;
+    the process itself out of file handles stops the restore with the error it got."""
+    try:
+        if is_link_stat(os.stat(name, dir_fd=dir_fd, follow_symlinks=False)):
+            return SourceChanged("a name on the way became a link after it was checked")
+    except OSError:
+        pass
+    if not _process_can_open():
+        return exc
+    return _unread_of(type(exc))
+
+
+def _open_member_fd(backup_root: Path, cat: str, cat_st: os.stat_result, rel: PurePosixPath) -> int:
+    """R783: open one restore member by walking from the backup folder ONE NAME AT A TIME, each name
+    opened relative to the folder handle before it and never followed if it is a link (``O_NOFOLLOW``;
+    ``O_DIRECTORY`` for the folders on the way). A folder swapped for a link between the walk and this
+    open is refused here, by the system, at the moment of the open -- not by a look made before it, which
+    is the window R779 could only narrow. The category folder opened must be the one that was walked.
+
+    The backup folder itself is opened by its path: it is the place the person chose and may be a link
+    (their choice), exactly as R779 measures it. Every handle but the returned one is closed."""
+    nofollow = os.O_NOFOLLOW
+    dir_flags = os.O_RDONLY | os.O_DIRECTORY | nofollow | getattr(os, "O_CLOEXEC", 0)
+    held: list[int] = []
+    try:
+        try:
+            cur = os.open(backup_root, os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0))
+        except OSError as exc:
+            if not _process_can_open():
+                raise
+            raise _unread_of(type(exc)) from None
+        held.append(cur)
+        for i, name in enumerate((cat, *rel.parent.parts)):
+            try:
+                nxt = os.open(name, dir_flags, dir_fd=cur)
+            except OSError as exc:
+                err = _fd_open_error(name, cur, exc)
+                if err is exc:
+                    raise
+                raise err from None
+            held.append(nxt)
+            if i == 0:
+                try:
+                    same = os.path.samestat(os.fstat(nxt), cat_st)
+                except OSError:
+                    same = False
+                if not same:
+                    raise SourceChanged("the category folder changed after it was walked")
+            cur = nxt
+        flags = os.O_RDONLY | nofollow | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+        try:
+            return os.open(rel.name, flags, dir_fd=cur)
+        except OSError as exc:
+            err = _fd_open_error(rel.name, cur, exc)
+            if err is exc:
+                raise
+            raise err from None
+    finally:
+        for fd in held:
+            os.close(fd)
+
+
 def _category_swapped(cat_root: Path, cat_real: str) -> bool:
     """Whether the category folder is now a link, or (where the system gives folders a stable identity)
     no longer the folder its resolved path names. A folder that cannot be looked at counts as swapped."""
@@ -1007,12 +1090,32 @@ def _category_members(
     # from the walk's own output rather than its error, so nothing of the system's words is read.
     to_enter: list[str] = [os.fspath(cat_root)]
     listed: set[str] = set()
-    for dirpath, dirnames, names in os.walk(cat_root, followlinks=False):
+    # R783: where the system can, the folders are walked BY HANDLE (``os.fwalk``) and every name is
+    # looked at relative to its folder's handle, so a folder swapped for a link during the walk cannot
+    # send it somewhere else. The files are opened the same way later (``_open_member_fd``).
+    walk = (
+        os.fwalk(os.fspath(cat_root), follow_symlinks=False)
+        if _FD_RELATIVE
+        else ((dp, dn, fn, None) for dp, dn, fn in os.walk(cat_root, followlinks=False))
+    )
+
+    def _look(dirpath: str, n: str, dir_fd: int | None) -> os.stat_result:
+        if dir_fd is None:
+            return os.lstat(os.path.join(dirpath, n))
+        return os.stat(n, dir_fd=dir_fd, follow_symlinks=False)
+
+    for dirpath, dirnames, names, dir_fd in walk:
         listed.add(dirpath)
         enter: list[str] = []
         for n in dirnames:
             try:
-                linked = is_link(os.path.join(dirpath, n))
+                if dir_fd is None:
+                    linked = is_link(os.path.join(dirpath, n))
+                else:
+                    try:
+                        linked = is_link_stat(_look(dirpath, n, dir_fd))
+                    except FileNotFoundError:
+                        linked = False
             except OSError:
                 if not _process_can_open():
                     raise
@@ -1030,7 +1133,7 @@ def _category_members(
                 continue
             fp = os.path.join(dirpath, n)
             try:
-                st = os.lstat(fp)
+                st = _look(dirpath, n, dir_fd)
             except FileNotFoundError:
                 continue
             except OSError as exc:
@@ -1202,7 +1305,8 @@ def restore_folder_backup(
             refused_categories.append(cat)
             continue
         try:
-            cat_dev = os.lstat(cat_root).st_dev
+            cat_st = os.lstat(cat_root)
+            cat_dev = cat_st.st_dev
         except OSError:
             refused_categories.append(cat)
             continue
@@ -1226,11 +1330,11 @@ def restore_folder_backup(
             # is not a plain folder of the backup: a drive that answers "folder" to the checks and
             # "link" to the walk or the open (a hostile FUSE device can) would otherwise hand over a
             # file from the machine itself, with the open's own identity check agreeing, since both
-            # looked at that same file. Refused. STATED LIMIT: a racer on the SAME file system as the
-            # files it wants read (POSIX: another local account that can write into the backup folder;
-            # Windows: any local program) can still swap a folder on the way between these checks and
-            # the open. Closing it needs a walk by folder handle (os.fwalk) AND every open made
-            # relative to its folder with O_NOFOLLOW, or openat2 RESOLVE_NO_SYMLINKS; not done here.
+            # looked at that same file. Refused. R783: where the system can (``_FD_RELATIVE``), the open
+            # itself walks from the backup folder by handle with O_NOFOLLOW, so a folder swapped for a
+            # link after these checks is refused AT the open. STATED LIMIT, where it cannot (Windows):
+            # a racer on the SAME file system as the files it wants read (any local program) can still
+            # swap a folder on the way between these checks and the open.
             if seen.st_dev != cat_dev:
                 refused_symlinks += 1
                 continue
@@ -1274,7 +1378,12 @@ def restore_folder_backup(
             # external drive was restored silently, and the app then read it as its own.
             h = hashlib.sha256() if want is not None else None
             try:
-                done = _atomic_copy(p, dst, should_stop=should_stop, digest=h, nofollow_src=True, expect=seen)
+                opener: Callable[[], int] | None = None
+                if _FD_RELATIVE:  # R783: opened by folder handle, never by the path checked above
+                    opener = functools.partial(_open_member_fd, src, cat, cat_st, PurePosixPath(rel.as_posix()))
+
+                done = _atomic_copy(p, dst, should_stop=should_stop, digest=h, nofollow_src=True, expect=seen,
+                                    opener=opener)
             except SourceChanged:
                 refused_symlinks += 1  # swapped for something else after it was looked at: not read
                 continue
