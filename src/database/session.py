@@ -265,6 +265,18 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         cursor.close()
 
 
+@event.listens_for(engine, "connect")
+def _country_form_recheck(dbapi_connection, _connection_record) -> None:
+    """R788: a new physical connection re-reads the store's country form and migration journal before anything runs on
+    it, so a migration this process did not see (its pool was empty) is not written over in the old form, and a store a
+    cut run left in both forms is refused here, the connection closed (``country_form.recheck_on_new_connection``)."""
+    if not _IS_SQLITE:
+        return
+    from src.database.country_form import recheck_on_new_connection
+
+    recheck_on_new_connection(dbapi_connection)
+
+
 #: The SQLite messages a vanished drive produces (R86): the file's device is gone.
 _DISK_GONE = ("disk i/o error", "unable to open database file", "no such device")
 
@@ -391,7 +403,8 @@ def init_db() -> None:
     from src.database.models import Base  # local import breaks the cycle
 
     # A country-form migration that began and did not end leaves rows in both forms: nothing boots on such a store
-    # (every start path goes through here), and ``store_form()`` refuses the writes of anything already running.
+    # (every start path goes through here), and ``store_form()`` refuses the writes of anything already running: its next new
+    # connection re-reads the journal (R788, ``_country_form_recheck``), and while it holds one open no run can start.
     _init_step("import:country_form")
     from src.database.country_form import refuse_if_unfinished, stamp_new_store
 
