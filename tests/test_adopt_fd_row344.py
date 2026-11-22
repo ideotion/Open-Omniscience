@@ -57,23 +57,37 @@ def files(tmp_path):
 
 @pytest.fixture
 def fail_after_fileio(monkeypatch):
-    """Raise right after the FileIO exists, as an interrupt or a buffer error would; the number is recorded."""
-    seen: list[int] = []
+    """Raise right after the FileIO exists, as an interrupt or a buffer error would. The FileIO itself is KEPT (``held``),
+    so a version that let it own the number would close it again only when the test lets go of it, which is after
+    ANOTHER file sits on the number: the second close then lands on that file, where :func:`_closed_once` sees it."""
+    held: list = []
 
     def boom(raw, *a, **kw):
-        seen.append(raw.fileno())
+        held.append(raw)
         raise KeyboardInterrupt
 
     monkeypatch.setitem(RF._BUFFERED, "rb", boom)
     monkeypatch.setitem(RF._BUFFERED, "wb", boom)
-    return seen
+    return held
 
 
-def _closed_once(n: int, other: Path) -> None:
+def _raised(call) -> BaseException:
+    try:
+        call()
+    except (KeyboardInterrupt, MemoryError) as exc:
+        return exc
+    pytest.fail("nothing was raised")
+
+
+def _closed_once(held: list, other: Path, exc: BaseException | None = None) -> None:
+    n = held[0].fileno()  # the half-built FileIO still names the number: nothing closed it through the object
     assert _is_closed(n), "the failure left the descriptor open"
     ino = _occupy(n, other)
     try:
-        gc.collect()  # a half-built file object, if any, is finalised now: it must not close what the number leads to
+        if exc is not None:
+            exc.__traceback__ = None  # its frames hold the half-built objects too
+        held.clear()
+        gc.collect()  # the half-built file object is finalised now: it must not close what the number leads to
         assert not _is_closed(n), "the descriptor was closed a second time, taking another file's number with it"
         assert os.fstat(n).st_ino == ino
     finally:
@@ -83,24 +97,21 @@ def _closed_once(n: int, other: Path) -> None:
 def test_adopt_fd_closes_once_when_the_buffer_fails(files, fail_after_fileio):
     a, b = files
     fd = os.open(a, os.O_RDONLY)
-    with pytest.raises(KeyboardInterrupt):
-        RF.adopt_fd(fd, "rb")
-    assert fail_after_fileio == [fd]
-    _closed_once(fd, b)
+    exc = _raised(lambda: RF.adopt_fd(fd, "rb"))
+    assert fail_after_fileio[0].fileno() == fd
+    _closed_once(fail_after_fileio, b, exc)
 
 
 def test_open_regular_closes_once_when_the_buffer_fails(files, fail_after_fileio):
     a, b = files
-    with pytest.raises(KeyboardInterrupt):
-        RF.open_regular(a)
-    _closed_once(fail_after_fileio[0], b)
+    exc = _raised(lambda: RF.open_regular(a))
+    _closed_once(fail_after_fileio, b, exc)
 
 
 def test_create_new_closes_once_when_the_buffer_fails(files, fail_after_fileio, tmp_path):
     _, b = files
-    with pytest.raises(KeyboardInterrupt):
-        RF.create_new(tmp_path / "new.bin")
-    _closed_once(fail_after_fileio[0], b)
+    exc = _raised(lambda: RF.create_new(tmp_path / "new.bin"))
+    _closed_once(fail_after_fileio, b, exc)
 
 
 def test_hash_fd_closes_once_when_the_buffer_fails(files, fail_after_fileio):
@@ -108,9 +119,8 @@ def test_hash_fd_closes_once_when_the_buffer_fails(files, fail_after_fileio):
 
     a, b = files
     fd = os.open(a, os.O_RDONLY)
-    with pytest.raises(KeyboardInterrupt):
-        _hash_fd(fd)
-    _closed_once(fd, b)
+    exc = _raised(lambda: _hash_fd(fd))
+    _closed_once(fail_after_fileio, b, exc)
 
 
 def test_read_manifest_json_closes_once_when_the_buffer_fails(files, monkeypatch, tmp_path):
@@ -119,15 +129,25 @@ def test_read_manifest_json_closes_once_when_the_buffer_fails(files, monkeypatch
     _, b = files
     m = tmp_path / "m.json"
     m.write_text('{"a": 1}')
-    seen: list[int] = []
+    held: list = []
 
     def boom(raw, *a, **kw):
-        seen.append(raw.fileno())
+        held.append(raw)
         raise MemoryError  # one the reader turns into "unreadable"
 
     monkeypatch.setitem(RF._BUFFERED, "rb", boom)
     assert read_manifest_json(m) is None
-    _closed_once(seen[0], b)
+    _closed_once(held, b)
+
+
+def _reopened_survives(n: int, other: Path) -> None:
+    assert _is_closed(n)
+    ino = _occupy(n, other)
+    try:
+        gc.collect()
+        assert os.fstat(n).st_ino == ino
+    finally:
+        os.close(n)
 
 
 def test_an_adopted_file_closes_its_descriptor_once(files):
@@ -136,7 +156,7 @@ def test_an_adopted_file_closes_its_descriptor_once(files):
     n = f.fileno()
     assert f.read() == b"a" * 100
     f.close()
-    _closed_once(n, b)
+    _reopened_survives(n, b)
     del f
 
 
@@ -155,7 +175,7 @@ def test_an_adopted_writer_writes_and_closes(tmp_path, files):
         n = f.fileno()
         f.write(b"xyz")
     assert (tmp_path / "w.bin").read_bytes() == b"xyz"
-    _closed_once(n, b)
+    _reopened_survives(n, b)
 
 
 def _closes_fd_on_failure(handler_or_final: list[ast.stmt]) -> bool:

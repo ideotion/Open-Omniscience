@@ -103,8 +103,10 @@ def adopt_fd(fd: int, mode: str) -> BinaryIO:
     buffer (``io.open`` then closes the raw file itself). The second close may land on a number another open has taken
     meanwhile, a SQLite connection's above all, and closing any descriptor of a file drops the process's locks on it
     (R789). Here nothing owns ``fd`` until the very last statement: until then a failure closes it here, once, and a
-    file object dropped half-built closes nothing; after it, only the file object does. Interrupt-safe because that
-    statement (an attribute store) and the ``return`` after it run no check for a pending signal."""
+    file object dropped half-built closes nothing; after it, only the file object does. That statement (an attribute store)
+    and the ``return`` after it run no check for a pending signal; one landing in the caller just after the call drops a
+    finished file object, which its finaliser closes, once. A signal at this function's own entry, before its ``try``,
+    leaves the descriptor open: a leak, never a second close."""
     try:
         raw = _AdoptedFileIO(fd, mode, closefd=False)
         f = _BUFFERED[mode](raw)
