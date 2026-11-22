@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "444c8e86970caef6f1053d9eecb45d3224d274cc1a554d02eb55b9e2d131c387",
+  "digest": "616a885cf9716299aa36fb593d079177924e79d4c5cf41b2260f3b80684ffd02",
   "log": [
     {
       "version": 1,
@@ -55,6 +55,12 @@
       "digest": "444c8e86970caef6f1053d9eecb45d3224d274cc1a554d02eb55b9e2d131c387",
       "kind": "same",
       "note": "row 239: safe_yaml maps libyaml 0.2.6's own nesting error (PyYAML 6.0.4) to the same YAMLDepthError; a document that parsed before parses to the same value, and a refused one is refused as before, so the rows an article gets are identical"
+    },
+    {
+      "version": 1,
+      "digest": "616a885cf9716299aa36fb593d079177924e79d4c5cf41b2260f3b80684ffd02",
+      "kind": "same",
+      "note": "row 292 (R776): cities.py reads an optional per-country last_diff from the places artifact; for every artifact without one (any built before R776, or with no daily file applied) each entry's vintage is the same string as before, so the rows index_article writes are identical; an artifact that carries last_diff is a different data file, which www_data_digest already counts"
     }
   ]
 }

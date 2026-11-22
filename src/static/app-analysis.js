@@ -4502,7 +4502,7 @@
     // R776 (row 292): the gazetteer's date on the place card. A place artifact built after daily OSM change files were applied
     // records "extract+last file" ("2026-10-01+2026-11-19", or "+not-read" when the file's date was not read;
     // src/entities/gazetteer_build.py:compound_vintage), so the card names both, in R775's words, never one date older than
-    // the data. A value without "+" (every gazetteer built before R776, the world file, nothing applied) reads exactly as before.
+    // the data. A value with no plus sign (every gazetteer built before R776, the world file, nothing applied) reads exactly as before.
     function _gazetteerDate(v) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, vv) => x.replace(/\{(\w+)\}/g, (m, k) => (vv[k] == null ? m : vv[k])));
