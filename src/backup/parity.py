@@ -356,9 +356,11 @@ def recover_volumes(
         p = out / pv["name"]
         if not p.exists() or not _digest_matches(p, pv["sha256"]):
             bad_set.add(pv["name"])
-    for v in data_meta:
-        if not _plain_volume_name(v.get("name")):
-            bad_set.add(str(v.get("name")))
+    # A data volume whose name is a path is never rebuilt: the rebuild writes beside and then over that name, which
+    # would be outside the folder. Nothing is recovered from such a manifest (row 312; both callers refuse it first).
+    unsafe = [str(v.get("name")) for v in data_meta if not _plain_volume_name(v.get("name"))]
+    if unsafe:
+        return sorted(set(bad) | set(unsafe))
 
     present_rows: list[tuple[int, Path]] = []
     erased_data: list[int] = []

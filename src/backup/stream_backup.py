@@ -105,6 +105,7 @@ from src.backup.volumes import (
     VolumeError,
     VolumeStopped,
     _digest_matches,
+    _plain_volume_name,
     load_manifest,
     member_in_use,
     verify_volume_set,
@@ -2135,8 +2136,11 @@ def verify_stream_backup(
     bad_parity: list[str] = []
     if par:
         for pv in par.get("volumes") or []:
+            if not _plain_volume_name(pv.get("name") if isinstance(pv, dict) else None):
+                bad_parity.append(str(pv.get("name") if isinstance(pv, dict) else pv))  # a path: never read (row 312)
+                continue
             p = src / pv["name"]
-            if not p.exists() or not _digest_matches(p, pv["sha256"]):
+            if not p.exists() or not _digest_matches(p, pv.get("sha256")):
                 bad_parity.append(pv["name"])
         usable = int(par.get("count", 0)) - len(bad_parity)
         report["parity"] = {

@@ -257,6 +257,38 @@ def test_parity_recovery_never_reads_a_parity_name_that_is_a_path(tmp_path, monk
     assert all(Path(p).parent == out for p in read) and (out / data0).read_bytes() != good
 
 
+def test_parity_recovery_never_rebuilds_a_data_name_that_is_a_path(tmp_path):
+    pytest.importorskip("numpy")
+    from src.backup import parity
+
+    out, _ = _small_set(tmp_path)
+    parity.write_parity(out, parity_count=1)
+    m = volumes.load_manifest(out)
+    m["volumes"][0]["name"] = "../escaped.ooenc"
+    left = parity.recover_volumes(m, ["../escaped.ooenc"], out_dir=out)
+    assert "../escaped.ooenc" in left
+    assert not (tmp_path / "escaped.ooenc").exists() and not (tmp_path / "escaped.ooenc.oopart").exists()
+
+
+def test_the_stream_verify_never_hashes_a_parity_name_that_is_a_path(tmp_path, monkeypatch):
+    pytest.importorskip("numpy")
+    from src.backup import parity, stream_backup
+
+    out, _ = _small_set(tmp_path)
+    parity.write_parity(out, parity_count=1)
+    m = volumes.load_manifest(out)
+    pv = m["parity"]["volumes"][0]
+    (tmp_path / "secret").write_bytes((out / pv["name"]).read_bytes())
+    pv["name"] = "../secret"
+    (out / "volumes.json").write_text(json.dumps(m), encoding="utf-8")
+    hashed: list = []
+    real = stream_backup._digest_matches
+    monkeypatch.setattr(stream_backup, "_digest_matches", lambda p, w: hashed.append(p) or real(p, w))
+    report = stream_backup.verify_stream_backup(out)
+    assert "../secret" in report["parity"]["bad"]
+    assert all(Path(p).parent == out for p in hashed)
+
+
 def test_a_sound_set_still_verifies_and_restores(tmp_path):
     out, _ = _small_set(tmp_path)
     assert volumes.verify_volume_set(out)["ok"] is True
