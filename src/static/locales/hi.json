@@ -4068,7 +4068,7 @@
   "OpenStreetMap: the view could not be read.": "OpenStreetMap: दृश्य पढ़ा नहीं जा सका।",
   "OpenTimestamps (Bitcoin)": "OpenTimestamps (Bitcoin)",
   "OpenTimestamps anchoring": "OpenTimestamps एंकरिंग",
-  "OpenTimestamps proof: no time is recorded until it is verified": "OpenTimestamps प्रमाण: सत्यापित होने तक कोई समय दर्ज नहीं होता",
+  "OpenTimestamps proof: no time is recorded here; verify the .ots proof to read its time": "OpenTimestamps प्रमाण: यहाँ कोई समय दर्ज नहीं होता; उसका समय पढ़ने के लिए .ots प्रमाण सत्यापित करें",
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps का अनुरोध किया गया, लेकिन 'timestamping' एक्स्ट्रा स्थापित नहीं है।",
   "Opening hours": "खुलने का समय",
   "Opening the UI in your browser...": "आपके ब्राउज़र में UI खुल रहा है...",

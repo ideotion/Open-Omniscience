@@ -4068,7 +4068,7 @@
   "OpenStreetMap: the view could not be read.": "OpenStreetMap：表示範囲を読み込めませんでした。",
   "OpenTimestamps (Bitcoin)": "OpenTimestamps (Bitcoin)",
   "OpenTimestamps anchoring": "OpenTimestamps アンカリング",
-  "OpenTimestamps proof: no time is recorded until it is verified": "OpenTimestamps の証明: 検証されるまで時刻は記録されません",
+  "OpenTimestamps proof: no time is recorded here; verify the .ots proof to read its time": "OpenTimestamps の証明: ここには時刻を記録しません。時刻を読むには .ots の証明を検証してください",
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps が要求されましたが、'timestamping' エクストラがインストールされていません。",
   "Opening hours": "営業時間",
   "Opening the UI in your browser...": "ブラウザで画面を開いています...",

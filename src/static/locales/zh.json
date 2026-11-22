@@ -4068,7 +4068,7 @@
   "OpenStreetMap: the view could not be read.": "OpenStreetMap：无法读取该视图。",
   "OpenTimestamps (Bitcoin)": "OpenTimestamps (Bitcoin)",
   "OpenTimestamps anchoring": "OpenTimestamps 锚定",
-  "OpenTimestamps proof: no time is recorded until it is verified": "OpenTimestamps 证明：在验证之前不记录任何时间",
+  "OpenTimestamps proof: no time is recorded here; verify the .ots proof to read its time": "OpenTimestamps 证明：此处不记录时间；请验证 .ots 证明以读取其时间",
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "已请求 OpenTimestamps，但未安装 'timestamping' 附加项。",
   "Opening hours": "营业时间",
   "Opening the UI in your browser...": "正在浏览器中打开界面...",

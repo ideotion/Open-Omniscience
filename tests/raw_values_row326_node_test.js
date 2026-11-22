@@ -131,7 +131,7 @@ window.OOI18N.ready.then(() => {
   assert.strictEqual(R._aiCoordinatorNote({ note: "y", note_code: "other" }, t), "y");
   // custody time cell
   assert.strictEqual(R.custodyEntryTimeHtml({ kind: "local", asserted_time: "2026-11-22T10:00:00Z" }, t), "2026-11-22T10:00:00Z");
-  assert.strictEqual(R.custodyEntryTimeHtml({ kind: "opentimestamps", asserted_time: null }, t), "T[OpenTimestamps proof: no time is recorded until it is verified]");
+  assert.strictEqual(R.custodyEntryTimeHtml({ kind: "opentimestamps", asserted_time: null }, t), "T[OpenTimestamps proof: no time is recorded here; verify the .ots proof to read its time]");
   assert.strictEqual(R.custodyEntryTimeHtml({ kind: "chain<x>", asserted_time: null }, t), '<code dir="ltr">chain&lt;x&gt;</code>');
   assert.strictEqual(R.custodyEntryTimeHtml(null, t), "—");
 

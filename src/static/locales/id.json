@@ -4068,7 +4068,7 @@
   "OpenStreetMap: the view could not be read.": "OpenStreetMap: tampilan tidak dapat dibaca.",
   "OpenTimestamps (Bitcoin)": "OpenTimestamps (Bitcoin)",
   "OpenTimestamps anchoring": "Penjangkaran OpenTimestamps",
-  "OpenTimestamps proof: no time is recorded until it is verified": "Bukti OpenTimestamps: tidak ada waktu yang dicatat sampai bukti itu diverifikasi",
+  "OpenTimestamps proof: no time is recorded here; verify the .ots proof to read its time": "Bukti OpenTimestamps: tidak ada waktu yang dicatat di sini; verifikasi bukti .ots untuk membaca waktunya",
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps diminta, tetapi ekstra 'timestamping' tidak terpasang.",
   "Opening hours": "Jam buka",
   "Opening the UI in your browser...": "Membuka antarmuka di peramban Anda...",

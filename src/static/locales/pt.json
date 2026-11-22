@@ -4068,7 +4068,7 @@
   "OpenStreetMap: the view could not be read.": "OpenStreetMap: não foi possível ler a vista.",
   "OpenTimestamps (Bitcoin)": "OpenTimestamps (Bitcoin)",
   "OpenTimestamps anchoring": "Ancoragem OpenTimestamps",
-  "OpenTimestamps proof: no time is recorded until it is verified": "Prova OpenTimestamps: nenhuma hora é registada até ser verificada",
+  "OpenTimestamps proof: no time is recorded here; verify the .ots proof to read its time": "Prova OpenTimestamps: nenhuma hora é registada aqui; verifique a prova .ots para ler a sua hora",
   "OpenTimestamps requested, but the 'timestamping' extra is not installed.": "OpenTimestamps solicitado, mas o extra 'timestamping' não está instalado.",
   "Opening hours": "Horário de funcionamento",
   "Opening the UI in your browser...": "Abrindo a interface no seu navegador...",

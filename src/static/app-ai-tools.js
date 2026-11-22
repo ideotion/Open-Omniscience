@@ -2695,7 +2695,7 @@
     function custodyEntryTimeHtml(ts, t) {
       if (!ts) return "—";
       if (ts.asserted_time) return esc(ts.asserted_time);
-      if (ts.kind === "opentimestamps") return esc(t("OpenTimestamps proof: no time is recorded until it is verified"));
+      if (ts.kind === "opentimestamps") return esc(t("OpenTimestamps proof: no time is recorded here; verify the .ots proof to read its time"));
       return ts.kind ? `<code dir="ltr">${esc(ts.kind)}</code>` : "—";
     }
 
