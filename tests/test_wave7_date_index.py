@@ -29,12 +29,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from src.database.maintenance import HOT_INDEXES, ensure_hot_indexes
-from src.database.models import Article, Base
+from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _INDEX = "ix_article_observed"
 REPO = Path(__file__).resolve().parents[1]
@@ -54,8 +55,8 @@ def _engine() -> Engine:
     """An isolated in-memory SQLite DB with the full model schema. Never
     SessionLocal (a plain Session on this engine has no write-gate/event hooks),
     so the tests can never touch the shared suite store."""
-    eng = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(eng)
     return eng
@@ -64,6 +65,9 @@ def _engine() -> Engine:
 def _seed(eng: Engine, n: int = 600) -> None:
     base = datetime.datetime(2024, 1, 1)
     with Session(eng) as s:
+        for sid in range(40):  # the sources the articles' source_id names (foreign keys are enforced)
+            s.add(Source(id=sid, name=f"S{sid}", domain=f"s{sid}.wave7.example"))
+        s.flush()
         for i in range(n):
             created = base + datetime.timedelta(days=i % 400, seconds=i)
             # ~1/3 of rows have a NULL published_at so coalesce actually falls
@@ -171,7 +175,7 @@ def test_migration_upgrade_head_creates_the_index(tmp_path) -> None:
     )
     assert res.returncode == 0, res.stdout + res.stderr
     db = tmp_path / "open_omniscience.db"
-    eng = create_engine(f"sqlite:///{db}")
+    eng = app_sqlite_engine(db)
     try:
         assert _index_sql(eng) is not None, "migration did not create ix_article_observed"
         assert "coalesce(published_at, created_at)" in _index_sql(eng).lower()

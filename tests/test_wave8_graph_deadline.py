@@ -29,12 +29,13 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine, func
+from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.analytics import queries as q
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 try:
     from src.api.main import app  # noqa: F401
@@ -72,8 +73,8 @@ def _score_like_keys(obj) -> list[str]:
 def _session():
     # StaticPool shares ONE in-memory connection across threads, so the endpoint (run off
     # the event loop in the threadpool) sees the seeded tables.
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = app_sqlite_engine(
+        ":memory:",
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
@@ -134,6 +135,7 @@ def _seed_dense(session, *, core: int = 14, sats: int = 6, block: int = 10):
     for aid in range(n_articles):
         session.add(
             Article(
+                id=aid,  # the id the mention rows name (foreign keys are enforced)
                 url=f"https://dense.test/{aid}",
                 canonical_url=f"https://dense.test/{aid}",
                 source_id=src.id,
@@ -179,6 +181,7 @@ def _seed_mentions(session, mention_map: dict[str, list[int]]):
     for aid in all_aids:
         session.add(
             Article(
+                id=aid,  # the id the mention rows name (foreign keys are enforced)
                 url=f"https://weighted.test/{aid}",
                 canonical_url=f"https://weighted.test/{aid}",
                 source_id=src.id, title=f"t{aid}", content="body",

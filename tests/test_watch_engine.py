@@ -16,17 +16,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import watches as W
-from src.database.models import Article, Base
+from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -37,6 +37,9 @@ def db():
 
 
 def _art(db, h, *, days_ago=0):
+    if db.get(Source, 1) is None:  # the parent the articles' source_id names (foreign keys are enforced)
+        db.add(Source(id=1, name="S", domain="x.test"))
+        db.flush()
     when = datetime.now(UTC) - timedelta(days=days_ago)
     a = Article(
         url=f"https://x.test/{h}", canonical_url=f"https://x.test/{h}", source_id=1,

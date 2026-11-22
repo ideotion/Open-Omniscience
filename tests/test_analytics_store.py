@@ -10,18 +10,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import backfill_corpus, index_article, reindex_all_batch
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -312,7 +312,15 @@ def test_batched_reindex_failure_fallback_loses_nothing(db):
 # --- Phase 4.2: reconcile_keyword_language ----------------------------------- #
 
 
+def _source_1(db):
+    """The source the hand-built articles below name (source_id=1): foreign keys are enforced."""
+    if db.get(Source, 1) is None:
+        db.add(Source(id=1, name="S", domain="x.test"))
+        db.flush()
+
+
 def _lang_article(db, hash_, lang):
+    _source_1(db)
     a = Article(
         url=f"https://x.test/{hash_}",
         canonical_url=f"https://x.test/{hash_}",
@@ -460,6 +468,7 @@ def test_reconcile_keyword_language_untagged_bucket_is_noop(db):
 
 def _unknown_article(db, hash_, text):
     """An article with NEITHER an asserted language NOR a detected one."""
+    _source_1(db)
     a = Article(
         url=f"https://x.test/{hash_}",
         canonical_url=f"https://x.test/{hash_}",

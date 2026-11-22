@@ -10,11 +10,11 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import lunar
-from src.database.models import Article, Base, Keyword, KeywordMention
+from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 END = date.today()
 START = END - timedelta(days=119)  # ~4 lunar cycles of daily data
@@ -22,8 +22,8 @@ START = END - timedelta(days=119)  # ~4 lunar cycles of daily data
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -83,6 +83,9 @@ _ART = [0]
 
 
 def _daily_mentions(db, keyword_id, counts_by_day):
+    if db.get(Source, 1) is None:  # the parent the articles' source_id names (foreign keys are enforced)
+        db.add(Source(id=1, name="S", domain="x.test"))
+        db.flush()
     for d, c in counts_by_day.items():
         _ART[0] += 1
         aid = _ART[0]

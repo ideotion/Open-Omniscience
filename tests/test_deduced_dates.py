@@ -12,21 +12,22 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, ArticleMentionedDate, Base, Source
 from src.timemap import datestore
+from tests._app_engine import app_sqlite_engine
 
 
 def _seed(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'dd.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'dd.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     today = date.today()
     with Sess() as s:
+        # Explicit article ids below: the mentioned-date rows name them (foreign keys are enforced).
         s.add(Source(name="A", domain="a.test"))
         s.add(Source(name="B", domain="b.test"))
         s.commit()
@@ -35,7 +36,7 @@ def _seed(tmp_path):
         for i, src in enumerate([1, 1, 2], start=1):
             s.add(
                 Article(
-                    url=f"https://x/{i}", canonical_url=f"https://x/{i}", source_id=src,
+                    id=i, url=f"https://x/{i}", canonical_url=f"https://x/{i}", source_id=src,
                     title="t", content="c", hash=f"h{i}", language="en",
                     created_at=datetime.now(UTC),
                 )
@@ -45,7 +46,7 @@ def _seed(tmp_path):
                                        status="candidate", extractor="regex"))
         # A single-mention future date → BELOW the gate, must not surface.
         s.add(
-            Article(url="https://x/9", canonical_url="https://x/9", source_id=1, title="t",
+            Article(id=9, url="https://x/9", canonical_url="https://x/9", source_id=1, title="t",
                     content="c", hash="h9", language="en", created_at=datetime.now(UTC))
         )
         s.commit()
@@ -54,7 +55,7 @@ def _seed(tmp_path):
         # A PAST date (2 articles) → out of the forward window, must not surface.
         past = today - timedelta(days=30)
         for i in (10, 11):
-            s.add(Article(url=f"https://x/{i}", canonical_url=f"https://x/{i}", source_id=1,
+            s.add(Article(id=i, url=f"https://x/{i}", canonical_url=f"https://x/{i}", source_id=1,
                           title="t", content="c", hash=f"h{i}", language="en",
                           created_at=datetime.now(UTC)))
             s.commit()

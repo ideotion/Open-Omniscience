@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.bulletin import sections
@@ -33,6 +32,7 @@ from src.database.models import (
     WikiPage,
     WikiRevision,
 )
+from tests._app_engine import app_sqlite_engine
 
 _END = date(2026, 8, 1)  # weekly period = 2026-07-25 .. 2026-07-31 inclusive
 
@@ -42,7 +42,7 @@ def _period(cadence: str = "weekly"):
 
 
 def _session() -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
 
@@ -80,6 +80,11 @@ def _kw(s, term, **kw) -> Keyword:
 
 
 def _mention(s, kw, article_id, day, source_id, count=1):
+    if s.get(Article, article_id) is None:  # the parent the mention names (foreign keys are enforced)
+        u = f"https://m.test/{article_id}"
+        s.add(Article(id=article_id, url=u, canonical_url=u, source_id=source_id, title=f"m{article_id}", content="body",
+                      hash=f"m{article_id}", published_at=datetime.fromisoformat(f"{day} 12:00:00")))
+        s.flush()
     s.add(
         KeywordMention(
             keyword_id=kw.id,
