@@ -649,6 +649,21 @@ def _build_backup_zip(
     return zip_path, envelope
 
 
+def _store_bytes(path: Path) -> int:
+    """Bytes a store occupies on disk: its main file plus its write-ahead log, if any.
+
+    Stat only (R789): nothing here opens the store, its ``-wal`` or its ``-shm``. A file that is
+    missing, or vanishes between the check and the stat (a checkpoint deleting the log), counts 0.
+    """
+    total = 0
+    for p in (path, Path(str(path) + "-wal")):
+        try:
+            total += p.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
 def write_backup_v2(
     dest: Path, passphrase: str | None = None, *, include_newsletters: bool = True
 ) -> dict:
@@ -674,9 +689,10 @@ def write_backup_v2(
     # full disk. Estimate from the live corpus DB (+ custody) size, times a peak-usage factor.
     from src.backup.sqlite_backup import live_db_path
 
-    corpus_bytes = live_db_path().stat().st_size if live_db_path().exists() else 0
-    custody = data_dir() / _CUSTODY_DB
-    corpus_bytes += custody.stat().st_size if custody.exists() else 0
+    # Row 321: a WAL store keeps its recent commits in "<store>-wal" until a checkpoint, and the
+    # snapshot copies them, so the log counts toward the room needed. Read by stat only, never by
+    # opening the file (R789: closing a Python handle on a live store drops SQLite's locks).
+    corpus_bytes = _store_bytes(live_db_path()) + _store_bytes(data_dir() / _CUSTODY_DB)
     preflight_free_space(
         dest.parent, corpus_bytes * _BUILD_SPACE_FACTOR, what="backup"
     )

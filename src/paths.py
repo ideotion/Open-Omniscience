@@ -176,3 +176,18 @@ def diagnostics_dir() -> Path:
 def default_sqlite_url() -> str:
     """The default SQLite URL rooted in :func:`data_dir`."""
     return f"sqlite:///{data_dir() / 'open_omniscience.db'}"
+
+
+def wal_file_bytes(db_file: Path) -> int | None:
+    """Bytes in the write-ahead log beside ``db_file`` (``<db_file>-wal``), read by stat only.
+
+    ``None`` when the store itself is absent, as its ``db_bytes`` is; ``0`` when it has no log (a store in
+    rollback-journal mode, or one whose log a checkpoint just removed). Never opens either file (R789: closing a
+    Python handle on a live store drops SQLite's locks), so it is safe beside a running app (row 321).
+    """
+    if not db_file.exists():
+        return None
+    try:
+        return Path(str(db_file) + "-wal").stat().st_size
+    except OSError:
+        return 0
