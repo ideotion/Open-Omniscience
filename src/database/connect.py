@@ -1122,8 +1122,8 @@ def _match_source_pragmas(conn, alias: str) -> None:
 #: R794: the one sentence said when a plaintext copy failed part-way and its unfinished file could not be removed. It names the
 #: path (the operator must find it) and nothing else: no key, no driver text. Translated x12 through ``ooServerText``.
 SNAPSHOT_LEFT_ON_DISK = (
-    'A plaintext copy of the store did not finish, and the unfinished file could not be removed: an incomplete plaintext copy is '
-    'still on disk at "{path}". It is not a usable snapshot; delete it yourself.'
+    'A plaintext copy of the store did not finish, and the unfinished file could not be removed: an incomplete plaintext copy may '
+    'still be on disk at "{path}". It is not a usable snapshot; check that file and delete it yourself.'
 )
 _SIDES = ("-journal", "-wal", "-shm")
 

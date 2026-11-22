@@ -241,7 +241,7 @@
   "A place close to a regional border can be counted in the neighbouring region, or in none, because the outlines are simplified. Places in no region and places with no point are counted, not placed.": "由于轮廓经过简化，靠近地区边界的地点可能计入相邻地区，或不计入任何地区。不在任何地区的地点和没有坐标点的地点已计数，未定位。",
   "A place name extracted from article text, placed at a gazetteer coordinate.": "从文章文本中提取的地名，按地名词典坐标定位。",
   "A place they mention": "文章提及的地点",
-  "A plaintext copy of the store did not finish, and the unfinished file could not be removed: an incomplete plaintext copy is still on disk at “{path}”. It is not a usable snapshot; delete it yourself.": "存储的一份明文副本未完成，且无法删除这个未完成的文件：一份不完整的明文副本仍在磁盘上，位于“{path}”。它不是可用的快照；请自行删除。",
+  "A plaintext copy of the store did not finish, and the unfinished file could not be removed: an incomplete plaintext copy may still be on disk at “{path}”. It is not a usable snapshot; check that file and delete it yourself.": "存储的一份明文副本未完成，且无法删除这个未完成的文件：一份不完整的明文副本可能仍在磁盘上，位于“{path}”。它不是可用的快照；请检查该文件并自行删除。",
   "A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.": "保留一份明文快照作为后路 — 成功解锁后请删除它。",
   "A preprint: not peer reviewed. PubMed lists it, which is not an endorsement.": "预印本：未经同行评审。被 PubMed 收录并不代表认可。",
   "A probability from Wikimedia's own edit-quality model, not a measurement of this edit and not a judgement by this app. Optional, and off unless you asked for it.": "来自维基媒体自有编辑质量模型的一个概率，既不是对这次编辑的度量，也不是本应用做出的判断。可选，除非你主动要求，否则默认关闭。",

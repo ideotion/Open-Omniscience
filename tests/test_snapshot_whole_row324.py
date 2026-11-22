@@ -6,7 +6,7 @@ snapshot. These tests force the failure MID-COPY on real stores, plaintext and e
 
 * the unfinished file is removed, by its exact path and identity, never through a link and never anything else in the folder;
 * a removal that fails raises :class:`SnapshotLeftOnDisk`, whose one fixed sentence names the path and says an incomplete
-  plaintext copy is still on disk, with no cause or context (so no driver text travels with it and the words reach the page);
+  plaintext copy may still be on disk, with no cause or context (so no driver text travels with it and the words reach the page);
 * the encrypt tool never keeps a cut-short snapshot (the operator's run included), and says a leftover to the operator;
 * the sentence is keyed in all 12 locales and read back by the page.
 
@@ -183,7 +183,7 @@ def test_a_removal_that_fails_is_loud_and_names_the_path(tmp_path, monkeypatch, 
         snapshot_to_plaintext(src, dest)
     said = str(left.value)
     assert said == SNAPSHOT_LEFT_ON_DISK.format(path=dest)
-    assert str(dest) in said and "incomplete plaintext copy is still on disk" in said
+    assert str(dest) in said and "incomplete plaintext copy may still be on disk" in said
     assert left.value.__cause__ is None and left.value.__context__ is None, "no driver text travels with the words"
     assert http_detail(left.value, "", _KEY) == said, "the words reach the page whole"
     assert dest.exists(), "the file it could not remove is still there, as the words say"
