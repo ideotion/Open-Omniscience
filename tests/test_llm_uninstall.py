@@ -380,6 +380,9 @@ def test_the_real_vllm_probe_only_calls_its_venv_removable_when_it_is_ours(
     monkeypatch.setattr(VL, "is_running", lambda: False)
 
     monkeypatch.setattr(VL, "venv_dir", lambda: app_dir / "vllm_venv")
+    # R786: only a folder shaped like a Python environment is removed as vLLM's.
+    (app_dir / "vllm_venv").mkdir()
+    (app_dir / "vllm_venv" / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")
     assert U._vllm_state()["removable"] is True
 
     monkeypatch.setattr(VL, "venv_dir", lambda: tmp_path / "somewhere-else")

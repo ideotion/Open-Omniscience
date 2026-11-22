@@ -188,7 +188,10 @@ def launch_env(base: dict | None = None) -> dict:
         # was a stray folder beside it.
         hf_hub_cache().mkdir(parents=True, exist_ok=True)
         env["OLLAMA_MODELS"] = str(o_store)
-        env["HF_HOME"] = str(h_home)
+        if not (env.get("HF_HUB_CACHE") or "").strip():
+            # R786: with HF_HUB_CACHE set, ``h_home`` is only its PARENT; exporting it as HF_HOME would
+            # override the person's own HF_HOME and move HF's token and other files beside their cache.
+            env["HF_HOME"] = str(h_home)
     except OSError as exc:  # noqa: BLE001 - an unwritable data dir must not block a start
         # Falling back to the backend's own default is strictly better than refusing to
         # start. It is logged rather than silent, because the operator's models will
