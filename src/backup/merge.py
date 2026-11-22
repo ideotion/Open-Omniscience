@@ -7373,6 +7373,14 @@ _KEY_EVIDENCE_PKCS8 = (
     "it under in a form it does read; it is not written and stays in the backup"
 )
 _EVIDENCE_KEY_FILE = "evidence_ed25519.pem"
+#: The key files this app writes: another spelling of one of them (case, a trailing dot or space) is refused, since on a
+#: filesystem that ignores those it IS that file (R801).
+_APP_KEY_FILES = frozenset(
+    f"{who}{suffix}" for who in ("evidence", "custody", "annotations") for suffix in ("_ed25519.pem", "_ml_dsa_65.key")
+)
+#: One restore of key files at a time in this process (R801): two at once could let one take back the marker the
+#: other relies on before it places a key.
+_KEY_RESTORE_LOCK = threading.Lock()
 _KEY_MARKER_CARRIED = (
     "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never "
     "written"
@@ -7493,6 +7501,12 @@ def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes 
 
 
 def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
+    """One at a time (``_KEY_RESTORE_LOCK``, R801); see :func:`_restore_key_members_now`."""
+    with _KEY_RESTORE_LOCK:
+        return _restore_key_members_now(staged, base)
+
+
+def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
     """Place the artifact's key files (role ``keys``) that this install does not have, wrapped under THIS install's
     passphrase (R448).
 
@@ -7527,6 +7541,7 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
     from src.custody.signing import SigningError
     from src.custody.signing import _passphrase as held_key_passphrase
     from src.database.connect import get_passphrase
+    from src.reporting.evidence import RESTORED_KEY_MARKER_SUFFIX as _RESTORED_MARKER_SUFFIX
     from src.reporting.evidence import mark_key_as_restored
     from src.shared_text import said
 
@@ -7592,17 +7607,20 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
     # end by which file sits at the evidence key's name (_settle_restore_marker): never a restored key without it
     made_marker: tuple[Path, tuple[int, int, int, int]] | None = None
     placed_names: list[str] = []  # every key file this restore placed, by name (the marker is settled on whether any was)
-    if not os.path.lexists(keys_dir / _EVIDENCE_KEY_FILE):
-        marker = mark_key_as_restored(keys_dir / _EVIDENCE_KEY_FILE, backup_key=staged.origin_fingerprint)
-        if marker is not None:
-            with suppress(OSError):
-                made_marker = (marker, keyfile.identity(os.lstat(marker)))
+    # the look and the write under the key-file lock, the one load_or_create_signing_key makes its key and drops the
+    # marker under: a key an export makes is either seen here (no marker) or made after (and drops this marker)
+    with keyfile.KEY_FILES_LOCK:
+        if not os.path.lexists(keys_dir / _EVIDENCE_KEY_FILE):
+            marker = mark_key_as_restored(keys_dir / _EVIDENCE_KEY_FILE, backup_key=staged.origin_fingerprint)
+            if marker is not None:
+                with suppress(OSError):
+                    made_marker = (marker, keyfile.identity(os.lstat(marker)))
 
     pairs: dict[str, list[tuple[str, Path, str]]] = {}
     for name, path in members:
         rel = Path(name)
         canon = rel.name.casefold().rstrip(" .")
-        if canon.startswith(_EVIDENCE_KEY_FILE) and rel.name != _EVIDENCE_KEY_FILE and rel.parent == Path("keys"):
+        if rel.parent == Path("keys") and canon.endswith(_RESTORED_MARKER_SUFFIX.casefold()):
             # R801: the restored-key marker, or any other spelling of a name beside the evidence key, is this install's
             # own: a backup never places, replaces or removes one
             out["not_placed"].append({"name": name, **said("reason", _KEY_MARKER_CARRIED)})
@@ -7613,7 +7631,7 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
             rel.is_absolute()
             or ".." in rel.parts
             or rel.parent != Path("keys")
-            or (canon != rel.name and _key_slot(canon) is not None)
+            or (canon != rel.name and canon in _APP_KEY_FILES)
         ):
             out["not_placed"].append({"name": name, "reason": _KEY_UNSAFE_NAME})
             continue

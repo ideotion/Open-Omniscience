@@ -214,15 +214,19 @@ def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
         raw, seen = keyfile.read_settled(path)
     except FileNotFoundError:
         key = Ed25519PrivateKey.generate()
+        sealed = _seal(key, passphrase)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            keyfile.create_new(path, _seal(key, passphrase))
+            # R801: the key is made and the marker dropped under the key-file lock, the one a restore looks for a key
+            # and writes its marker under, so a marker never lands on a key this installation just made
+            with keyfile.KEY_FILES_LOCK:
+                keyfile.create_new(path, sealed)
+                _drop_restored_marker(path)  # this installation made its own key, so no restore placed this one
         except FileExistsError:
             # another caller created it between our look and our create: ONE key, theirs, judged like
             # any file found there (a caller with no passphrase may have made it plaintext)
             raw, seen = keyfile.read_settled(path)
         else:
-            _drop_restored_marker(path)  # R801: this installation made its own key, so no restore placed this one
             return key
     key, legacy_plaintext = _parse_key(path, raw, passphrase)
     if legacy_plaintext and passphrase is not None:

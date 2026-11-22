@@ -155,7 +155,7 @@ def test_an_import_report_never_marks_a_key(tmp_path):
 @pytest.mark.parametrize("spelling", ["keys/EVIDENCE_ed25519.pem", "keys/Evidence_ED25519.PEM",
                                       "keys/evidence_ed25519.pem.", "keys/evidence_ed25519.pem ",
                                       "keys/EVIDENCE_ED25519.PEM.RESTORED-FROM-BACKUP",
-                                      "keys/evidence_ed25519.pem.anything", "keys/CUSTODY_ed25519.pem"])
+                                      "keys/CUSTODY_ed25519.pem", "keys/Annotations_ML_DSA_65.key"])
 def test_another_spelling_of_a_key_or_the_marker_is_never_placed(tmp_path, spelling):
     """Security reads of R801: on a filesystem that ignores case (macOS, Windows) or trailing dots (Windows), these
     ARE the evidence key or its marker; placed by name they skipped the marker."""
@@ -211,3 +211,64 @@ def test_no_reader_compares_keys_itself():
     for fn in (artifact._is_this_installations_key, sb._why_the_volume_list_is_not_ours):
         src = inspect.getsource(fn)
         assert "is_this_installations_key(" in src and "fromhex" not in src and "key ==" not in src, fn.__name__
+
+
+def test_a_file_beside_the_key_that_is_no_key_is_carried(tmp_path):
+    out = _restore(tmp_path, {"keys/evidence_ed25519.pem.bak": b"an operator's copy", "keys/OLD_ed25519.pem": b"x"})
+    assert out["carried_unread"] == ["keys/evidence_ed25519.pem.bak"]
+    old = [n for n in out["not_placed"] if n["name"] == "keys/OLD_ed25519.pem"]
+    assert old and old[0]["reason"] != merge._KEY_UNSAFE_NAME  # judged as a key (it is none), not refused by its case
+    assert not (tmp_path / "live" / MARKER).exists()  # no evidence key was placed
+
+
+def test_a_key_an_export_makes_while_the_restore_looks_never_gets_the_marker(tmp_path, monkeypatch):
+    """Security re-read of R801: an export making this installation's key between the restore's look and its marker
+    write left the marker on the installation's OWN key, for good. Both now run under the key-file lock."""
+    import threading
+
+    real = ev.mark_key_as_restored
+    made = {}
+
+    def an_export_tries_meanwhile(*a, **k):
+        t = threading.Thread(target=lambda: made.setdefault("key", ev.load_or_create_signing_key()))
+        t.start()
+        t.join(timeout=0.5)
+        assert t.is_alive(), "the export waits for the restore's look and write"
+        out = real(*a, **k)
+        made["thread"] = t
+        return out
+
+    monkeypatch.setattr(ev, "mark_key_as_restored", an_export_tries_meanwhile)
+    _restore(tmp_path, {"keys/notes.txt": b"x"})
+    made["thread"].join(timeout=10)
+    assert ev.is_this_installations_key(ev.public_key_hex(made["key"])) is True
+    assert not (tmp_path / "live" / MARKER).exists()
+
+
+def test_two_restores_run_one_after_the_other(tmp_path, monkeypatch):
+    """Security re-reads of R801: two restores at once could let one take back the marker the other relied on."""
+    import threading
+
+    order = []
+    real = merge._restore_key_members_now
+
+    def slow(staged, base):
+        order.append("start")
+        out = real(staged, base)
+        order.append("end")
+        return out
+
+    monkeypatch.setattr(merge, "_restore_key_members_now", slow)
+    attacker = Ed25519PrivateKey.generate()
+    staging = tmp_path / "s1"
+    (staging / "keys").mkdir(parents=True)
+    (staging / EVIDENCE).write_bytes(_pem(attacker))
+    staged = staged_artifact(staging, members=[{"name": EVIDENCE, "role": "keys"}])
+    threads = [threading.Thread(target=merge._restore_key_members, args=(staged, tmp_path / "live")) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert order == ["start", "end"] * 4
+    assert (tmp_path / "live" / MARKER).exists()
+    assert ev.is_this_installations_key(ev.public_key_hex(attacker)) is False
