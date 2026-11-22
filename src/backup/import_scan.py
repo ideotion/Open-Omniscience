@@ -26,7 +26,7 @@ import stat
 from collections.abc import Callable
 from pathlib import Path
 
-from src.backup.hf_layout import hf_member_allowed
+from src.backup.hf_layout import HF_LAYOUT, hf_member_allowed
 from src.backup.links import is_link, is_link_stat
 from src.backup.manifest_file import read_manifest_json
 
@@ -317,6 +317,15 @@ def scan_import_folder(
         if not root_totals:  # a manifest with zero non-empty categories: drop the empty root
             blob_roots.pop(str(mdir), None)
 
+    # R784: whether each backup folder carrying the model cache recorded WHICH folder it read. One
+    # without the record was made when the backup read ``<parent of HF_HUB_CACHE>/hub``: its models
+    # restore to the right place, but a cache folder named otherwise on that computer is not in it.
+    for rd, root_cats in blob_roots.items():
+        hf = root_cats.get("hf_models")
+        if hf is not None and not hf.get("linked"):
+            data = read_manifest_json(Path(rd) / _FOLDER_MANIFEST)
+            hf["layout_recorded"] = isinstance(data, dict) and data.get("hf_layout") == HF_LAYOUT
+
     found: dict = {}
 
     if corpus_dirs:
@@ -351,6 +360,8 @@ def scan_import_folder(
                     a["reason"] = SCAN_UNREAD
                 if tot.get("unlisted"):
                     a["unlisted_reason"] = SCAN_UNLISTED
+                if k == "hf_models" and tot.get("layout_recorded") is False:
+                    a["layout_unrecorded"] = a.get("layout_unrecorded", 0) + 1  # R784, per backup folder
                 if tot.get("linked"):
                     # R779: counted per backup folder, since two backups can each hold one.
                     a["linked"] = a.get("linked", 0) + 1

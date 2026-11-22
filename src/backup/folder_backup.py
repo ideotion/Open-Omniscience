@@ -44,7 +44,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
-from src.backup.hf_layout import hf_member_allowed
+from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.backup.manifest_file import read_manifest_json
 from src.monitoring.secret_scrub import log_failure, record_text
@@ -270,10 +270,14 @@ def collect_hf_model_items(home: Path | None = None) -> list[BackupItem]:
     revision. A cache normally holds one revision per model, and the alternative costs
     the symlink guard, so the duplication is accepted rather than hidden.
     """
-    from src.llm.model_store import hf_home
+    from src.llm.model_store import hf_hub_cache
 
-    home = home or hf_home()
-    hub = home / "hub"
+    # R784: the hub cache folder ITSELF (HF_HUB_CACHE when set, whatever it is named). The old
+    # ``hf_home() / "hub"`` named the PARENT of HF_HUB_CACHE plus "hub": a cache folder named
+    # anything else was never backed up. ``home`` (tests, callers with their own home) keeps HF's
+    # own layout below it. The backup still writes it as ``hub/...``: that folder name is the
+    # cache folder, recorded in the manifest as ``hf_layout``.
+    hub = home / "hub" if home is not None else hf_hub_cache()
     if not hub.is_dir():
         return []
     items: list[BackupItem] = []
@@ -555,6 +559,10 @@ def write_folder_backup(
         # checksums existed). Verify reports those as unverifiable rather than counting
         # them as content-checked.
         "files_without_checksum": unhashed,
+        # R784: ``hf_models/hub/`` is the Hugging Face hub cache folder itself; a restore places it in
+        # the hub cache folder of the computer it runs on. A manifest without it was written when the
+        # backup read ``<parent of HF_HUB_CACHE>/hub``, which missed a cache folder named otherwise.
+        "hf_layout": HF_LAYOUT,
         "note": (
             "Public, re-downloadable blobs copied as-is (NOT encrypted) — the private "
             "corpus stays in the encrypted oo-backup-2 backup. Restore is additive. "
@@ -605,10 +613,68 @@ def live_targets(overrides: dict[str, Path] | None = None) -> dict[str, Path]:
         # than a second root under "models": the existing category's on-disk layout IS
         # the Ollama store root, and folding a second store under it would send an
         # older backup's manifests/ and blobs/ somewhere new on the way back.
-        from src.llm.model_store import hf_home
+        # R784: the hub cache folder ITSELF, as it resolves on THIS computer; a member's leading
+        # ``hub/`` is that folder (``hf_live_rel``).
+        from src.llm.model_store import hf_hub_cache
 
-        tgt.setdefault("hf_models", hf_home())
+        tgt.setdefault("hf_models", hf_hub_cache())
     return tgt
+
+
+#: R784: why the Hugging Face cache folder cannot take a restore here. Fixed codes, never the system's
+#: words; the page says each one in the person's language.
+HF_TARGET_UNRESOLVED = "unresolved"  # no absolute folder could be worked out, or it could not be looked at
+HF_TARGET_NOT_FOLDER = "not-a-folder"  # its path, or a folder above it, is taken by something that is not a folder
+HF_TARGET_NOT_WRITABLE = "not-writable"  # the folder (or the nearest one above it that exists) cannot be written
+
+
+def hf_target_refusal(target: Path | str | None) -> str | None:
+    """Why the hub cache folder ``target`` cannot take a restore, or ``None`` (R784).
+
+    Looked at before anything is placed, so a cache folder this computer cannot use is said as ONE
+    named reason and the category is left out -- never one write error per model file. The folder may
+    not exist yet (a computer that never downloaded a model): then the nearest folder above it that
+    exists must be one this process can write into. The folder may be a link the person made (a cache
+    moved to another disk); that is their choice and is followed, as the other live folders are. A
+    write that still fails later stops the restore with an error, as before.
+
+    STATED LIMIT: on Windows ``os.access`` does not read folder permissions (ACLs), so a folder it calls
+    writable can still refuse the first write -- which then stops the restore with that error."""
+    if target is None:
+        return HF_TARGET_UNRESOLVED
+    raw = os.path.expanduser(os.fspath(target))
+    if not raw or not os.path.isabs(raw):
+        return HF_TARGET_UNRESOLVED  # a relative HF_HUB_CACHE would mean whatever folder a process started in
+    p = Path(raw)
+    probe = p
+    while True:
+        try:
+            st = os.stat(probe)
+        except FileNotFoundError:
+            if probe.parent == probe:
+                return HF_TARGET_UNRESOLVED
+            probe = probe.parent
+            continue
+        except NotADirectoryError:
+            return HF_TARGET_NOT_FOLDER
+        except (OSError, ValueError):
+            return HF_TARGET_UNRESOLVED
+        break
+    if not stat.S_ISDIR(st.st_mode):
+        return HF_TARGET_NOT_FOLDER
+    if not os.access(probe, os.W_OK | os.X_OK):
+        return HF_TARGET_NOT_WRITABLE
+    return None
+
+
+def hf_restore_target() -> dict:
+    """The Hugging Face hub cache folder a restore would write to on THIS computer, and why it cannot
+    when it cannot (R784) -- what the import checklist shows before the person chooses."""
+    try:
+        path: Path | None = live_targets().get("hf_models")
+    except Exception:  # noqa: BLE001 - any failure to work the folder out is that, said as one reason
+        path = None
+    return {"path": None if path is None else os.fspath(path), "refused": hf_target_refusal(path)}
 
 
 def _unsafe_placement_reason(name: str, rel: str) -> str | None:
@@ -673,6 +739,7 @@ def place_artifact_file_members(
     refused: list[dict] = []
     missing: list[dict] = []
     stopped = False
+    hf_refused: str | None = None  # R784: looked at once, the first time a model-cache member comes up
     for fm in file_members:
         if should_stop is not None and should_stop():
             stopped = True
@@ -691,7 +758,21 @@ def place_artifact_file_members(
             refused.append({"category": category, "rel": rel, "why": why})
             continue
         src_path = staging / name
-        dst = root / rel
+        place_rel = rel
+        if category == "hf_models":
+            # R784: ``hub/`` is the hub cache folder itself, and only the cache's own shape is placed
+            # (R777's rule, which this path now applies too).
+            live_rel = hf_live_rel(rel)
+            if live_rel is None:
+                refused.append({"category": category, "rel": rel, "why": "outside the model cache's layout"})
+                continue
+            place_rel = live_rel
+            if hf_refused is None:
+                hf_refused = hf_target_refusal(root) or ""
+            if hf_refused:
+                refused.append({"category": category, "rel": rel, "why": f"model cache folder {hf_refused}"})
+                continue
+        dst = root / place_rel
         try:
             contained = dst.resolve().is_relative_to(root.resolve())
         except (OSError, ValueError):  # pragma: no cover - defensive
@@ -989,6 +1070,8 @@ def restore_folder_backup(
 
     restored = skipped = refused_symlinks = refused_dest_links = refused_layout = 0
     refused_categories: list[str] = []
+    # R784: categories whose LIVE folder cannot take a restore on this computer, with one fixed reason.
+    refused_targets: dict[str, str] = {}
     corrupt: list[dict] = []
     # R778: what could not be READ. Counted and named like ``corrupt``, and the restore goes on.
     unread: list[dict] = []
@@ -1043,6 +1126,13 @@ def restore_folder_backup(
             continue
         if not is_folder:
             continue
+        if cat == "hf_models":
+            # R784: the hub cache folder as it resolves HERE; one that cannot be used leaves the whole
+            # category out with its reason, and the restore is incomplete.
+            why_target = hf_target_refusal(dest_dir)
+            if why_target is not None:
+                refused_targets[cat] = why_target
+                continue
         # Containment is measured from where the folders really are: the backup folder the person
         # picked may itself be a link (their choice), and so may a live data folder they moved.
         cat_real = os.path.realpath(cat_root)
@@ -1097,11 +1187,20 @@ def restore_folder_backup(
             if linked_way or not stays_inside(p, cat_real):
                 refused_symlinks += 1
                 continue
-            dst = dest_dir / rel
+            # R784: in the model cache, the leading ``hub/`` is the hub cache folder itself.
+            if cat == "hf_models":
+                live_rel = hf_live_rel(rel.as_posix())
+                if live_rel is None:  # pragma: no cover - hf_member_allowed refused it above
+                    refused_layout += 1
+                    continue
+                rel_live = Path(live_rel)
+            else:
+                rel_live = rel
+            dst = dest_dir / rel_live
             # R779, the destination side: never write THROUGH a link. A link anywhere between the
             # live folder and the file (a sub-folder, or the file's own name) is refused, and the
             # resolved destination must stay inside the live folder.
-            if link_on_the_way(dest_dir, rel) or not stays_inside(dst, dest_real):
+            if link_on_the_way(dest_dir, rel_live) or not stays_inside(dst, dest_real):
                 refused_dest_links += 1
                 continue
             if dst.exists():
@@ -1149,11 +1248,14 @@ def restore_folder_backup(
         # R779: category folders that are links. NOTHING in them was restored, so the restore is
         # incomplete -- the person restores them by copying the real folder into the backup.
         "refused_categories": refused_categories,
+        # R784: categories whose live folder cannot take a restore here, ``{category: reason code}``
+        # (HF_TARGET_*). Nothing of them was restored.
+        "refused_targets": refused_targets,
         # R779: files not placed because a link sat on the way to their place in the live folder.
         "refused_dest_links": refused_dest_links,
         # A member link was never written by a backup, but its place in the restore is still empty:
         # any link refusal means the restore did not bring back everything the folder showed.
-        "incomplete": bool(refused_categories or refused_dest_links or refused_symlinks or unread_total or unread_folders
+        "incomplete": bool(refused_categories or refused_targets or refused_dest_links or refused_symlinks or unread_total or unread_folders
                            or refused_layout),
         # R777: files in the model-cache folder outside the shape the backup writes there (hidden names,
         # anything outside hub/models--*/refs|snapshots). Never placed in the Hugging Face home.

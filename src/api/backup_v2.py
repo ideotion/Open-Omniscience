@@ -146,9 +146,16 @@ def import_scan_endpoint(path: str) -> dict:
     from src.backup.import_scan import scan_import_folder
 
     try:
-        return scan_import_folder(path)
+        out = scan_import_folder(path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    if "hf_models" in (out.get("found", {}).get("blobs") or {}):
+        # R784: the folder the Hugging Face models would be restored to ON THIS COMPUTER (or why they
+        # cannot be), shown on the checklist before the person chooses. A local look, no network.
+        from src.backup.folder_backup import hf_restore_target
+
+        out["found"]["hf_target"] = hf_restore_target()
+    return out
 
 
 class RemoveLeftoverPlaintextRequest(BaseModel):

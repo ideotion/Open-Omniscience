@@ -1456,6 +1456,30 @@
     // file count ("wiki 3 · maps 1" was English in every locale). A category with folders or files the scan was refused
     // reads "at least N files", with the reason on the hover; links are never restored (a restore refuses every link),
     // so they are not counted, and the hover says so.
+    // R784: why the Hugging Face cache folder on this computer cannot take a restore (fixed codes).
+    function _hfTargetWhy(code, t) {
+      return ({
+        "not-a-folder": t("its path is taken by something that is not a folder"),
+        "not-writable": t("its folder cannot be written to"),
+      })[code] || t("its folder could not be worked out");
+    }
+    // R784: where the Hugging Face models go on THIS computer, said on the checklist before the person
+    // chooses (the real folder, as it resolves here), or why they cannot be restored here. And, for a
+    // backup made before it recorded which cache folder it read, what that older backup may be missing.
+    function _uxImHfNote(b, hf, t, tfs) {
+      if (!b || !b.hf_models || !(b.hf_models.count > 0)) return "";
+      const notes = [];
+      if (hf && hf.refused) {
+        notes.push(esc(ooLabelText(t("Hugging Face models will not be restored on this computer"), _hfTargetWhy(hf.refused, t))));
+      } else if (hf && hf.path) {
+        notes.push(esc(ooLabelText(t("Hugging Face models are restored to"), "\u0001")).replace("\u0001",
+          () => `<bdi dir="ltr" style="overflow-wrap:anywhere">${esc(hf.path)}</bdi>`));
+      }
+      if (b.hf_models.layout_unrecorded) {
+        notes.push(esc(t("This backup was made before it recorded which Hugging Face cache folder it read: if that computer's cache folder was not named “hub”, its models are not in this backup.")));
+      }
+      return notes.map((n) => `<div class="muted" style="font-size:12px;margin-inline-start:28px">${n}</div>`).join("");
+    }
     function _uxImBlobRow(b, t, tfs, paren) {
       const parts = [], why = [];
       const files = (n) => (n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) }));
@@ -1551,7 +1575,7 @@
           const legacy = n === 1 ? t("Restore legacy backup file") : t("Restore legacy backup files");
           rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(legacy)} <span class="muted">${paren(`${esc(fmtNum(n, 0))} · ${f.legacy_backup.map(x => ltr(x.name)).join(", ")}`)}</span></label>`);
         }
-        if (f.blobs) rows.push(_uxImBlobRow(f.blobs, t, tfs, paren));
+        if (f.blobs) rows.push(_uxImBlobRow(f.blobs, t, tfs, paren) + _uxImHfNote(f.blobs, f.hf_target, t, tfs));
         if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">${paren(ltr(`${fmtNum(f.newsletters.count, 0)}${f.newsletters.capped ? "+" : ""} .eml`))}</span></label>`);
         const notes = [];
         // Row 293: folders the scan was refused are said on screen; whatever they hold is not listed above.
@@ -3816,6 +3840,12 @@
       // R779: a category folder that is a LINK was not restored at all, so the restore is
       // incomplete. The category is a fixed folder name, never a path; the remedy rides along.
       const linkedCats = (p.refused_categories || []).map((c) => String(c));
+      // R784: the Hugging Face model cache folder on THIS computer could not take the restore; one
+      // fixed reason, said in the person's language. Nothing of that category was restored.
+      const tgtWhy = (p.refused_targets || {}).hf_models;
+      if (tgtWhy) {
+        lines.push(ooLabelText(t("Restore incomplete — the Hugging Face model cache was not restored"), _hfTargetWhy(tgtWhy, t)));
+      }
       if (linkedCats.length) {
         lines.push(ooLabelText(t("Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link"),
           linkedCats.join(" · ")));

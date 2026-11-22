@@ -65,11 +65,11 @@ def test_the_scanned_categories_restore_and_an_existing_model_is_never_overwritt
     _touch(bk / "hf_models" / "hub" / "models--o--m" / "snapshots" / "r" / "a.safetensors", b"backup")
     _touch(bk / "hf_models" / "hub" / "models--o--m" / "snapshots" / "r" / "b.safetensors", b"backup")
     tgt = _targets(tmp_path)
-    _touch(tgt["hf_models"] / "hub" / "models--o--m" / "snapshots" / "r" / "a.safetensors", b"mine")
+    _touch(tgt["hf_models"] / "models--o--m" / "snapshots" / "r" / "a.safetensors", b"mine")
     cats = scan_import_folder(tmp_path)["found"]["blob_roots"][0]["categories"]
     res = restore_folder_backup(bk, categories=cats, targets=tgt)
-    assert (tgt["hf_models"] / "hub" / "models--o--m" / "snapshots" / "r" / "a.safetensors").read_bytes() == b"mine"
-    assert (tgt["hf_models"] / "hub" / "models--o--m" / "snapshots" / "r" / "b.safetensors").read_bytes() == b"backup"
+    assert (tgt["hf_models"] / "models--o--m" / "snapshots" / "r" / "a.safetensors").read_bytes() == b"mine"
+    assert (tgt["hf_models"] / "models--o--m" / "snapshots" / "r" / "b.safetensors").read_bytes() == b"backup"
     assert res["restored"] == 1 and res["skipped"] == 1
 
 
@@ -121,10 +121,10 @@ def test_only_the_model_cache_layout_is_ever_placed_in_the_hugging_face_home(tmp
     res = restore_folder_backup(bk, targets=tgt)
     home = tgt["hf_models"]
     placed = sorted(p.relative_to(home).as_posix() for p in home.rglob("*") if p.is_file())
-    assert placed == [
-        "hub/models--org--m/refs/main",
-        "hub/models--org--m/snapshots/r1/.gitattributes",
-        "hub/models--org--m/snapshots/r1/config.json",
+    assert placed == [  # R784: the target is the hub cache folder itself, so ``hub/`` is not repeated
+        "models--org--m/refs/main",
+        "models--org--m/snapshots/r1/.gitattributes",
+        "models--org--m/snapshots/r1/config.json",
     ]
     assert res["refused_layout"] == 4 and res["incomplete"] is True  # the scan and the restore agree
 

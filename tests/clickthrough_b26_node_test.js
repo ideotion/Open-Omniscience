@@ -321,6 +321,8 @@ test("J-3: every bracket on the import checklist is the keyed frame, and the lar
     extract("ooLabelText") + "\n" +
     // Row 293 moved the large-data row and the unread-folders note out of _uxImScan into helpers.
     extract("_uxImBlobRow") + "\n" + extract("_uxImUnreadNote") + "\n" +
+    // R784: the Hugging Face cache note under the large-data row.
+    extract("_hfTargetWhy") + "\n" + extract("_uxImHfNote") + "\n" +
     "async " + extract("_uxImScan") + "\n" +
     "return { run: _uxImScan };";
   const mod = new Function("window", "OOI18N", "DOM", "api", src)(
