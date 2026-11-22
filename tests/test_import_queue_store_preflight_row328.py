@@ -89,3 +89,47 @@ def test_refuse_while_writer_jobs_run_still_refuses_through_the_shared_words(mon
     monkeypatch.setattr(MG, "writer_jobs_refusal", lambda: "the shared words")
     with pytest.raises(MG.WriterJobsRefused, match="the shared words"):
         MG.refuse_while_writer_jobs_run()
+
+
+def test_a_start_never_stops_a_stoppable_job_end_to_end(mgr, monkeypatch, tmp_path):
+    import src.backup.export_job as EJ
+    import src.jobs.background as BG
+
+    monkeypatch.setattr(MG, "refuse_half_migrated_store", lambda: None)
+    monkeypatch.setattr(EJ, "running_export_label", lambda: None)
+    # The re-index drain "runs" and may be stopped by a restore; the start must leave it alone.
+    monkeypatch.setattr(BG, "running_writer_jobs", lambda include_stoppable=True: [("reindex", "re-index")] if include_stoppable else [])
+    monkeypatch.setattr(BG, "stop_jobs_for_restore", lambda *_a: pytest.fail("the start stopped a job"))
+    monkeypatch.setattr(ImportQueueManager, "_run", lambda self: None)
+    out = mgr.start([{"kind": "corpus", "path": str(tmp_path / "b")}], passphrase="k")
+    assert out["state"] == "running"
+
+
+def test_a_mixed_start_is_refused_as_a_whole(mgr, monkeypatch, tmp_path):
+    monkeypatch.setattr(MG, "refuse_half_migrated_store", _half_migrated)
+    with pytest.raises(ValueError, match="half-migrated"):
+        mgr.start([{"kind": "corpus", "path": str(tmp_path / "b")}, {"kind": "blobs", "path": str(tmp_path)}])
+    assert mgr.status()["state"] != "running"
+
+
+def test_an_export_is_named_before_a_blocking_writer(monkeypatch):
+    import src.backup.export_job as EJ
+    import src.jobs.background as BG
+
+    monkeypatch.setattr(EJ, "running_export_label", lambda: "the export")
+    monkeypatch.setattr(BG, "running_writer_jobs", lambda include_stoppable=True: pytest.fail("asked the writers first"))
+    assert "the export" in MG.writer_jobs_refusal()
+
+
+def test_a_second_start_while_a_run_is_in_flight_is_told_so_before_any_preflight(mgr, monkeypatch, tmp_path):
+    import threading
+
+    monkeypatch.setattr(MG, "refuse_half_migrated_store", _half_migrated)
+    gate = threading.Event()
+    mgr._state, mgr._thread = "running", threading.Thread(target=gate.wait, daemon=True)
+    mgr._thread.start()
+    try:
+        with pytest.raises(RuntimeError, match="already running"):
+            mgr.start([{"kind": "corpus", "path": str(tmp_path / "b")}])
+    finally:
+        gate.set()

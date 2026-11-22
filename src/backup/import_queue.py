@@ -558,6 +558,11 @@ class ImportQueueManager:
         can import backups locked with different passphrases while the common case is typed once. Every key is held in
         memory only: it is taken OUT of the item before the item is stored, never written to the queue file, and
         scrubbed from every record the run writes."""
+        with self._lock:
+            # A second start while a run is in flight is told so first (409), never a pre-flight's words about the store or the
+            # backups (row 328 review); the check under the lock below stays the one that decides.
+            if self._state == "running" and self._thread is not None and self._thread.is_alive():
+                raise RuntimeError("An import is already running.")
         self._refuse_a_store_no_restore_may_enter(items)
         self._refuse_unreadable_backup_manifests(items)
         self._refuse_wrong_backup_passphrases(items, passphrase)
@@ -669,7 +674,9 @@ class ImportQueueManager:
         Asked here in ``run_restore``'s order, half-migrated first, with the same helpers and their fixed words. A job the
         restore may stop (the re-index drain) is left running: the run stops it itself, and stopped here it would stay
         stopped for the whole run. Asked only when an item will restore (a backup to merge, or a legacy file); the run
-        asks again at every restore, so a store that changes after this still refuses there."""
+        asks again at every restore, so a store that changes after this still refuses there. The whole start is refused, also
+        the blobs and newsletters listed beside the restores: nothing is started, and the person imports again once the
+        store is free. The journal read waits up to 30 s for a store another program holds, as the restore's own does."""
         from src.backup.merge import (
             HalfMigratedStoreRefused,
             refuse_half_migrated_store,
