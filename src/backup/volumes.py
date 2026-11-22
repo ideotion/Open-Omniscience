@@ -33,6 +33,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.backup.regular_file import NotARegularFile, open_regular
 from src.safety.crypto import decrypt_file, encrypt_stream_to
 
 MANIFEST_NAME = "volumes.json"
@@ -72,11 +73,23 @@ class _HashingReader:
 
 
 def _sha256_file(path: Path) -> str:
+    """The SHA-256 of a regular file. A link, a pipe or a device raises :class:`NotARegularFile` without a byte read
+    (row 312): a volume's name in a backup folder may be any of them."""
     h = hashlib.sha256()
-    with open(path, "rb") as f:
+    with open_regular(path) as f:
         for blk in iter(lambda: f.read(_COPY_BUF), b""):
             h.update(blk)
     return h.hexdigest()
+
+
+def _digest_matches(path: Path, expected: object) -> bool:
+    """Whether ``path`` is a regular file whose SHA-256 is ``expected``. A name that is a link, a pipe or a device is
+    a volume that does not match: reported as bad, so a re-copy or parity recovery deals with it, never read (row
+    312). Any other read error raises as before."""
+    try:
+        return _sha256_file(path) == expected
+    except NotARegularFile:
+        return False
 
 
 class VolumeStopped(VolumeError):
@@ -256,7 +269,7 @@ def verify_volume_set(
         if not p.exists():
             bad.append(v["name"])
             missing.append(v["name"])
-        elif _sha256_file(p) != v["sha256"]:
+        elif not _digest_matches(p, v["sha256"]):
             bad.append(v["name"])
         checked += 1
         if progress_cb is not None:
