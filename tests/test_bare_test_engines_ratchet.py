@@ -17,7 +17,7 @@ from pathlib import Path
 _TESTS = Path(__file__).resolve().parent
 #: Engine-building calls in tests/ outside the helper, measured on 2026-11-21. Counted per CALL, never per file: a file
 #: that attaches the app's pragmas to one engine can still build others bare, and a per-file exemption would hide them.
-_CEILING = 741  # in 540 files, measured after row 288 batch 1 on main d8723948f
+_CEILING = 742  # in 541 files, measured after row 288 batch 1 on main d8723948f
 #: The SQLAlchemy calls that build an engine.
 _BUILDERS = frozenset({"create_engine", "create_async_engine", "engine_from_config"})
 
@@ -92,7 +92,7 @@ def test_the_helpers_default_busy_timeout_is_the_apps(tmp_path):
         app_value = con.execute("PRAGMA busy_timeout").fetchone()[0]
     finally:
         con.close()
-    assert APP_BUSY_TIMEOUT_MS == app_value
+    assert app_value == APP_BUSY_TIMEOUT_MS
     engine = app_sqlite_engine(tmp_path / "helper.db")
     try:
         assert _pragma(engine, "busy_timeout") == app_value

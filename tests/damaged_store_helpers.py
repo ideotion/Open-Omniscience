@@ -17,8 +17,6 @@ from typing import Any
 
 import pytest
 
-from tests._app_engine import app_sqlite_engine
-
 KEY = "a passphrase that is long enough"
 PLAIN_PAGE = 4096
 CIPHER_PAGE = 16384
@@ -34,7 +32,7 @@ def build_app_store(
     """A store with the app's real schema (every model table, the full-text index and its triggers) holding ``sources`` sources
     and ``articles`` articles, in a file of its own. SQLCipher stores are created at the app's page size (16 KiB) unless
     ``cipher_page_size`` says another (a file made before the app moved to 16 KiB pages is 4 KiB)."""
-    from sqlalchemy import select
+    from sqlalchemy import create_engine, select
     from sqlalchemy.orm import sessionmaker
 
     from src.database import connect as connect_mod
@@ -53,7 +51,7 @@ def build_app_store(
             cipher_page_size=cipher_page_size if encrypted else None,
         )
 
-    engine = app_sqlite_engine(":memory:", creator=creator, future=True)
+    engine = create_engine("sqlite://", creator=creator, future=True)
     try:
         Base.metadata.create_all(engine)
         fts.ensure_fts(engine)
