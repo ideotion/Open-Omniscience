@@ -92,7 +92,8 @@ def _dir_totals(d: Path) -> dict:
 
     for dirpath, dirnames, names in os.walk(d, onerror=_refused, followlinks=False):
         # os.walk lists a link to a folder among the folders and never enters it; restore refuses it.
-        links += sum(1 for n in dirnames if os.path.islink(os.path.join(dirpath, n)))
+        # A ".oopart" name is skipped by restore before its link check, so it is not a refused link either.
+        links += sum(1 for n in dirnames if not n.endswith(_PART_SUFFIX) and os.path.islink(os.path.join(dirpath, n)))
         for name in names:
             if name.endswith(_PART_SUFFIX):
                 continue
@@ -143,7 +144,12 @@ def scan_import_folder(
                             first-class importable item — restored additively in turn).
     """
     root = Path(path)
-    if not root.is_dir():
+    try:
+        is_folder = root.is_dir()
+    except OSError:
+        # A folder above it refused the look (row 293): the operator's 400, never a 500.
+        raise ValueError(f"{path} could not be read, so it cannot be scanned.") from None
+    if not is_folder:
         raise ValueError(f"{path} is not a folder to import from.")
 
     corpus_dirs: list[Path] = []
@@ -200,12 +206,19 @@ def scan_import_folder(
                     source_csv.append(fn)
             elif fn.startswith("open-omniscience-") and not low.endswith(".oomodels"):
                 fp = curp / fn
-                if fp.is_file():
-                    item: dict = {"path": str(fp), "name": fn}
-                    try:
-                        item["bytes"] = os.stat(fp).st_size
-                    except OSError:
-                        item.update(bytes=None, reason=SCAN_UNSIZED)  # row 293: unread, never 0
+                # ONE stat, guarded (row 293): Path.is_file() raises a PermissionError rather than
+                # answering False, so it could fail the whole scan from a folder it may list but not enter.
+                item: dict = {"path": str(fp), "name": fn}
+                try:
+                    st = os.stat(fp)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    item.update(bytes=None, reason=SCAN_UNSIZED)  # unread, never 0; restore says its own error
+                    legacy.append(item)
+                    continue
+                if stat.S_ISREG(st.st_mode):
+                    item["bytes"] = st.st_size
                     legacy.append(item)
 
     # Manifest-anchored blobs: a completed large-data backup declares its categories
@@ -220,10 +233,16 @@ def scan_import_folder(
         root_totals = blob_roots.setdefault(str(mdir), {})
         for catdir, (count, nbytes) in cats.items():
             catkey = _BLOB_DIRS.get(catdir)
-            if not catkey or catkey in root_totals:
-                continue  # unknown category, or the dir-walk already measured it on disk
+            if not catkey:
+                continue  # unknown category
+            seen = root_totals.get(catkey)
+            if seen and (seen["count"] or not seen.get("unread_entries")):
+                continue  # the dir-walk already measured it on disk
             if count:
-                root_totals[catkey] = {"count": count, "bytes": nbytes}
+                # Row 293: a category folder the walk could not read at all keeps its reason, and the
+                # manifest's declared totals stand in for the 0 it read.
+                root_totals[catkey] = {"count": count, "bytes": nbytes, "from_manifest": True,
+                                       **({k: seen[k] for k in ("unread_entries", "reason") if k in seen} if seen else {})}
         if not root_totals:  # a manifest with zero non-empty categories: drop the empty root
             blob_roots.pop(str(mdir), None)
 

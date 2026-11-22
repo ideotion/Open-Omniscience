@@ -84,6 +84,37 @@ def test_a_category_folder_it_cannot_list_is_still_listed_as_unread(tmp_path, mo
     assert maps == {"count": 0, "bytes": 0, "unread_entries": 1, "reason": SCAN_UNREAD}
 
 
+def test_an_unlistable_category_the_manifest_declares_shows_the_manifest_totals(tmp_path, monkeypatch):
+    _touch(tmp_path / "oo-folder-backup.json", json.dumps(
+        {"categories": {"osm_regions": [{"rel": "kenya.osm.pbf", "size": 40}, {"rel": "chad.osm.pbf", "size": 2}]}}
+    ).encode())
+    _touch(tmp_path / "osm_regions" / "kenya.osm.pbf")
+    real_walk = os.walk
+
+    def fake_walk(top, onerror=None, followlinks=False):
+        if str(top).endswith("osm_regions"):
+            onerror(PermissionError(errno.EACCES, "refused", str(top)))
+            return
+        yield from real_walk(top, onerror=onerror, followlinks=followlinks)
+
+    scope_os(monkeypatch, import_scan, walk=fake_walk)
+    maps = scan_import_folder(tmp_path)["found"]["blobs"]["maps"]
+    assert maps["count"] == 2 and maps["bytes"] == 42  # the manifest's word, never the 0 it read
+    assert maps["unread_entries"] == 1 and maps["reason"] == SCAN_UNREAD
+
+
+def test_a_folder_it_may_not_look_at_is_refused_with_a_reason_not_a_crash(tmp_path, monkeypatch):
+    target = tmp_path / "backup"
+    target.mkdir()
+
+    def refuse(self, *a, **kw):
+        raise PermissionError(errno.EACCES, "refused", str(self))
+
+    monkeypatch.setattr(import_scan.Path, "is_dir", refuse)
+    with pytest.raises(ValueError, match="could not be read"):
+        scan_import_folder(target)
+
+
 def test_a_file_that_vanished_mid_scan_is_gone_not_unread(tmp_path, monkeypatch):
     _touch(tmp_path / "models" / "blobs" / "sha256-a")
     _touch(tmp_path / "models" / "blobs" / "sha256-gone")
