@@ -781,7 +781,29 @@ imply a protection we cannot deliver.
   file shares its bytes with its other names, and a mount point under the data dir is walked like any folder. A transaction already under way can still commit into the
   unlinked files; the wipe keeps a descriptor on each and rewrites them once the pool is closed and again 15 s later, and
   a commit later than that is the window left, each wipe's own (a second wipe within the 15 s never shortens the first
-  one's late pass); every file under the data dir the earlier steps did not
+  one's late pass). **Another process holding the store (R792).** A second copy of the app or a database tool that has the
+  store open keeps the unlinked files alive through its own descriptors and can go on committing into them, salt included
+  (measured: 5 runs of 5 left it without kept descriptors, 1 of 5 with them). The erase never waits on such a process and
+  never signals it. Once every key is destroyed (on the panic path, also once the app is offline and its own pool is closed),
+  it takes SQLite's lock bytes on the kept main files and log indexes in one non-blocking attempt, so a holder between
+  transactions is refused when it next begins one (taken only then: POSIX locks belong to the process, and closing any
+  descriptor this process has on the file, the erase's own overwrite or the pool's close, would drop them); it asks each kept
+  main file, log and log index with one `F_GETLK` (the shared locks SQLite holds for as long as a connection is open in WAL
+  mode; never this process's own, and no process id is read); and while a holder is seen it rewrites through its kept
+  descriptors every 100 ms for at most 2 s, each pass stopped at the bound and each file rewritten up to its size when kept
+  plus 256 MiB, so a holder that grows the shared file cannot make the erase fill the disk; the panic wipe's 15 s late pass
+  does the same before it lets its descriptors go (its finding is logged, without a path). The report says `other_holder`:
+  `none` (none SEEN), `held` (one was still there when the bound ended: the result says the erase may be incomplete, names
+  closing that program or restarting the computer, and its `limit` no longer claims the corpus unrecoverable) or `unknown`
+  (Windows, where an open file cannot be found from here, a platform whose lock record is not read, a check that failed, or a
+  store file that could not be kept: said as such, never clean). Stated limits: a program that has the database open but holds
+  no lock on it at that moment (in rollback-journal mode between transactions, under SQLite's `flock()` or no-lock VFS, or a
+  process that opened the file without SQLite) cannot be seen, so the check can miss it and the result then says `none`
+  (measured: such a process's next write was refused and left no salt, because SQLite rereads page 1 and finds it destroyed;
+  a transaction already under way that commits page 1 after the last rewrite is the window left); a holder on another
+  machine sharing the folder over a network file system may hold locks this machine cannot see; key files, the cache and
+  `anchors.db` are not checked. With no other holder the check costs one probe per kept file. Every file under the data
+  dir the earlier steps did not
   handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot

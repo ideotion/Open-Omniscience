@@ -4207,19 +4207,31 @@
         // reaches what this page stored, not only the server's files.
         try { localStorage.removeItem("oo.climate.place"); } catch (_e) { /* storage may be unavailable */ }
         const plaintext = r.encrypted_corpus === false;
-        // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state.
+        // R792, read here before the offer below: it may never call the corpus unrecoverable unless the erase result is clean.
+        const holder = r.other_holder || "unknown";
+        const clean = holder === "none";
+        // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
+        // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
         const rec = plaintext
           ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
+          : !clean ? t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.")
           : t("For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.") +
             " " + t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.");
         // The file count is ONE keyed frame, its numbers grouped (R14).
         const tfw = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
           : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+        // R792: only "none" is a clean erase. Another program that still had the database open may have written the key material
+        // back into the files it holds ("held"), and on Windows, or when the check failed, the erase cannot tell ("unknown"): the
+        // result then never says the store is unrecoverable, and the notice stays visible beside it.
+        const holderNote = holder === "held"
+          ? t("Another program still had the database open when the erase ended, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer, then run a full overwrite of free disk space below.")
+          : t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer, then run a full overwrite of free disk space below.");
         $("panic-result").innerHTML =
-          `<span class="pill warn">${esc(t("crypto-erased"))}</span> ${esc(tfw("{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
-          `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` +
+          `<span class="pill warn">${esc(t(clean ? "crypto-erased" : "erase may be incomplete"))}</span> ${esc(tfw("{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
+          (clean ? `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` : "") +
           `<span class="muted">${esc(r.limit)}</span>` +
+          (clean ? "" : `<div class="card-caveat">${esc(holderNote)}</div>`) +
           // R711: in a folder the app does not own, only its files went; the folder and the rest stayed, and the names are in the report.
           (r.scope === "app-only"
             ? `<div class="card-caveat" title="${esc((r.left_untouched || []).join(", "))}">${esc(tfw("Your data folder is not the app’s own: only the app’s files were removed, and {n} other entries were left untouched.", { n: fmtNum((r.left_untouched || []).length, 0) }))}</div>` +
@@ -4233,7 +4245,7 @@
           `<button class="danger" data-on-click="secureErase(3)">${esc(t("Triple pass"))}</button>` +
           `<button class="danger" data-on-click="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
           `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`;
-        toast(t("Local data crypto-erased. Restart the app."), "warn");
+        toast(clean ? t("Local data crypto-erased. Restart the app.") : t("The erase may be incomplete. Read the notice under the wipe button."), clean ? "warn" : "err");
       } catch (e) { toast(_failMsg("Panic wipe failed: {error}", e), "err"); }
     }
 

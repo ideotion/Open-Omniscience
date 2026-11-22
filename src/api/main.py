@@ -3997,6 +3997,15 @@ def _panic_cli(*, force: bool) -> None:
             print("Also left, because the name is common and may be yours: " + ", ".join(report["left_common_names"]))
     if report.get("after_erase_failures"):
         print("The erase completed; these steps after it failed: " + ", ".join(report["after_erase_failures"]))
+    # R792: only "none" is a clean erase; the other two are said in plain words, never folded into the line above.
+    holder = report.get("other_holder", "unknown")
+    if holder == "held":
+        print("THE ERASE MAY BE INCOMPLETE: another program still had the database open when the erase ended, and it may have "
+              "written the database's key material back to the disk. Close that program or restart the computer; overwriting the "
+              "disk's free space after that may reach what it wrote, but not reliably on SSDs or copy-on-write file systems.")
+    elif holder != "none":
+        print("The erase could not check whether another program had the database open. If one did, the erase may be "
+              "incomplete: close such a program or restart the computer.")
     print(report["limit"])
 
 

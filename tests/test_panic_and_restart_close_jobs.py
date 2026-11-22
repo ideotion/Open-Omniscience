@@ -102,7 +102,9 @@ def test_a_failing_close_step_never_stops_the_wipe(panic_steps, monkeypatch):
     monkeypatch.setattr(runner, "pause_for_exclusive_operation", boom)
     monkeypatch.setattr(after_shutdown, "stop_jobs_and_close", boom)
     monkeypatch.setattr(session, "dispose_engine", boom)
-    assert panic_wipe(confirm=True) == {"files_wiped": 0}
+    report = panic_wipe(confirm=True)
+    # The erase's own report, with what R792's check after the tidying adds (no kept file here: nothing to ask, none seen).
+    assert report == {"files_wiped": 0, "other_holder": "none"}
     assert panic_steps == [("erase",)]
 
 
