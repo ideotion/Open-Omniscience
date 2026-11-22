@@ -22,6 +22,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import io
 import os
 import stat
 from typing import BinaryIO
@@ -73,14 +74,50 @@ def open_regular_fd(path: str | os.PathLike[str], *, follow_links: bool = False,
     return fd
 
 
+class _AdoptedFileIO(io.FileIO):
+    """A ``FileIO`` that closes its descriptor only once :func:`adopt_fd` has handed it over (row 344).
+
+    Built with ``closefd=False``, so dropping it before the hand-over closes nothing; ``_owns`` is set as the last step."""
+
+    _owns = False
+
+    def close(self) -> None:
+        fd = -1 if self.closed else self.fileno()
+        try:
+            super().close()
+        finally:
+            if self._owns and fd >= 0:
+                self._owns = False
+                os.close(fd)
+
+
+_BUFFERED: dict[str, type[io.BufferedReader] | type[io.BufferedWriter]] = {"rb": io.BufferedReader, "wb": io.BufferedWriter}
+
+
+def adopt_fd(fd: int, mode: str) -> BinaryIO:
+    """``fd`` as a buffered binary file object (``mode`` ``"rb"`` or ``"wb"``) that closes it, with the descriptor closed
+    exactly once whatever is raised on the way (row 344).
+
+    ``os.fdopen`` inside ``try: ... except BaseException: os.close(fd)`` closes it TWICE when the exception comes after
+    the file object exists: an interrupt between the object's construction and the ``return``, or an error building the
+    buffer (``io.open`` then closes the raw file itself). The second close may land on a number another open has taken
+    meanwhile, a SQLite connection's above all, and closing any descriptor of a file drops the process's locks on it
+    (R789). Here nothing owns ``fd`` until the very last statement: until then a failure closes it here, once, and a
+    file object dropped half-built closes nothing; after it, only the file object does. Interrupt-safe because that
+    statement (an attribute store) and the ``return`` after it run no check for a pending signal."""
+    try:
+        raw = _AdoptedFileIO(fd, mode, closefd=False)
+        f = _BUFFERED[mode](raw)
+    except BaseException:
+        os.close(fd)  # nothing owns it yet: a FileIO built with closefd=False never closes it, built or half-built
+        raise
+    raw._owns = True
+    return f  # type: ignore[return-value]
+
+
 def open_regular(path: str | os.PathLike[str], *, follow_links: bool = False, dir_fd: int | None = None) -> BinaryIO:
     """:func:`open_regular_fd` as a binary file object (``"rb"``) that closes the descriptor with it."""
-    fd = open_regular_fd(path, follow_links=follow_links, dir_fd=dir_fd)
-    try:
-        return os.fdopen(fd, "rb")
-    except BaseException:
-        os.close(fd)
-        raise
+    return adopt_fd(open_regular_fd(path, follow_links=follow_links, dir_fd=dir_fd), "rb")
 
 
 def create_new(path: str | os.PathLike[str], *, mode: int = 0o666) -> BinaryIO:
@@ -105,12 +142,7 @@ def create_new(path: str | os.PathLike[str], *, mode: int = 0o666) -> BinaryIO:
         os.O_WRONLY | os.O_CREAT | os.O_EXCL
         | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOCTTY", 0)
     )
-    fd = os.open(path, flags, mode)
-    try:
-        return os.fdopen(fd, "wb")
-    except BaseException:
-        os.close(fd)
-        raise
+    return adopt_fd(os.open(path, flags, mode), "wb")
 
 
 def replace_with(path: str | os.PathLike[str], data: bytes, *, tmp: str | os.PathLike[str] | None = None) -> None:
@@ -138,4 +170,4 @@ def replace_with(path: str | os.PathLike[str], data: bytes, *, tmp: str | os.Pat
         raise
 
 
-__all__ = ["NotARegularFile", "create_new", "open_regular", "open_regular_fd", "replace_with"]
+__all__ = ["NotARegularFile", "adopt_fd", "create_new", "open_regular", "open_regular_fd", "replace_with"]
