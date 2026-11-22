@@ -393,6 +393,9 @@ def merge_batches(limit: int = 20) -> dict:
         rows = (
             s.query(MergeBatch).order_by(MergeBatch.id.desc()).limit(max(1, min(limit, 100))).all()
         )
+        from src.backup.artifact import signer_relation, this_installation_key
+
+        local_key = this_installation_key()
         return {
             "batches": [
                 {
@@ -400,6 +403,8 @@ def merge_batches(limit: int = 20) -> dict:
                     "imported_at": b.imported_at.isoformat() if b.imported_at else None,
                     "artifact_kind": b.artifact_kind,
                     "origin_fingerprint": b.origin_fingerprint,
+                    # R800: the stored key, compared now with this installation's own
+                    "signed_by": signer_relation(b.origin_fingerprint, local_key),
                     "app_version": b.app_version,
                     "alembic_rev": b.alembic_rev,
                     "status": b.status,
