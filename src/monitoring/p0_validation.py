@@ -556,6 +556,9 @@ def _check_restore(
         "peak_rss_delta_mb": rss.delta_mb,
         "staged_bytes": staged_bytes,
         "signature_state": report.get("signature_state"),
+        # R800: "verified" means the content is unchanged since it was signed; whose key signed it
+        # (this installation's or another's) is the separate fact, never an origin.
+        "signed_by": report.get("signed_by"),
         "artifact_kind": report.get("artifact_kind"),
         "encrypted": report.get("encrypted"),
         "plan": report.get("plan"),

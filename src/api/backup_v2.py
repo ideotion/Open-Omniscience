@@ -599,7 +599,8 @@ def folder_backup_verify(body: FolderRestoreBody) -> dict:
     files are counted in ``size_only`` rather than silently called sound). The
     content-addressed Ollama model blobs (``blobs/sha256-<hex>``) are checked against the
     hash in their own filename as well. The manifest itself is signed, and its state
-    (``signed`` / ``unsigned`` / ``bad-signature``) rides the verdict. Runs as the (single) folder job, so it
+    (``signed`` / ``unsigned`` / ``bad-signature``) rides the verdict: ``signed`` means the manifest is
+    unchanged since the key it carries signed it, never where the backup came from (R800). Runs as the (single) folder job, so it
     surfaces in /api/jobs + /folder/status and is cancellable; the verdict rides
     ``status()['verify']`` (schema ``oo-folder-verify-1``: ok, files_checked, files_checksummed,
     summary{ok,size_only,missing,size_mismatch,checksum_mismatch,traversal_refused,link_not_checked,unreadable},
