@@ -1303,7 +1303,7 @@ def _emit_member(st: _EmitState, mf: MemberFile) -> dict[str, Any]:
                 and pooled.get("plaintext_sha256") == psha
                 and _whole_number(pooled.get("plaintext_bytes", -1)) == slice_len
                 and _is_regular_file(reuse_path)
-                and _digest_matches(reuse_path, pooled.get("sha256"), listed_bytes(pooled))
+                and _digest_matches(reuse_path, pooled.get("sha256"), max_bytes=listed_bytes(pooled))
             ):
                 entry = {
                     "name": reuse_path.name,
@@ -2147,7 +2147,7 @@ def verify_stream_backup(
                 bad_parity.append(str(pv.get("name") if isinstance(pv, dict) else pv))  # a path: never read (row 312)
                 continue
             p = src / pv["name"]
-            if not p.exists() or not _digest_matches(p, pv.get("sha256"), listed_bytes(pv)):
+            if not p.exists() or not _digest_matches(p, pv.get("sha256"), max_bytes=listed_bytes(pv)):
                 bad_parity.append(pv["name"])
         usable = int(par.get("count", 0)) - len(bad_parity)
         report["parity"] = {

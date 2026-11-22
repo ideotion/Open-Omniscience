@@ -33,6 +33,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.backup.bounded_hash import LongerThanListed, sha256_read
 from src.backup.regular_file import NotARegularFile, create_new, open_regular, replace_with
 from src.safety.crypto import decrypt_file, encrypt_stream_to
 
@@ -49,6 +50,9 @@ _COPY_BUF = 1 << 20
 
 class VolumeError(RuntimeError):
     """Raised when a volume set is malformed, corrupt, or fails its checksum."""
+
+
+_LongerThanListed = LongerThanListed  # row 336; shared with the folder-backup check (row 342)
 
 
 def member_in_use(name: str) -> str:
@@ -72,32 +76,15 @@ class _HashingReader:
         return b
 
 
-class _LongerThanListed(Exception):
-    """A file read past the size its manifest lists (row 336): it is not the file listed, whatever its digest."""
-
-
 def _sha256_file(path: Path, max_bytes: int | None = None) -> str:
     """The SHA-256 of a regular file. A link, a pipe or a device raises :class:`NotARegularFile` without a byte read
     (row 312): a volume's name in a backup folder may be any of them.
 
     ``max_bytes`` (row 336) is the size the manifest lists: a file that holds more raises :class:`_LongerThanListed`
-    after reading at most one block past it, so a volume swapped for a huge sparse file, or one that keeps growing, is
+    after reading at most one byte past it, so a volume swapped for a huge sparse file, or one that keeps growing, is
     never hashed to its end."""
-    h = hashlib.sha256()
-    read = 0
     with open_regular(path) as f:
-        if max_bytes is not None and os.fstat(f.fileno()).st_size > max_bytes:
-            raise _LongerThanListed(str(path))
-        while True:
-            want = _COPY_BUF if max_bytes is None else min(_COPY_BUF, max_bytes - read + 1)
-            blk = f.read(want)
-            if not blk:
-                break
-            read += len(blk)
-            if max_bytes is not None and read > max_bytes:
-                raise _LongerThanListed(str(path))
-            h.update(blk)
-    return h.hexdigest()
+        return sha256_read(f, max_bytes, chunk=_COPY_BUF)
 
 
 def _plain_volume_name(name: object) -> bool:
@@ -107,11 +94,16 @@ def _plain_volume_name(name: object) -> bool:
     return isinstance(name, str) and name not in {"", ".", ".."} and not any(c in name for c in "/\\:\0")
 
 
-def _digest_matches(path: Path, expected: object, max_bytes: int | None = None) -> bool:
-    """Whether ``path`` is a regular file whose SHA-256 is ``expected``. A name that is a link, a pipe or a device is
-    a volume that does not match: reported as bad, so a re-copy or parity recovery deals with it, never read (row
-    312). With ``max_bytes`` (the manifest's size, row 336) a file longer than that does not match either, and is read
-    at most one block past it. Any other read error raises as before."""
+def _digest_matches(path: Path, expected: object, *, max_bytes: int | None) -> bool:
+    """Whether ``path`` is a regular file whose SHA-256 is ``expected``, read no further than ``max_bytes``: the size
+    the manifest lists (:func:`listed_bytes`, row 336). A name that is a link, a pipe or a device is a volume that does
+    not match: reported as bad, so a re-copy or parity recovery deals with it, never read (row 312). A file longer than
+    listed does not match and is read at most one byte past it. A size of None (the entry lists none that is a whole
+    number of bytes) does not match either: the size sits in the same manifest as the volumes, so whoever can swap in a
+    huge file can also drop the size, and a missing size must not switch the bound off. Every build that writes a
+    volume set has recorded ``bytes`` since the first one. Any other read error raises as before."""
+    if max_bytes is None:
+        return False
     try:
         return _sha256_file(path, max_bytes) == expected
     except (NotARegularFile, _LongerThanListed):
@@ -306,7 +298,7 @@ def verify_volume_set(
         if not p.exists():
             bad.append(v["name"])
             missing.append(v["name"])
-        elif not _digest_matches(p, v.get("sha256"), listed_bytes(v)):
+        elif not _digest_matches(p, v.get("sha256"), max_bytes=listed_bytes(v)):
             bad.append(v["name"])
         checked += 1
         if progress_cb is not None:

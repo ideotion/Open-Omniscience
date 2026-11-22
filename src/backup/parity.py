@@ -355,7 +355,7 @@ def recover_volumes(
             bad_set.add(str(pv.get("name")))
             continue
         p = out / pv["name"]
-        if not p.exists() or not _digest_matches(p, pv["sha256"], listed_bytes(pv)):
+        if not p.exists() or not _digest_matches(p, pv["sha256"], max_bytes=listed_bytes(pv)):
             bad_set.add(pv["name"])
     # A data volume whose name is a path is never rebuilt: the rebuild writes beside and then over that name, which
     # would be outside the folder. Nothing is recovered from such a manifest (row 312; both callers refuse it first).
@@ -403,7 +403,7 @@ def recover_volumes(
     unrepaired: list[str] = []
     for k in erased_data:
         target = out / data_meta[k]["name"]
-        if not _digest_matches(tmp_paths[k], data_meta[k]["sha256"], listed_bytes(data_meta[k])):
+        if not _digest_matches(tmp_paths[k], data_meta[k]["sha256"], max_bytes=listed_bytes(data_meta[k])):
             unrepaired.append(data_meta[k]["name"])  # reconstruction did not verify
             tmp_paths[k].unlink(missing_ok=True)  # never install a wrong rebuild
         else:
