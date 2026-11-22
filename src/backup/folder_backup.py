@@ -362,7 +362,10 @@ def _atomic_copy(
         # A restore reads from an untrusted folder: where the system can, the source is opened without
         # following a link, so a member swapped for one after it was checked is refused, not read.
         try:
-            src_fd = os.open(src, os.O_RDONLY | binary | (getattr(os, "O_NOFOLLOW", 0) if nofollow_src else 0))
+            # O_NONBLOCK too: a member swapped for a named pipe would otherwise block this open for
+            # ever, before the fstat below could refuse it. It changes nothing for a regular file.
+            guard = (getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)) if nofollow_src else 0
+            src_fd = os.open(src, os.O_RDONLY | binary | guard)
         except OSError as exc:
             if nofollow_src and exc.errno == errno.ELOOP:  # the name is now a link: refused, never read
                 raise SourceChanged("the file became a link after it was checked") from None

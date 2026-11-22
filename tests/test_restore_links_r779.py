@@ -129,6 +129,10 @@ def test_a_member_swapped_after_its_check_is_refused_not_read(tmp_path):
     with pytest.raises(SourceChanged):  # the name became a link: not opened
         _atomic_copy(checked, dst, nofollow_src=True, expect=os.lstat(other))
     assert not dst.exists() and not (tmp_path / "live" / "a.bz2.oopart").exists()
+    checked.unlink()
+    os.mkfifo(checked)
+    with pytest.raises(SourceChanged):  # a named pipe is refused at once, never waited on
+        _atomic_copy(checked, dst, nofollow_src=True, expect=os.lstat(other))
 
 
 def test_a_member_link_alone_makes_the_restore_incomplete(tmp_path):
