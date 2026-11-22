@@ -56,7 +56,7 @@ AUDIT_LOG = Path.home() / ".open-omniscience-uninstall.log"
 # absolute paths + flags — the detached process computes NO paths itself (so it can only
 # ever remove exactly what plan_uninstall decided in-process).
 _WATCHER_SRC = r"""
-import os, re, sys, json, time, shutil, datetime
+import os, re, sys, json, time, shutil, datetime, stat, struct
 pid = int(sys.argv[1]); plan = json.loads(sys.argv[2])
 os.chdir(os.path.expanduser("~"))          # never sit inside a folder we may delete
 __PID_PROBE__
@@ -90,6 +90,102 @@ def overwrite(p, head_only):
                 c = os.urandom(min(CHUNK, limit - w)); f.write(c); w += len(c)
             f.flush(); os.fsync(f.fileno())
     except OSError: pass
+# R792 (part B): ANOTHER process holding the database (a second copy of the app, a database tool) keeps the unlinked files alive
+# and can go on committing into them, salt included -- measured on this watcher: a process writing in a loop through it kept
+# the salt in 5 runs of 5. Never waited on and never signalled: a descriptor is kept on each SQLite file of an encrypted
+# database before it is overwritten and unlinked; once the walk is over, SQLite's lock bytes are taken in one non-blocking
+# attempt (only then: closing any descriptor this process has on the file drops its locks), one F_GETLK asks whether another
+# process holds a lock (its id is never read), and while one does the kept files are rewritten every STEP s for at most BOUND s,
+# each up to its size when kept plus GROWTH. The audit log then says whether another program still had the database open, or
+# that it could not be checked (always so on Windows, where an open file cannot be found from here). No path, no process id.
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+LAYOUT = "hhqqi" if sys.platform.startswith("linux") else ("qqihh" if sys.platform == "darwin" else None)
+BOUND = 2.0; STEP = 0.1; GROWTH = 256 * 1024 * 1024
+_SQL = tuple(n for n in _ENC if "duckdb" not in n)
+kept = []; held_stat = {"missed": 0, "seen": 0}
+def sqlite_kind(name):
+    for b in _SQL:
+        if name == b: return "head"
+        if name in (b + "-wal", b + "-journal"): return "whole"
+        if name == b + "-shm": return "shm"
+    return None
+def keep(p, kind):
+    held_stat["seen"] += 1
+    if os.name != "posix": return               # an open descriptor would make the unlink fail there
+    try: fd = os.open(p, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0))
+    except FileNotFoundError: return
+    except OSError: held_stat["missed"] += 1; return
+    try:
+        st = os.fstat(fd)
+        regular = stat.S_ISREG(st.st_mode)
+    except OSError:
+        regular = False
+    if not regular:
+        os.close(fd); held_stat["missed"] += 1; return
+    kept.append((fd, kind, st.st_size + GROWTH))
+def flock(kind, start, length):
+    if LAYOUT == "hhqqi": return struct.pack(LAYOUT, kind, 0, start, length, 0)
+    return struct.pack(LAYOUT, start, length, 0, kind, 0)
+def holder(fd):
+    if fcntl is None or LAYOUT is None: return None
+    try: got = fcntl.fcntl(fd, fcntl.F_GETLK, flock(fcntl.F_WRLCK, 0, 0))
+    except (OSError, ValueError): return None
+    return struct.unpack(LAYOUT, got[:struct.calcsize(LAYOUT)])[0 if LAYOUT == "hhqqi" else 3] != fcntl.F_UNLCK
+def holder_state():
+    if os.name != "posix" or fcntl is None or LAYOUT is None: return "unknown"
+    unknown = held_stat["missed"] > 0
+    for fd, _k, _c in kept:
+        h = holder(fd)
+        if h: return "held"
+        unknown = unknown or h is None
+    return "unknown" if unknown else "none"
+def rewrite_kept(deadline):
+    for fd, kind, cap in kept:
+        try:
+            size = min(os.fstat(fd).st_size, cap)
+            limit = size if kind == "whole" else min(size, PAGE1)
+            os.lseek(fd, 0, os.SEEK_SET); w = 0
+            while w < limit:
+                if time.monotonic() >= deadline: return
+                n = min(CHUNK, limit - w)
+                w += os.write(fd, bytes(n) if kind == "shm" else os.urandom(n))   # a log index's head is zeroed, never randomised
+            os.fsync(fd)
+        except OSError: pass
+def check_other_holders():
+    if fcntl is not None and LAYOUT is not None:
+        for fd, kind, _c in kept:
+            if kind in ("head", "shm"):
+                start, length = (0x40000000, 512) if kind == "head" else (120, 9)
+                try: fcntl.fcntl(fd, fcntl.F_SETLK, flock(fcntl.F_WRLCK, start, length))
+                except (OSError, ValueError): pass
+    state = holder_state()
+    if state == "held":
+        deadline = time.monotonic() + BOUND
+        while True:
+            rewrite_kept(deadline)
+            if time.monotonic() >= deadline:
+                state = holder_state(); break
+            time.sleep(STEP)
+            state = holder_state()
+            if state != "held":
+                rewrite_kept(time.monotonic() + BOUND)   # what it committed just before it let go
+                break
+    if state == "held":
+        rec("THE ERASE MAY BE INCOMPLETE: another program still had the database open when the erase ended, and it may have "
+            "written the database's key material back to the disk. Close that program or restart the computer; overwriting the "
+            "disk's free space after that may reach what it wrote, but not reliably on SSDs or copy-on-write file systems.")
+    elif state == "unknown":
+        rec("The erase could not check whether another program had the database open (it never can on Windows). If one did, "
+            "the erase may be incomplete: close such a program or restart the computer.")
+    else:
+        rec("Checked: no other program was seen holding the database when the erase ended (a program that had it open "
+            "without holding a lock on it at that moment cannot be seen).")
+    for fd, _k, _c in kept:
+        try: os.close(fd)
+        except OSError: pass
 rec("uninstall watcher start (pid %d)" % pid)
 for f in plan.get("files", []):
     try: os.remove(f); rec("removed launcher " + f)
@@ -127,6 +223,8 @@ if wd and os.path.isdir(wd):
     seen = wiped = 0
     for top in roots():
         if top != wd and (linkish(top) or not os.path.isdir(top)):
+            k = None if linkish(top) else sqlite_kind(os.path.basename(top))
+            if k: keep(top, k)
             seen += 1; overwrite(top, header_only(os.path.basename(top)))
             try: os.remove(top); wiped += 1
             except OSError: pass
@@ -134,10 +232,15 @@ if wd and os.path.isdir(wd):
         for root, dirs, names in os.walk(top):
             dirs[:] = [d for d in dirs if not linkish(os.path.join(root, d))]
             for nm in names:
-                seen += 1; fp = os.path.join(root, nm); overwrite(fp, header_only(nm))
+                seen += 1; fp = os.path.join(root, nm)
+                k = sqlite_kind(nm)
+                if k and not os.path.islink(fp): keep(fp, k)
+                overwrite(fp, header_only(nm))
                 try: os.remove(fp); wiped += 1
                 except OSError: pass
         if top != wd: shutil.rmtree(top, ignore_errors=True)
+    if held_stat["seen"]:
+        check_other_holders()
     scrubbed = 0                              # optional defence-in-depth free-space scrub
     passes = plan.get("passes")
     if passes in (1, 3, 8):
@@ -328,7 +431,12 @@ def _app_only(scope: dict | None) -> dict | None:
     """The app's own names for the watcher when the data folder is broad (R711), else None (the folder is removed whole)."""
     if not scope or not scope.get("broad"):
         return None
-    from src.safety.crypto_erase import _KEY_FILES, _KEYS_PENDING, _OTHER_KEY_FILES, KEY_FORM_SUFFIXES
+    from src.safety.crypto_erase import (
+        _KEY_FILES,
+        _KEYS_PENDING,
+        _OTHER_KEY_FILES,
+        KEY_FORM_SUFFIXES,
+    )
     from src.safety.data_scope import owned_spec
 
     keys = [f"keys/{n}" for n in (*_KEY_FILES, *_OTHER_KEY_FILES, _KEYS_PENDING)]
