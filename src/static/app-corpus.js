@@ -379,7 +379,7 @@
              const members = (p.members && p.members.length > 1) ? p.members.join(", ") : "";
              const titleAttr = members ? ` title="${esc(t("Entity family:"))} ${esc(members)}"` : "";
              return `<tr class="ckw-row" data-term="${esc(p.normalized || p.term)}" style="cursor:pointer;border-bottom:1px solid var(--line)">
-               <td style="padding:4px 8px"><span${titleAttr}>${esc(p.term)}</span>${p.kind ? ` <span class="muted" style="font-size:11px">${esc(kwKindLabel(p.kind))}</span>` : ""}</td>
+               <td style="padding:4px 8px"><span${titleAttr} translate="no">${esc(p.term)}</span>${p.kind ? ` <span class="muted" style="font-size:11px">${esc(kwKindLabel(p.kind))}</span>` : ""}</td>
                <td style="text-align:right;padding:4px 8px">${fmt(p.cooccur)}</td>
                <td style="text-align:right;padding:4px 8px">${fmt(p.n_b)}</td>
                <td style="text-align:right;padding:4px 8px">${(p.pmi != null ? p.pmi.toFixed(2) : "—")}</td>
@@ -798,7 +798,7 @@
           api("/api/insights/associations?term=" + encodeURIComponent(term)),
           api("/api/insights/context?term=" + encodeURIComponent(term)),
         ]);
-        if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “${esc(term)}”. Index the corpus, or try another term.</div>`; return; }
+        if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “<span translate="no">${esc(term)}</span>”. Index the corpus, or try another term.</div>`; return; }
         const r = tr.resolved;
         const t8 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const tf8 = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
@@ -1467,7 +1467,7 @@
       if (!terms.length) return `<div class="muted">${esc(t((d && d.method) || "No resolvable keyword given."))}</div>`;
       const expr = terms.map((x) => esc(x.normalized || x.term)).join(_anConjSep(d.op));
       const perTerm = terms.map((x) =>
-        `<span class="chip" title="${esc(t("exact article count for this term, within the scope"))}">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
+        `<span class="chip" title="${esc(t("exact article count for this term, within the scope"))}"><span translate="no">${esc(x.term)}</span> <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
       const bounded = d.result_bounded
         ? `<div class="card-caveat" title="${esc(t("the set scan reached its cap"))}">${esc(t("Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one."))}</div>` : "";
       const sc = d.scope || {};
@@ -1517,7 +1517,7 @@
     function conjContrastHtml(c, t, tf) {
       const side = (s2) => `${_conjExpr(s2)} (n=${s2 ? s2.n_combined : 0})`;
       const rows = (c.contrasts || []).slice(0, 15).map((r) =>
-        `<tr><td dir="auto">${esc(r.term)}</td><td>${r.a_articles}</td><td>${r.b_articles}</td><td>${ooLtrIsolate((r.delta > 0 ? "+" : "") + r.delta)}</td></tr>`).join("");
+        `<tr><td dir="auto" translate="no">${esc(r.term)}</td><td>${r.a_articles}</td><td>${r.b_articles}</td><td>${ooLtrIsolate((r.delta > 0 ? "+" : "") + r.delta)}</td></tr>`).join("");
       if (!rows) return `<div class="muted">${esc(t("No keyword to compare: one side is empty or its articles carry no other keyword."))}</div>`;
       return `<div class="muted small">A = ${esc(side(c.a))} · B = ${esc(side(c.b))}</div>`
         + `<table class="data" style="margin-top:4px"><thead><tr><th>${esc(t("Keyword"))}</th><th>A</th><th>B</th>`
@@ -1705,7 +1705,7 @@
             + `<div>${esc(m.snippet || "")}</div></div>`).join("")
         : `<div class="muted">${esc(t("No context snippets."))}</div>`;
       return `<h3 style="margin:16px 0 6px;font-size:13px">${esc(t("In context"))}`
-        + `${ctx.term ? ` <span class="muted">— ${esc(ctx.term)}</span>` : ""}</h3>` + body;
+        + `${ctx.term ? ` <span class="muted" translate="no">— ${esc(ctx.term)}</span>` : ""}</h3>` + body;
     }
     async function loadAnContext(p) {
       if (!_anKwData) return;
@@ -1746,7 +1746,7 @@
       return terms.map(t => `<div class="kw-row" style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="${esc(T("exclude this keyword"))}" style="margin:0;padding:0 6px"
           data-on-click='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-        <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" data-on-click='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
+        <a href="#" data-kwstat="${esc(t.term)}"${kwTipExtraAttr(t)} title="${esc(t.term)}" translate="no" data-on-click='pickTerm(${esc(JSON.stringify(t.term))});return false'>${kwLabelHtml(t, {inLink: true})}</a>${kwQidHtml(t)}
         <span class="pill">${esc(kwKindLabel(t.kind))}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
     // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords

@@ -366,7 +366,7 @@
       const kws = (a.keywords || []).map(k =>
         `<button type="button" class="an-facet" data-on-click="openAnalysisFor(${esc(JSON.stringify(k.term))})" `
         + `title="${esc(t("Mentions in this article — open this keyword's corpus."))}">`
-        + `${esc(k.term)} <span class="muted">${k.count}</span></button>`).join(" ");
+        + `<span translate="no">${esc(k.term)}</span> <span class="muted">${k.count}</span></button>`).join(" ");
       const when = ooIsoDate(a.published_at);
       const lang = a.language || a.detected_language || "";
       // Ruling 12: expanding is a class toggle over text ALREADY in the payload -- a feed

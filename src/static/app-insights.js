@@ -161,7 +161,7 @@
     // Keywords (loadFamilyCuration below) -- this view shows the grouped data only, no
     // plumbing (checkboxes/Merge/✕ chips). Nothing lost: every control still exists there.
     function _famMemberList(f) {
-      return (f.members || []).map(m => esc(m.term)).join(", ");
+      return (f.members || []).map(m => `<span translate="no">${esc(m.term)}</span>`).join(", ");
     }
 
     async function loadFamilies() {
@@ -211,7 +211,7 @@
                data-single="${single ? "1" : "0"}"
                data-on-click="familySplit(this)"
                title="${single ? "nothing to split -- this family has only one member" : "split this form out"}"
-               >${esc(m.term)}${single ? "" : " ✕"}</button>`).join("");
+               ><span translate="no">${esc(m.term)}</span>${single ? "" : " ✕"}</button>`).join("");
           // S3 (2026-07-18 default-on brief, conservative + browser-unverified per fork-3/Q6a):
           // a family collapsed in part by lemmatization (families.py conflated_by=["lemma"])
           // carries a small, honest marker -- reversible via the split control above, never a score.
@@ -219,7 +219,7 @@
             ? '<span class="pill" title="This grouping merges a form via lemmatization (e.g. study/studied). Split any member out above if a merge looks wrong.">conflated by lemma</span>'
             : "";
           return `<div class="fam-row">
-            <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
+            <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}" translate="no">
             <div class="fam-body"><div><b>${kwLabelHtml(f)}</b> <span class="pill">${esc(kwKindLabel(f.kind))}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" data-on-click="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
@@ -759,7 +759,7 @@
           api("/api/insights/rings"),
         ]);
         $("sg-family-options").innerHTML = (top.terms || []).map(f =>
-          `<option value="${esc(f.normalized)}">${esc(f.term)} (${f.mentions})</option>`).join("");
+          `<option value="${esc(f.normalized)}" translate="no">${esc(f.term)} (${f.mentions})</option>`).join("");
         $("sg-ring-options").innerHTML = (rings.rings || []).map(r =>
           `<option value="${esc(r.id)}">${esc(r.id)} — ${esc((r.languages || []).join("/"))}</option>`).join("");
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCurationCard).join("")
@@ -892,7 +892,7 @@
           (r.keywords || []).map(k =>
             `<div style="padding:3px 0;border-bottom:1px solid var(--line)">
                <div style="display:flex;gap:8px;align-items:center">
-                 <span style="flex:1">${esc(k.term)} <span class="muted">${k.language ? ooLangCell(k.language) : "?"} · ${k.articles}a/${k.mentions}m · ${esc(k.source)}</span></span>
+                 <span style="flex:1"><span translate="no">${esc(k.term)}</span> <span class="muted">${k.language ? ooLangCell(k.language) : "?"} · ${k.articles}a/${k.mentions}m · ${esc(k.source)}</span></span>
                  <button class="ghost tiny" data-norm="${esc(k.normalized)}" data-on-click="kxToggleTags(this)"
                    title="${esc(t("Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score."))}">${esc(t("Tags"))}</button>
                  <button class="ghost tiny" data-norm="${esc(k.normalized)}" data-on-click="kxHide(this)">Hide</button>
@@ -1399,7 +1399,7 @@
           const qv = (r.q_value == null) ? "—" : (+r.q_value).toFixed(4);
           const num = (v, dp) => (v == null || isNaN(+v)) ? "—" : (+v).toFixed(dp);
           return `<tr>
-            <td>${esc(r.term)}</td>
+            <td translate="no">${esc(r.term)}</td>
             <td style="text-align:right">${num(r.r, 3)}</td>
             <td style="text-align:right">${num(r.p_value, 4)}</td>
             <td style="text-align:right" class="muted">${r.n}</td>
@@ -1445,7 +1445,7 @@
           out.innerHTML = `<div class="muted">${esc(t("Too few active days to test this keyword honestly."))}</div>`;
           return;
         }
-        const stat = `<strong>${esc(r.term)}</strong> · r ${(+r.r).toFixed(3)} · ${esc(t("p-value"))} ${(+r.p_value).toFixed(4)} · n ${r.n} · ${r.active_days} ${esc(t("active days"))}`;
+        const stat = `<strong translate="no">${esc(r.term)}</strong> · r ${(+r.r).toFixed(3)} · ${esc(t("p-value"))} ${(+r.p_value).toFixed(4)} · n ${r.n} · ${r.active_days} ${esc(t("active days"))}`;
         // The pre-registered outcome, stated either way. A CONTRADICTED expectation is
         // reported exactly as plainly as a matched one -- reporting only the matches is
         // the bias pre-registration exists to prevent, so there is no styling here that
