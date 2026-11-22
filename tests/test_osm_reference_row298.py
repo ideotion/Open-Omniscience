@@ -101,3 +101,27 @@ def test_the_map_says_why_in_every_language():
     assert '(lane.data_date || {}).updates === "date_not_read"' in js
     for p in sorted((ROOT / "src" / "static" / "locales").glob("*.json")):
         assert json.loads(p.read_text(encoding="utf-8")).get(NEW), p.name
+
+
+def test_a_split_counted_before_the_fix_shows_no_edited_figure_once_the_date_is_unread(
+    cut, tmp_path
+):
+    """A split stored while the date was unread (by the old code) keeps a matching basis, so it reads as current: its edited_1y is not shown."""
+    from src.osm.lane_models import OsmAdmin1Split
+
+    _seed()
+    _seed_points()
+    _undated()
+    path = _outlines(tmp_path)
+    count_admin1("ZZZ", path=path)
+    with store.lane_session(
+        "osm"
+    ) as s:  # what the old code stored: an edited_1y aged from the extract's date
+        row = s.query(OsmAdmin1Split).filter_by(alpha3="ZZZ").one()
+        stored = json.loads(row.regions_json)
+        stored["ZZ-W"]["measures"]["edited_1y"] = 1
+        row.regions_json = json.dumps(stored)
+    st = admin1_state("ZZZ", path=path)
+    assert st["status"] == "complete"
+    regs = _regions(st)
+    assert "edited_1y" not in regs["ZZ-W"]["measures"] and regs["ZZ-W"]["measures"]["brand"] == 2
