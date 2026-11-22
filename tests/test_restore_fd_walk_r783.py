@@ -1,5 +1,5 @@
 """R783: on a system that can, a folder restore walks the backup BY FOLDER HANDLE and opens every file
-one name at a time, relative to the folder before it, never following a link (``os.fwalk`` +
+one name at a time, relative to the folder before it, never following a link (a walk by handle +
 ``openat`` with ``O_NOFOLLOW``). A folder swapped for a link after the checks is then refused by the
 system at the open itself, where R779 could only narrow the window. Where the system cannot, R779's
 path is kept, decided by what the system offers and never by its name; both paths refuse the same
@@ -60,11 +60,11 @@ def test_the_capability_is_decided_by_what_the_system_offers_not_its_name():
     node = next(n for n in tree.body if isinstance(n, ast.Assign) and any(
         isinstance(t, ast.Name) and t.id == "_FD_RELATIVE" for t in n.targets))
     text = ast.get_source_segment(src, node) or ""
-    for name in ("fwalk", "supports_dir_fd", "O_NOFOLLOW", "O_DIRECTORY"):
+    for name in ("supports_dir_fd", "supports_fd", "O_NOFOLLOW", "O_DIRECTORY"):
         assert name in text
     for name in ("os.name", "sys.platform", "platform."):
         assert name not in text
-    if hasattr(os, "fwalk") and os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW"):
+    if os.open in os.supports_dir_fd and os.scandir in os.supports_fd and hasattr(os, "O_NOFOLLOW"):
         assert folder_backup._FD_RELATIVE is True  # this system can: the new path is the one tested here
 
 
@@ -155,14 +155,25 @@ def test_the_open_itself_refuses_a_link_on_the_way(tmp_path):
 
 @needs_links
 def test_a_category_folder_replaced_after_the_walk_is_refused(tmp_path):
+    """A link in its place is refused at the open. A different real folder in its place passes the
+    folder's second look (a made-up inode number on FAT looks the same), so its files are caught by the
+    member's own identity check: the file opened must be the file that was walked."""
     if not folder_backup._FD_RELATIVE:
         pytest.skip("this system has no walk by folder handle")
-    backup, _, _ = _setup(tmp_path)
+    backup, outside, tgt = _setup(tmp_path)
     cat_st = os.lstat(backup / "wiki_dumps")
+    seen = os.lstat(backup / "wiki_dumps" / "a.bz2")
     (backup / "wiki_dumps").rename(tmp_path / "old_cat")
-    _touch(backup / "wiki_dumps" / "a.bz2", b"other")
+    os.symlink(outside, backup / "wiki_dumps")
     with pytest.raises(SourceChanged):
         folder_backup._open_member_fd(backup, "wiki_dumps", cat_st, PurePosixPath("a.bz2"))
+    os.unlink(backup / "wiki_dumps")
+    _touch(backup / "wiki_dumps" / "a.bz2", b"other")
+    opener = lambda: folder_backup._open_member_fd(backup, "wiki_dumps", cat_st, PurePosixPath("a.bz2"))  # noqa: E731
+    with pytest.raises(SourceChanged):
+        folder_backup._atomic_copy(backup / "wiki_dumps" / "a.bz2", tmp_path / "out.bz2", nofollow_src=True,
+                                   expect=seen, opener=opener)
+    assert not (tmp_path / "out.bz2").exists()
 
 
 def test_without_the_capability_the_path_checks_are_kept(tmp_path, monkeypatch):
@@ -298,3 +309,57 @@ def test_a_folder_nested_deeper_than_the_process_has_handles_restores_whole(tmp_
                          capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr[-2000:]
     assert out.stdout.split() == ["3", "False", "0"]
+
+
+@needs_links
+def test_both_walks_agree_on_a_tricky_tree(tmp_path, monkeypatch):
+    """Links to folders, dangling links, ``.oopart`` names and folders, a pipe, a link two levels down:
+    the walk by handle and the walk by path give the same members, counts and result."""
+    _fd_only()
+    backup, outside, _ = _setup(tmp_path)
+    w = backup / "wiki_dumps"
+    os.symlink(outside, w / "to_dir")
+    os.symlink(outside, w / "x.oopart")
+    os.symlink(tmp_path / "nowhere", w / "dangling")
+    os.symlink(tmp_path / "nowhere", w / "d.oopart")
+    _touch(w / "f.oopart", b"part")
+    _touch(w / "dir.oopart" / "inside.bz2", b"in")
+    os.mkfifo(w / "pipe")
+    _touch(w / "sub" / "deeper" / "e.bz2", b"e")
+    os.symlink(outside / "c.bz2", w / "sub" / "deeper" / "link.bz2")
+    results = {}
+    for fd in (True, False):
+        monkeypatch.setattr(folder_backup, "_FD_RELATIVE", fd)
+        unread: list = []
+        members, links = folder_backup._category_members(w, unread)
+        live = tmp_path / f"live{int(fd)}"
+        res = restore_folder_backup(backup, targets={c: live / c for c in ("wiki_dumps", "osm_regions", "models", "hf_models")})
+        results[fd] = ([(str(p), st.st_size) for p, st in members], links, unread,
+                       {k: v for k, v in res.items() if k not in ("src",)}, _live_bytes(live / "wiki_dumps"))
+    assert results[True] == results[False]
+    assert results[True][1] == 3  # to_dir, dangling, link.bz2; the .oopart links are not counted
+
+
+def test_a_category_folder_whose_inode_number_moved_is_still_the_folder(tmp_path, monkeypatch):
+    """Opus read: on FAT32/exFAT the folder's inode number can be made up again during a long copy. The
+    second look accepts it when the name is still that same folder, so a sound backup is not refused."""
+    _fd_only()
+    backup, _, tgt = _setup(tmp_path)
+    real_lstat = os.lstat
+    moved: list[bool] = []
+
+    def lstat_once_moved(path, *a, **k):
+        st = real_lstat(path, *a, **k)
+        if os.fspath(path) == os.fspath(backup / "wiki_dumps") and not moved:
+            moved.append(True)  # the walk's look: an inode number the kernel will not give again
+            vals = list(st)
+            vals[1] = st.st_ino + 987654
+            return os.stat_result(vals)
+        return st
+
+    real_samestat = os.path.samestat
+    scope_os(monkeypatch, folder_backup, lstat=lstat_once_moved)
+    monkeypatch.setattr(folder_backup, "_category_swapped", lambda *a: False)
+    res = restore_folder_backup(backup, targets=tgt)
+    assert moved and real_samestat
+    assert res["restored"] == 2 and res["refused_symlinks"] == 0 and res["incomplete"] is False

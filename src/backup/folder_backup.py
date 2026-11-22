@@ -985,12 +985,12 @@ def _now_a_link(path: Path) -> bool:
 
 
 #: R783: whether this system can walk a folder by handle and open every name relative to its folder
-#: without following a link. Decided by what the system offers, never by its name: where any piece is
-#: missing (Windows has no ``os.fwalk`` and no ``dir_fd``), the restore keeps R779's checks by path and
-#: their stated limit.
+#: without following a link (the pieces ``os.fwalk`` and ``openat`` stand on: handle-relative open, stat
+#: and listing, O_NOFOLLOW, O_DIRECTORY). Decided by what the system offers, never by its name: where any
+#: piece is missing (Windows has no ``dir_fd``), the restore keeps R779's checks by path and their stated
+#: limit.
 _FD_RELATIVE = bool(
-    hasattr(os, "fwalk")
-    and os.open in os.supports_dir_fd
+    os.open in os.supports_dir_fd
     and os.stat in os.supports_dir_fd
     and os.scandir in os.supports_fd
     and os.stat in os.supports_follow_symlinks
@@ -1038,7 +1038,7 @@ def _open_member_fd(backup_root: Path, cat: str, cat_st: os.stat_result, rel: Pu
             same = os.path.samestat(os.fstat(cur), cat_st)
         except OSError:
             same = False
-        if not same:
+        if not same and not _same_folder_again(cur, cat_st, backup_root / cat):
             raise SourceChanged("the category folder changed after it was walked")
         for name in rel.parent.parts:
             try:
@@ -1060,6 +1060,21 @@ def _open_member_fd(backup_root: Path, cat: str, cat_st: os.stat_result, rel: Pu
             raise err from None
     finally:
         os.close(cur)
+
+
+def _same_folder_again(fd: int, walked: os.stat_result, path: Path) -> bool:
+    """The category folder's second look when its inode moved, as ``_same_file_again`` does for a file:
+    FAT32, exFAT, a CIFS share mounted ``noserverino`` or FUSE without ``use_ino`` make a folder's inode
+    number up again when the kernel drops it, likely during a long copy, which would refuse every member of
+    a sound backup. Accepted only on the same device, with the name still a folder and not a link, carrying
+    the inode of the folder just opened. A swap would have to win this look too."""
+    try:
+        opened = os.fstat(fd)
+        now = os.lstat(path)
+    except OSError:
+        return False
+    return (opened.st_dev == walked.st_dev and stat.S_ISDIR(now.st_mode) and not is_link_stat(now)
+            and (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino))
 
 
 def _open_dir_chain(root_fd: int, parts: tuple[str, ...]) -> int | None:
@@ -1106,6 +1121,8 @@ def _fd_walk(top: str):
             parts = stack.pop()
             fd = root if not parts else _open_dir_chain(root, parts)
             if fd is None:
+                if not _process_can_open():  # asked while the walk still holds its handles
+                    raise OSError("this process could not open any file while listing the backup")
                 continue  # never handed back: the caller counts it as not listed
             try:
                 dirnames: list[str] = []
@@ -1119,6 +1136,8 @@ def _fd_walk(top: str):
                                 is_dir = False
                             (dirnames if is_dir else names).append(entry.name)
                 except OSError:
+                    if not _process_can_open():
+                        raise OSError("this process could not open any file while listing the backup") from None
                     continue  # could not be listed: never handed back, as os.walk does
                 yield os.path.join(top, *parts), dirnames, names, fd
                 stack.extend(parts + (n,) for n in reversed(dirnames))
@@ -1147,7 +1166,7 @@ def _category_members(
     """The regular files a restore may copy from one category folder, each with the ``lstat`` it was
     checked by, sorted, and the number of links met on the way (R779).
 
-    Walked with ``os.walk`` and PRUNED here rather than by the walker's own rule, because ``rglob`` and
+    Walked with ``os.walk`` (or, R783, by handle with ``_fd_walk``) and PRUNED here rather than by the walker's own rule, because ``rglob`` and
     ``os.walk`` both treat a Windows junction as a plain folder and would walk into it. A ``.oopart`` is
     skipped before its link check (a copy in progress, never a member), and a plain folder is entered
     whatever its name. Mirrors ``import_scan._dir_totals``, so the preview and the restore agree.
@@ -1410,7 +1429,7 @@ def restore_folder_backup(
             # "link" to the walk or the open (a hostile FUSE device can) would otherwise hand over a
             # file from the machine itself, with the open's own identity check agreeing, since both
             # looked at that same file. Refused. R783: where the system can (``_FD_RELATIVE``), the open
-            # itself walks from the backup folder by handle with O_NOFOLLOW, so a folder swapped for a
+            # itself goes from the category folder one name at a time by handle with O_NOFOLLOW, so a folder swapped for a
             # link after these checks is refused AT the open. STATED LIMIT, where it cannot (Windows):
             # a racer on the SAME file system as the files it wants read (any local program) can still
             # swap a folder on the way between these checks and the open.
