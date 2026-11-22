@@ -49,7 +49,7 @@ from pathlib import Path, PurePosixPath
 from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.backup.manifest_file import read_manifest_json
-from src.backup.regular_file import NotARegularFile, open_regular
+from src.backup.regular_file import NotARegularFile, create_new, open_regular
 from src.monitoring.secret_scrub import log_failure, record_text
 
 MANIFEST_NAME = "oo-folder-backup.json"
@@ -320,8 +320,8 @@ def _write_manifest_atomically(path: Path, text: str) -> None:
 
     tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}{_PART_SUFFIX}")
     try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.write(text)
+        with create_new(tmp) as fh:  # never through a link at the temporary name (row 313)
+            fh.write(text.encode("utf-8"))
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, path)

@@ -12,6 +12,9 @@ the descriptor is never switched back (``os.set_blocking`` works on pipes only o
 another drive): the link is followed, but a pipe, a device or a directory at its end is still refused, and still
 without blocking.
 
+:func:`create_new` and :func:`replace_with` are the WRITE side (row 313): a name in such a folder is created
+exclusively, never opened through a link planted there.
+
 Kept import-light (no app modules) so the import scan (crypto-free) and the crypto layer can both use it.
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -76,4 +79,57 @@ def open_regular(path: str | os.PathLike[str], *, follow_links: bool = False, di
         raise
 
 
-__all__ = ["NotARegularFile", "open_regular", "open_regular_fd"]
+def create_new(path: str | os.PathLike[str], *, mode: int = 0o666) -> BinaryIO:
+    """A new, empty regular file at ``path``, opened for writing, that no link can redirect (row 313).
+
+    A backup folder, an export destination or a restore staging folder may already hold the name: a link planted there
+    turned a plain ``open(path, "wb")`` into a write wherever the link pointed. Whatever the name holds is removed
+    first, a link as a link (``unlink`` never follows one), and the file is then CREATED exclusively (``O_CREAT |
+    O_EXCL``, plus ``O_NOFOLLOW`` where the platform has it): a link or a file that appears between the two makes the
+    create fail rather than be followed or truncated. A folder at the name is refused, never removed; on Windows any
+    reparse point (a junction, a mount point, a link) is refused rather than removed."""
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        st = None
+    if st is not None:
+        if stat.S_ISDIR(st.st_mode) or int(getattr(st, "st_reparse_tag", 0) or 0):
+            raise NotARegularFile(f"refusing to write over a folder or a reparse point: {os.fspath(path)!s}")
+        os.unlink(path)
+    flags = (
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOCTTY", 0)
+    )
+    fd = os.open(path, flags, mode)
+    try:
+        return os.fdopen(fd, "wb")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def replace_with(path: str | os.PathLike[str], data: bytes, *, tmp: str | os.PathLike[str] | None = None) -> None:
+    """Write ``data`` to ``path`` through a temporary file made by :func:`create_new`, flushed to disk and then renamed
+    over ``path`` (a rename replaces a link at ``path`` itself, never what it points at). A reader sees the old file or
+    the new one, whole. ``tmp`` defaults to ``<name>.<random>.oopart`` beside ``path``."""
+    import secrets
+
+    p = os.fspath(path)
+    t = os.fspath(tmp) if tmp is not None else f"{p}.{secrets.token_hex(4)}.oopart"
+    try:
+        with create_new(t) as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(t, p)
+    except BaseException:
+        try:
+            st = os.lstat(t)
+            if not stat.S_ISDIR(st.st_mode):
+                os.unlink(t)
+        except OSError:
+            pass
+        raise
+
+
+__all__ = ["NotARegularFile", "create_new", "open_regular", "open_regular_fd", "replace_with"]

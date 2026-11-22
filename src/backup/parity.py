@@ -38,7 +38,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from src.backup.regular_file import NotARegularFile, open_regular
+from src.backup.regular_file import NotARegularFile, create_new, open_regular, replace_with
 from src.backup.volumes import (
     MANIFEST_NAME,
     VolumeError,
@@ -261,7 +261,7 @@ def write_parity(
 
     par_paths = [out / f"par-{j + 1:05d}.oopar" for j in range(m)]
     tmp_paths = [p.with_name(p.name + ".oopart") for p in par_paths]
-    handles = [open(p, "wb") for p in tmp_paths]
+    handles = [create_new(p) for p in tmp_paths]  # a link planted at a .oopart name is removed, never written through (row 313)
     try:
         for off in range(0, stripe, band_bytes):
             # one band per call: the loops of a band live in a function with no handler, so an interrupt reaches this call, which the
@@ -286,9 +286,7 @@ def write_parity(
     if write_manifest:
         # Atomic (temp + os.replace on the same dir/FS), matching the engine's
         # manifest discipline — a torn write can never leave an unreadable index.
-        tmp = out / (MANIFEST_NAME + ".tmp")
-        tmp.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
-        os.replace(tmp, out / MANIFEST_NAME)
+        replace_with(out / MANIFEST_NAME, json.dumps(manifest, indent=1).encode("utf-8"), tmp=out / (MANIFEST_NAME + ".tmp"))
     return manifest["parity"]
 
 
@@ -388,7 +386,7 @@ def recover_volumes(
     tmp_paths = {
         k: out / (data_meta[k]["name"] + ".oopart") for k in erased_data
     }
-    handles = {k: open(p, "wb") for k, p in tmp_paths.items()}
+    handles = {k: create_new(p) for k, p in tmp_paths.items()}  # never through a link planted in the backup folder (row 313)
     try:
         for off in range(0, stripe, band_bytes):
             # see write_parity: the band's loops are a function of their own (R163)
