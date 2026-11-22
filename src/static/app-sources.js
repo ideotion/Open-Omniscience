@@ -1009,16 +1009,25 @@
       renderBatchPicker();
     }
 
+    // Row 322: a batch result's status in words (src/api/ingestion.py: ok | not_found | no_feed | error). A status this build
+    // has no word for is shown as sent, so a newer server is never mislabelled.
+    function batchIngestStatusWords(st, t) {
+      if (st === "not_found") return t("Source not found");
+      if (st === "no_feed") return t("No feed to fetch");
+      if (st === "error") return t("Fetch failed");
+      return String(st == null ? "" : st);
+    }
+
     async function ingestBatch(btn) {
       const ids = [...BI.selected];
       if (!ids.length) { toast("Select at least one source with a feed.", "err"); return; }
       btn.disabled = true;
-      $("bi-status").textContent = `Fetching ${ids.length} feed(s)… (ethical & rate-limited; may take a while)`;
-      $("bi-status").title = "";
-      $("bi-results").innerHTML = "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
         String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      $("bi-status").textContent = tf("Fetching feeds: {n}… (polite and rate-limited; this may take a while)", {n: ids.length});
+      $("bi-status").title = "";
+      $("bi-results").innerHTML = "";
       try {
         const r = await api("/api/sources/ingest-batch", {method: "POST", body: JSON.stringify({source_ids: ids})});
         // A feed the kill switch refused still counts in `ingested` (it ran through the pipeline) with an all-zero
@@ -1027,14 +1036,14 @@
         const allOff = off > 0 && off >= r.ingested;
         $("bi-status").textContent = allOff
           ? t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.")
-          : `Done: ${r.ingested - off}/${r.requested} fetched` + (off ? ` · ${tf("{n} not fetched (airplane mode)", {n: off})}` : "") + ` · ${tally(r.aggregate)}`;
+          : tf("Done: {fetched} of {requested} fetched", {fetched: r.ingested - off, requested: r.requested}) + (off ? ` · ${tf("{n} not fetched (airplane mode)", {n: off})}` : "") + ` · ${tally(r.aggregate)}`;
         $("bi-status").title = allOff ? "" : tallyHover(r.aggregate);
         $("bi-results").innerHTML = `<table class="bi-res"><tr><th>Source</th><th>Result</th></tr>` +
           r.results.map(x => { const hov = (x.status === "ok" && x.tally && !x.tally.skipped_offline) ? tallyHover(x.tally) : "";
             return `<tr><td>${esc(x.source || ("#" + x.source_id))}</td>` +
             `<td${hov ? ` title="${esc(hov)}"` : ""}>${x.status === "ok"
               ? ((x.tally && x.tally.skipped_offline) ? `<span class="pill warn">${esc(t("Not fetched (airplane mode)"))}</span>` : esc(tally(x.tally)))
-              : `<span class="pill warn">${esc(x.status)}</span>${x.detail ? " " + esc(x.detail) : ""}`}</td></tr>`; }).join("") +
+              : `<span class="pill warn">${esc(batchIngestStatusWords(x.status, t))}</span>${x.detail ? " " + ooLabelHtml(esc(t("Error")), `<code dir="ltr">${esc(x.detail)}</code>`) : ""}`}</td></tr>`; }).join("") +
           `</table>`;
         if (allOff) { toast(t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn"); return; }
         toast("Batch ingest complete."); doSearch({refresh: true});
