@@ -15,6 +15,7 @@ from src.analytics.managed import (
     normalize_lang,
 )
 from src.analytics.segmentation import segmenter_available
+from tests._app_engine import app_sqlite_engine
 
 # zh/ja/th are functional IFF the optional [segmentation] extra is installed; a core
 # install reports them 'unsegmented'. The tests assert BOTH environments honestly.
@@ -57,7 +58,6 @@ def test_engine_report_shares_the_managed_set():
 
 
 def _mem_session():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
@@ -68,8 +68,8 @@ def _mem_session():
     # hand that thread a fresh, EMPTY in-memory DB ("no such table: sources"). StaticPool
     # + check_same_thread=False keep a single shared connection (matches the pattern in
     # tests/test_convergence.py's session fixture).
-    eng = create_engine(
-        "sqlite:///:memory:",
+    eng = app_sqlite_engine(
+        ":memory:",
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,

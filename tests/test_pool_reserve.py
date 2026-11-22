@@ -16,7 +16,6 @@ import threading
 import time
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from src.config.memory_budget import _API_MARGIN
@@ -26,14 +25,15 @@ from src.database.pool_reserve import (
     collector_role,
     in_collector_role,
 )
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 POOL, OVERFLOW = 2, 4  # 6 in total: the collector's ceiling is 6 - _API_MARGIN
 
 
 def _engine(timeout: float = 0.3):
-    return create_engine(
-        "sqlite://",
+    return app_sqlite_engine(
+        ":memory:",
         creator=lambda: sqlite3.connect(":memory:", check_same_thread=False),
         poolclass=ReservingQueuePool,
         pool_size=POOL,
@@ -137,8 +137,8 @@ def test_a_failed_checkout_does_not_leak_its_slot():
     def boom():
         raise RuntimeError("cannot open")
 
-    eng = create_engine(
-        "sqlite://", creator=boom, poolclass=ReservingQueuePool,
+    eng = app_sqlite_engine(
+        ":memory:", creator=boom, poolclass=ReservingQueuePool,
         pool_size=POOL, max_overflow=OVERFLOW, pool_timeout=0.2,
     )
     with collector_role():

@@ -22,7 +22,6 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import global_stopwords
@@ -36,13 +35,14 @@ from src.analytics.month_occupancy import (
 )
 from src.database.models import Article, Base, Source
 from src.timemap.dateextract import _MAX_SCAN
+from tests._app_engine import app_sqlite_engine
 
 TODAY = date(2026, 6, 11)
 
 
 def _sess(tmp_path, name="months.db"):
-    eng = create_engine(
-        f"sqlite:///{tmp_path / name}", future=True, connect_args={"check_same_thread": False}
+    eng = app_sqlite_engine(
+        tmp_path / name, future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng, future=True)

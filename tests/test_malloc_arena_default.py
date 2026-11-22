@@ -34,13 +34,13 @@ import sys
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.database.models import Base
 from src.monitoring import forensics, session_hwm
 from src.monitoring import soak_window as sw
 from tests import previous_identity
+from tests._app_engine import app_sqlite_engine
 from tests.os_scope import scope_os
 
 REPO = Path(__file__).resolve().parents[1]
@@ -1167,7 +1167,7 @@ def test_a_record_written_before_the_setting_was_kept_renders_without_it():
 
 @pytest.fixture
 def session() -> Session:
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as s:
         yield s

@@ -18,6 +18,7 @@ import pytest
 from src.analytics.managed import MANAGED_LANGUAGES, UNSEGMENTED, normalize_lang
 from src.services import prose_gate as pg
 from src.services.stopwords import stopwords_manager
+from tests._app_engine import app_sqlite_engine
 
 # --- the previous implementation, verbatim (the reference this change must match) ---------------
 
@@ -152,13 +153,12 @@ def test_a_non_letter_in_the_cjk_thai_range_is_not_counted_as_a_letter(text):
 
 
 def test_the_screening_result_says_where_its_time_went(tmp_path):
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.analytics.quarantine_job import default_quarantine_candidates_batch
     from src.database.models import Article, Base, Source
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'q.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'q.db', future=True)
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, future=True)
     with session_factory() as s:

@@ -39,7 +39,6 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup.merge import merge_corpus  # noqa: E402
@@ -55,6 +54,7 @@ from src.database.models import (  # noqa: E402
     Watch,
     WatchMatch,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture(autouse=True)
@@ -81,7 +81,7 @@ _T1 = _T0 + timedelta(days=1)
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

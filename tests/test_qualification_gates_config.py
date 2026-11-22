@@ -28,7 +28,6 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from src.catalog.gates import (  # noqa: E402
@@ -47,10 +46,11 @@ from src.catalog.qualification import (  # noqa: E402
 from src.database.models import Base, Source  # noqa: E402
 from src.scheduler.runner import select_sources  # noqa: E402
 from src.scheduler.settings import SchedulerSettings  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 
 def _session(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'q.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'q.db', future=True)
     Base.metadata.create_all(engine)
     return Session(engine, future=True)
 

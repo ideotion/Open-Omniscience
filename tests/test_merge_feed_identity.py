@@ -11,18 +11,18 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.backup.merge import merge_corpus
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _META = {"artifact_kind": "oo-backup-2", "origin_fingerprint": "test", "app_version": "0.5.0",
          "alembic_rev": "head", "manifest": None}
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

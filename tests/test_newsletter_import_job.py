@@ -11,20 +11,20 @@ upload path can't handle). Reuses the batched ingest_emails; resume is idempoten
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database.models import Article, Base, Source
 from src.ingest.email import ingest_emails
 from src.ingest.import_job import NewsletterImportManager, _import_source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def env(tmp_path):
     # A shared in-memory DB (StaticPool) so the worker's own session sees the schema.
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    engine = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True, autoflush=False)

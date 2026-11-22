@@ -25,9 +25,10 @@ import threading
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 
 from src.database import pool_watch
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import python_function_source
 
 
@@ -40,7 +41,7 @@ def _mine() -> list[dict]:
 
 @pytest.fixture()
 def eng(tmp_path):
-    e = create_engine(f"sqlite:///{tmp_path / 'pwe.db'}", future=True)
+    e = app_sqlite_engine(tmp_path / 'pwe.db', future=True)
 
     @event.listens_for(e, "connect")
     def _p(dbapi, _rec):

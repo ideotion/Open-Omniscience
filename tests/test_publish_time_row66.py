@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.ingest import extract as ex
+from tests._app_engine import app_sqlite_engine
 
 BODY = "<p>" + "A sentence of a real article body that runs long enough to be kept. " * 20 + "</p>"
 
@@ -76,13 +77,12 @@ def test_the_extensive_search_flag_still_reaches_htmldate(monkeypatch):
 
 
 def test_an_end_day_bound_keeps_that_days_timed_articles():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.api.search_filters import published_until
     from src.database.models import Article, Base, Source
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as s:
         src = Source(name="S", domain="s.example", source_type="news", enabled=True)

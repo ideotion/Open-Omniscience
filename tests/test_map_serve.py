@@ -19,13 +19,13 @@ import time
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 pytestmark = pytest.mark.skipif(
     not columnar.duckdb_available(), reason="duckdb not installed (optional [columnar] extra)"
@@ -33,8 +33,8 @@ pytestmark = pytest.mark.skipif(
 
 
 def _new_session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -192,8 +192,8 @@ def test_endpoint_serves_basis_and_matches_the_live_endpoint(tmp_path, monkeypat
 
     # A FILE-backed SQLite so every session/thread (TestClient request, the build) shares the
     # same DB — an in-memory engine gives each connection its own empty database.
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'map.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'map.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

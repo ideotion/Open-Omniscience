@@ -23,16 +23,16 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from src.analytics.source_quality import _HIGH_LINK_DENSITY, link_dense_article_ids  # noqa: E402
 from src.database.models import Article, ArticleLink, Base, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
 def db(tmp_path) -> Session:
-    engine = create_engine(f"sqlite:///{tmp_path / 'ld.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'ld.db', future=True)
     Base.metadata.create_all(engine)
     return Session(engine, future=True)
 

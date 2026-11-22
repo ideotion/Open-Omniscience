@@ -22,11 +22,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.backup.merge import merge_corpus
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-2",
@@ -43,7 +44,7 @@ def _build_corpus(path: Path, sources: list[dict], articles: list[dict]) -> dict
     ``sources`` rows are dicts with at least ``domain`` (+ optional ``name``);
     ``articles`` rows reference a source by ``domain`` and carry hash/content/etc.
     """
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     now = datetime.now(UTC)
     ids: dict = {}
@@ -75,7 +76,7 @@ def _build_corpus(path: Path, sources: list[dict], articles: list[dict]) -> dict
 
 
 def _article_rows(path: Path) -> list[dict]:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     try:
         with engine.connect() as c:
             rows = c.execute(
@@ -212,7 +213,7 @@ def test_new_rows_recorded_in_merged_rows_provenance(tmp_path):
     counts, batch_id = merge_corpus(staged, working, _BATCH_META)
     assert counts["articles"]["new"] == 1
 
-    engine = create_engine(f"sqlite:///{working}", future=True)
+    engine = app_sqlite_engine(working, future=True)
     try:
         with engine.connect() as c:
             tracked = c.execute(

@@ -14,12 +14,12 @@ data, where a refusal reads as a gap.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog import publicsuffix as PS
 from src.database.models import Article, Base, Source
 from src.ingest import newsletter_source as NS
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture(autouse=True)
@@ -32,8 +32,8 @@ def _fresh_psl_cache():
 def _db(sources: list[tuple[str, str]] | None = None):
     """An ISOLATED in-memory session (never SessionLocal — a shared-store write
     pollutes every later test that reads it)."""
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

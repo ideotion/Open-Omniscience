@@ -26,20 +26,20 @@ from pathlib import Path
 
 import pytest
 import yaml
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.provenance_scope import is_curated
 from src.catalog.qualification import STATUS_QUALIFIED, stamp_curated_catalog
 from src.database.models import Base, Source
 from src.ingest.seed_sources import seed_default_sources
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
 def session():
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine)()
     yield s

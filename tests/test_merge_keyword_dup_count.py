@@ -18,12 +18,12 @@ import shutil
 import sqlite3
 from pathlib import Path
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import src.backup.merge as merge_mod
 from src.backup.merge import merge_corpus
 from src.database.models import Base, Keyword
+from tests._app_engine import app_sqlite_engine
 
 _META = {
     "artifact_kind": "oo-backup-2", "origin_fingerprint": "test", "app_version": "0.5.0",
@@ -37,7 +37,7 @@ _OLD_COUNT = (
 
 
 def _corpus(path: Path, rows: list[tuple[str, str | None]], *, drop_ids: tuple[int, ...] = ()) -> None:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, future=True)() as s:
         for term, lang in rows:

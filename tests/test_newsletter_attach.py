@@ -27,7 +27,6 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog import publicsuffix as PS
@@ -37,6 +36,7 @@ from src.ingest.email import (
     delete_imported_newsletters,
     ingest_emails,
 )
+from tests._app_engine import app_sqlite_engine
 
 _BUCKET = "newsletters.import.local"
 
@@ -51,8 +51,8 @@ def _fresh_psl_cache():
 def _db(sources: list[tuple[str, str]] | None = None):
     """An ISOLATED in-memory session (never SessionLocal -- a shared-store write pollutes
     every later test that reads it)."""
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

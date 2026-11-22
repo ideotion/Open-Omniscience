@@ -12,7 +12,6 @@ days), so it never re-fetches an unchanged series every cycle.
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 pytest.importorskip("feedparser", reason="the markets pipeline imports the ingest pipeline (feedparser)")
@@ -20,11 +19,12 @@ pytest.importorskip("feedparser", reason="the markets pipeline imports the inges
 from src.database.models import Base, CommodityPrice
 from src.markets import pipeline
 from src.markets.feed_catalog import Feed
+from tests._app_engine import app_sqlite_engine
 
 
 def _sess():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

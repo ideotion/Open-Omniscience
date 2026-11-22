@@ -38,7 +38,6 @@ import pytest
 
 pytest.importorskip("scipy", reason="price_narrative needs the [analysis] extra (scipy)")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.database.models import (  # noqa: E402
@@ -50,12 +49,13 @@ from src.database.models import (  # noqa: E402
     MarketExtractionRule,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

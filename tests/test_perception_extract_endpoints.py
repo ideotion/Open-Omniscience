@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from src.api import diagnostics as d
 from src.llm import backend as llm_backend
 from src.llm.ollama import LLMUnavailable
+from tests._app_engine import app_sqlite_engine
 
 
 def _fake_client(list_installed):
@@ -173,22 +174,20 @@ def test_perception_extract_job_status_reports_a_genuine_error_after_a_permanent
     (never a benign-looking 'done'). Exercises the REAL BackgroundJob.start()
     (a thread, joined); the retry budget + backoff are shrunk via monkeypatch
     so this test runs in milliseconds, not minutes."""
-    from contextlib import contextmanager
-
     import importlib
+    from contextlib import contextmanager
 
     # The module the worker imports (sys.modules), never a package attribute that could name an older copy: the constants
     # below must be the ones the running job reads (row 147).
     pe_job_mod = importlib.import_module("src.ai_layer.perception_extract_job")
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
     from src.database.models import Article, Base, Source
 
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = app_sqlite_engine(
+        ":memory:",
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,

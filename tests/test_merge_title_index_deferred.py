@@ -15,7 +15,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.backup import merge as merge_mod
@@ -23,13 +22,14 @@ from src.backup.merge import merge_corpus
 from src.database import fts_title
 from src.database.fts import ensure_fts
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _META = {"artifact_kind": "oo-backup-2", "origin_fingerprint": "t", "app_version": "0.5.0",
          "alembic_rev": "head", "manifest": None}
 
 
 def _corpus(path: Path, *, articles: int, first: int = 0, built: bool = False) -> None:
-    eng = create_engine(f"sqlite:///{path}", future=True)
+    eng = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(eng)
     ensure_fts(eng)
     now = datetime.now(UTC)
@@ -62,7 +62,7 @@ def _trigger(path: Path) -> bool:
 
 
 def _finish_backfill(path: Path) -> dict:
-    eng = create_engine(f"sqlite:///{path}", future=True)
+    eng = app_sqlite_engine(path, future=True)
     try:
         with eng.begin() as c:
             while not fts_title.backfill_step(c, batch=7, budget_s=0.0)["done"]:

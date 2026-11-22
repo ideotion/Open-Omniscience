@@ -20,19 +20,19 @@ import sqlite3
 import threading
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from src.config.memory_budget import _API_MARGIN
 from src.database.pool_reserve import ReservingQueuePool, collector_ceiling, collector_role
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import HANG_GUARD_S
 
 POOL, OVERFLOW = 3, 3
 
 
 def _engine(**kwargs):
-    return create_engine(
-        "sqlite://",
+    return app_sqlite_engine(
+        ":memory:",
         creator=lambda: sqlite3.connect(":memory:", check_same_thread=False),
         poolclass=ReservingQueuePool,
         pool_size=POOL,

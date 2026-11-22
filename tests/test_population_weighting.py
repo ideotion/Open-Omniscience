@@ -15,7 +15,6 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -23,6 +22,7 @@ from src.api.main import app
 from src.database.models import Base, StatFigure
 from src.database.session import get_db
 from src.stats import aggregate, population
+from tests._app_engine import app_sqlite_engine
 
 
 def _table(tmp_path, doc):
@@ -193,7 +193,7 @@ def _fig(area, series, value):
 
 @pytest.fixture
 def client():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                            poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

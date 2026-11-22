@@ -15,7 +15,6 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 pytest.importorskip("feedparser", reason="the markets pipeline imports the ingest pipeline (feedparser)")
@@ -25,6 +24,7 @@ from src.database.models import Base
 from src.ingest import activate_kill_switch, clear_kill_switch
 from src.markets import pipeline
 from src.markets.feed_catalog import Feed
+from tests._app_engine import app_sqlite_engine
 
 # The shape a Stop inside a proxied request really takes: requests' wrapper around the socket guard's error, nowhere near our refusal sentence at the start.
 RAW_STOP = "request error for https://f.example/f3.csv: ('Connection aborted.', AirplaneModeError('network kill switch engaged'))"
@@ -66,7 +66,7 @@ def _feeds(n: int = 5) -> list[Feed]:
 
 
 def _sess():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
