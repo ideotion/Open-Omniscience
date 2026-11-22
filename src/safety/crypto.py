@@ -14,6 +14,7 @@ transport/stash; it is not a substitute for full-disk encryption of the live mac
 from __future__ import annotations
 
 import os
+import stat
 import struct
 
 from cryptography.exceptions import InvalidTag
@@ -260,23 +261,53 @@ def _open_stream_header(fin, passphrase: str) -> tuple[AESGCM, bytes, int]:
     return AESGCM(_derive(_key_bytes(passphrase), salt, n, r, p)), prefix, chunk_size + _TAG
 
 
-def _open_sealed(src: str | os.PathLike[str]):
+def _open_sealed(
+    src: str | os.PathLike[str], *, follow_links: bool = True, identity: tuple[int, int] | None = None
+):
     """An encrypted file opened to be read, as a regular file or not at all (row 312).
 
     A backup's volumes sit on a drive anyone may write to: a named pipe in a volume's place held a restore on its
-    open for ever, and a link to ``/dev/zero`` was read without end. A link is followed (the app's own files may
-    live behind one; the backup readers refuse links in the folder before they get here), but what it reaches must
-    be a regular file, and the open never blocks. Anything else is the same refusal as a file that is not ours."""
+    open for ever, and a link to ``/dev/zero`` was read without end. What is opened must be a regular file, and the
+    open never blocks. Anything else is the same refusal as a file that is not ours.
+
+    ``follow_links`` (row 329): the app's own sealed files may live behind a link and keep the default. A reader of a
+    backup folder passes ``False``: it checked the volume's name is not a link earlier, and an open that followed one
+    swapped in since would read a file outside the folder; with ``False`` the open itself refuses a link at the name.
+    ``identity`` is the ``(st_dev, st_ino)`` the reader recorded when it checked the volume: the file opened must be
+    that file, or nothing is read. Either refusal fails closed and never reads as a wrong passphrase."""
     try:
-        return open_regular(src, follow_links=True)
+        fh = open_regular(src, follow_links=follow_links)
     except NotARegularFile:
-        raise EncryptionError("not an Open Omniscience encrypted file (not a regular file); nothing was read") from None
+        raise EncryptionError(
+            "not an Open Omniscience encrypted file (not a regular file, or a link); nothing was read"
+        ) from None
+    if identity is not None and identity[1]:
+        try:
+            st = os.fstat(fh.fileno())
+            same = (st.st_dev, st.st_ino) == identity or not st.st_ino
+            if not same:
+                # A second look by NAME, from the same call family as the reader's check: on Windows lstat and fstat
+                # can give one file's identity at different widths (volumes.load_manifest). Without links followed,
+                # the open already proved the file opened is the file at this name.
+                again = os.stat(src, follow_symlinks=False)
+                same = not follow_links and stat.S_ISREG(again.st_mode) and (again.st_dev, again.st_ino) == identity
+        except OSError:
+            same = False
+        if not same:
+            fh.close()
+            raise EncryptionError(
+                "this file is no longer the one that was checked before reading (it was replaced); nothing was read"
+            )
+    return fh
 
 
 def decrypt_stream(
     src: str | os.PathLike[str],
     write,
     passphrase: str,
+    *,
+    follow_links: bool = True,
+    identity: tuple[int, int] | None = None,
 ) -> int:
     """Stream-decrypt an OOENC2 file, passing each plaintext chunk to ``write``
     (a ``bytes -> Any`` callable: a file's ``write``, a hasher's ``update``, …).
@@ -284,9 +315,10 @@ def decrypt_stream(
     The sink form lets a VERIFY pass prove a volume decrypts and checksum its
     plaintext WITHOUT writing anything to disk. Returns the plaintext byte count.
     Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
-    extended stream -- never silently yields a partial archive."""
+    extended stream -- never silently yields a partial archive. ``follow_links`` and ``identity``: see
+    :func:`_open_sealed` (row 329)."""
     total = 0
-    with _open_sealed(src) as fin:
+    with _open_sealed(src, follow_links=follow_links, identity=identity) as fin:
         aes, prefix, block = _open_stream_header(fin, passphrase)
         counter = 0
         prev = fin.read(block)
@@ -308,14 +340,17 @@ def decrypt_stream(
     return total
 
 
-def stream_key_opens(src: str | os.PathLike[str], passphrase: str) -> bool:
+def stream_key_opens(
+    src: str | os.PathLike[str], passphrase: str, *, follow_links: bool = True, identity: tuple[int, int] | None = None
+) -> bool:
     """Whether ``passphrase`` opens the FIRST chunk of an OOENC2 file, reading only the header and that chunk.
 
     A quick key check before a long pass, never a verification of the file: True says the key is right for this
     file, False says the first chunk's tag failed (a wrong key, or a damaged first chunk -- the caller tells the two
     apart, for example by the file's checksum). A malformed header raises :class:`EncryptionError` as
-    :func:`decrypt_stream` does. Nothing decrypted is kept."""
-    with _open_sealed(src) as fin:
+    :func:`decrypt_stream` does, and so does a refused open (:func:`_open_sealed`): never a ``False``, which would
+    read as a wrong key. Nothing decrypted is kept."""
+    with _open_sealed(src, follow_links=follow_links, identity=identity) as fin:
         aes, prefix, block = _open_stream_header(fin, passphrase)
         first = fin.read(block)
         final = not fin.read(1)  # a one-chunk file seals its only chunk as the final one
@@ -330,10 +365,13 @@ def decrypt_file(
     src: str | os.PathLike[str],
     dst: str | os.PathLike[str],
     passphrase: str,
+    *,
+    follow_links: bool = True,
+    identity: tuple[int, int] | None = None,
 ) -> None:
     """Stream-decrypt an OOENC2 file written by :func:`encrypt_file`.
 
     Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
     extended stream -- never silently yields a partial archive."""
     with create_new(dst) as fout:  # never through a link at its name (row 313)
-        decrypt_stream(src, fout.write, passphrase)
+        decrypt_stream(src, fout.write, passphrase, follow_links=follow_links, identity=identity)

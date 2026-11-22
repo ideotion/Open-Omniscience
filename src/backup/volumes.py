@@ -405,7 +405,7 @@ def read_volume_set(
 
     for v in m.get("volumes") or []:
         _require_safe_volume_name(str((v or {}).get("name") or ""))
-    _require_each_volume_read_once(m, out)
+    checked_ids = _require_each_volume_read_once(m, out)
     declared = m.get("plaintext_bytes")
     if isinstance(declared, bool) or not isinstance(declared, int) or declared <= 0:
         raise VolumeError("the volume manifest declares no plaintext size; refusing to reassemble an unbounded archive")
@@ -426,6 +426,8 @@ def read_volume_set(
                 "corrupt or missing volumes that could not be recovered: "
                 + ", ".join(sorted(unrepaired))
             )
+        for name in status["bad"]:
+            checked_ids.pop(name, None)  # rebuilt by this restore: a new file, still opened without following a link
 
     # Free space for what is really written: the archive itself plus ONE decrypted volume at a time,
     # which a volume's ciphertext size bounds from above (R686).
@@ -447,7 +449,9 @@ def read_volume_set(
                 # drive, where nothing of ours would ever clean it up (R686).
                 vtmp = Path(dest).with_name(f".{v['name']}.{secrets.token_hex(4)}.plain")
                 try:
-                    decrypt_file(out / v["name"], vtmp, passphrase)
+                    # Never through a link, and only the file checked above (row 329); a volume parity rebuilt since
+                    # carries no identity (it is the file this restore wrote).
+                    decrypt_file(out / v["name"], vtmp, passphrase, follow_links=False, identity=checked_ids.get(v["name"]))
                     with open(vtmp, "rb") as vf:
                         while True:
                             blk = vf.read(_COPY_BUF)
