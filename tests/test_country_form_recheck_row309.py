@@ -76,6 +76,23 @@ _APP = textwrap.dedent(
     except Exception as exc:
         refused = type(getattr(exc, "orig", None) or exc).__name__
     dispose_engine()
+    # A plain read, through the corpus engine and through the read-snapshot engine: neither asks for the form first.
+    reads = {}
+    from sqlalchemy import text
+    from src.database.read_snapshot import dispose_read_engines, read_snapshot_session
+    def _engine_read():
+        with engine.connect() as c:
+            return c.exec_driver_sql("SELECT count(*) FROM sources").fetchone()[0]
+    def _snapshot_read():
+        with read_snapshot_session() as s:
+            return s.execute(text("SELECT count(*) FROM sources")).scalar()
+    for name, run in (("engine", _engine_read), ("snapshot", _snapshot_read)):
+        try:
+            reads[name] = run()
+        except Exception as exc:
+            reads[name] = type(getattr(exc, "orig", None) or exc).__name__
+    dispose_engine()
+    dispose_read_engines()
     resume = subprocess.run([sys.executable, "-c", child, DB_FILE, "resume"], env=os.environ, capture_output=True,
                             text=True, timeout=240)
     con = C.connect(DB_FILE, check_same_thread=False)
@@ -88,7 +105,7 @@ _APP = textwrap.dedent(
     print(json.dumps({
         "encrypted": C.is_encrypted_file(DB_FILE), "before": before,
         "migration": mig.stdout.strip().splitlines()[-1:] or [mig.stderr.strip()[-300:]],
-        "wrote": wrote, "refused": refused,
+        "wrote": wrote, "refused": refused, "reads": reads,
         "resume": resume.stdout.strip().splitlines()[-1:] or [resume.stderr.strip()[-300:]],
         "rows": rows, "marker": json.loads(marker[0])["form"] if marker else None,
         "journal": json.loads(journal[0]).get("state") if journal else None,
@@ -125,6 +142,7 @@ def test_after_a_migration_it_did_not_see_the_app_writes_the_new_form(tmp_path, 
     assert [tuple(r) for r in out["rows"]] == [("a", "FRA"), ("b", "DEU")], out
     assert out["marker"] == "alpha3", out
     assert out["resume"] == ["already-done"], out
+    assert out["reads"] == {"engine": 2, "snapshot": 2}, out
 
 
 @pytest.mark.parametrize("leg", _LEGS)
@@ -132,6 +150,8 @@ def test_after_an_interrupted_run_the_app_refuses_and_the_resume_finishes(tmp_pa
     out = _run(tmp_path, leg, "interrupt")
     assert out["migration"] == ["interrupted"], out
     assert out["wrote"] is None and out["refused"] == "MigrationUnfinished", out
+    # A read is refused too, on both engines, before it runs: the store holds both forms (R788).
+    assert out["reads"] == {"engine": "MigrationUnfinished", "snapshot": "MigrationUnfinished"}, out
     # The resume is not forced onto the safety copy: it finishes, and the store holds one form.
     assert out["resume"] == ["done"], out
     assert [tuple(r) for r in out["rows"]] == [("a", "FRA")], out
@@ -220,7 +240,7 @@ def test_a_start_under_a_held_store_names_the_holder_not_a_damaged_journal(tmp_p
         with pytest.raises(cf.StoreFormUnreadable) as caught:
             cf.refuse_if_unfinished()
         text = str(caught.value)
-        assert "held by another program" in text and "migrate-countries" in text, text
+        assert "in use by another program" in text and "migrate-countries" in text, text
         assert "could not be read (" not in text, text
     finally:
         kv_store.kv_invalidate()
@@ -242,6 +262,97 @@ def test_a_journal_that_fails_otherwise_still_says_it_could_not_be_read(tmp_path
         with pytest.raises(cf.StoreFormUnreadable) as caught:
             cf.refuse_if_unfinished()
         assert "could not be read (KvReadError)" in str(caught.value)
-        assert "held by another program" not in str(caught.value)
+        assert "in use by another program" not in str(caught.value)
+    finally:
+        kv_store.kv_invalidate()
+
+
+def test_a_new_connection_on_an_unfinished_store_is_refused_and_closed(tmp_path):
+    """The connect listener itself: a journal that names a cut run refuses the connection and closes it; one that names a
+    finished run, or none, lets it through (R788, row 309)."""
+    import sqlite3
+
+    from src.config import kv_store
+    from src.database import country_form as cf
+
+    db = tmp_path / "s.db"
+    con = sqlite3.connect(db)
+    try:
+        con.execute("CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT)")
+        con.commit()
+        cf.recheck_on_new_connection(con)  # no journal: through
+        for state, refused in (("done", False), ("running", True), ("interrupted", True)):
+            con.execute(
+                "INSERT OR REPLACE INTO app_state VALUES (?, ?)",
+                (cf.JOURNAL_KEY, json.dumps({"state": state, "backup": {"path": "/b/copy.db"}})),
+            )
+            con.commit()
+            if not refused:
+                cf.recheck_on_new_connection(con)
+                continue
+            probe = sqlite3.connect(db)
+            with pytest.raises(cf.MigrationUnfinished) as caught:
+                cf.recheck_on_new_connection(probe)
+            assert state in str(caught.value) and "/b/copy.db" in str(caught.value)
+            with pytest.raises(sqlite3.ProgrammingError):
+                probe.execute("SELECT 1")  # closed
+    finally:
+        con.close()
+        kv_store.kv_invalidate()
+
+
+def test_a_wrong_key_is_raised_by_the_read_only_check_and_only_read_only_failures_pass_on(tmp_path, monkeypatch):
+    """``_check_key_read_only`` passes on only a held store and a failure of read-only opening itself; a wrong key or a
+    damaged file is raised before any read-write open."""
+    import sqlite3
+
+    from src.backup import country_migration as cm
+
+    def _fails(exc):
+        def _connect(*_a, **_k):
+            raise exc
+
+        return _connect
+
+    for exc, passes in (
+        (connect_mod.StoreHeldError("in use"), True),
+        (sqlite3.OperationalError("unable to open database file"), True),
+        (sqlite3.OperationalError("attempt to write a readonly database"), True),
+        (connect_mod.WrongPassphraseError("no"), False),
+        (sqlite3.DatabaseError("file is not a database"), False),
+    ):
+        monkeypatch.setattr(connect_mod, "connect", _fails(exc))
+        if passes:
+            cm._check_key_read_only(tmp_path / "s.db")
+        else:
+            with pytest.raises(type(exc)):
+                cm._check_key_read_only(tmp_path / "s.db")
+
+
+def test_the_held_message_names_the_wait_and_claims_nothing_about_writes():
+    from src.database import country_form as cf
+
+    text = cf.held_message()
+    assert "30 seconds" in text and "migrate-countries" in text
+    assert "nothing was written" not in text and "second copy of the app" not in text
+
+
+def test_a_recheck_that_finds_the_cache_right_still_moves_the_epoch(tmp_path, monkeypatch):
+    """A read that began before the recheck may have read the file as it was before a migration: it must not store it.
+    The epoch moves on every recheck, equal values included, so such a read is never cached."""
+    from src.config import kv_store
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 's.db'}")
+    kv_store.kv_invalidate()
+    try:
+        path = kv_store._db_path()
+        with kv_store._lock:
+            kv_store._cache[(path, "k")] = '{"a": 1}'
+        before = kv_store._epoch
+        assert kv_store.kv_forget_if_changed("k", '{"a": 1}') is False
+        assert kv_store._epoch > before
+        assert (path, "k") in kv_store._cache
+        assert kv_store.kv_forget_if_changed("k", '{"a": 2}') is True
+        assert (path, "k") not in kv_store._cache
     finally:
         kv_store.kv_invalidate()

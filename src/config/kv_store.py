@@ -758,11 +758,14 @@ def kv_forget_if_changed(key: str, raw: str | None) -> bool:
     """Drop ``key``'s cached value when it is not ``raw``, the value just read from the live file by another route (R788).
 
     For a caller that holds an open connection on the store and has read the row through it: the cache answers a later
-    read only if it still says what the file says. Equal, nothing moves (a pooled store pays one indexed read, not a
-    second keyed open). Different, or nothing cached to compare, the key is forgotten as :func:`kv_invalidate` forgets
-    it, so the next read goes to the file. Returns whether it was forgotten."""
+    read only if it still says what the file says. Equal, the cached value stays (a pooled store pays one indexed read, not
+    a second keyed open). Different, or nothing cached to compare, the key is forgotten as :func:`kv_invalidate` forgets
+    it, so the next read goes to the file. Either way the epoch moves, so a read that began before this one, perhaps on
+    the file as it was before a migration, never stores what it read. Returns whether the key was forgotten."""
+    global _epoch
     path = _db_path()
     with _lock:
+        _epoch += 1
         if path is not None and (path, key) in _cache and _cache[(path, key)] == raw:
             return False
     kv_invalidate(key)

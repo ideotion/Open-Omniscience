@@ -112,6 +112,15 @@ def _build_read_engine(url: str) -> Engine:
         finally:
             cur.close()
 
+    @event.listens_for(eng, "connect")
+    def _country_form_recheck(dbapi_connection, _record) -> None:  # noqa: ANN001
+        # R788 (row 309): an export or a diagnostics read opens a new connection here, never through the corpus pool,
+        # so the same recheck runs on it: the cached form answers only what this file says, and a store a country
+        # migration left half done is refused rather than read (``country_form.recheck_on_new_connection``).
+        from src.database.country_form import recheck_on_new_connection
+
+        recheck_on_new_connection(dbapi_connection)
+
     @event.listens_for(eng, "begin")
     def _explicit_begin(conn) -> None:  # noqa: ANN001
         # With the driver in autocommit (above), emit a real BEGIN when SQLAlchemy's

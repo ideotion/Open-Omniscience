@@ -265,6 +265,17 @@ KEPT: dict[str, dict[tuple[str, str], int]] = {
 #: because the damage and storage classifiers read it; every sink of a chain goes through ``log_failure``/``record_text``/
 #: ``record_traceback``, which apply the per-link driver rule), and ``session.info`` dictionaries (not logs). Read line by line; counted.
 _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
+    # R788 (row 309): a failed read of the form or the journal reads only the KvReadError's ``held`` flag (a bool), to name a
+    # held store instead of a damaged one; the words come from ``held_message`` and the class name, never from the error
+    'src/database/country_form.py': {
+        ('refuse_if_unfinished', 'if getattr(exc, "held", False):'): 1,
+        ('store_form', 'if getattr(exc, "held", False):'): 1,
+    },
+    # R788 (row 309): the read-only key check passes on a failure of read-only opening alone (kv_store's bool) and re-raises
+    # the rest unchanged; nothing of the error is kept, served or logged here
+    'src/backup/country_migration.py': {
+        ('_check_key_read_only', 'if _ro_only_failure(exc):'): 1,
+    },
     'src/database/connect.py': {
         ('_try_open_encrypted', 'last_error[:] = [exc]'): 1,
         # Row 154: only the SQLite result code is read, to stop the page-size walk on a lock; nothing of the error is kept
@@ -1028,6 +1039,8 @@ _S5_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('kv_get_json_checked', 'if isinstance(exc, FileNotFoundError) or "no such table" in str(exc).lower():'): 1,
         # classifies the exception (a bool, an errno, a status code, an enum): no text of it is written
         ('kv_get_json_checked', 'if not _ro_only_failure(ro_exc):'): 1,
+        # R788 (row 309): whether another connection holds the file, by class name and SQLite's fixed locked/busy words (a bool)
+        ('kv_get_json_checked', 'held_by_other = _held_failure(exc)'): 1,
         # read for a keyword to CLASSIFY the failure; the text goes nowhere
         ('kv_get_json_strict', 'if "no such table" in str(exc).lower():'): 1,
     },

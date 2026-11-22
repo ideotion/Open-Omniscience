@@ -39,6 +39,7 @@ def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -
 
     command = "open-omniscience migrate-countries"  # the command that moves a store, as it is typed
 
+    from src.config.kv_store import KvReadError, kv_get_json_checked
     from src.database.country_form import (
         JOURNAL_KEY,
         KEY,
@@ -60,7 +61,12 @@ def country_form_status(estimate: bool = False, db: Session = Depends(get_db)) -
     try:
         form = store_form()
     except MigrationUnfinished as exc:
-        stopped = _kv(JOURNAL_KEY) or {}
+        # Read by the key-value store's own connection: a new corpus connection is refused on this store (R788), so
+        # ``_kv`` through the session would raise the same refusal again instead of describing it.
+        try:
+            stopped = kv_get_json_checked(JOURNAL_KEY) or {}
+        except KvReadError:
+            stopped = {}
         return {"form": None, "readable": False, "unfinished": True, "command": command, "note": record_text(exc, typed=False),
                 "journal": {"state": stopped.get("state"), "rewritten": stopped.get("rewritten")}}
     except StoreFormUnreadable:
