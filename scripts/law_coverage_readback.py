@@ -241,6 +241,9 @@ def floor_lines(floor: Any) -> list[str]:
     lines.append(head)
     if f.get("state") != "checked":
         lines.append(f"  not checked: {_words(f.get('reason'), 'no reason given')}")
+        cat = f.get("catalog_reason")
+        if cat and cat != f.get("reason"):  # row 319: an unread floor file does not hide an unread catalogue
+            lines.append(f"  catalogue not read either: {_words(cat, 'no reason given')}")
         if f.get("by_state") is None:
             return lines
     why = _words(f.get("reason"), "the catalogue could not be read")

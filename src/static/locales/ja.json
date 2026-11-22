@@ -5814,6 +5814,7 @@
   "The latest attempt failed and changed nothing: the values already stored are shown, kept as they were.": "直近の試行は失敗し、何も変わっていません。保存済みの値をそのまま表示しています。",
   "The latest attempt failed, so nothing is stored for this yet.": "直近の試行が失敗したため、これについてはまだ何も保存されていません。",
   "The latest {n} firings, newest first. Earlier ones are kept but not shown here.": "最新 {n} 件の発火（新しい順）。それより前のものは保存されていますが、ここには表示されません。",
+  "The law catalogue could not be read either.": "法令カタログも読み込めませんでした。",
   "The law catalogue could not be read, so only what is tracked here is counted.": "法令カタログを読み込めなかったため、ここで追跡中のものだけを集計しています。",
   "The law catalogue could not be read, so this country was not looked up.": "法令カタログを読み込めなかったため、この国は照会されていません。",
   "The law documents you watch are re-checked for new versions when due, at most once a day each, and their AI change summaries follow, never in airplane mode. On by default. Untick it to stop the background check; “Track changes now” in Governments → Law still works.": "追跡している法令は、時期が来ると新しい版がないか再確認され（各文書は1日1回まで）、続いて AI による変更要約が作られます。機内モードでは実行されません。既定はオンです。チェックを外すとバックグラウンド確認が止まります。「政府 → 法律」の「今すぐ変更を追跡」は引き続き使えます。",
