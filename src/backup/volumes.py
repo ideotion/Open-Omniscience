@@ -72,12 +72,30 @@ class _HashingReader:
         return b
 
 
-def _sha256_file(path: Path) -> str:
+class _LongerThanListed(Exception):
+    """A file read past the size its manifest lists (row 336): it is not the file listed, whatever its digest."""
+
+
+def _sha256_file(path: Path, max_bytes: int | None = None) -> str:
     """The SHA-256 of a regular file. A link, a pipe or a device raises :class:`NotARegularFile` without a byte read
-    (row 312): a volume's name in a backup folder may be any of them."""
+    (row 312): a volume's name in a backup folder may be any of them.
+
+    ``max_bytes`` (row 336) is the size the manifest lists: a file that holds more raises :class:`_LongerThanListed`
+    after reading at most one block past it, so a volume swapped for a huge sparse file, or one that keeps growing, is
+    never hashed to its end."""
     h = hashlib.sha256()
+    read = 0
     with open_regular(path) as f:
-        for blk in iter(lambda: f.read(_COPY_BUF), b""):
+        if max_bytes is not None and os.fstat(f.fileno()).st_size > max_bytes:
+            raise _LongerThanListed(str(path))
+        while True:
+            want = _COPY_BUF if max_bytes is None else min(_COPY_BUF, max_bytes - read + 1)
+            blk = f.read(want)
+            if not blk:
+                break
+            read += len(blk)
+            if max_bytes is not None and read > max_bytes:
+                raise _LongerThanListed(str(path))
             h.update(blk)
     return h.hexdigest()
 
@@ -89,14 +107,20 @@ def _plain_volume_name(name: object) -> bool:
     return isinstance(name, str) and name not in {"", ".", ".."} and not any(c in name for c in "/\\:\0")
 
 
-def _digest_matches(path: Path, expected: object) -> bool:
+def _digest_matches(path: Path, expected: object, max_bytes: int | None = None) -> bool:
     """Whether ``path`` is a regular file whose SHA-256 is ``expected``. A name that is a link, a pipe or a device is
     a volume that does not match: reported as bad, so a re-copy or parity recovery deals with it, never read (row
-    312). Any other read error raises as before."""
+    312). With ``max_bytes`` (the manifest's size, row 336) a file longer than that does not match either, and is read
+    at most one block past it. Any other read error raises as before."""
     try:
-        return _sha256_file(path) == expected
-    except NotARegularFile:
+        return _sha256_file(path, max_bytes) == expected
+    except (NotARegularFile, _LongerThanListed):
         return False
+
+
+def listed_bytes(v: object) -> int | None:
+    """The size a manifest entry lists for a file, or None when it lists none that is a whole number of bytes."""
+    return volume_expectation(v)["expect_bytes"] if isinstance(v, dict) else None
 
 
 class VolumeStopped(VolumeError):
@@ -282,7 +306,7 @@ def verify_volume_set(
         if not p.exists():
             bad.append(v["name"])
             missing.append(v["name"])
-        elif not _digest_matches(p, v.get("sha256")):
+        elif not _digest_matches(p, v.get("sha256"), listed_bytes(v)):
             bad.append(v["name"])
         checked += 1
         if progress_cb is not None:
