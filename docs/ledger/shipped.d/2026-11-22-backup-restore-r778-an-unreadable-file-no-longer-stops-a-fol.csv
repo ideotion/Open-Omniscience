@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-22,backup/restore,R778 an unreadable file no longer stops a folder restore,shipped,PR #2261,src/backup/folder_backup.py; src/backup/import_queue.py; src/static/app-backup.js; tests/test_restore_unread_r778.py,"A member the folder restore cannot read is left out with a fixed reason code, the rest restored, the result marked incomplete with counts and up to six names; atomic per file; process-wide and write-side failures still stop; journals carry counts only; Help x12."
