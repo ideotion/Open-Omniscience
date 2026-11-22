@@ -558,6 +558,7 @@ class ImportQueueManager:
         can import backups locked with different passphrases while the common case is typed once. Every key is held in
         memory only: it is taken OUT of the item before the item is stored, never written to the queue file, and
         scrubbed from every record the run writes."""
+        self._refuse_a_store_no_restore_may_enter(items)
         self._refuse_unreadable_backup_manifests(items)
         self._refuse_wrong_backup_passphrases(items, passphrase)
         with self._lock:
@@ -657,6 +658,40 @@ class ImportQueueManager:
                 self._save()
                 raise
             return self.status()
+
+    @staticmethod
+    def _refuse_a_store_no_restore_may_enter(items: list[dict]) -> None:
+        """Refuse the start, before anything runs, when every restore in it would be refused by the live store (row 328).
+
+        A corpus that a country-code migration left half done (R788), or whose migration state cannot be read, and a
+        writer the restore may not stop (R659, or a running export: R712), refuse each restore when it runs: after the
+        collection pause, item by item, and a refusal inside a checkpoint group discards the merges the group still holds.
+        Asked here in ``run_restore``'s order, half-migrated first, with the same helpers and their fixed words. A job the
+        restore may stop (the re-index drain) is left running: the run stops it itself, and stopped here it would stay
+        stopped for the whole run. Asked only when an item will restore (a backup to merge, or a legacy file); the run
+        asks again at every restore, so a store that changes after this still refuses there."""
+        from src.backup.merge import (
+            HalfMigratedStoreRefused,
+            refuse_half_migrated_store,
+            writer_jobs_refusal,
+        )
+
+        if not any(
+            raw.get("kind") == "legacy"
+            or (
+                raw.get("kind") == "corpus" and raw.get("path")
+                and (raw.get("force") or not ImportQueueManager._already_merged(str(raw["path"])))
+            )
+            for raw in items or []
+        ):
+            return
+        try:
+            refuse_half_migrated_store()
+        except HalfMigratedStoreRefused as refused:
+            raise ValueError(str(refused)) from None
+        said = writer_jobs_refusal()
+        if said:
+            raise ValueError(said)
 
     @staticmethod
     def _refuse_unreadable_backup_manifests(items: list[dict]) -> None:
