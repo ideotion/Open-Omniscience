@@ -385,25 +385,53 @@ def _link_refused(exc: OSError) -> Declined:
     )
 
 
-def _replaced_name(target: Path, doc: dict[str, Any]) -> Path | None:
-    """The damaged name a fallback moved away from (``replaced_name`` in the sidecar), when it is a name the repair gives."""
-    name = doc.get("replaced_name")
-    if isinstance(name, str) and _kept_name_pattern(target).fullmatch(name):
-        return target.parent / name
-    return None
+#: At most this many earlier names are remembered (each further fallback adds one; more than one needs a fresh blocker every start).
+_REPLACED_NAMES_KEPT = 8
+
+
+def _replaced_names(target: Path, doc: dict[str, Any]) -> list[Path]:
+    """The damaged names a fallback moved away from (``replaced_names`` in the sidecar), each only when it is a name the repair gives."""
+    names = doc.get("replaced_names")
+    if not isinstance(names, list):
+        return []
+    pattern = _kept_name_pattern(target)
+    return [target.parent / n for n in names[:_REPLACED_NAMES_KEPT] if isinstance(n, str) and pattern.fullmatch(n)]
 
 
 def _drop_replaced_name(target: Path, doc: dict[str, Any], kept: Path) -> None:
-    """After the switch: the name the fallback moved away from, when an earlier start had made it a second name of the file that is now
-    the kept damaged one, is removed, only when it is that same file at this moment (inode and device, no link followed): it holds
-    nothing the kept name does not, and left there it would keep a full copy of the library on the drive that nothing ever removes."""
-    old = _replaced_name(target, doc)
-    if old is None or old == kept:
-        return
-    a, b = _identity(old), _identity(kept)
-    if a is not None and a == b:
-        with contextlib.suppress(OSError):
-            old.unlink()
+    """After the switch: a name the fallback moved away from, when an earlier start had made it a second name of the file that is now the
+    kept damaged one, is removed, only when it is that same file at this moment (inode and device, no link followed): it holds nothing
+    the kept name does not, and left there it would keep a full copy of the library on the drive that nothing ever removes."""
+    for old in _replaced_names(target, doc):
+        if old == kept:
+            continue
+        a, b = _identity(old), _identity(kept)
+        if a is not None and a == b:
+            with contextlib.suppress(OSError):
+                old.unlink()
+
+
+def _sidecar_doc(sidecar: Path | None) -> dict[str, Any]:
+    if sidecar is None:
+        return {}
+    try:
+        doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def _scrap(target: Path, damaged: Path, finished: Path | None, sidecar: Path | None) -> None:
+    """A copy that will never be switched in is the app's own scratch: the copy and its sidecar go, and so do the second names of the live
+    file this repair gave (the damaged name, and the names a fallback moved away from, which only the sidecar records, so they are read
+    from it first). Each name goes only when it is the live file's own second name (:func:`_drop_extra_names`)."""
+    earlier = _replaced_names(target, _sidecar_doc(sidecar))
+    for spent in (finished, sidecar):
+        if spent is not None:
+            with contextlib.suppress(OSError):
+                spent.unlink()
+    for name in (damaged, *earlier):
+        _drop_extra_names(target, name)
 
 
 def _numbered(target: Path, damaged: Path, n: int) -> Path:
@@ -420,7 +448,7 @@ def _claim_free_name(target: Path, damaged: Path, sidecar: Path, left: str) -> P
     name is CLAIMED by the hard link itself, which fails on any existing name (a link included, never followed), and a taken one moves
     on to the next number, so there is no gap between a check and the use. The sidecar names the candidate BEFORE the link is tried, so a
     cut at any point resumes under the name the sidecar records. The old name is not removed here (the probe connection still holds the
-    live file open, and Windows refuses to remove any name of an open file): it is recorded as ``replaced_name`` and removed after the
+    live file open, and Windows refuses to remove any name of an open file): it is recorded in ``replaced_names`` and removed after the
     switch, only when it is then the kept file's own second name (:func:`_drop_replaced_name`). The file left in place is never touched."""
     doc = json.loads(sidecar.read_text(encoding="utf-8"))
     original = dict(doc)
@@ -428,7 +456,9 @@ def _claim_free_name(target: Path, damaged: Path, sidecar: Path, left: str) -> P
         candidate = _numbered(target, damaged, n)
         if candidate == damaged or any(os.path.lexists(_side(candidate, s)) for s in ("", "-wal", "-shm")):
             continue
-        doc.update(damaged=candidate.name, name_left_in_place=left, replaced_name=damaged.name)
+        earlier = [n for n in doc.get("replaced_names", []) if isinstance(n, str)] if isinstance(doc.get("replaced_names"), list) else []
+        names = [*earlier, damaged.name] if damaged.name not in earlier else earlier
+        doc.update(damaged=candidate.name, name_left_in_place=left, replaced_names=names[-_REPLACED_NAMES_KEPT:])
         _write_json_atomic(sidecar, doc)
         try:
             os.link(target, candidate)
@@ -683,7 +713,9 @@ def find_resumable(target: Path, *, late: list[dict[str, Any]] | None = None) ->
             doc["swapped"] = True
             _record(late_sidecar=doc)
             _drop_extra_names(target, target.parent / str(doc["damaged"]))
-            _drop_replaced_name(target, doc, target.parent / str(doc["damaged"]))
+            _drop_replaced_name(target, doc, target.parent / str(doc["damaged"]))  # the switch ran: the kept file's own extra names
+            for old in _replaced_names(target, doc):
+                _drop_extra_names(target, old)  # it did not: the live file's own extra names
             with contextlib.suppress(OSError):
                 sidecar.unlink()
             continue
@@ -698,9 +730,8 @@ def find_resumable(target: Path, *, late: list[dict[str, Any]] | None = None) ->
             with contextlib.suppress(OSError):
                 stale.unlink()
         _drop_extra_names(target, target.parent / str(doc["damaged"]))
-        replaced = _replaced_name(target, doc)
-        if replaced is not None:
-            _drop_extra_names(target, replaced)
+        for old in _replaced_names(target, doc):
+            _drop_extra_names(target, old)
     return resumable
 
 
@@ -1465,10 +1496,7 @@ def _swap(
         finished = source
         if expect is not None and now != expect:
             assert sidecar is not None
-            for stale in (finished, sidecar):
-                with contextlib.suppress(OSError):
-                    stale.unlink()
-            _drop_extra_names(target, damaged)
+            _scrap(target, damaged, finished, sidecar)
             raise Declined(
                 "copy-stale",
                 "the library file was written to after the copy was made, so the copy is discarded and a new one is made at the next start",
@@ -1516,18 +1544,14 @@ def _swap(
             except OSError as exc:
                 refusal = _link_refused(exc)
                 if refusal.code == "no-hard-links":
-                    for spent in (finished, sidecar):
-                        with contextlib.suppress(OSError):
-                            spent.unlink()
+                    _scrap(target, damaged, finished, sidecar)
                 raise refusal from None
         if left is not None:
             try:
                 damaged = _claim_free_name(target, damaged, sidecar, left)
             except Declined as refusal:
                 if refusal.code == "no-hard-links":
-                    for spent in (finished, sidecar):
-                        with contextlib.suppress(OSError):
-                            spent.unlink()
+                    _scrap(target, damaged, finished, sidecar)
                 raise
             report["name_left_in_place"] = left
             _LOG.warning(
@@ -1578,10 +1602,7 @@ def _swap(
             if refusal.code == "saved-during-the-copy":
                 # AFTER the window has ended (it reads the copy's existence to tell whether the file moved, and gives the earlier
                 # connections their validity back when it did not): the copy is stale and is the app's own scratch.
-                for stale in (finished, sidecar):
-                    with contextlib.suppress(OSError):
-                        stale.unlink()
-                _drop_extra_names(target, damaged)
+                _scrap(target, damaged, finished, sidecar)
             raise
     finally:
         watch.close()
@@ -1590,8 +1611,7 @@ def _swap(
     kv_invalidate()  # the settings the replaced file held are not the live ones: the restore's swap empties the cache the same way
     dispose_engine()
     _fsync_dir(target.parent)
-    with contextlib.suppress(OSError, ValueError):
-        _drop_replaced_name(target, json.loads(sidecar.read_text(encoding="utf-8")), damaged)
+    _drop_replaced_name(target, _sidecar_doc(sidecar), damaged)
     report["kept_file"] = damaged.name
     with contextlib.suppress(OSError):
         report["kept_file_bytes"] = damaged.stat().st_size

@@ -1756,6 +1756,7 @@ class DamageRegistry:
                     "copy-stale": FRAME_REPAIR_WRITTEN,
                     "saved-during-the-copy": FRAME_REPAIR_WRITTEN,
                     "damaged-name-taken": FRAME_REPAIR_NAME_TAKEN,
+                    "name-not-given": FRAME_REPAIR_NOT_NAMED,
                 }.get(str(reason), FRAME_REPAIR_FAILED)
                 values: dict[str, Any] = {}
                 if frame == FRAME_REPAIR_NO_ROOM:
@@ -2201,6 +2202,10 @@ FRAME_REPAIRED_OPEN = (
 FRAME_KEPT_NAME_LEFT = (
     "The repair finished. The damaged file it set aside is kept as {name}, because a file named {left} was already beside "
     "your library: the app left that file as it was."
+)
+FRAME_REPAIR_NOT_NAMED = (
+    "The app did not switch to the repaired file: the damaged file could not be given the second name it is kept under. The "
+    "repaired copy is kept and the switch is tried again at the next start. Your data files were not changed."
 )
 FRAME_REPAIR_NAME_TAKEN = (
     "The app did not switch to the repaired file: the names it gives the damaged file beside your library are all taken by "

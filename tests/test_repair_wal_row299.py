@@ -332,6 +332,33 @@ def test_the_free_name_search_is_bounded_and_claims_by_the_link(tmp_path, monkey
 
 
 @pytest.mark.parametrize("encrypted", LEGS)
+def test_a_save_in_the_window_after_a_fallback_leaves_no_unrecorded_second_name_of_the_library(tmp_path, monkeypatch, request, encrypted):
+    """The name a fallback moved away from is recorded only in the sidecar. When the copy is then thrown away (a save landed in the
+    window), that name goes with the new one, so no second name of the live library is left that no record knows of."""
+    from src.backup import merge
+
+    live, damaged = _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, encrypted, "pending at the cut")
+    log = Path(str(damaged) + "-wal")
+    log.write_bytes(b"\x37\x7f\x06\x82" + b"\0" * 60)
+    real = merge.swap_in_corpus
+
+    def save_then_swap(finished, target, *, check, **kw):
+        con = H.open_store(target)
+        con.execute("INSERT INTO sources (name, domain) VALUES ('in the window', 'in-the-window.example.org')")
+        con.commit()
+        con.close()
+        return real(finished, target, check=check, **kw)
+
+    monkeypatch.setattr(merge, "swap_in_corpus", save_then_swap)
+    with pytest.raises(repair.Declined) as refusal:
+        repair.run(repair.plan())
+    assert refusal.value.code == "saved-during-the-copy"
+    assert sorted(p.name for p in tmp_path.glob("live.damaged-*")) == [log.name], "a second name of the library was left behind"
+    assert log.read_bytes().startswith(b"\x37\x7f") and not list(tmp_path.glob("live.salvage-*"))
+    assert _count_named(live, "in the window") == 1 and _count_named(live, "pending at the cut") == 1
+
+
+@pytest.mark.parametrize("encrypted", LEGS)
 def test_an_index_beside_the_damaged_name_is_left_in_place_too(tmp_path, monkeypatch, request, encrypted):
     live, damaged = _cut_at_the_replace_with_a_save(tmp_path, monkeypatch, request, encrypted, "pending at the cut")
     shm = Path(str(damaged) + "-shm")
@@ -502,6 +529,7 @@ def test_the_name_left_in_place_notice_is_translated_into_every_language():
         assert entry, f"{path.name} has no translation of the notice"
         assert "{name}" in entry and "{left}" in entry, f"{path.name} lost a slot"
         assert data.get(damage.FRAME_REPAIR_NAME_TAKEN), f"{path.name} has no translation of the refusal"
+        assert data.get(damage.FRAME_REPAIR_NOT_NAMED), f"{path.name} has no translation of the name-not-given refusal"
 
 
 def test_the_damaged_name_pattern_is_the_repairs_own():
