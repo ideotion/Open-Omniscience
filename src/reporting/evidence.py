@@ -337,19 +337,21 @@ def _placed_by_an_earlier_restore(own_hex: str, path: Path) -> bool:
     return False
 
 
-def is_this_installations_key(public_key: object, path: Path | None = None) -> bool | None:
+def is_this_installations_key(public_key: object, path: Path | None = None, *, own: str | None = None) -> bool | None:
     """True when ``public_key`` (hex, any case or spacing) is the public half of THIS installation's signing key.
 
     False when it is another key (or not a key at all); None when this installation's own key could not be read, so the
     question has no answer. Like :func:`existing_public_key_hex` it never creates or rewrites a key. A signature checked
     against the key an artifact carries proves only that the artifact is unchanged since it was signed (R800); this is
-    the question that says WHO signed it."""
+    the question that says WHO signed it. R801: a key a restore placed counts as ANOTHER installation's while its
+    marker exists (:func:`restored_key_marker`); every caller asks here and none compares keys itself."""
     path = path or _default_key_path()
-    if not path.exists():
-        return False  # no key yet: nothing this installation signed can exist
-    own = existing_public_key_hex(path)
-    if own is None:
-        return None
+    if own is None:  # ``own``: this installation's public key the caller already read (a list compares many keys)
+        if not path.exists():
+            return False  # no key yet: nothing this installation signed can exist
+        own = existing_public_key_hex(path)
+        if own is None:
+            return None
     try:
         same = bytes.fromhex(str(public_key)) == bytes.fromhex(own)
     except ValueError:

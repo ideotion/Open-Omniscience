@@ -237,16 +237,19 @@ def signer_relation(signer_key: str | None, local_key: str | None) -> str:
         return "unsigned"
     if not local_key:
         return "not-compared"
-    return "this-installation" if _is_this_installations_key(key, local_key) else "another-installation"
+    same = _is_this_installations_key(key, local_key)
+    if same is None:
+        return "not-compared"
+    return "this-installation" if same else "another-installation"
 
 
-def _is_this_installations_key(key: str, local_key: str) -> bool:
-    """THE one place the comparison is made, so it can be swapped whole.
+def _is_this_installations_key(key: str, local_key: str) -> bool | None:
+    """THE one place the comparison is made: ``evidence.is_this_installations_key`` (R801), which also counts a key a
+    restore placed as another installation's while its restored-key marker exists. ``local_key`` is the public key
+    the caller already read, so a list of backups reads this installation's key once."""
+    from src.reporting.evidence import is_this_installations_key
 
-    Plan's ruling for row 340: this is to be ``evidence.is_this_installations_key`` (lane I), which
-    also counts a key placed by a restore as another installation's while its restored-key marker
-    exists. Until that lands on main it is the plain comparison with this installation's key."""
-    return key == local_key.strip().lower()
+    return is_this_installations_key(key, own=local_key.strip().lower())
 
 
 def member_name(name: str) -> str:

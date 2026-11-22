@@ -161,3 +161,35 @@ def test_a_report_naming_another_key_changes_nothing(tmp_path):
     (reports / "broken.json").write_text("{not json")
     assert ev.is_this_installations_key(ev.public_key_hex(key)) is True
     assert not (tmp_path / "live" / MARKER).exists()
+
+
+def test_every_reader_asks_the_one_check(tmp_path, monkeypatch):
+    """R801 (2): the backup list's signer relation (row 340) and the early passphrase verdict (R795) both say
+    "another installation" for a key a restore placed, because both ask is_this_installations_key."""
+    from src.backup import artifact
+    from src.backup import stream_backup as sb
+
+    attacker = Ed25519PrivateKey.generate()
+    _restore(tmp_path, {EVIDENCE: _pem(attacker)})
+    pub = ev.public_key_hex(attacker)
+    assert artifact.signer_relation(pub, artifact.this_installation_key()) == "another-installation"
+    m = {"kind": "x", "volumes": []}
+    sig = attacker.sign(ev.canonical_bytes(m)).hex()
+    m["signature"] = {"public_key": pub, "signature": sig}
+    assert sb._manifest_signature_state(m) == "verified"
+    assert sb._why_the_volume_list_is_not_ours(m) == sb.REASON_OTHER_INSTALLATION
+    (tmp_path / "live" / MARKER).unlink()  # what only a new key of this installation's own does
+    assert artifact.signer_relation(pub, artifact.this_installation_key()) == "this-installation"
+    assert sb._why_the_volume_list_is_not_ours(m) is None
+
+
+def test_no_reader_compares_keys_itself():
+    """R801 (2): the comparison lives in evidence.is_this_installations_key alone."""
+    import inspect
+
+    from src.backup import artifact
+    from src.backup import stream_backup as sb
+
+    for fn in (artifact._is_this_installations_key, sb._why_the_volume_list_is_not_ours):
+        src = inspect.getsource(fn)
+        assert "is_this_installations_key(" in src and "fromhex" not in src and "key ==" not in src, fn.__name__

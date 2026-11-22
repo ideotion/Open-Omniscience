@@ -2318,22 +2318,20 @@ class BackupPassphraseUnchecked(EncryptionError):
 def _why_the_volume_list_is_not_ours(m: dict[str, Any]) -> str | None:
     """None when the manifest is signed, validly, by this installation's own key; else the plain reason it is not.
 
-    The key is read, never created (``signing_key_state`` -> ``existing_public_key_hex``): a check that wrote a key to
-    answer would change the installation it is checking against."""
+    The key is read, never created (``is_this_installations_key`` -> ``existing_public_key_hex``): a check that wrote a
+    key to answer would change the installation it is checking against."""
     state = _manifest_signature_state(m)
     if state == "unsigned":
         return REASON_UNSIGNED
     if state != "verified":
         return REASON_BAD_SIGNATURE
-    from src.reporting.evidence import signing_key_state
+    from src.reporting.evidence import is_this_installations_key
 
-    key_state, own = signing_key_state()
-    if key_state == "unreadable":
+    # R801: the one check, which compares the keys as bytes (case and spacing aside) and counts a key a restore placed
+    # as another installation's while its restored-key marker exists
+    same = is_this_installations_key(m["signature"].get("public_key"))
+    if same is None:
         return REASON_OWN_KEY_UNREADABLE
-    try:  # the keys as bytes: the hex in the list may differ in case or spacing and still name the same key
-        same = own is not None and bytes.fromhex(own) == bytes.fromhex(str(m["signature"]["public_key"]))
-    except ValueError:
-        same = False
     return None if same else REASON_OTHER_INSTALLATION
 
 
