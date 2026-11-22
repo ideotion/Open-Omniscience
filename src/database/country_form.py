@@ -117,6 +117,9 @@ def refuse_if_unfinished() -> None:
         raise MigrationUnfinished(unfinished_message(journal.get("state"), backup.get("path") if isinstance(backup, dict) else None))
 
 
+_RECHECK_SQL = 'SELECT key, value FROM "app_state" WHERE key IN (?, ?)'
+
+
 def recheck_on_new_connection(dbapi_connection) -> None:
     """Make the process's cached form and journal answer only what THIS file says now, and refuse the connection when the
     store's run state is not known to be sound (R788, row 309).
@@ -137,6 +140,8 @@ def recheck_on_new_connection(dbapi_connection) -> None:
       ``interrupted``) raises :class:`MigrationUnfinished`; rows that cannot be read (the file held, a damaged page) or a
       journal row that is not a JSON object raise :class:`StoreFormUnreadable`. Unreadable is not "no run". Only a store
       with no ``app_state`` table yet (a new file before ``create_all``) is let through without the rows: it has no run.
+      A corruption answer is recorded as damage first (:func:`_note_damage`), since a refusal here never reaches the
+      engine's damage observer.
 
     While this connection, or any other, stays open no migration can start, so what the cache holds from here on is what
     the file holds."""
@@ -146,7 +151,7 @@ def recheck_on_new_connection(dbapi_connection) -> None:
         cur = dbapi_connection.cursor()
         try:
             rows = dict(
-                cur.execute('SELECT key, value FROM "app_state" WHERE key IN (?, ?)', (KEY, JOURNAL_KEY)).fetchall()
+                cur.execute(_RECHECK_SQL, (KEY, JOURNAL_KEY)).fetchall()
             )
         finally:
             cur.close()
@@ -154,10 +159,16 @@ def recheck_on_new_connection(dbapi_connection) -> None:
         if _no_app_state_yet(exc):
             return
         held = _held(exc)
+        damaged = _note_damage(exc)
         _LOG.debug("country form recheck on a new connection not read (%s); connection refused", type(exc).__name__)
         _close_quietly(dbapi_connection)
         if held:
             raise StoreFormUnreadable(held_message()) from None
+        if damaged:
+            raise StoreFormUnreadable(
+                "the store is damaged where its country form is kept, so it could not be read on a new connection; the "
+                "damage has been recorded (Diagnostics) and nothing was read or written"
+            ) from None
         raise StoreFormUnreadable(
             f"the country form of the store could not be read on a new connection ({type(exc).__name__})"
         ) from None
@@ -182,6 +193,15 @@ def _held(exc: BaseException) -> bool:
     from src.database.write import is_locked_error
 
     return is_locked_error(exc)
+
+
+def _note_damage(exc: BaseException) -> bool:
+    """A corruption answer is recorded as the engine's own damage observer would have recorded it: a refusal raised in a
+    connect event never reaches SQLAlchemy's ``handle_error``, so without this the incident (the latch that pauses the
+    writers, the record the next start plans a check from) would be lost. Returns whether it was corruption."""
+    from src.database import damage
+
+    return damage.registry.note(damage.FILE_CORPUS, exc, statement=_RECHECK_SQL)
 
 
 def _close_quietly(dbapi_connection) -> None:

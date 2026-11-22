@@ -9342,17 +9342,38 @@ def start_jobs_stopped_for_restore() -> list[str]:
         return []
 
 
+class HalfMigratedStoreRefused(RestoreRefused):
+    """R788's refusal: the live store is half way through a country-code migration, or its journal cannot be read. A
+    :class:`RestoreRefused`, so every caller reports it as a refusal the operator must read (never a crash, never "an
+    incompatible backup"); its own class so the run journal can say which refusal it was."""
+
+
 def _refuse_half_migrated_store() -> None:
     """A committing restore refuses a live store that a country migration left in both forms (R788, row 309).
 
     The restore copies and merges through raw connections, which the corpus engine's connect-time refusal never sees,
     and it takes the store's form from the marker alone, which still says alpha-2 while a cut run has turned some rows
     into alpha-3. Rows merged in then would change a table's row count, and the migration's resume could never finish.
-    Asked twice, like the writer-jobs check: before preparing and again at the working copy. A journal that cannot be
-    read refuses too (``StoreFormUnreadable``): unreadable is not "no run"."""
-    from src.database.country_form import refuse_if_unfinished
+    Asked twice, like the writer-jobs check: before preparing and again at the working copy. The journal is read from
+    the FILE each time, never from this process's cache, which is exactly what may be stale after a run it did not see. A
+    journal that cannot be read refuses too: unreadable is not "no run". The words are fixed sentences, never an error's."""
+    from src.config.kv_store import KvReadError, kv_get_json_checked, kv_invalidate
+    from src.database.country_form import JOURNAL_KEY, UNFINISHED_STATES, held_message, unfinished_message
 
-    refuse_if_unfinished()
+    kv_invalidate(JOURNAL_KEY)
+    try:
+        journal = kv_get_json_checked(JOURNAL_KEY)
+    except KvReadError as exc:
+        if exc.held:
+            raise HalfMigratedStoreRefused(f"nothing was restored: {held_message()}") from None
+        raise HalfMigratedStoreRefused(
+            "nothing was restored: the country migration journal of your corpus could not be read, so whether a migration "
+            "was cut half way is not known. Your corpus is exactly as it was."
+        ) from None
+    if isinstance(journal, dict) and journal.get("state") in UNFINISHED_STATES:
+        backup = journal.get("backup")
+        path = backup.get("path") if isinstance(backup, dict) else None
+        raise HalfMigratedStoreRefused(f"nothing was restored: {unfinished_message(journal.get('state'), path)}")
 
 
 def run_restore(

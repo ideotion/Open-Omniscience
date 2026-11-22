@@ -333,31 +333,69 @@ def test_rows_that_cannot_be_read_refuse_the_connection_except_on_a_store_with_n
         def close(self):
             self.closed = True
 
+    from src.database import damage
+
+    damage.registry._reset_for_tests(path_fn=lambda: tmp_path / "database-damage.json")
     try:
         held = _Failing(sqlite3.OperationalError("database is locked"))
         with pytest.raises(cf.StoreFormUnreadable) as caught:
             cf.recheck_on_new_connection(held)
         assert held.closed and "in use by another program" in str(caught.value)
+        other = _Failing(sqlite3.OperationalError("disk I/O error"))
+        with pytest.raises(cf.StoreFormUnreadable) as caught:
+            cf.recheck_on_new_connection(other)
+        assert other.closed and "(OperationalError)" in str(caught.value) and "I/O" not in str(caught.value)
+        # A corruption answer is refused AND recorded: a refusal in a connect event never reaches the engine's observer.
+        assert not damage.registry.latched(damage.FILE_CORPUS)
         damaged = _Failing(sqlite3.DatabaseError("database disk image is malformed"))
         with pytest.raises(cf.StoreFormUnreadable) as caught:
             cf.recheck_on_new_connection(damaged)
-        assert damaged.closed and "(DatabaseError)" in str(caught.value) and "malformed" not in str(caught.value)
+        assert damaged.closed and "damaged" in str(caught.value) and "malformed" not in str(caught.value)
+        assert damage.registry.latched(damage.FILE_CORPUS), "the corruption was not recorded"
     finally:
+        damage.registry._reset_for_tests()
         kv_store.kv_invalidate()
 
 
-def test_a_committing_restore_refuses_a_half_migrated_store(monkeypatch):
+def test_a_committing_restore_refuses_a_half_migrated_store_read_from_the_file(tmp_path, monkeypatch):
     """The restore merges through raw connections the connect-time refusal never sees, and takes the form from the marker
-    alone; it asks the journal itself, before preparing and again at the working copy (R788)."""
+    alone; it asks the journal itself, before preparing and again at the working copy (R788). It reads the FILE: a cache
+    that still says "no journal" from before a run this process did not see does not answer for it."""
     import inspect
+    import sqlite3
 
     from src.backup import merge
     from src.config import kv_store
     from src.database import country_form as cf
 
-    monkeypatch.setattr(kv_store, "kv_get_json_checked", lambda key: {"state": "interrupted"} if key == cf.JOURNAL_KEY else None)
-    with pytest.raises(cf.MigrationUnfinished):
-        merge._refuse_half_migrated_store()
+    db = tmp_path / "s.db"
+    con = sqlite3.connect(db)
+    try:
+        con.execute("CREATE TABLE app_state (key TEXT PRIMARY KEY, value TEXT)")
+        con.commit()
+    finally:
+        con.close()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    kv_store.kv_invalidate()
+    try:
+        merge._refuse_half_migrated_store()  # no journal: a restore goes ahead
+        assert kv_store.kv_get_json_checked(cf.JOURNAL_KEY) is None  # cached as "no journal"
+        con = sqlite3.connect(db)
+        try:
+            con.execute(
+                "INSERT INTO app_state VALUES (?, ?)",
+                (cf.JOURNAL_KEY, json.dumps({"state": "interrupted", "backup": {"path": "/b/copy.db"}})),
+            )
+            con.commit()
+        finally:
+            con.close()
+        with pytest.raises(merge.HalfMigratedStoreRefused) as caught:
+            merge._refuse_half_migrated_store()
+        assert isinstance(caught.value, merge.RestoreRefused)
+        assert "interrupted" in str(caught.value) and "/b/copy.db" in str(caught.value)
+    finally:
+        kv_store.kv_invalidate()
     body = inspect.getsource(merge.run_restore)
     assert body.count("_refuse_half_migrated_store()") == 2, "asked before preparing and again at the working copy"
 

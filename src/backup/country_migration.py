@@ -655,7 +655,12 @@ def _check_key_read_only(db_path: Path) -> None:
     - A failure that belongs to read-only opening alone (a ``-shm`` it may not create, a read-only folder: ``kv_store``'s
       own list) goes on to the read-write open. An encrypted open reports every driver failure as
       ``WrongPassphraseError`` chained from the driver's error, so the chained error is classified too.
-    - Anything else (a wrong key, a damaged file) is raised here, before any read-write open."""
+    - Anything else (a wrong key, a damaged file) is raised here, before any read-write open.
+
+    What it proves is the key: an encrypted open reads page 1 with it. It does not prove the rest of the file sound, and on
+    a plaintext store (no key, and a read-only open reads nothing at connect) it proves nothing. A wrong key on a store
+    whose read-only open fails only for being read-only (a folder that cannot be written) still goes on to the read-write
+    open; that folder also stops the read-write open from removing the log."""
     from src.config.kv_store import _ro_only_failure
     from src.database.connect import StoreHeldError, connect
 

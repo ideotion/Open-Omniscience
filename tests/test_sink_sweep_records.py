@@ -193,6 +193,8 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ("_lock_holder_note", 'name = getattr(exc, "filename", None)'): 1,
         ("classify_restore_error", "msg = str(exc)"): 1,
         ("classify_restore_error", "if _file_is_locked(exc):"): 1,
+        # R788 (row 309): the restore's journal check reads the KvReadError's ``held`` flag (a bool); its words are fixed
+        ("_refuse_half_migrated_store", "if exc.held:"): 1,
         ("classify_restore_error", 'f"{_lock_holder_note(exc)} Waited {_SWAP_HANDLE_WAIT_S:.0f}s for it to be "'): 1,
         ("_retry_while_locked", "if not _file_is_locked(exc) or time.monotonic() >= deadline:"): 1,
         # R741 (row 145): the grace hook only reads ``filename2``/``filename`` to ask whether THIS process holds that file; no text is read or kept.
@@ -275,6 +277,10 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         ('recheck_on_new_connection', 'if _no_app_state_yet(exc):'): 1,
         ('recheck_on_new_connection', 'held = _held(exc)'): 1,
         ('_no_app_state_yet', 'return "no such table" in str(exc).lower()'): 1,
+        # the recheck hands a failed read to the damage registry, which records only corruption and only its code and name
+        # (the same call as ``damage.note_raw_driver_error``), and answers whether it was corruption (a bool)
+        ('recheck_on_new_connection', 'damaged = _note_damage(exc)'): 1,
+        ('_note_damage', 'return damage.registry.note(damage.FILE_CORPUS, exc, statement=_RECHECK_SQL)'): 1,
     },
     # R788 (row 309): the read-only key check passes on a failure of read-only opening alone (kv_store's bool, read on the
     # error and on the driver error an encrypted open chains it from) and re-raises the rest unchanged; nothing is kept here
