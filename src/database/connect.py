@@ -274,16 +274,18 @@ def is_encrypted_file(path: Path | str) -> bool | None:
             if (after.st_dev, after.st_ino) == (st.st_dev, st.st_ino):
                 return head != _SQLITE_MAGIC
             # Row 335: the number led to another file by the end of the read (a close elsewhere freed it and an open took
-            # it), or the name was replaced: these bytes are not the store's. Read again, from the start.
+            # it), or the name was replaced. Bytes of the file the name leads to NOW are its answer; any other file's are not.
             st = p.stat()
         except OSError:
             return None
         if st.st_size == 0:
             return None
-    # Still another file after three reads (the name keeps being replaced): answer "encrypted", never None, which callers
-    # read as "absent" or "plaintext". The encrypted path then fails loudly at its key on a file that is not, where the
-    # plaintext path would have read an encrypted store as fresh (fail closed).
-    return True
+        if (after.st_dev, after.st_ino) == (st.st_dev, st.st_ino):
+            return head != _SQLITE_MAGIC
+    # Three reads, none of the file the name leads to: the answer an unreadable file has always had ("could not read").
+    # Never a verdict from another file's bytes, and never a made-up True: callers act on True (an encrypt skips the store
+    # as "already encrypted", an erase skips the whole-file rewrite a plaintext body needs).
+    return None
 
 
 # --- R789: header reads that never drop a lock ----------------------------------------------------------------- #

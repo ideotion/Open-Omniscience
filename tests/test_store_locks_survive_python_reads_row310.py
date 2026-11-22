@@ -954,9 +954,10 @@ def test_a_record_forgotten_while_a_sweep_lists_still_counts_as_held(tmp_path, m
         conn.close()
 
 
-def test_a_header_read_that_keeps_landing_on_another_file_answers_encrypted_never_absent(tmp_path, monkeypatch):
-    """Row 335 review: three reads that each end on another file are not the store's bytes. ``None`` would read as "absent"
-    or "plaintext" to the callers, so the answer is the fail-closed "encrypted"."""
+def test_a_header_read_that_keeps_landing_on_another_file_never_answers_from_its_bytes(tmp_path, monkeypatch):
+    """Row 335 review: three reads that each end on another file are not the store's bytes. The answer is the one an
+    unreadable file has always had (None), never a verdict from the other file, and never a made-up True (an encrypt would
+    skip a plaintext store as "already encrypted")."""
     path = tmp_path / "s.db"
     path.write_bytes(b"SQLite format 3\x00" + b"\x00" * 100)  # a plaintext header: a wrong answer would be False
     other = tmp_path / "other.bin"
@@ -973,5 +974,6 @@ def test_a_header_read_that_keeps_landing_on_another_file_answers_encrypted_neve
             os.close(fd)
 
     monkeypatch.setattr(connect_mod, "store_reader", elsewhere)
-    assert connect_mod.is_encrypted_file(path) is True
+    assert connect_mod.is_encrypted_file(path) is None
     assert len(reads) == 3
+
