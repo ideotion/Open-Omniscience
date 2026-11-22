@@ -61,38 +61,59 @@
       return L[kind] || name || kind;
     }
 
+    // Row 284: a line this app could not read has bytes null and a reason; it reads "not measured", in the
+    // caveat colour, with the reason on the hover (#17) -- never 0 and never dropped. A line read only in
+    // part, and every sum it feeds, reads "at least". An incomplete total says so on screen, not only on hover.
     function _sfPaint(host, d, t) {
       if (!d || !Array.isArray(d.components)) {
         host.innerHTML = `<div class="muted">${esc(t("No storage measurement yet."))}</div>`; return;
       }
-      const total = (d.totals || {}).grand_total_bytes || 0;
-      const priv = d.components.filter(c => !_SF_PUBLIC.has(c.kind)).reduce((a, c) => a + (c.bytes || 0), 0);
-      const pub = d.components.filter(c => _SF_PUBLIC.has(c.kind)).reduce((a, c) => a + (c.bytes || 0), 0);
-      const rows = d.components.filter(c => (c.bytes || 0) > 0).sort((a, b) => b.bytes - a.bytes).map(c => {
-        const pct = total ? Math.round(100 * c.bytes / total) : 0;
+      const tot = d.totals || {};
+      const total = tot.grand_total_bytes || 0;
+      const complete = tot.complete !== false;
+      const gap = (c) => c.bytes == null || !!c.partial;
+      const measured = d.components.filter(c => c.bytes != null);
+      const priv = measured.filter(c => !_SF_PUBLIC.has(c.kind)).reduce((a, c) => a + (c.bytes || 0), 0);
+      const pub = measured.filter(c => _SF_PUBLIC.has(c.kind)).reduce((a, c) => a + (c.bytes || 0), 0);
+      const privGap = d.components.some(c => !_SF_PUBLIC.has(c.kind) && gap(c));
+      const pubGap = d.components.some(c => _SF_PUBLIC.has(c.kind) && gap(c));
+      const atLeast = (gapped, html) => gapped ? `${esc(t("at least"))} ${html}` : html;
+      const rows = d.components.filter(c => c.bytes == null || c.bytes > 0 || c.partial)
+        .sort((a, b) => (a.bytes == null) - (b.bytes == null) || (b.bytes || 0) - (a.bytes || 0)).map(c => {
+        const unread = c.bytes == null;
+        const pct = (total && !unread) ? Math.round(100 * c.bytes / total) : 0;
         const isPub = _SF_PUBLIC.has(c.kind);
         // "encrypted" is strictly true only of the DB triple (SQLCipher at rest); the honest
         // per-component tag is public=re-downloadable vs private=local. The summary line below
         // carries the "encrypted corpus" framing where the DB dominates the private bytes.
         const tag = isPub ? t("re-downloadable") : t("private (local)");
-        const ttl = (c.detail || "") + (c.outside_data_dir ? ` · ${t("outside the data folder")}` : "");
+        const ttl = [c.reason ? t(c.reason) : "", c.detail || "", c.outside_data_dir ? t("outside the data folder") : ""]
+          .filter(Boolean).join(" · ");
+        const size = unread
+          ? `<span class="stat-unread" style="color:var(--caveat)">${esc(t("not measured"))}</span>`
+          : atLeast(!!c.partial, esc(_fmtBytes(c.bytes)));
         return `<div class="sf-row" style="display:flex;gap:8px;align-items:center;margin:3px 0"${ttl ? ` title="${esc(ttl)}"` : ""}>`
           + `<div style="flex:0 0 42%;min-width:0">${esc(_sfLabel(c.kind, c.name, t))} <span class="muted" style="font-size:11px">· ${esc(tag)}</span></div>`
           + `<div style="flex:1;height:8px;background:var(--panel2, rgba(128,128,128,.18));border-radius:4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${isPub ? "var(--muted, #8c95a6)" : "var(--accent)"}"></div></div>`
-          + `<div style="flex:0 0 auto;font-variant-numeric:tabular-nums">${esc(_fmtBytes(c.bytes))}</div></div>`;
+          + `<div style="flex:0 0 auto;font-variant-numeric:tabular-nums">${size}</div></div>`;
       }).join("");
+      const caveat = complete ? "" :
+        `<div class="sf-incomplete" style="color:var(--caveat);font-size:12px;margin:2px 0 6px">${esc(t("Not every store could be measured, so this total is a lower bound. Hover a line for the reason."))}</div>`;
       host.innerHTML =
         `<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">`
-        + `<div><b style="font-size:1.15em">${esc(_fmtBytes(total))}</b> <span class="muted">${esc(t("on disk, all stores"))}</span></div>`
+        + `<div>${tot.grand_total_bytes == null && !complete
+            ? `<b style="font-size:1.15em;color:var(--caveat)">${esc(t("not measured"))}</b>`
+            : atLeast(!complete, `<b style="font-size:1.15em">${esc(_fmtBytes(total))}</b>`)} <span class="muted">${esc(t("on disk, all stores"))}</span></div>`
         + `<button class="secondary" style="font-size:11px;padding:2px 8px" data-on-click="renderStorageFootprint(${esc(JSON.stringify(host.id))}, true)">${esc(t("Re-measure"))}</button></div>`
+        + caveat
         + `<div class="muted" style="font-size:11px;margin:3px 0 8px"${d.method ? ` title="${esc(ooSaidText(d, "method"))}"` : ""}>`
         // Honest label (no fabricated security): the private sum includes -shm + backup
         // staging, which are NOT necessarily encrypted — so it is "Private (local)", with the
         // corpus's at-rest encryption noted, not a blanket "encrypted" claim over every byte.
         // Label and value through the locale's own separator (ooLabelHtml): a ": " welded
         // after t() read "Privé (local ; …): 12 Go" in French (click-through B14, Z3).
-        + ooLabelHtml(esc(t("Private (local; corpus encrypted at rest)")), `<b>${esc(_fmtBytes(priv))}</b>`) + ` · `
-        + ooLabelHtml(esc(t("Re-downloadable (dumps / maps / models)")), `<b>${esc(_fmtBytes(pub))}</b>`) + `</div>`
+        + ooLabelHtml(esc(t("Private (local; corpus encrypted at rest)")), atLeast(privGap, `<b>${esc(_fmtBytes(priv))}</b>`)) + ` · `
+        + ooLabelHtml(esc(t("Re-downloadable (dumps / maps / models)")), atLeast(pubGap, `<b>${esc(_fmtBytes(pub))}</b>`)) + `</div>`
         + rows;
     }
 
@@ -1173,7 +1194,9 @@
       // panel has measured it, show the all-stores total here too so the number is honest
       // about being only the database (never implying it is the app's whole disk use).
       const gt = _sfCache && (_sfCache.totals || {}).grand_total_bytes;
-      const foot = gt ? ` <span class="muted">· ${esc(_t("all stores"))} <strong>${esc(_fmtBytes(gt))}</strong> (${esc(_t("see Storage footprint below"))})</span>` : "";
+      // Row 284: an incomplete all-stores total is a lower bound, and says so.
+      const gtLow = !!_sfCache && (_sfCache.totals || {}).complete === false;
+      const foot = gt ? ` <span class="muted">· ${esc(_t("all stores"))} ${gtLow ? esc(_t("at least")) + " " : ""}<strong>${esc(_fmtBytes(gt))}</strong> (${esc(_t("see Storage footprint below"))})</span>` : "";
       host.innerHTML = s.file
         ? `${esc(_t("Backend"))} <span class="pill">${esc(s.backend)}</span> · ${esc(_t("on disk"))} ` +
           `<strong>${humanBytes(s.file.bytes)}</strong> ` +
