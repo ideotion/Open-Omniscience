@@ -171,7 +171,7 @@ src/llm/installer.py	3
 src/llm/model_catalog.py	2
 src/llm/model_store.py	9
 src/llm/ollama_lifecycle.py	7
-src/llm/uninstall.py	5
+src/llm/uninstall.py	4
 src/llm/vllm_lifecycle.py	24
 src/llm/weights_pin.py	1
 src/maintenance/registry.py	1

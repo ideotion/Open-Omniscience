@@ -1713,7 +1713,9 @@
         ? `<div style="margin-top:8px">${esc(t("Downloaded models on this machine:"))}` +
           stores.map((st) =>
             `<div class="muted"><code>${esc(st.path)}</code>${esc(_gbytes(st.bytes))}` +
-            (st.removable ? "" : ` — ${esc(t("kept"))}`) + `</div>`).join("") + `</div>`
+            // R786: the REASON rides with "kept", so a folder the app will not remove says why.
+            (st.removable ? "" : ` — ${esc(st.kept_reason ? ooLabelText(t("kept"), st.kept_reason) : t("kept"))}`) +
+            `</div>`).join("") + `</div>`
         : "";
       box.innerHTML =
         `<div>${ooSaidHtml(plan, "method")}</div>` + rows + both + storeRows +
