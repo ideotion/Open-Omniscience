@@ -249,6 +249,25 @@ def existing_public_key_hex(path: Path | None = None) -> str | None:
     return public_key_hex(key)
 
 
+def is_this_installations_key(public_key: object, path: Path | None = None) -> bool | None:
+    """True when ``public_key`` (hex, any case or spacing) is the public half of THIS installation's signing key.
+
+    False when it is another key (or not a key at all); None when this installation's own key could not be read, so the
+    question has no answer. Like :func:`existing_public_key_hex` it never creates or rewrites a key. A signature checked
+    against the key an artifact carries proves only that the artifact is unchanged since it was signed (R800); this is
+    the question that says WHO signed it."""
+    path = path or _default_key_path()
+    if not path.exists():
+        return False  # no key yet: nothing this installation signed can exist
+    own = existing_public_key_hex(path)
+    if own is None:
+        return None
+    try:
+        return bytes.fromhex(str(public_key)) == bytes.fromhex(own)
+    except ValueError:
+        return False
+
+
 def signing_key_state(path: Path | None = None) -> tuple[str, str | None]:
     """``(state, public key hex)`` for the review screen; never writes.
 

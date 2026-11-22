@@ -7157,6 +7157,17 @@ def merge_side_files(staged: StagedArtifact) -> dict:
     report["state"] = state
 
     ann: dict = {"imported_authors": 0, "kept_local": 0, "errors": []}
+    # R800 / row 339: the artifact's signature is checked against the key the artifact carries, which proves only that
+    # its bytes are unchanged since they were signed, never who signed them. The trust flags of imported authors are
+    # the user's web-of-trust decisions, so they are applied automatically ONLY from an artifact this installation
+    # signed. From any other key they are withheld, counted and named with the signer's key; one click (default no)
+    # applies them later. Everything else in the artifact imports as before.
+    signed_here = False
+    if staged.signature_state == "verified":
+        from src.reporting.evidence import is_this_installations_key
+
+        signed_here = is_this_installations_key(staged.origin_fingerprint) is True
+    withheld_authors: list[str] = []
     for name, path in staged.member_paths("annotations"):
         local = base / name
         if local.exists():
@@ -7175,16 +7186,19 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 from src.annotations.store import adopt_imported_record
 
                 record = json.loads(path.read_text("utf-8"))
-                # Honour the record's own trust flag ONLY for a signature-verified
-                # artifact (its signature binds the member bytes = the user's own
-                # web-of-trust decisions). An allow-unverified restore carries
-                # attacker-controllable member bytes, so its imported authors are
-                # adopted UNtrusted (the user re-affirms trust explicitly). The
+                # Honour the record's own trust flag ONLY for an artifact THIS
+                # installation signed (signed_here above, R800). Any other artifact's
+                # imported authors are adopted UNtrusted with the decision withheld
+                # (a verified other key: offered to the user as one click). The
                 # author_id is validated inside adopt_imported_record (path-traversal
                 # guard), so a crafted id is reported here, never written.
                 res = adopt_imported_record(
-                    record, allow_trusted=staged.signature_state == "verified"
+                    record,
+                    allow_trusted=signed_here,
+                    withheld_signer=staged.origin_fingerprint if staged.signature_state == "verified" else None,
                 )
+                if res.get("trust_withheld"):
+                    withheld_authors.append(str(res.get("author_id")))
                 if res.get("adopted"):
                     ann["imported_authors"] += 1
                 else:
@@ -7195,6 +7209,19 @@ def merge_side_files(staged: StagedArtifact) -> dict:
             local.parent.mkdir(parents=True, exist_ok=True)
             _replace_file_bytes(local, path.read_bytes())
             ann["restored_mine"] = True
+    if withheld_authors:
+        offered = staged.signature_state == "verified"
+        ann["trust_withheld"] = {
+            "count": len(withheld_authors),
+            "authors": withheld_authors,
+            "signer": staged.origin_fingerprint if offered else None,
+            "reason": (
+                "this backup was signed by another installation, so its trust decisions are not applied without a click"
+                if offered
+                else "this backup's signature was not verified, so its trust decisions are not applied"
+            ),
+            "offered": offered,  # one click in the web-of-trust list applies them; an unverified backup gets no offer
+        }
     report["annotations"] = ann
 
     logs: dict = {}

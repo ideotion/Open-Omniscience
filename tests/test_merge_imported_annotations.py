@@ -77,12 +77,16 @@ def test_imported_author_survives_restore(monkeypatch, tmp_path):
     assert store.list_authors() == [], "fresh data dir has no imported authors"
 
     from src.backup.merge import merge_side_files
+    from src.reporting.evidence import load_or_create_signing_key, public_key_hex
 
-    report = merge_side_files(_staged_from(staging, member_name))
+    staged = _staged_from(staging, member_name)
+    staged.origin_fingerprint = public_key_hex(load_or_create_signing_key())  # a backup THIS installation signed (R800)
+    report = merge_side_files(staged)
 
     ann = report["annotations"]
     assert ann["errors"] == [], f"restore reported errors: {ann['errors']}"
     assert ann["imported_authors"] == 1
+    assert "trust_withheld" not in ann
     # The author is genuinely present and aggregatable on the fresh machine.
     authors = store.list_authors()
     assert len(authors) == 1
@@ -140,6 +144,9 @@ def test_unverified_artifact_adopts_untrusted(monkeypatch, tmp_path):
     assert report["annotations"]["imported_authors"] == 1
     authors = store.list_authors()
     assert authors[0]["trusted"] is False  # never auto-trusted from an unverified artifact
+    withheld = report["annotations"]["trust_withheld"]
+    assert withheld["count"] == 1 and withheld["offered"] is False and withheld["signer"] is None
+    assert authors[0]["trust_withheld_by"] is None and store.withheld_trust() == []  # no offer for an unverified backup
 
 
 def test_adopt_rejects_path_traversal_author_id(monkeypatch, tmp_path):
@@ -186,3 +193,126 @@ def test_adopt_imported_record_rejects_a_bundleless_record(monkeypatch, tmp_path
     )
     with pytest.raises(ValueError):
         store.import_bundle(record)  # the exact malformed-input path the bug hit
+
+
+# --------------------------------------------------------------------------- #
+#  R800 / row 339: trust decisions from another installation's backup need a click
+# --------------------------------------------------------------------------- #
+OTHER_KEY = "ab" * 32
+
+
+def _member_from_another_install(monkeypatch, tmp_path, name: str = "Alice", *, trusted: bool = True):
+    dir_a = tmp_path / f"a-{name}"
+    monkeypatch.setenv("OO_DATA_DIR", str(dir_a))
+    store.import_bundle(_make_signed_bundle(name), trusted=trusted)
+    record_file = next((dir_a / "annotations" / "imported").glob("*.json"))
+    staging = tmp_path / f"staging-{name}"
+    member_name = f"annotations/imported/{record_file.name}"
+    dest = staging / member_name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(record_file, dest)
+    staged = _staged_from(staging, member_name)
+    staged.origin_fingerprint = OTHER_KEY
+    return staged
+
+
+def test_another_installations_trust_decisions_are_withheld_and_named(monkeypatch, tmp_path):
+    staged = _member_from_another_install(monkeypatch, tmp_path)
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
+    from src.backup.merge import merge_side_files
+
+    ann = merge_side_files(staged)["annotations"]
+    assert ann["imported_authors"] == 1 and ann["errors"] == []  # the rest imports as before
+    withheld = ann["trust_withheld"]
+    assert withheld["count"] == 1 and withheld["signer"] == OTHER_KEY and withheld["offered"] is True
+    assert "another installation" in withheld["reason"]
+    author = store.list_authors()[0]
+    assert author["trusted"] is False and author["trust_withheld_by"] == OTHER_KEY
+    assert store.withheld_trust() == [{"signer": OTHER_KEY, "count": 1, "authors": [
+        {"author_id": author["author_id"], "author_name": "Alice"}]}]
+
+
+def test_one_click_applies_them_and_a_stale_count_changes_nothing(monkeypatch, tmp_path):
+    from src.backup.merge import merge_side_files
+
+    staged_a = _member_from_another_install(monkeypatch, tmp_path, "Alice")
+    staged_b = _member_from_another_install(monkeypatch, tmp_path, "Bob")
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
+    merge_side_files(staged_a)
+    merge_side_files(staged_b)
+    with pytest.raises(ValueError, match="now 2, not 1"):
+        store.settle_withheld_trust(OTHER_KEY, apply=True, expected_count=1)  # the person was shown one
+    assert all(a["trusted"] is False for a in store.list_authors())
+    assert store.settle_withheld_trust(OTHER_KEY.upper(), apply=True, expected_count=2) == 2
+    assert all(a["trusted"] is True and a["trust_withheld_by"] is None for a in store.list_authors())
+    assert store.withheld_trust() == []
+
+
+def test_no_leaves_them_untrusted_and_the_question_gone(monkeypatch, tmp_path):
+    staged = _member_from_another_install(monkeypatch, tmp_path)
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
+    from src.backup.merge import merge_side_files
+
+    merge_side_files(staged)
+    assert store.settle_withheld_trust(OTHER_KEY, apply=False, expected_count=1) == 1
+    author = store.list_authors()[0]
+    assert author["trusted"] is False and author["trust_withheld_by"] is None
+
+
+def test_an_existing_local_decision_is_never_touched_from_another_key(monkeypatch, tmp_path):
+    staged = _member_from_another_install(monkeypatch, tmp_path)
+    dir_b = tmp_path / "b"
+    monkeypatch.setenv("OO_DATA_DIR", str(dir_b))
+    member = next((staged.staging_dir / "annotations" / "imported").glob("*.json"))
+    local = dir_b / "annotations" / "imported" / member.name  # this installation already holds this author, untrusted
+    local.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(member, local)
+    rec = json.loads(local.read_text("utf-8"))
+    rec["trusted"] = False
+    local.write_text(json.dumps(rec), encoding="utf-8")
+    from src.backup.merge import merge_side_files
+
+    ann = merge_side_files(staged)["annotations"]
+    assert ann["kept_local"] == 1 and "trust_withheld" not in ann
+    assert json.loads(local.read_text("utf-8"))["trusted"] is False and store.withheld_trust() == []
+
+
+def test_a_crafted_marker_in_the_backup_is_dropped(monkeypatch, tmp_path):
+    """Only this module writes the marker: a record that brings its own (naming any key) loses it."""
+    staged = _member_from_another_install(monkeypatch, tmp_path, trusted=False)
+    member = next((staged.staging_dir / "annotations" / "imported").glob("*.json"))
+    rec = json.loads(member.read_text("utf-8"))
+    rec[store.TRUST_WITHHELD] = {"signer": "cd" * 32}
+    member.write_text(json.dumps(rec), encoding="utf-8")
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
+    from src.backup.merge import merge_side_files
+
+    ann = merge_side_files(staged)["annotations"]
+    assert "trust_withheld" not in ann  # the record said untrusted: nothing was withheld
+    assert store.withheld_trust() == [] and store.list_authors()[0]["trust_withheld_by"] is None
+
+
+def test_a_manual_trust_toggle_settles_the_question(monkeypatch, tmp_path):
+    staged = _member_from_another_install(monkeypatch, tmp_path)
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
+    from src.backup.merge import merge_side_files
+
+    merge_side_files(staged)
+    aid = store.list_authors()[0]["author_id"]
+    assert store.set_trusted(aid, True)
+    assert store.withheld_trust() == []
+
+
+def test_the_endpoint_refuses_a_key_that_is_not_one(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+
+    from src.api import annotations as api
+
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    for body in ({"signer": "zz", "count": 1}, {"signer": OTHER_KEY, "count": -1}):
+        with pytest.raises(HTTPException) as refused:
+            api.settle_withheld_trust(api.WithheldTrustDecision(**body))
+        assert refused.value.status_code == 400
+    with pytest.raises(HTTPException) as stale:
+        api.settle_withheld_trust(api.WithheldTrustDecision(signer=OTHER_KEY, count=3, apply=True))
+    assert stale.value.status_code == 409
