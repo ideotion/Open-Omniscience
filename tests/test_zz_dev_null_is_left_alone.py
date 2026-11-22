@@ -49,6 +49,7 @@ _SCANNED = ("tests", "src", "scripts")
 _ALLOWED = {
     "tests/test_ci_installed_versions_step.py": "the text of a mutated shell step (``rewrite(_SUMMARY, \"/dev/null\")``); nothing opens the path",
     "scripts/osm_reference_run.py": "``os.open(os.devnull, os.O_WRONLY)``: opens the null device to write to it and replaces nothing",
+    "src/backup/folder_backup.py": "``os.open(os.devnull, os.O_RDONLY)`` in ``_process_can_open``: opens the null device for reading to ask whether the process still has a file handle; nothing is written or replaced",
     "scripts/guards_for_diff.py": "``core.hooksPath={os.devnull}``: the text of a git config value that switches hooks off; nothing is written there",
 }
 #: The nodes the canary checks. ``/dev/full`` exists on Linux only.
