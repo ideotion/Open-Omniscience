@@ -19,18 +19,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, LawDocument, Source
 from src.law.ingest_report import CHROME_MARKERS, law_ingest_report
+from tests._app_engine import app_sqlite_engine
 
 _RE_EXTRACTED = "re-read with strip-1 (-2100 bytes of page chrome); the document itself is unchanged"
 
 
 @pytest.fixture
 def db():
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     yield session

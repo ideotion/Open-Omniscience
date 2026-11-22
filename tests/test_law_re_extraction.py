@@ -21,7 +21,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 pytest.importorskip("bs4", reason="bs4 is the parser the strip stage runs through")
@@ -29,6 +28,7 @@ pytest.importorskip("bs4", reason="bs4 is the parser the strip stage runs throug
 from src.database.models import Base, LawDocument, LawRevision  # noqa: E402
 from src.ingest import FetchResult  # noqa: E402
 from src.law.track import page_text, track_document  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 #: Long enough that removing it clears LARGE_CHANGE_BYTES -- i.e. the case where the
 #: fabricated revision would also have been FLAGGED, which is what makes this matter.
@@ -75,8 +75,8 @@ class StubFetcher:
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

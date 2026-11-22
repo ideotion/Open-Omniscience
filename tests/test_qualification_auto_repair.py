@@ -20,7 +20,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -31,6 +30,7 @@ from src.catalog.qualification import (
     VERDICT_CURATED,
 )
 from src.database.models import Base, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 
 NOW = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 CURATED = "oo-curated-catalog-1"
@@ -42,7 +42,7 @@ T0 = datetime(2026, 8, 1, 9, 0)  # naive UTC, as every writer stores it
 def env(monkeypatch):
     # the suite-wide conftest switches the boot repair off; these tests are about it
     monkeypatch.setenv(qi.AUTO_REPAIR_ENV, "1")
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                            poolclass=StaticPool)
     Base.metadata.create_all(engine)
     maker = sessionmaker(bind=engine)

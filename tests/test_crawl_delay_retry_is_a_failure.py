@@ -19,7 +19,6 @@ from urllib.robotparser import RobotFileParser
 
 import pytest
 import requests
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument
@@ -30,6 +29,7 @@ from src.ingest import (
     clear_kill_switch,
 )
 from src.law.track import track_document
+from tests._app_engine import app_sqlite_engine
 
 _HOST = "https://slow.example"
 
@@ -114,7 +114,7 @@ def test_a_short_crawl_delay_still_retries_a_503(tmp_path):
 
 def test_the_law_tracker_stamps_a_failed_request_on_a_long_crawl_delay_host(tmp_path):
     """The consequence that mattered (R293): the failed request is a real check, so the document is backed off."""
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
     doc = LawDocument(

@@ -146,9 +146,19 @@ def import_scan_endpoint(path: str) -> dict:
     from src.backup.import_scan import scan_import_folder
 
     try:
-        return scan_import_folder(path)
+        out = scan_import_folder(path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc
+    found = out.get("found", {})
+    corpus = found.get("corpus") or []
+    # R787: an encrypted artifact that carries Hugging Face models gets the same look at this computer's folder.
+    if "hf_models" in (found.get("blobs") or {}) or any(isinstance(c, dict) and c.get("hf_models") for c in corpus):
+        # R784: the folder the Hugging Face models would be restored to ON THIS COMPUTER (or why they
+        # cannot be), shown on the checklist before the person chooses. A local look, no network.
+        from src.backup.folder_backup import hf_restore_target
+
+        out["found"]["hf_target"] = hf_restore_target()
+    return out
 
 
 class RemoveLeftoverPlaintextRequest(BaseModel):
@@ -550,7 +560,9 @@ def folder_backup_restore(body: FolderRestoreBody) -> dict:
 
     try:
         return get_folder_manager().start(
-            body.src, _folder_categories(body.categories), mode="restore"
+            # R787 reads: a restore that names no category never places Hugging Face models.
+            body.src, _folder_categories(body.categories) if body.categories else [c for c in _FOLDER_CATEGORIES if c != "hf_models"],
+            mode="restore"
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=http_detail(exc)) from exc

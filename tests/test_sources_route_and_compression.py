@@ -19,19 +19,19 @@ import zlib
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
 from src.api.ratelimit import limiter
 from src.database.models import Base, Source
 from src.database.session import get_db
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 's.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 's.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
@@ -52,7 +52,7 @@ def client(tmp_path):
 
 
 def _seed(n: int, db_url: str) -> None:
-    engine = create_engine(db_url, future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(db_url.removeprefix("sqlite:///"), future=True, connect_args={"check_same_thread": False})
     Sess = sessionmaker(bind=engine, future=True)
     db = Sess()
     for i in range(n):

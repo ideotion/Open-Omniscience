@@ -20,13 +20,14 @@ import time
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 
 from src.database.writer import write_lock
 from src.monitoring import storage_events
 from src.scheduler import hygiene, runner, storage_guard
 from src.scheduler.hygiene import checkpoint_wal
 from src.scheduler.storage_guard import GIB, StorageGuard
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 #: What a record of a checkpoint that ran carries, in the order a reader of it knows.
@@ -43,7 +44,7 @@ def _enabled(monkeypatch):
 
 def _wal_engine(tmp_path, name="pw.db"):
     db = tmp_path / name
-    eng = create_engine(f"sqlite:///{db}", future=True)
+    eng = app_sqlite_engine(db, future=True)
 
     @event.listens_for(eng, "connect")
     def _pragmas(dbapi, _rec):

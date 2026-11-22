@@ -19,12 +19,12 @@ import re
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base
 from src.ingest import FetchError
 from src.versioned import store
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 _FIXTURES = ROOT / "tests" / "fixtures" / "law" / "synthetic"
@@ -77,7 +77,7 @@ def corpus(tmp_path, monkeypatch):
     store.dispose_all()
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
-    engine = create_engine(f"sqlite:///{tmp_path / 'corpus.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'corpus.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     try:
         store.create_lane("law")

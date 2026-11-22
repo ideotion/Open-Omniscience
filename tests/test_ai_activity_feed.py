@@ -27,6 +27,7 @@ from src.ai_layer.activity import (
     recent_activity,
     run_activity_selftest,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 def _write(path: Path, records: list[dict]) -> None:
@@ -276,7 +277,6 @@ def test_a_measured_zero_is_published_as_zero(tmp_path):
     turning it into None would make "produced nothing lately" indistinguishable from
     "we could not tell" — the two are opposite answers. "Never ran" stays visible as a
     total of 0 beside it."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.ai_layer.activity import stored_activity
@@ -285,7 +285,7 @@ def test_a_measured_zero_is_published_as_zero(tmp_path):
     # A REAL session against an isolated engine, never a hand-written double: a stub of
     # this payload drifts the moment the reader consults one more field, and it fails
     # against correct code rather than catching a defect.
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     AiKeyword.__table__.create(engine)
     with Session(engine) as session:
         out = stored_activity(session, recent=1, hours=24)
@@ -299,16 +299,22 @@ def test_a_real_row_is_counted_and_surfaced():
     forever, is indistinguishable from a working one until something is actually there."""
     from datetime import UTC, datetime, timedelta
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.ai_layer.activity import stored_activity
-    from src.database.models import AiKeyword
+    from src.database.models import AiKeyword, Article, Base, Source
 
-    engine = create_engine("sqlite://")
-    AiKeyword.__table__.create(engine)
+    engine = app_sqlite_engine(":memory:")
+    Base.metadata.create_all(engine)  # the articles the rows point at, too: foreign keys are enforced
     now = datetime.now(UTC).replace(tzinfo=None)
     with Session(engine) as session:
+        src = Source(name="S", domain="s.example")
+        session.add(src)
+        session.flush()
+        for aid in (1, 2, 3):
+            u = f"http://s.example/{aid}"
+            session.add(Article(id=aid, title=f"a{aid}", content="x", url=u, canonical_url=u, source_id=src.id, hash=f"h{aid}"))
+        session.flush()
         session.add_all([
             AiKeyword(article_id=1, term="fr", kind="language", language="fr",
                       model="m", created_at=now - timedelta(hours=1)),

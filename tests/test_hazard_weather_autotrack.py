@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from tests._app_engine import app_sqlite_engine
+
 # A minimal, VALID USGS earthquake GeoJSON -> one parsed record.
 _USGS_ONE = (
     '{"features":[{"id":"us-test-1","properties":{"title":"M 5.0 - Testland","mag":5.0,'
@@ -117,7 +119,6 @@ def test_auto_snapshot_with_session_also_ingests_as_corpus_articles(tmp_path, mo
     """2026-07-24 field-feedback A6: when a Session is given, a freshly-saved snapshot is
     ALSO ingested as corpus Articles (src.hazards.ingest) -- session=None (every other
     caller/test above) stays byte-identical, snapshot-only."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, Base
@@ -128,8 +129,8 @@ def test_auto_snapshot_with_session_also_ingests_as_corpus_articles(tmp_path, mo
     snap_path = tmp_path / "haz.json"
     monkeypatch.setattr(store, "_snapshot_path", lambda: snap_path)
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()

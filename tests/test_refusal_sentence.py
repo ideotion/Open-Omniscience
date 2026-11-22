@@ -13,6 +13,7 @@ import pytest
 from src.ingest import FetchFailed, activate_kill_switch, clear_kill_switch, kill_switch_active
 from src.ingest.fetch_verdict import is_kill_switch_refusal
 from src.markets.csv_feeds import classify_fetch_failure as markets_verdict
+from tests._app_engine import app_sqlite_engine
 
 _BARE = "network kill switch is active -- collection stopped by operator"
 _SOCKET = "airplane mode is engaged: refusing a network connection to 'h.test'. No packet leaves the machine while offline"
@@ -70,7 +71,6 @@ def test_the_markets_classifier_reads_only_our_sentence():
 
 def test_the_health_summary_counts_only_a_real_refusal_as_refused(monkeypatch, tmp_path):
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api import monitoring
@@ -78,8 +78,8 @@ def test_the_health_summary_counts_only_a_real_refusal_as_refused(monkeypatch, t
     from src.database.models import Base, Source
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'h.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'h.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True)

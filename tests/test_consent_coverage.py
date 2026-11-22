@@ -53,6 +53,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from src.ingest import activate_kill_switch, clear_kill_switch, kill_switch_active
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
@@ -633,7 +634,6 @@ def client(tmp_path, monkeypatch):
     """The real app on a throwaway FILE database (so a route's threadpool thread sees the rows), loopback host, and a private data
     folder (the feed verdict and attempt files are written under it)."""
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api.main import app
@@ -641,8 +641,8 @@ def client(tmp_path, monkeypatch):
     from src.database.session import get_db
 
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'consent.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'consent.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

@@ -36,7 +36,6 @@ import re
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -48,6 +47,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from src.api.main import app  # noqa: E402
 from src.database.models import Article, Base, Source  # noqa: E402
 from src.database.session import get_db  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 _BODY = "Regional assembly debated the coastal defence budget for a third session. " * 6
 
@@ -62,8 +62,8 @@ def seeded():
     # StaticPool + check_same_thread=False, the repo's own pattern (test_bm25f.py:25):
     # search_articles is a plain `def`, so Starlette runs it in the THREADPOOL, and an
     # in-memory SQLite connection cannot be used from another thread.
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False},
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False},
         poolclass=StaticPool, future=True,
     )
     Base.metadata.create_all(eng)

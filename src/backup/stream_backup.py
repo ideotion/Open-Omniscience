@@ -77,6 +77,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -93,12 +94,18 @@ from src.shared_text import said
 if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
     from src.backup.artifact import StagedArtifact
 
+from src.backup.hf_layout import HF_LAYOUT
+from src.backup.manifest_file import read_manifest_json
+from src.backup.volumes import (
+    MANIFEST_MAX_BYTES as VOLUMES_MANIFEST_MAX_BYTES,
+)
 from src.backup.volumes import (
     MANIFEST_NAME,
     VOLUME_SIZE_DEFAULT,
     VolumeError,
     VolumeStopped,
-    _sha256_file,
+    _digest_matches,
+    _plain_volume_name,
     load_manifest,
     member_in_use,
     verify_volume_set,
@@ -495,8 +502,8 @@ def _key_check(passphrase: str) -> str:
     return encrypt_bytes(_KEY_CHECK_PLAINTEXT, passphrase).hex()
 
 
-def _key_check_ok(token: str | None, passphrase: str) -> bool:
-    if not token:
+def _key_check_ok(token: object, passphrase: str) -> bool:
+    if not isinstance(token, str) or not token:  # row 308: a manifest of another shape proves nothing
         return False
     try:
         return decrypt_bytes(bytes.fromhex(token), passphrase) == _KEY_CHECK_PLAINTEXT
@@ -1287,9 +1294,9 @@ def _emit_member(st: _EmitState, mf: MemberFile) -> dict[str, Any]:
                 pooled is not None
                 and reuse_path is not None
                 and pooled.get("plaintext_sha256") == psha
-                and int(pooled.get("plaintext_bytes", -1)) == slice_len
-                and reuse_path.exists()
-                and _sha256_file(reuse_path) == pooled.get("sha256")
+                and _whole_number(pooled.get("plaintext_bytes", -1)) == slice_len
+                and _is_regular_file(reuse_path)
+                and _digest_matches(reuse_path, pooled.get("sha256"))
             ):
                 entry = {
                     "name": reuse_path.name,
@@ -1340,6 +1347,41 @@ def _emit_member(st: _EmitState, mf: MemberFile) -> dict[str, Any]:
     }
 
 
+def _whole_number(v: object) -> int | None:
+    """``v`` as an int when a manifest on the drive gave a whole number (or its digits), else ``None`` (row 308)."""
+    if isinstance(v, bool):
+        return None
+    try:
+        return int(v)  # type: ignore[call-overload]
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _reusable_entry(v: object) -> bool:
+    """Whether a previous manifest's volume entry has the shape this module writes (row 308).
+
+    The destination is a drive anything may have written to, and an entry's ``name`` is joined to it and hashed
+    before reuse: only a plain volume file name (:data:`_SAFE_VOL_NAME`, never ``..``, a separator or an absolute
+    path such as ``/dev/zero``) is kept, with string digests and whole-number sizes. Every entry this module
+    writes passes, so a sound set is reused exactly as before."""
+    if not isinstance(v, dict) or not all(k in v for k in ("member", "slice", "sha256", "plaintext_sha256")):
+        return False
+    name = v.get("name")
+    if not isinstance(name, str) or name in {".", ".."} or not _SAFE_VOL_NAME.fullmatch(name):
+        return False
+    if not isinstance(v["sha256"], str) or not isinstance(v["plaintext_sha256"], str):
+        return False
+    return _whole_number(v["slice"]) is not None and _whole_number(v.get("plaintext_bytes", -1)) is not None
+
+
+def _is_regular_file(p: Path) -> bool:
+    """A regular file by ``lstat`` -- never a link, a pipe or a device, which hashing would follow or block on (row 308)."""
+    try:
+        return stat.S_ISREG(os.lstat(p).st_mode)
+    except OSError:
+        return False
+
+
 def _load_reuse_pool(
     dest: Path, passphrase: str
 ) -> tuple[dict[tuple[str, int], dict[str, Any]], list[str]]:
@@ -1352,9 +1394,11 @@ def _load_reuse_pool(
         p = dest / fname
         if not p.exists():
             continue
-        try:
-            m = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        # Row 308: the destination is a drive anything may have written to. Its manifests are read like every
+        # other untrusted manifest (R780): never through a link, never blocking on a pipe, bounded in size (by
+        # the volume format's own ceiling, so no set the restore reads is refused here) and in nesting.
+        m = read_manifest_json(p, max_bytes=VOLUMES_MANIFEST_MAX_BYTES)
+        if not isinstance(m, dict):
             notes.append(f"unreadable {fname} at the destination ignored")
             continue
         kind = m.get("kind")
@@ -1370,9 +1414,14 @@ def _load_reuse_pool(
                 "nothing reused, full re-emission"
             )
             continue
-        for v in m.get("volumes") or []:
-            if all(k in v for k in ("member", "slice", "sha256", "plaintext_sha256")):
+        vols = m.get("volumes")
+        for v in vols if isinstance(vols, list) else []:  # row 308: entries of another shape offer nothing
+            if not _reusable_entry(v):
+                continue
+            try:
                 pool[(str(v["member"]), int(v["slice"]))] = v
+            except (TypeError, ValueError, OverflowError):
+                continue
     return pool, notes
 
 
@@ -1487,9 +1536,13 @@ def _previous_volume_size(dest: Path) -> int | None:
     p = dest / MANIFEST_NAME
     if not p.exists():
         return None
+    m = read_manifest_json(p, max_bytes=VOLUMES_MANIFEST_MAX_BYTES)  # row 308: the hardened read
+    v = m.get("volume_size") if isinstance(m, dict) else None
+    if v is None or isinstance(v, bool):
+        return None
     try:
-        return int(json.loads(p.read_text(encoding="utf-8"))["volume_size"])
-    except (OSError, ValueError, KeyError, TypeError):
+        return int(v)
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -1807,6 +1860,9 @@ def write_stream_backup(
                 "plaintext_bytes": sum(int(m["plaintext_bytes"]) for m in members_out),
                 "members": members_out,
                 "file_members": file_members,
+                # R784: a model-cache member's leading ``hub/`` is the Hugging Face hub cache folder
+                # itself (src.backup.hf_layout.HF_LAYOUT). Absent when the artifact carries none.
+                **({"hf_layout": HF_LAYOUT} if any(fm.get("category") == "hf_models" for fm in file_members) else {}),
                 "volumes": st.volumes,
                 "parity": None,
                 "notes": notes,
@@ -2080,8 +2136,11 @@ def verify_stream_backup(
     bad_parity: list[str] = []
     if par:
         for pv in par.get("volumes") or []:
+            if not _plain_volume_name(pv.get("name") if isinstance(pv, dict) else None):
+                bad_parity.append(str(pv.get("name") if isinstance(pv, dict) else pv))  # a path: never read (row 312)
+                continue
             p = src / pv["name"]
-            if not p.exists() or _sha256_file(p) != pv["sha256"]:
+            if not p.exists() or not _digest_matches(p, pv.get("sha256")):
                 bad_parity.append(pv["name"])
         usable = int(par.get("count", 0)) - len(bad_parity)
         report["parity"] = {
@@ -2223,7 +2282,7 @@ def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: 
             return
     except (EncryptionError, OSError):
         return  # an unreadable header is damage, not a key: the checksum pass reports it
-    if _sha256_file(path) != vol_by_name[first].get("sha256"):
+    if not _digest_matches(path, vol_by_name[first].get("sha256")):
         return
     raise EncryptionError(
         "wrong passphrase for this backup: its first volume is intact (its checksum matches the backup's manifest) "

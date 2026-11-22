@@ -21,7 +21,6 @@ import pytest
 pytest.importorskip("sqlalchemy")
 pytest.importorskip("sqlcipher3")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 import src.database.connect as connect_mod  # noqa: E402
@@ -36,6 +35,7 @@ from src.database.models import (  # noqa: E402
     Keyword,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 _KEY = "correct horse battery staple"
 _META = {
@@ -115,7 +115,7 @@ def test_a_statement_of_another_shape_is_refused_not_guessed(tmp_path) -> None:
 
 
 def _corpus(path: Path, *, first: int, kw: list[tuple[str, str | None]]) -> None:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, future=True)() as s:
         src = Source(name="Wire", domain="wire.example")

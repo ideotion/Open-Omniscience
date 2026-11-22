@@ -14,13 +14,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from src.backup import lane_merge
 from src.database.models import Base, LawDocument, LawRevision
 from src.law.lane_models import LawDocumentMeta, LawIdentity, LawProvision
 from src.versioned import store
+from tests._app_engine import app_sqlite_engine
 
 
 def _at(h: int) -> datetime:
@@ -44,7 +45,7 @@ def machines(tmp_path, monkeypatch):
 @pytest.fixture
 def corpus(monkeypatch):
     """The live corpus after the corpus merge: two documents, one version."""
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, future=True)
     with factory() as db:

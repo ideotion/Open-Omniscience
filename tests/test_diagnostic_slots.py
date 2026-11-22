@@ -36,7 +36,6 @@ from collections import defaultdict
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api import diagnostics as d
@@ -45,6 +44,7 @@ from src.api import diagnostics_slots as slots
 from src.api import diagnostics_volumes as dv
 from src.api.diagnostics import bundle as b
 from src.database.models import Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -52,8 +52,8 @@ from src.database.models import Base, Source
 # ---------------------------------------------------------------------------------------------------
 @pytest.fixture()
 def db(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'store.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'store.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

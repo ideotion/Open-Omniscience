@@ -19,11 +19,11 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 _TERM_ID = 1
 _SPAN_DAYS = 120  # deep enough to cover the widest window + baseline used below
@@ -35,8 +35,8 @@ def _seed(tmp_path):
     ``count=1`` per day means a summed ``recent``/``prior`` is exactly the number of
     DAYS the window covered -- which is what makes width directly assertable.
     """
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'tww.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'tww.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

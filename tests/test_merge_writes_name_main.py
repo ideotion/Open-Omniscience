@@ -53,11 +53,11 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup.merge import merge_corpus  # noqa: E402
 from src.database.models import Article, Base, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 _MERGE = Path(__file__).resolve().parents[1] / "src" / "backup" / "merge.py"
 
@@ -1122,7 +1122,7 @@ def test_the_fts_bulk_indexer_the_merge_calls_names_main():
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

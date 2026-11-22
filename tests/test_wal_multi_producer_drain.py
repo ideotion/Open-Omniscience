@@ -43,14 +43,14 @@ first and abandoned as unreliable for a sibling property).
 
 from __future__ import annotations
 
-
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.briefing import registry
 from src.database import session as db_session
 from src.scheduler import hygiene
 from src.scheduler.hygiene import checkpoint_wal
+from tests._app_engine import app_sqlite_engine
 
 _JOURNAL_SIZE_LIMIT_MB = 1
 _SEED_ROWS = 50  # empirically: enough that fetchmany(3) below leaves the bulk of
@@ -61,7 +61,7 @@ _SEED_ROWS = 50  # empirically: enough that fetchmany(3) below leaves the bulk o
 
 def _wal_engine(tmp_path, name="wal_multi_producer.db"):
     db = tmp_path / name
-    eng = create_engine(f"sqlite:///{db}", future=True)
+    eng = app_sqlite_engine(db, future=True)
     event.listen(eng, "connect", db_session._sqlite_pragmas)
     with eng.connect() as c:
         c.exec_driver_sql("CREATE TABLE t(x)")

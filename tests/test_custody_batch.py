@@ -34,7 +34,6 @@ import re
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -43,12 +42,13 @@ from src.custody.log import CustodyLog
 from src.custody.settings import CustodySettings
 from src.database.models import Article, Base, Source
 from src.ingest.pipeline import _CustodyBatch, _maybe_record_custody
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite://", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -469,7 +469,7 @@ def test_flush_batched_opens_one_log_for_its_whole_loop(opens, monkeypatch):
             raise requests.ConnectionError(f"unrouted url {url}")
 
     monkeypatch.setenv("OO_COLLECT_COMMIT_BATCH", "5")
-    eng = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
     source = Source(name=domain, domain=domain, rss_url=f"https://{domain}/feed.xml", language="en")

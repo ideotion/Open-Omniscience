@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError, OperationalError, PendingRollbackError
 
 from src.database import pool_watch
@@ -41,6 +41,7 @@ from src.scheduler.storage_guard import (
     override_floor_bytes,
     wal_high_bytes,
 )
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import python_function_source
 from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
@@ -433,7 +434,7 @@ def test_the_engine_error_hook_latches_the_guard_on_a_real_sqlite_full(tmp_path)
     supervisor's next sample. Driven with SQLite's own SQLITE_FULL on a throwaway engine."""
     import src.database.session as session_mod
 
-    eng = create_engine(f"sqlite:///{tmp_path / 'f.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'f.db', future=True)
     event.listen(eng, "handle_error", session_mod._storage_guard_on_disk_full)
     with eng.begin() as c:
         c.exec_driver_sql("CREATE TABLE t(b BLOB)")
@@ -451,7 +452,7 @@ def test_the_engines_own_hook_keeps_the_drivers_words_and_never_the_statement_or
     a bare driver exception, which the old text also rendered the same. Through a real engine, with
     a statement and a value that say something, a full drive is recorded as the driver's first line."""
     secret = "SECRET-TITLE-do-not-keep"
-    eng = create_engine(f"sqlite:///{tmp_path / 'h.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'h.db', future=True)
     event.listen(eng, "handle_error", storage_guard.on_engine_error)
     with eng.begin() as c:
         c.exec_driver_sql("CREATE TABLE t(title TEXT, b BLOB)")
@@ -468,7 +469,7 @@ def test_the_engines_own_hook_keeps_the_drivers_words_and_never_the_statement_or
 def test_the_error_hook_ignores_other_errors(tmp_path):
     import src.database.session as session_mod
 
-    eng = create_engine(f"sqlite:///{tmp_path / 'g.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'g.db', future=True)
     event.listen(eng, "handle_error", session_mod._storage_guard_on_disk_full)
     with pytest.raises(OperationalError), eng.connect() as c:
         c.exec_driver_sql("SELECT * FROM no_such_table")
@@ -2226,7 +2227,7 @@ def test_a_real_pinned_reader_engages_the_guard_is_named_and_released_when_it_en
 
     monkeypatch.setenv("OO_WAL_HIGH_MB", "1")
     db = tmp_path / "real.db"
-    eng = create_engine(f"sqlite:///{db}", future=True)
+    eng = app_sqlite_engine(db, future=True)
 
     @event.listens_for(eng, "connect")
     def _pragmas(dbapi, _rec):
@@ -2310,7 +2311,7 @@ def test_the_hourly_disk_gauge_is_registered_in_mib_and_unmeasurable_is_a_hole(m
 def test_the_reader_snapshot_lists_every_holder_not_only_the_oldest(tmp_path):
     from src.scheduler.hygiene import _reader_snapshot
 
-    eng = create_engine(f"sqlite:///{tmp_path / 'r.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'r.db', future=True)
     pool_watch.register(eng)
     a, b = eng.connect(), eng.connect()
     try:
@@ -2331,7 +2332,7 @@ def test_storage_composition_carries_the_guard_block(tmp_path, monkeypatch):
     from src.database.models import Base
     from src.monitoring.storage import storage_composition
 
-    eng = create_engine(f"sqlite:///{tmp_path / 's.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 's.db', future=True)
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
     try:

@@ -22,7 +22,6 @@ What is pinned here:
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import src.config.machine_floor as mf
@@ -36,6 +35,7 @@ from src.database.models import (
     Source,
     SourceQualificationAttempt,
 )
+from tests._app_engine import app_sqlite_engine
 from tests.test_source_qualification import (
     _add_candidate_with_articles,
     _seed_healthy_en_cohort,
@@ -43,8 +43,8 @@ from tests.test_source_qualification import (
 
 
 def _session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

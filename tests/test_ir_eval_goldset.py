@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -29,6 +28,7 @@ from src.analytics.ir_eval import (
 )
 from src.database.fts import ensure_fts
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _TEMPLATE = "configs/ir_eval/gold_set.example.json"
 
@@ -70,8 +70,8 @@ def test_load_gold_set_fails_loudly_on_malformed(tmp_path):
 
 
 def _corpus():
-    eng = create_engine(
-        "sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     Base.metadata.create_all(eng)
     ensure_fts(eng)

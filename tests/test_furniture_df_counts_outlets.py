@@ -11,12 +11,12 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.analytics import source_audit as sa
 from src.analytics import source_quality as sq
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 _OUTLET = {1: "a.example", 2: "a.example", 3: "b.example", 4: "c.example"}
 
@@ -32,7 +32,7 @@ def test_a_term_counts_once_per_outlet_and_the_default_is_unchanged():
 
 def _corpus() -> Session:
     """Four feed rows of three outlets (a.example holds two), each with one indexed article topping 'share now'."""
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     k = Keyword(term="share now", normalized_term="share now")

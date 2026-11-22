@@ -29,6 +29,7 @@ from datetime import datetime
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
 from tests.test_bulletin_sink_sites import (  # noqa: F401  (``_held`` is an autouse fixture: importing it puts it in force here)
     CLASS,
     SECRET,
@@ -73,12 +74,11 @@ def _no_passphrase(text) -> None:
 
 
 def _empty_session():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.database.models import Base
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
 

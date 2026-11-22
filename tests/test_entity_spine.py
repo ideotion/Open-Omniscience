@@ -22,7 +22,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import equivalence
@@ -42,6 +42,7 @@ from src.entities import places as PL
 from src.entities import spine as SP
 from src.entities.wikidata_items import BATCH_MAX, CLAIMS, batches, entities_url, parse_entities
 from src.ingest import activate_kill_switch, clear_kill_switch
+from tests._app_engine import app_sqlite_engine
 
 FIXTURE = Path(__file__).parent / "fixtures" / "places" / "gazetteer.synthetic.yml"
 ZEDPORT = "node/9000000001"
@@ -74,7 +75,7 @@ def gazetteer(monkeypatch):
 
 @pytest.fixture
 def db():
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
 
     @event.listens_for(eng, "connect")
     def _fk(dbapi_con, _rec):  # pragma: no cover - sqlite pragma plumbing

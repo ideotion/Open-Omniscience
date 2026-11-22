@@ -27,7 +27,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event, select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.orm import sessionmaker
 
 from src.api import boot_sequence
@@ -38,6 +38,7 @@ from src.database.maintenance import DEFERRED_INDEXES, HOT_INDEXES, ensure_hot_i
 from src.database.models import Article, Base, Source
 from src.jobs.background import Framed
 from src.scheduler import storage_guard as sg
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import python_function_source
 from tests.stand_aside_helpers import engage, engaged_guard, healthy, healthy_guard, install
 from tests.wallclock_helpers import HANG_GUARD_S, wait_until
@@ -55,7 +56,7 @@ LANGS = ["en", "fr", "de", "es", "ru"]
 def _store(tmp_path: Path, rows: int = 600, name: str = "corpus.db"):
     """A real SQLite store with ``rows`` articles, built from the models, then with the two deferred indexes
     DROPPED: the state of a store created before this change, which is what the boot step builds them on."""
-    eng = create_engine(f"sqlite:///{tmp_path / name}")
+    eng = app_sqlite_engine(tmp_path / name)
     Base.metadata.create_all(eng)
     S = sessionmaker(bind=eng)
     with S() as s:
@@ -268,7 +269,7 @@ def test_init_db_asks_for_the_pass_without_the_deferred_indexes():
 
 
 def test_a_fresh_store_gets_both_from_create_all_with_the_table(tmp_path):
-    e = create_engine(f"sqlite:///{tmp_path / 'fresh.db'}")
+    e = app_sqlite_engine(tmp_path / 'fresh.db')
     Base.metadata.create_all(e)
     assert {LANG, TITLE} <= _names(e)
     with e.connect() as c:
@@ -373,7 +374,7 @@ def test_the_switch_leaves_the_store_as_it_was(eng, monkeypatch):
 
 
 def test_a_store_without_an_articles_table_is_skipped(tmp_path):
-    e = create_engine(f"sqlite:///{tmp_path / 'empty.db'}")
+    e = app_sqlite_engine(tmp_path / 'empty.db')
     with e.begin() as c:
         c.execute(text("CREATE TABLE other (id INTEGER PRIMARY KEY)"))
     assert ai.build_missing(e)["outcome"] == "skipped"
@@ -497,7 +498,7 @@ def test_the_planner_gets_statistics_for_the_new_indexes_and_only_those(eng):
 def test_a_store_made_by_create_all_serves_the_nocase_sort_from_its_index(tmp_path):
     """create_all spells the collation through SQLAlchemy (``COLLATE "NOCASE"``), the self-heal as
     ``COLLATE NOCASE``: both must be the NOCASE order the list asks for."""
-    e = create_engine(f"sqlite:///{tmp_path / 'fresh2.db'}")
+    e = app_sqlite_engine(tmp_path / 'fresh2.db')
     Base.metadata.create_all(e)
     S = sessionmaker(bind=e)
     plan = _plan(e, _title_ids(e, S, descending=True))

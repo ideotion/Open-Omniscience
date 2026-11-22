@@ -20,17 +20,18 @@ visible rather than assumed.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import Column, Integer, String, create_engine, inspect, text
+from sqlalchemy import Column, Integer, String, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from src.versioned.models import LaneBase, VersionedEntity
 from src.versioned.store import LaneSchemaError, add_missing_columns
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
 def older_build(tmp_path):
     """A lane file with every table but without the columns S04-09 added."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'older.db'}")
+    engine = app_sqlite_engine(tmp_path / 'older.db')
     LaneBase.metadata.create_all(engine)
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE versioned_entities DROP COLUMN deleted_at"))
@@ -74,7 +75,7 @@ def test_it_is_idempotent_and_a_second_run_changes_nothing(older_build):
 
 
 def test_an_UP_TO_DATE_file_is_untouched(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'current.db'}")
+    engine = app_sqlite_engine(tmp_path / 'current.db')
     LaneBase.metadata.create_all(engine)
     assert add_missing_columns(engine) == []
 
@@ -101,7 +102,7 @@ def test_a_column_present_in_the_FILE_and_absent_from_the_model_is_LEFT_ALONE(ol
 def test_a_NOT_NULL_column_with_no_default_is_REFUSED_by_name_rather_than_guessed(tmp_path):
     """Filling one for existing rows is a decision about their contents that only a
     real migration can make. The refusal names the column."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'strict.db'}")
+    engine = app_sqlite_engine(tmp_path / 'strict.db')
     LaneBase.metadata.create_all(engine)
     table = LaneBase.metadata.tables["versioned_entities"]
     column = Column("must_be_filled", String(8), nullable=False)
@@ -117,7 +118,7 @@ def test_a_NOT_NULL_column_with_no_default_is_REFUSED_by_name_rather_than_guesse
 
 def test_the_refusal_leaves_the_FILE_untouched(tmp_path):
     """A half-applied schema change is worse than none: it would be invisible."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'strict2.db'}")
+    engine = app_sqlite_engine(tmp_path / 'strict2.db')
     LaneBase.metadata.create_all(engine)
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE versioned_entities DROP COLUMN admitted_reason"))

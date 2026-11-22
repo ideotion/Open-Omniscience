@@ -8,17 +8,17 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
 from src.scheduler.runner import select_sources
 from src.scheduler.settings import SchedulerSettings, load_settings, save_settings
+from tests._app_engine import app_sqlite_engine
 
 
 def _db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -102,8 +102,8 @@ def test_targets_endpoint(tmp_path, monkeypatch):
     save_settings({"select_source_types": ["news"]})
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 't.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 't.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

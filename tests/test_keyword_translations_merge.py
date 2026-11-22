@@ -18,11 +18,11 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup.merge import merge_corpus  # noqa: E402
 from src.database.models import Base, KeywordTranslation  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-3",
@@ -35,7 +35,7 @@ _T0 = datetime(2026, 9, 1, tzinfo=UTC).replace(tzinfo=None)
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

@@ -23,7 +23,6 @@ import threading
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -32,6 +31,7 @@ from src.ingest import EthicalFetcher
 from src.scheduler import runner
 from src.scheduler.runner import run_scrape_once
 from src.scheduler.settings import SchedulerSettings
+from tests._app_engine import app_sqlite_engine
 
 _EMPTY_RSS = (
     '<?xml version="1.0"?><rss version="2.0"><channel><title>t</title></channel></rss>'
@@ -78,8 +78,8 @@ def _mem_session():
     """An ISOLATED in-memory corpus (never the shared SessionLocal — the
     order-dependent-pollution lesson). run_scrape_once runs SEQUENTIALLY on a
     non-global engine, which is exactly what deterministic ordering needs."""
-    eng = create_engine(
-        "sqlite://", future=True, connect_args={"check_same_thread": False},
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     Base.metadata.create_all(eng)

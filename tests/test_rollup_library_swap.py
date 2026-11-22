@@ -28,10 +28,11 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 
 from src.analytics import rollup_hold, rollup_serve
 from src.database import library_generation as gen
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture(autouse=True)
@@ -99,8 +100,8 @@ def _the_exception_a_real_swap_raises(tmp_path: Path) -> BaseException:
     """What a build's session meets: a connection opened before the swap, used after it."""
     live = tmp_path / "live.db"
     _store(live)
-    engine = create_engine(
-        f"sqlite:///{live}",
+    engine = app_sqlite_engine(
+        live,
         creator=gen.guarded_creator(lambda: sqlite3.connect(str(live), check_same_thread=False)),
     )
     gen.attach(engine)

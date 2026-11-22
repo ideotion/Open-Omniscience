@@ -20,12 +20,12 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import backfill_corpus, index_article
 from src.database.models import Article, Base, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 # Bodies that legitimately produce zero kept terms. Not malformed input -- each is a
 # shape a real corpus contains (a paywalled stub, whitespace, pure function words).
@@ -38,8 +38,8 @@ _REAL = (
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

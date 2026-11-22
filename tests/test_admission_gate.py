@@ -27,7 +27,6 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from src.catalog.qualification import (  # noqa: E402
@@ -46,6 +45,7 @@ from src.catalog.qualification import (  # noqa: E402
     undo_admission,
 )
 from src.database.models import Base, Source, SourceAdmissionEvent  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 NOW = datetime(2026, 9, 18, 12, 0, 0)
 
@@ -60,7 +60,7 @@ _SOFT_FAIL = [{"name": "short_articles", "extraction_failure": False}]
 
 
 def _session(tmp_path) -> Session:
-    engine = create_engine(f"sqlite:///{tmp_path / 'adm.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'adm.db', future=True)
     Base.metadata.create_all(engine)
     return Session(engine, future=True)
 

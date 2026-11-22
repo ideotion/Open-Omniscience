@@ -22,7 +22,6 @@ import zipfile
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.bulletin.annexes import (
@@ -38,6 +37,7 @@ from src.bulletin.annexes import (
 )
 from src.bulletin.render import render
 from src.database.models import Article, ArticleAnalysis, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _PERIOD = {"cadence": "weekly", "start": "2026-08-04", "end": "2026-08-11",
            "last_day": "2026-08-10", "days": 7}
@@ -328,8 +328,8 @@ def corpus():
     # Without it teardown floods stderr with cross-thread ProgrammingErrors.
     from sqlalchemy.pool import StaticPool
 
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = app_sqlite_engine(
+        ":memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )

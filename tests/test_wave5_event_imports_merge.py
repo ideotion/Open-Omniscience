@@ -37,11 +37,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import src.backup.merge as merge
 from src.database.models import Base, EventImport, SourceCandidate
+from tests._app_engine import app_sqlite_engine
 
 _REPO = Path(__file__).resolve().parents[1]
 _HELPER = _REPO / "tests" / "torture_helper.py"
@@ -221,7 +221,7 @@ def test_refresh_never_empties_a_populated_table_on_a_read_hiccup(isolated_store
 # --------------------------------------------------------------------------- #
 def _build_corpus(path: Path, *, events: list[dict], candidates: list[dict]) -> None:
     """A throwaway plaintext SQLite corpus with the full schema + the given rows."""
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     now = datetime.now(UTC)
     with sessionmaker(bind=engine, future=True)() as s:
@@ -242,7 +242,7 @@ def _build_corpus(path: Path, *, events: list[dict], candidates: list[dict]) -> 
 
 
 def _count_rows(path: Path, table: str) -> int:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     try:
         with engine.connect() as c:
             from sqlalchemy import text

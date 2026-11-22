@@ -17,18 +17,18 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.bulletin import facts
 from src.bulletin.period import resolve_period
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _END = date(2026, 8, 1)  # exclusive; the weekly period is 2026-07-25 .. 2026-07-31
 
 
 def _session() -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
 
@@ -422,8 +422,9 @@ def test_a_refused_verdict_gets_the_refusal_and_no_figures(monkeypatch):
 
 
 def test_an_unknown_cadence_is_a_400_not_a_silently_rounded_period(monkeypatch):
-    import src.api.diagnostics as diag
     from fastapi import HTTPException
+
+    import src.api.diagnostics as diag
 
     _open_gate(monkeypatch)
     try:

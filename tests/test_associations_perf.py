@@ -16,19 +16,20 @@ import math
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine, func
+from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

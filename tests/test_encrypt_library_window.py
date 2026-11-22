@@ -25,11 +25,12 @@ import time
 from contextlib import contextmanager
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.pool import QueuePool
 
 from src.database import encrypt_tool, library_generation, writer
 from src.database.connect import connect, is_encrypted_file
+from tests._app_engine import app_sqlite_engine
 from tests.os_scope import scope_os
 from tests.test_gate_connection_order import _factory
 
@@ -37,7 +38,7 @@ _KEY = "a-long-enough-passphrase-for-the-test-9Q"
 
 
 def _engine(path):
-    eng = create_engine(f"sqlite:///{path}", poolclass=QueuePool, pool_size=2, max_overflow=0)
+    eng = app_sqlite_engine(path, poolclass=QueuePool, pool_size=2, max_overflow=0)
 
     @event.listens_for(eng, "connect")
     def _wal(dbapi, _rec):

@@ -19,6 +19,7 @@ from __future__ import annotations
 import pytest
 
 from src.config import memory_budget as mb
+from tests._app_engine import app_sqlite_engine
 
 # A faked machine size means "a machine of this size", never bounded by the cgroup of the machine running the suite (R302).
 pytestmark = pytest.mark.usefixtures("no_cgroup_limit")
@@ -145,18 +146,18 @@ def test_the_engine_reads_the_budget_rather_than_a_constant():
 def test_the_connection_really_applies_the_resolved_cache(monkeypatch):
     """BEHAVIOURAL TWIN. A resolver nothing reads back is a number in a dict. Reads
     PRAGMA cache_size on a fresh engine built through the app's own connect event."""
-    from sqlalchemy import create_engine, event, text
+    from sqlalchemy import event, text
 
     monkeypatch.setenv("OO_SQLITE_CACHE_MB", "9")
     mb.reset_for_tests()
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
 
     @event.listens_for(engine, "connect")
     def _apply(dbapi_connection, _rec):
-        from src.config.memory_budget import budget
-
         import os as _os
+
+        from src.config.memory_budget import budget
 
         cache_mb = (
             int(_os.environ["OO_SQLITE_CACHE_MB"])

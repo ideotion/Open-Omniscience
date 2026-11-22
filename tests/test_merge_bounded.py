@@ -51,12 +51,13 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup import merge as merge_mod  # noqa: E402
 from src.backup.merge import merge_corpus  # noqa: E402
 from src.database.models import Article, Base, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-2",
@@ -69,7 +70,7 @@ _BATCH_META = {
 
 def _corpus(path: Path, *, articles: int, first_hash: int = 0) -> None:
     """A plaintext corpus with ``articles`` rows on one source."""
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     now = datetime.now(UTC)
     with sessionmaker(bind=engine, future=True)() as s:
@@ -113,7 +114,7 @@ def _pin_window(monkeypatch, ids: int) -> None:
 
 
 def _hashes(path: Path) -> set[str]:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     try:
         with engine.connect() as c:
             return {r[0] for r in c.execute(text("SELECT hash FROM articles")).all()}
@@ -362,7 +363,7 @@ def test_negative_source_ids_are_not_skipped(tmp_path, monkeypatch) -> None:
     _corpus(working, articles=1)
     _corpus(staged, articles=20, first_hash=700)
 
-    engine = create_engine(f"sqlite:///{staged}", future=True)
+    engine = app_sqlite_engine(staged, future=True)
     with engine.begin() as c:
         c.execute(text("UPDATE articles SET id = -50 WHERE hash = :h"), {"h": "h00000700"})
     engine.dispose()
@@ -389,7 +390,7 @@ def test_windowing_changes_nothing_about_the_result(tmp_path, monkeypatch) -> No
     tables = ("articles", "sources", "keywords", "merged_rows")
 
     def snapshot(path: Path) -> dict[str, list]:
-        engine = create_engine(f"sqlite:///{path}", future=True)
+        engine = app_sqlite_engine(path, future=True)
         try:
             out = {}
             with engine.connect() as c:
@@ -434,7 +435,7 @@ def test_a_completed_merge_is_stamped_merged(tmp_path) -> None:
     _corpus(staged, articles=3, first_hash=300)
     merge_corpus(staged, working, _BATCH_META)
 
-    engine = create_engine(f"sqlite:///{working}", future=True)
+    engine = app_sqlite_engine(working, future=True)
     try:
         with engine.connect() as c:
             rows = c.execute(text("SELECT status FROM merge_batches")).all()
@@ -475,7 +476,7 @@ def test_an_interrupted_merge_is_not_stamped_merged(tmp_path, monkeypatch) -> No
     with pytest.raises(RuntimeError):
         merge_corpus(staged, working, _BATCH_META)
 
-    engine = create_engine(f"sqlite:///{working}", future=True)
+    engine = app_sqlite_engine(working, future=True)
     try:
         with engine.connect() as c:
             rows = c.execute(text("SELECT status FROM merge_batches")).all()

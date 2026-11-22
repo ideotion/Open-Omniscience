@@ -15,7 +15,6 @@ import contextlib
 
 import pytest
 import requests
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from urllib3.exceptions import ProtocolError
 
@@ -30,6 +29,7 @@ from src.ingest import (
 )
 from src.ingest.airplane import AirplaneModeError
 from src.markets import csv_feeds as C
+from tests._app_engine import app_sqlite_engine
 
 _URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO"
 _REFUSAL = "airplane mode is engaged: refusing a network connection to 'fred.stlouisfed.org'. No packet leaves the machine while offline"
@@ -71,8 +71,8 @@ def _switch(on: bool):
 
 @pytest.fixture()
 def session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

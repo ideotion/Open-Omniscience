@@ -11,7 +11,6 @@ import asyncio
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
@@ -21,13 +20,14 @@ from src.database.session import get_db
 # the commodity router imports scipy (the [analysis] extra); a core install skips this file
 pytest.importorskip("scipy", reason="the commodity router needs the [analysis] extra")
 from src.api import commodity  # noqa: E402
+from tests._app_engine import app_sqlite_engine
 
 _CSV = "date,price\n2024-01-01,10.5\n2024-01-02,11.0\n"
 
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'b.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'b.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
 

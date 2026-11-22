@@ -16,7 +16,6 @@ import time
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar, rollup_serve
@@ -24,6 +23,7 @@ from src.analytics import queries as q
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 pytestmark = pytest.mark.skipif(
     not columnar.duckdb_available(), reason="duckdb not installed (optional [columnar] extra)"
@@ -34,7 +34,7 @@ _WIDE = 100_000  # a window covering the whole fixture (days)
 
 @pytest.fixture()
 def session():
-    e = create_engine("sqlite:///:memory:", future=True,
+    e = app_sqlite_engine(":memory:", future=True,
                       connect_args={"check_same_thread": False})
     Base.metadata.create_all(e)
     s = sessionmaker(bind=e, future=True)()
@@ -321,8 +321,8 @@ def test_rollup_never_served_to_a_different_database(session, monkeypatch):
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
     monkeypatch.setattr(rollup_serve, "_trigger_build_async", lambda: None)
 
-    e2 = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    e2 = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(e2)
     s2 = sessionmaker(bind=e2, future=True)()

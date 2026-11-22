@@ -19,11 +19,12 @@ from __future__ import annotations
 import datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.analytics import columnar
 from src.monitoring import rollup_benchmark
+from tests._app_engine import app_sqlite_engine
 
 pytestmark = pytest.mark.skipif(
     not columnar.duckdb_available(), reason="duckdb not installed (optional [columnar] extra)"
@@ -35,7 +36,7 @@ _LATER = "2099-01-01 00:00:00"  # after any scan bound the tests produce
 
 def _corpus(*, created_at=True):
     """100 articles x 5 keywords, one dated mention each, in an in-memory SQLite."""
-    s = Session(create_engine("sqlite://"))
+    s = Session(app_sqlite_engine(":memory:"))
     s.execute(text(
         "CREATE TABLE keywords (id INTEGER PRIMARY KEY, normalized_term TEXT, term TEXT, is_entity INT, "
         "entity_type TEXT, language TEXT, mention_count INT)"
@@ -170,7 +171,7 @@ def test_run_rollup_benchmark_reports_the_bound_and_compares_bounded(monkeypatch
     from src.analytics.store import index_article
     from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
-    e = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    e = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(e)
     s = sessionmaker(bind=e, future=True)()
     s.add(Source(name="S", domain="x.test", country="fr"))

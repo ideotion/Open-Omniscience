@@ -13,16 +13,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.ai_layer import auto as ai_auto
 from src.database.models import AiCustomPrompt, Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _sess(tmp_path, name="auto.db"):
-    eng = create_engine(
-        f"sqlite:///{tmp_path / name}", future=True, connect_args={"check_same_thread": False}
+    eng = app_sqlite_engine(
+        tmp_path / name, future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng, future=True)

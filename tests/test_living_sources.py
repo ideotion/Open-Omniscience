@@ -29,7 +29,6 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api import living, wiki_lane
@@ -41,6 +40,7 @@ from src.versioned.models import (
 )
 from src.versioned.pipeline import ensure_entity
 from src.versioned.store import create_lane, dispose_all, lane_path, lane_session
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
@@ -70,7 +70,7 @@ def corpus():
     every count below is exact rather than a delta over the suite's shared database."""
     from src.database.models import Base, LawDocument, LawRevision, WikiPage, WikiRevision
 
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(
         engine,
         tables=[t.__table__ for t in (WikiPage, WikiRevision, LawDocument, LawRevision)],
@@ -274,7 +274,7 @@ def test_law_counts_a_CHANGE_not_a_recheck(corpus):
 
 
 def test_a_database_that_cannot_be_read_is_NAMED_per_block():
-    engine = create_engine("sqlite://")  # no tables at all
+    engine = app_sqlite_engine(":memory:")  # no tables at all
     session = sessionmaker(bind=engine)()
     try:
         assert living._wiki_tracked(session, SINCE)["reason"] == "unreadable"

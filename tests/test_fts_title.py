@@ -10,17 +10,18 @@ real triggers and asks the real FTS5 table what it holds.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database import fts_title
 from src.database.fts import ensure_fts, search_ids
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _engine():
-    return create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    return app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
 
 
 def _add(Session, titles, *, start=0, quarantined=None):

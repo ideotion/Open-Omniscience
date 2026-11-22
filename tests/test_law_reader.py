@@ -7,17 +7,17 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument, LawRevision
+from tests._app_engine import app_sqlite_engine
 
 
 def test_law_document_reader_renders_text_and_diff(tmp_path):
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'law.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'law.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

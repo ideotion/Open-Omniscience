@@ -17,13 +17,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument, LawRevision
 from src.law.analytics import SPARSE_BAR_MAX, amendment_velocity, provision_timeline
 from src.law.track import track_document
 from src.versioned import store
+from tests._app_engine import app_sqlite_engine
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures" / "law" / "synthetic"
 
@@ -48,8 +48,8 @@ class _ScriptedFetcher:
 
 @pytest.fixture
 def corpus(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'corpus.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'corpus.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

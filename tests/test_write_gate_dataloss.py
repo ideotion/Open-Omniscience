@@ -44,7 +44,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import Integer, create_engine, event
+from sqlalchemy import Integer, event
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -67,6 +67,7 @@ from src.database.writer import (
     write_gate,
 )
 from src.markets.csv_feeds import import_points
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # Helpers (real app wiring)
@@ -360,8 +361,8 @@ def _hostile_sessionmaker(tmp_path, *, with_gate: bool):
     not in play (we add rows directly). ``with_gate`` toggles the production gate
     handlers so the gate's contribution is isolated."""
     db = tmp_path / f"hostile-{'gate' if with_gate else 'nogate'}.db"
-    engine = create_engine(
-        f"sqlite:///{db}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        db, future=True, connect_args={"check_same_thread": False}
     )
 
     @event.listens_for(engine, "connect")

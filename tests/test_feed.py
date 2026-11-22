@@ -17,7 +17,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -35,6 +34,7 @@ except BaseException:  # noqa: BLE001  # pragma: no cover - crypto extra absent
     _HAVE_APP = False
 
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 # --------------------------------------------------------------------------- #
@@ -133,8 +133,8 @@ def client():
     # and a second thread checking out a second connection to sqlite :memory: gets a
     # second EMPTY database -- every request 500s on "no such table" while the fixture
     # looks perfectly seeded. One connection for everyone is what makes it real.
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = app_sqlite_engine(
+        ":memory:",
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,

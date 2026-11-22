@@ -27,7 +27,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import global_stopwords
@@ -42,6 +41,7 @@ from src.database.models import (
     KeywordTag,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 HIDDEN = "mathcal"
 VISIBLE = "press"
@@ -51,8 +51,8 @@ VISIBLE = "press"
 def s():
     assert HIDDEN in global_stopwords(), "the fixture word must be on the shipped list"
     assert VISIBLE not in global_stopwords()
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()

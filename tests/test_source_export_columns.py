@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
+
 
 class _Recorder:
     """Answers every attribute with None and remembers the order they were asked in."""
@@ -51,15 +53,14 @@ def test_the_tuple_names_the_csv_columns():
 @pytest.fixture()
 def client(tmp_path):
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api.main import app
     from src.database.models import Base, Source
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'x.db'}", future=True,
+    engine = app_sqlite_engine(
+        tmp_path / 'x.db', future=True,
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(engine)

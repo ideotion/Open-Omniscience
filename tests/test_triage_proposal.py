@@ -11,18 +11,18 @@ from __future__ import annotations
 import json
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.ai_layer import triage as T
 from src.ai_layer import triage_proposal as P
 from src.ai_layer.triage_job import CANARIES, _verdicts_record
 from src.database.models import Base, Keyword
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    eng = create_engine("sqlite:///:memory:")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     S = sessionmaker(bind=eng)
     s = S()

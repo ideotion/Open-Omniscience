@@ -28,13 +28,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog import qualification as q
 from src.database.models import Base, Source
 from src.ingest import FetchFailed, FetchResult, pipeline, sitemap
 from src.ingest import feed_find as ff
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import array_literal, function_body
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -81,7 +81,7 @@ class _Recorder:
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

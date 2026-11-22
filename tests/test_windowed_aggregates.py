@@ -21,11 +21,11 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 _TERM_ID = 1
 _SPAN = 200
@@ -37,8 +37,8 @@ def _seed(tmp_path):
     A summed count is therefore exactly a DAY COUNT, which is what lets these tests
     assert window width rather than merely that a term surfaced.
     """
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'win.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'win.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

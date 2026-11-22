@@ -601,6 +601,9 @@ class ImportQueueManager:
                         None if raw.get("trust_fetch_history") is None
                         else bool(raw.get("trust_fetch_history"))
                     ),
+                    # R787: only an explicit True (the person ticked the models, the folder shown)
+                    # places the Hugging Face models an artifact carries.
+                    "place_hf_models": raw.get("place_hf_models") is True,
                     "state": "queued",
                     "started_at": None,
                     "ended_at": None,
@@ -1437,6 +1440,7 @@ class ImportQueueManager:
             already_merged_digests=already,
             allow_unverified=bool(item.get("allow_unverified")),
             trust_fetch_history=item.get("trust_fetch_history"),
+            place_hf_models=item.get("place_hf_models") is True,
         )
         st = self._await(mgr.status, mgr.cancel)
         summary = st.get("summary") or {}
@@ -1497,6 +1501,23 @@ class ImportQueueManager:
             "corrupt_refused": p.get("corrupt_refused", 0),
             "corrupt": list(p.get("corrupt") or []),
             "restored_unverified": p.get("restored_unverified", 0),
+            # R780: restored but not listed in the backup's current manifest, per category name.
+            "restored_unlisted": dict(p.get("restored_unlisted") or {}),
+            # R779: what a restore refused because a link stood in the way. Category NAMES only
+            # (fixed words such as wiki_dumps), never a path from the person's disk.
+            "refused_symlinks": p.get("refused_symlinks", 0),
+            "refused_categories": list(p.get("refused_categories") or []),
+            # R784: a live folder that could not take its category here, ``{category: reason code}``
+            # (fixed codes, never the path).
+            "refused_targets": dict(p.get("refused_targets") or {}),
+            "refused_dest_links": p.get("refused_dest_links", 0),
+            "refused_layout": p.get("refused_layout", 0),
+            "incomplete": bool(p.get("incomplete")),
+            # R778: members that could not be read, with a fixed reason code each; the restore went on.
+            "unread_total": p.get("unread_total", 0),
+            "unread_folders": p.get("unread_folders", 0),
+            "unread_by_why": dict(p.get("unread_by_why") or {}),
+            "unread": list(p.get("unread") or []),
         }
 
     def _run_newsletters(self, item: dict) -> dict:

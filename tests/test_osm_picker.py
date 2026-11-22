@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from src.osm import picker as P
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
@@ -192,7 +193,6 @@ def test_the_diff_estimate_date_is_registered():
 def test_the_picker_routes(settings_file, no_network):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
     from sqlalchemy.pool import StaticPool
 
@@ -200,7 +200,7 @@ def test_the_picker_routes(settings_file, no_network):
     from src.database.models import Base, LawDocument
     from src.database.session import get_db
 
-    eng = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(":memory:", poolclass=StaticPool, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng, tables=[LawDocument.__table__])
 
     def _db():
@@ -330,12 +330,11 @@ def test_the_origin_country_is_the_default_first_import_until_one_is_chosen(sett
 
 
 def test_the_laws_row_is_the_watched_jurisdictions_that_are_countries():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.database.models import Base, LawDocument
 
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng, tables=[LawDocument.__table__])
     with Session(eng) as s:
         for i, (jur, watched) in enumerate(

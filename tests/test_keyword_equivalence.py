@@ -14,13 +14,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import equivalence as E
 from src.analytics import queries as q
 from src.analytics.store import backfill_keyword_counters
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 # --- pure module: merge_equivalents / group_rows ----------------------------- #
 
@@ -158,8 +158,8 @@ def _kw(s, term, normalized, *, language, kind="term"):
 
 
 def _corpus():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)

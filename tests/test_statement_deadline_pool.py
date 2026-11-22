@@ -27,6 +27,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from src.database.maintenance import StatementTimeout, statement_deadline
+from tests._app_engine import app_sqlite_engine
 
 # ~400k iterations: comfortably past the 20,000-opcode granularity at which the
 # progress handler fires, so an armed connection WILL be interrupted.
@@ -46,8 +47,8 @@ def _engine(tmp_path, **kw):
     """
     from src.database.session import _disarm_progress_handler
 
-    eng = sa.create_engine(
-        f"sqlite:///{tmp_path / 'd.db'}",
+    eng = app_sqlite_engine(
+        tmp_path / 'd.db',
         connect_args={"check_same_thread": False},
         poolclass=QueuePool,
         pool_size=kw.pop("pool_size", 1),

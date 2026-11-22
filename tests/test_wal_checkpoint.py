@@ -19,16 +19,15 @@ from __future__ import annotations
 import threading
 import time
 
-from sqlalchemy import create_engine
-
 from src.scheduler import hygiene
 from src.scheduler.hygiene import checkpoint_wal
+from tests._app_engine import app_sqlite_engine
 
 
 def _wal_engine(tmp_path, name="ckpt.db"):
     """A REAL file-backed WAL database, isolated from the shared store."""
     db = tmp_path / name
-    eng = create_engine(f"sqlite:///{db}", future=True)
+    eng = app_sqlite_engine(db, future=True)
     with eng.connect() as c:
         c.exec_driver_sql("PRAGMA journal_mode=WAL")
         c.exec_driver_sql("CREATE TABLE t(x)")

@@ -33,16 +33,23 @@ and progress via ``progress_cb``. The pausable task-manager job + endpoints wrap
 
 from __future__ import annotations
 
+import errno
+import functools
 import hashlib
 import json
 import os
 import re
 import shutil
+import stat
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
+from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
+from src.backup.manifest_file import read_manifest_json
+from src.backup.regular_file import NotARegularFile, open_regular
 from src.monitoring.secret_scrub import log_failure, record_text
 
 MANIFEST_NAME = "oo-folder-backup.json"
@@ -266,10 +273,14 @@ def collect_hf_model_items(home: Path | None = None) -> list[BackupItem]:
     revision. A cache normally holds one revision per model, and the alternative costs
     the symlink guard, so the duplication is accepted rather than hidden.
     """
-    from src.llm.model_store import hf_home
+    from src.llm.model_store import hf_hub_cache
 
-    home = home or hf_home()
-    hub = home / "hub"
+    # R784: the hub cache folder ITSELF (HF_HUB_CACHE when set, whatever it is named). The old
+    # ``hf_home() / "hub"`` named the PARENT of HF_HUB_CACHE plus "hub": a cache folder named
+    # anything else was never backed up. ``home`` (tests, callers with their own home) keeps HF's
+    # own layout below it. The backup still writes it as ``hub/...``: that folder name is the
+    # cache folder, recorded in the manifest as ``hf_layout``.
+    hub = home / "hub" if home is not None else hf_hub_cache()
     if not hub.is_dir():
         return []
     items: list[BackupItem] = []
@@ -335,6 +346,9 @@ def _atomic_copy(
     *,
     should_stop: Callable[[], bool] | None = None,
     digest: "hashlib._Hash | None" = None,
+    nofollow_src: bool = False,
+    expect: os.stat_result | None = None,
+    opener: Callable[[], int] | None = None,
 ) -> bool:
     """Stream ``src`` to ``dst`` via a temp file + rename (so a paused copy never leaves
     a corrupt destination). Returns True if it completed, False if ``should_stop`` fired
@@ -348,21 +362,74 @@ def _atomic_copy(
     A stopped copy leaves the digest partial; the caller discards it with the temp."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.name + _PART_SUFFIX)
+    # R779: a leftover ``.oopart`` is removed and the temp file is CREATED, never opened if it is
+    # there. ``open(tmp, "wb")`` follows a link, so a ``.oopart`` planted as a link to another file
+    # had the copy written through it. ``unlink`` removes a link itself, never what it points at.
+    tmp.unlink(missing_ok=True)
+    binary = getattr(os, "O_BINARY", 0)
     try:
-        with open(src, "rb") as r, open(tmp, "wb") as w:
-            while True:
-                if should_stop is not None and should_stop():
-                    w.close()
-                    tmp.unlink(missing_ok=True)
-                    return False
-                chunk = r.read(_COPY_BUF)
-                if not chunk:
-                    break
-                w.write(chunk)
-                if digest is not None:
-                    digest.update(chunk)
-            w.flush()
-            os.fsync(w.fileno())
+        # A restore reads from an untrusted folder: where the system can, the source is opened without
+        # following a link, so a member swapped for one after it was checked is refused, not read.
+        try:
+            # O_NONBLOCK too: a member swapped for a named pipe would otherwise block this open for
+            # ever, before the fstat below could refuse it. It changes nothing for a regular file.
+            guard = (getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)) if nofollow_src else 0
+            # R783: where the system can, the caller hands an opener that walks to the file by folder
+            # handle (``_open_member_fd``); it raises the refusals itself.
+            src_fd = opener() if opener is not None else os.open(src, os.O_RDONLY | binary | guard)
+        except (SourceChanged, SourceUnreadable):
+            raise
+        except OSError as exc:
+            if nofollow_src and _now_a_link(src):  # the name is now a link: refused, never read
+                raise SourceChanged("the file became a link after it was checked") from None
+            if not nofollow_src or not _process_can_open():
+                raise  # a backup's own copy, or the whole process out of files or memory: stop, as before
+            # R778: the SOURCE could not be opened. Raised as one of the fixed classes below, so the
+            # restore counts it as not read and goes on; the system's own words are never kept.
+            raise _unread_of(type(exc)) from None
+        with os.fdopen(src_fd, "rb") as r:
+            if expect is not None:
+                # The file opened must be the one that was checked: a regular file with the same
+                # device and inode. This also catches a FOLDER on the way swapped for a link, which
+                # O_NOFOLLOW alone does not (it only guards the last name).
+                try:
+                    got = os.fstat(r.fileno())
+                except OSError as exc:
+                    if not _process_can_open():
+                        raise
+                    raise _unread_of(type(exc)) from None
+                if not stat.S_ISREG(got.st_mode) or not (_same_file(got, expect) or _same_file_again(got, expect, Path(src))):
+                    raise SourceChanged("the file changed after it was checked")
+                if nofollow_src and hasattr(os, "set_blocking"):
+                    # Opened with O_NONBLOCK so a pipe could not hang the open; a regular file is read
+                    # blocking, so a file system that honours the flag can never end a read early (an
+                    # empty read is taken as the end of the file).
+                    try:
+                        os.set_blocking(r.fileno(), True)
+                    except OSError:
+                        pass
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | binary, 0o666)
+            with os.fdopen(fd, "wb") as w:
+                while True:
+                    if should_stop is not None and should_stop():
+                        w.close()
+                        tmp.unlink(missing_ok=True)
+                        return False
+                    try:
+                        chunk = r.read(_COPY_BUF)
+                    except OSError as exc:
+                        if not nofollow_src or not _process_can_open():
+                            raise
+                        # R778: a read that fails part-way (a bad sector, a drive pulled) leaves no
+                        # partial file: the temp is removed below and the live name never appears.
+                        raise _unread_of(type(exc)) from None
+                    if not chunk:
+                        break
+                    w.write(chunk)
+                    if digest is not None:
+                        digest.update(chunk)
+                w.flush()
+                os.fsync(w.fileno())
         os.replace(tmp, dst)  # atomic on the same filesystem
         return True
     except BaseException:
@@ -398,10 +465,7 @@ def _recorded_digests(root: Path) -> dict[tuple[str, str, int], str]:
     file whose size differs from the recorded one is not the file that was hashed and its
     old digest must not travel. A missing, damaged or foreign manifest is simply an empty
     map — this is a best-effort carry-forward, never a gate."""
-    try:
-        m = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+    m = read_manifest_json(root / MANIFEST_NAME)  # a link, a pipe, a huge or deeply nested file: none
     cats = m.get("categories") if isinstance(m, dict) else None
     if not isinstance(cats, dict):
         return {}
@@ -420,6 +484,24 @@ def _recorded_digests(root: Path) -> dict[tuple[str, str, int], str]:
                 continue
             if isinstance(sha, str) and _SHA256_RE.match(sha) and isinstance(rel, str):
                 out[(str(c), rel, size)] = sha.lower()
+    return out
+
+
+def _manifest_listing(root: Path) -> dict[str, set[str]] | None:
+    """``category -> {rel}`` for every file the backup's CURRENT manifest lists, or ``None`` when there
+    is no manifest that can be read (R780). Unlike :func:`_recorded_digests` it keeps an entry with no
+    checksum too: the question here is only "is this file listed", never "is it verified".
+
+    The manifest is signed with a key it carries itself, so it is tamper-EVIDENCE, never proof of
+    where a file came from: a file it does not list is still restored, and counted as unlisted."""
+    m = read_manifest_json(root / MANIFEST_NAME)  # a link, a pipe, a huge or deeply nested file: none
+    cats = m.get("categories") if isinstance(m, dict) else None
+    if not isinstance(cats, dict):
+        return None
+    out: dict[str, set[str]] = {}
+    for c, lst in cats.items():
+        if isinstance(lst, list):
+            out[str(c)] = {e["rel"] for e in lst if isinstance(e, dict) and isinstance(e.get("rel"), str)}
     return out
 
 
@@ -493,6 +575,10 @@ def write_folder_backup(
         # checksums existed). Verify reports those as unverifiable rather than counting
         # them as content-checked.
         "files_without_checksum": unhashed,
+        # R784: ``hf_models/hub/`` is the Hugging Face hub cache folder itself; a restore places it in
+        # the hub cache folder of the computer it runs on. A manifest without it was written when the
+        # backup read ``<parent of HF_HUB_CACHE>/hub``, which missed a cache folder named otherwise.
+        "hf_layout": HF_LAYOUT,
         "note": (
             "Public, re-downloadable blobs copied as-is (NOT encrypted) — the private "
             "corpus stays in the encrypted oo-backup-2 backup. Restore is additive. "
@@ -543,10 +629,72 @@ def live_targets(overrides: dict[str, Path] | None = None) -> dict[str, Path]:
         # than a second root under "models": the existing category's on-disk layout IS
         # the Ollama store root, and folding a second store under it would send an
         # older backup's manifests/ and blobs/ somewhere new on the way back.
-        from src.llm.model_store import hf_home
+        # R784: the hub cache folder ITSELF, as it resolves on THIS computer; a member's leading
+        # ``hub/`` is that folder (``hf_live_rel``).
+        from src.llm.model_store import hf_hub_cache
 
-        tgt.setdefault("hf_models", hf_home())
+        tgt.setdefault("hf_models", hf_hub_cache())
     return tgt
+
+
+#: R784: why the Hugging Face cache folder cannot take a restore here. Fixed codes, never the system's
+#: words; the page says each one in the person's language.
+HF_TARGET_UNRESOLVED = "unresolved"  # no absolute folder could be worked out, or it could not be looked at
+HF_TARGET_NOT_FOLDER = "not-a-folder"  # its path, or a folder above it, is taken by something that is not a folder
+HF_TARGET_NOT_WRITABLE = "not-writable"  # the folder (or the nearest one above it that exists) cannot be written
+
+
+def hf_target_refusal(target: Path | str | None) -> str | None:
+    """Why the hub cache folder ``target`` cannot take a restore, or ``None`` (R784).
+
+    Looked at before anything is placed, so a cache folder this computer cannot use is said as ONE
+    named reason and the category is left out -- never one write error per model file. The folder may
+    not exist yet (a computer that never downloaded a model): then the nearest folder above it that
+    exists must be one this process can write into. The folder may be a link the person made (a cache
+    moved to another disk); that is their choice and is followed, as the other live folders are. A
+    write that still fails later stops the restore with an error, as before.
+
+    STATED LIMIT: on Windows ``os.access`` does not read folder permissions (ACLs), so a folder it calls
+    writable can still refuse the first write -- which then stops the restore with that error."""
+    if target is None:
+        return HF_TARGET_UNRESOLVED
+    # Checked exactly as given, never expanded here: the path checked must be the path written to, and
+    # ``hf_hub_cache`` already expands ``~`` the way Hugging Face does.
+    raw = os.fspath(target)
+    if not raw or not os.path.isabs(raw):
+        return HF_TARGET_UNRESOLVED  # a relative HF_HUB_CACHE would mean whatever folder a process started in
+    p = Path(raw)
+    probe = p
+    while True:
+        try:
+            st = os.stat(probe)
+        except FileNotFoundError:
+            if os.path.islink(probe):
+                return HF_TARGET_NOT_FOLDER  # a link to nothing: the write would fail, so it is said now
+            if probe.parent == probe:
+                return HF_TARGET_UNRESOLVED
+            probe = probe.parent
+            continue
+        except NotADirectoryError:
+            return HF_TARGET_NOT_FOLDER
+        except (OSError, ValueError):
+            return HF_TARGET_UNRESOLVED
+        break
+    if not stat.S_ISDIR(st.st_mode):
+        return HF_TARGET_NOT_FOLDER
+    if not os.access(probe, os.W_OK | os.X_OK):
+        return HF_TARGET_NOT_WRITABLE
+    return None
+
+
+def hf_restore_target() -> dict:
+    """The Hugging Face hub cache folder a restore would write to on THIS computer, and why it cannot
+    when it cannot (R784) -- what the import checklist shows before the person chooses."""
+    try:
+        path: Path | None = live_targets().get("hf_models")
+    except Exception:  # noqa: BLE001 - any failure to work the folder out is that, said as one reason
+        path = None
+    return {"path": None if path is None else os.fspath(path), "refused": hf_target_refusal(path)}
 
 
 def _unsafe_placement_reason(name: str, rel: str) -> str | None:
@@ -568,14 +716,25 @@ def _unsafe_placement_reason(name: str, rel: str) -> str | None:
     return None
 
 
+#: The errors that say a member's NAME cannot exist here, not that writing failed (R787 reads).
+_NAME_ERRNOS = frozenset({errno.ENAMETOOLONG, errno.ENOTDIR, errno.EEXIST, errno.EISDIR})
+
+
 def place_artifact_file_members(
     staging_dir: str | os.PathLike,
     file_members: Iterable[dict],
     *,
     targets: dict[str, Path] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    place_hf: bool = False,
 ) -> dict:
     """Put an oo-volumes-2 artifact's large public files back into their live homes.
+
+    R787: the Hugging Face models an artifact carries are placed only when ``place_hf`` is true -- the
+    person ticked them on the import checklist, which showed the folder they go to on this computer.
+    Otherwise they stay in the artifact, counted in ``hf_not_chosen``, and nothing of them is written.
+    When the cache folder here cannot take them, the restore says so (``refused_targets``) and is
+    ``incomplete``, never complete.
 
     The counterpart of :func:`restore_folder_backup` for the files that rode INSIDE the
     signed artifact (S6.2). Same additive rule -- an existing destination file is never
@@ -611,6 +770,9 @@ def place_artifact_file_members(
     refused: list[dict] = []
     missing: list[dict] = []
     stopped = False
+    hf_refused: str | None = None  # R784: looked at once, the first time a model-cache member comes up
+    hf_not_chosen = 0  # R787
+    refused_targets: dict[str, str] = {}
     for fm in file_members:
         if should_stop is not None and should_stop():
             stopped = True
@@ -629,13 +791,52 @@ def place_artifact_file_members(
             refused.append({"category": category, "rel": rel, "why": why})
             continue
         src_path = staging / name
-        dst = root / rel
+        place_rel = rel
+        if category == "hf_models":
+            if not place_hf:
+                # R787: never placed unasked. Counted, so the result can say what stayed in the artifact.
+                hf_not_chosen += 1
+                continue
+            # R784: ``hub/`` is the hub cache folder itself, and only the cache's own shape is placed
+            # (R777's rule, which this path now applies too).
+            live_rel = hf_live_rel(rel)
+            if live_rel is None:
+                refused.append({"category": category, "rel": rel, "why": "outside the model cache's layout"})
+                continue
+            place_rel = live_rel
+            if hf_refused is None:
+                hf_refused = hf_target_refusal(root) or ""
+            if hf_refused:
+                # R787: one fixed code for the whole category, said once on screen in the person's language.
+                refused_targets["hf_models"] = hf_refused
+                refused.append({"category": category, "rel": rel, "why": f"model cache folder {hf_refused}"})
+                continue
+        dst = root / place_rel
         try:
             contained = dst.resolve().is_relative_to(root.resolve())
         except (OSError, ValueError):  # pragma: no cover - defensive
             contained = False
         if not contained:
             refused.append({"category": category, "rel": rel, "why": "outside its category"})
+            continue
+        # R779's destination rule, on this path too (R784 security read): a link anywhere between the live
+        # folder and the file is never written through. A real Hugging Face cache is made of links, and a
+        # DANGLING one (a deleted blob) reads as absent to ``exists()``, so it would have been replaced.
+        # R787 reads: a link AT the file's own name is that file already present here (a cache's
+        # snapshot entries are links into its blobs), so it is kept and counted as skipped; a link in a
+        # folder on the way is still refused. A name the system cannot look at (too long, a file where
+        # a folder is needed) refuses that one member and never stops the others.
+        try:
+            parent_link = link_on_the_way(root, Path(place_rel).parent)
+            own_link = not parent_link and os.path.islink(dst)
+        except (OSError, ValueError):
+            refused.append({"category": category, "rel": rel, "why": "a name that cannot be used here"})
+            continue
+        if parent_link:
+            refused.append({"category": category, "rel": rel, "why": "a link on the way in your data folder"})
+            continue
+        if own_link:
+            skipped += 1  # never overwrite a local file, and never write through a link
             continue
         if not src_path.is_file():
             # The member is named in the index but its bytes are not in staging. The
@@ -646,7 +847,16 @@ def place_artifact_file_members(
         if dst.exists():
             skipped += 1  # never overwrite a local file
             continue
-        if not _atomic_copy(src_path, dst, should_stop=should_stop):
+        try:
+            copied = _atomic_copy(src_path, dst, should_stop=should_stop)
+        except OSError as exc:
+            # R787 reads: a NAME this system cannot hold (too long, or a file where the artifact needs a
+            # folder) refuses that one member; any other failure (a full disk) still stops, as before.
+            if exc.errno not in _NAME_ERRNOS:
+                raise
+            refused.append({"category": category, "rel": rel, "why": "a name that cannot be used here"})
+            continue
+        if not copied:
             stopped = True
             break
         placed += 1
@@ -660,6 +870,11 @@ def place_artifact_file_members(
         "missing": missing[:_PROBLEM_CAP],
         "missing_total": len(missing),
         "stopped": stopped,
+        # R787: what the person did not tick stays in the artifact; a cache folder that could not take
+        # the models makes the restore incomplete, as does any refused or missing member.
+        "hf_not_chosen": hf_not_chosen,
+        "refused_targets": refused_targets,
+        "incomplete": bool(refused or missing or stopped),
         "method": (
             "Files carried inside the artifact are placed additively: an existing local "
             "file is kept and counted in `skipped`, never replaced. Their bytes were "
@@ -667,6 +882,388 @@ def place_artifact_file_members(
             "are not re-hashed here."
         ),
     }
+
+
+def _same_file(opened: os.stat_result, checked: os.stat_result) -> bool:
+    """Whether the file opened is the one that was checked.
+
+    Device and inode on POSIX. On Windows ``lstat`` and ``fstat`` can read the file id by two routes
+    that need not agree on every file system (ReFS, Dev Drive), and a mismatch there would refuse every
+    member of a sound backup, so the size stands in; the real-path and link-on-the-way checks made just
+    before the open carry the rest there."""
+    if os.name == "nt":
+        return opened.st_size == checked.st_size
+    return (opened.st_dev, opened.st_ino) == (checked.st_dev, checked.st_ino)
+
+
+def _same_file_again(opened: os.stat_result, checked: os.stat_result, src: Path) -> bool:
+    """A second look by name when the inode moved (POSIX): FAT32, exFAT, a CIFS share mounted
+    ``noserverino`` or a FUSE file system without ``use_ino`` make an inode number up when a file is
+    loaded, and it can change if the kernel drops the file in between -- likely while tens of GB are
+    copied. A sound member would then be refused at random. So the name is looked at again: it must
+    still not be a link, be a regular file on the same device as the one checked, with the size
+    checked, and now carry the inode that was opened. A swap would have to win this look too, which
+    is the same race as the stated limit, never a wider one."""
+    if os.name == "nt" or opened.st_dev != checked.st_dev or opened.st_size != checked.st_size:
+        return False
+    try:
+        now = os.lstat(src)
+    except OSError:
+        return False
+    return (stat.S_ISREG(now.st_mode) and not is_link_stat(now)
+            and (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino))
+
+
+class SourceChanged(OSError):
+    """A restore member is no longer the file that was checked (R779): it was swapped after the look."""
+
+
+class SourceUnreadable(OSError):
+    """A restore member that could not be READ (R778). Never a destination failure: a full disk or a
+    live folder that cannot be written still stops the restore with an error, because every file after
+    it would fail the same way. Each subclass is one fixed reason; the system's own words are dropped."""
+
+
+class UnreadDenied(SourceUnreadable):
+    """The system refused to let the file be read (permissions, or a file another program holds locked)."""
+
+
+class UnreadGone(SourceUnreadable):
+    """The file was listed, then was no longer there when it was read."""
+
+
+class UnreadNotAFile(SourceUnreadable):
+    """The name no longer stands for a regular file."""
+
+
+class UnreadFailed(SourceUnreadable):
+    """Reading failed part-way, or for another reason (a damaged drive, a disconnected device)."""
+
+
+#: R778's fixed reason codes, by class. A folder that could not be listed has its own code.
+UNREAD_WHY: dict[type, str] = {
+    UnreadDenied: "denied",
+    UnreadGone: "gone",
+    UnreadNotAFile: "not-a-file",
+    UnreadFailed: "read-failed",
+}
+UNREAD_FOLDER = "folder-unlisted"
+
+
+def _unread_of(cls: type) -> SourceUnreadable:
+    """The fixed R778 class for an ``OSError`` class met while READING a member."""
+    if issubclass(cls, PermissionError):
+        return UnreadDenied("permission denied")
+    if issubclass(cls, FileNotFoundError):
+        return UnreadGone("no longer there")
+    if issubclass(cls, (IsADirectoryError, NotADirectoryError)):
+        return UnreadNotAFile("not a file")
+    return UnreadFailed("could not be read")
+
+
+def _process_can_open() -> bool:
+    """Whether this process can still open a file at all. Asked only after a source failed: when the
+    process itself is out of file handles, every file after this one would fail the same way, so the
+    restore stops with that error instead of marking the rest unread one by one. Answered by trying,
+    since the error's own number is not read (the sink rule). Stated limit: an open refused for lack of
+    memory is not told apart this way (opening the null device usually still succeeds), so it is
+    counted against that one file."""
+    try:
+        fd = os.open(os.devnull, os.O_RDONLY)
+    except OSError:
+        return False
+    os.close(fd)
+    return True
+
+
+def _now_a_link(path: Path) -> bool:
+    """``is_link`` for a name whose open just failed; a name that cannot even be looked at is not
+    known to be a link, and its open failure is reported as such."""
+    try:
+        return is_link(path)
+    except OSError:
+        return False
+
+
+#: R783: whether this system can walk a folder by handle and open every name relative to its folder
+#: without following a link (the pieces ``os.fwalk`` and ``openat`` stand on: handle-relative open, stat
+#: and listing, O_NOFOLLOW, O_DIRECTORY). Decided by what the system offers, never by its name: where any
+#: piece is missing (Windows has no ``dir_fd``), the restore keeps R779's checks by path and their stated
+#: limit.
+_FD_RELATIVE = bool(
+    os.open in os.supports_dir_fd
+    and os.stat in os.supports_dir_fd
+    and os.scandir in os.supports_fd
+    and os.stat in os.supports_follow_symlinks
+    and getattr(os, "O_NOFOLLOW", 0)
+    and getattr(os, "O_DIRECTORY", 0)
+)
+
+
+def _fd_open_error(name: str, dir_fd: int, cls: type) -> OSError | None:
+    """What a failed fd-relative open of ``name`` (raising ``cls``) means for the restore: a link there is
+    refused, as R779 refuses it (``SourceChanged``); anything else is counted as not read with R778's fixed
+    reason; ``None`` when the process itself is out of file handles, and the restore stops with the error."""
+    try:
+        if is_link_stat(os.stat(name, dir_fd=dir_fd, follow_symlinks=False)):
+            return SourceChanged("a name on the way became a link after it was checked")
+    except OSError:
+        pass
+    if not _process_can_open():
+        return None
+    return _unread_of(cls)
+
+
+def _open_member_fd(backup_root: Path, cat: str, cat_st: os.stat_result, rel: PurePosixPath) -> int:
+    """R783: open one restore member ONE NAME AT A TIME from the category folder, each name opened relative
+    to the folder handle before it and never followed if it is a link (``O_NOFOLLOW``; ``O_DIRECTORY`` for
+    the folders on the way). A folder swapped for a link between the walk and this open is refused here, by
+    the system, at the moment of the open -- not by a look made before it, which is the window R779 could
+    only narrow.
+
+    The category folder is opened by its path, without following it, and must be the folder that was
+    walked (the backup folder above it is the place the person chose and may be a link, as R779 measures
+    it; only passing through it is needed). At most two handles are held at once, whatever the depth, and
+    every one but the returned one is closed."""
+    dir_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        cur = os.open(backup_root / cat, dir_flags)
+    except OSError as exc:
+        if _now_a_link(backup_root / cat):
+            raise SourceChanged("the category folder became a link after it was walked") from None
+        if not _process_can_open():
+            raise
+        raise _unread_of(type(exc)) from None
+    try:
+        try:
+            same = os.path.samestat(os.fstat(cur), cat_st)
+        except OSError:
+            same = False
+        if not same and not _same_folder_again(cur, cat_st, backup_root / cat):
+            raise SourceChanged("the category folder changed after it was walked")
+        for name in rel.parent.parts:
+            try:
+                nxt = os.open(name, dir_flags, dir_fd=cur)
+            except OSError as exc:
+                err = _fd_open_error(name, cur, type(exc))
+                if err is None:
+                    raise
+                raise err from None
+            os.close(cur)
+            cur = nxt
+        flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+        try:
+            return os.open(rel.name, flags, dir_fd=cur)
+        except OSError as exc:
+            err = _fd_open_error(rel.name, cur, type(exc))
+            if err is None:
+                raise
+            raise err from None
+    finally:
+        os.close(cur)
+
+
+def _same_folder_again(fd: int, walked: os.stat_result, path: Path) -> bool:
+    """The category folder's second look when its inode moved, as ``_same_file_again`` does for a file:
+    FAT32, exFAT, a CIFS share mounted ``noserverino`` or FUSE without ``use_ino`` make a folder's inode
+    number up again when the kernel drops it, likely during a long copy, which would refuse every member of
+    a sound backup. Accepted only on the same device, with the name still a folder and not a link, carrying
+    the inode of the folder just opened. A swap would have to win this look too."""
+    try:
+        opened = os.fstat(fd)
+        now = os.lstat(path)
+    except OSError:
+        return False
+    return (opened.st_dev == walked.st_dev and stat.S_ISDIR(now.st_mode) and not is_link_stat(now)
+            and (now.st_dev, now.st_ino) == (opened.st_dev, opened.st_ino))
+
+
+def _open_dir_chain(root_fd: int, parts: tuple[str, ...]) -> int | None:
+    """The folder ``parts`` below ``root_fd``, opened one name at a time without following a link, holding
+    at most two handles; ``None`` when any name on the way cannot be opened as a folder (a link included)."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+    cur = root_fd
+    try:
+        for p in parts:
+            nxt = os.open(p, flags, dir_fd=cur)
+            if cur != root_fd:
+                os.close(cur)
+            cur = nxt
+    except OSError:
+        if cur != root_fd:
+            os.close(cur)
+        return None
+    return cur
+
+
+def _fd_walk(top: str):
+    """R783: ``os.walk``'s shape (top-down, ``dirnames`` pruned in place), walked BY HANDLE. Every folder is
+    reached from the category folder's handle one name at a time with ``O_NOFOLLOW | O_DIRECTORY`` and
+    listed through its own handle. Yields ``(dirpath, dirnames, names, dir_fd)``; ``dir_fd`` is valid until
+    the next item.
+
+    Written here rather than taken from ``os.fwalk`` (the reads of this change): ``os.fwalk`` RAISES where
+    ``os.walk`` passes over -- a category folder that cannot be opened, a listing that fails part-way on a
+    damaged drive, a folder nested deeper than the process has handles for, since it holds one handle per
+    level. Here, as with ``os.walk``, a folder that cannot be opened or listed is never handed back and the
+    caller counts it as not listed (R778); and each folder is reopened from the category folder's handle
+    rather than kept open below its parent, so at most three handles are open whatever the depth. An entry
+    is sorted by its own type, never by what a link points at, so a link always lands in ``names``, where
+    the caller counts it; an entry whose type cannot be read lands there too and is counted as unread by
+    the caller's look."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+    try:
+        root = os.open(top, flags)
+    except OSError:
+        return
+    try:
+        stack: list[tuple[str, ...]] = [()]
+        while stack:
+            parts = stack.pop()
+            fd = root if not parts else _open_dir_chain(root, parts)
+            if fd is None:
+                if not _process_can_open():  # asked while the walk still holds its handles
+                    raise OSError("this process could not open any file while listing the backup")
+                continue  # never handed back: the caller counts it as not listed
+            try:
+                dirnames: list[str] = []
+                names: list[str] = []
+                try:
+                    with os.scandir(fd) as it:
+                        for entry in it:
+                            try:
+                                is_dir = entry.is_dir(follow_symlinks=False)
+                            except OSError:
+                                is_dir = False
+                            (dirnames if is_dir else names).append(entry.name)
+                except OSError:
+                    if not _process_can_open():
+                        raise OSError("this process could not open any file while listing the backup") from None
+                    continue  # could not be listed: never handed back, as os.walk does
+                yield os.path.join(top, *parts), dirnames, names, fd
+                stack.extend(parts + (n,) for n in reversed(dirnames))
+            finally:
+                if fd != root:
+                    os.close(fd)
+    finally:
+        os.close(root)
+
+
+def _category_swapped(cat_root: Path, cat_real: str) -> bool:
+    """Whether the category folder is now a link, or (where the system gives folders a stable identity)
+    no longer the folder its resolved path names. A folder that cannot be looked at counts as swapped."""
+    try:
+        st = os.lstat(cat_root)
+        if is_link_stat(st):
+            return True
+        return os.name != "nt" and not os.path.samestat(st, os.stat(cat_real))
+    except OSError:
+        return True
+
+
+def _category_members(
+    cat_root: Path, unread: list[tuple[str, str]] | None = None
+) -> tuple[list[tuple[Path, os.stat_result]], int]:
+    """The regular files a restore may copy from one category folder, each with the ``lstat`` it was
+    checked by, sorted, and the number of links met on the way (R779).
+
+    Walked with ``os.walk`` (or, R783, by handle with ``_fd_walk``) and PRUNED here rather than by the walker's own rule, because ``rglob`` and
+    ``os.walk`` both treat a Windows junction as a plain folder and would walk into it. A ``.oopart`` is
+    skipped before its link check (a copy in progress, never a member), and a plain folder is entered
+    whatever its name. Mirrors ``import_scan._dir_totals``, so the preview and the restore agree.
+
+    R778: what could not be looked at is appended to ``unread`` as ``(relative path, reason code)`` --
+    a folder that could not be listed (its files are unknown, so it is one entry), a sub-folder or a
+    file whose own look was refused -- and the walk goes on."""
+    members: list[tuple[Path, os.stat_result]] = []
+    links = 0
+
+    def _note(path: str, why: str) -> None:
+        if unread is not None:
+            unread.append((Path(path).relative_to(cat_root).as_posix(), why))
+
+    # A folder the walk was told to enter but never handed back is one it could not list. Worked out
+    # from the walk's own output rather than its error, so nothing of the system's words is read.
+    to_enter: list[str] = [os.fspath(cat_root)]
+    listed: set[str] = set()
+    # R783: where the system can, the folders are walked BY HANDLE (``_fd_walk``) and every name is
+    # looked at relative to its folder's handle, so a folder swapped for a link during the walk cannot
+    # send it somewhere else. The files are opened the same way later (``_open_member_fd``).
+    walk = (
+        _fd_walk(os.fspath(cat_root))
+        if _FD_RELATIVE
+        else ((dp, dn, fn, None) for dp, dn, fn in os.walk(cat_root, followlinks=False))
+    )
+
+    def _look(dirpath: str, n: str, dir_fd: int | None) -> os.stat_result:
+        if dir_fd is None:
+            return os.lstat(os.path.join(dirpath, n))
+        return os.stat(n, dir_fd=dir_fd, follow_symlinks=False)
+
+    try:
+        for dirpath, dirnames, names, dir_fd in walk:
+            listed.add(dirpath)
+            enter: list[str] = []
+            for n in dirnames:
+                try:
+                    if dir_fd is None:
+                        linked = is_link(os.path.join(dirpath, n))
+                    else:
+                        try:
+                            linked = is_link_stat(_look(dirpath, n, dir_fd))
+                        except FileNotFoundError:
+                            linked = False
+                except OSError:
+                    if not _process_can_open():
+                        raise
+                    _note(os.path.join(dirpath, n), UNREAD_FOLDER)
+                    continue
+                if linked:
+                    if not n.endswith(_PART_SUFFIX):
+                        links += 1  # never follow -- see restore_folder_backup's docstring
+                else:
+                    enter.append(n)
+            dirnames[:] = enter
+            to_enter.extend(os.path.join(dirpath, n) for n in enter)
+            for n in names:
+                if n.endswith(_PART_SUFFIX):
+                    continue
+                fp = os.path.join(dirpath, n)
+                try:
+                    st = _look(dirpath, n, dir_fd)
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    if not _process_can_open():
+                        raise
+                    _note(fp, UNREAD_WHY[type(_unread_of(type(exc)))])
+                    continue
+                if is_link_stat(st):
+                    links += 1
+                elif stat.S_ISREG(st.st_mode):
+                    members.append((Path(fp), st))
+    finally:
+        walk.close()  # every folder handle is closed, even when the walk stops part-way
+    for d in to_enter:
+        if d not in listed:
+            # One rule for what disappears while the folder is being LISTED: it was never a member, so
+            # it is not counted (a file gone before its look is passed over the same way above). What
+            # is gone after it was listed is counted as "no longer there" when its copy is tried.
+            try:
+                os.lstat(d)
+            except FileNotFoundError:
+                continue
+            except OSError:
+                pass
+            # Out of file handles, ``os.walk`` passes over every folder it cannot open: that is the
+            # process, not the backup, and every folder after it would read the same way. Stop.
+            if not _process_can_open():
+                raise OSError("this process could not open any file while listing the backup")
+            rel = Path(d).relative_to(cat_root).as_posix()
+            if unread is not None:
+                unread.append(("" if rel == "." else rel, UNREAD_FOLDER))
+    members.sort(key=lambda m: m[0])
+    return members, links
 
 
 def restore_folder_backup(
@@ -704,7 +1301,18 @@ def restore_folder_backup(
     directory under an innocuous filename (live-reproduced). ``Path.is_symlink()``
     uses ``lstat`` (never follows), so checking it first costs nothing and touches
     the symlink target not at all — mirroring the sibling ``verify_folder_backup``'s
-    own ``_safe_member_path`` guard for the identical untrusted-input threat model."""
+    own ``_safe_member_path`` guard for the identical untrusted-input threat model.
+
+    ONE UNREADABLE FILE DOES NOT STOP THE RESTORE (R778). A member the restore cannot READ -- refused
+    by the system, gone since it was listed, no longer a file, a read that fails part-way, or a folder
+    that cannot be listed -- is left out, counted in ``unread`` with one fixed reason code (never the
+    system's words), and the restore goes on; ``incomplete`` is then true. Nothing of it reaches the
+    live folder: the copy goes through a temp file that is removed, and an existing live file is never
+    touched, so running the import again restores exactly what was missed. A failure on the WRITING
+    side still stops the restore with an error, since every file after it would fail the same way. A
+    folder backup holds no critical member: its four categories (``_CATEGORIES``) are wiki dumps, map
+    extracts and AI models, never the main store or key material, so nothing here needs to stop the
+    whole restore before anything is placed."""
     src = Path(src_root)
     cats = set(categories) if categories is not None else set(_CATEGORIES)
     tgt = live_targets(targets)
@@ -714,9 +1322,40 @@ def restore_folder_backup(
     # in which case every file restores as before and is COUNTED as unverifiable, never
     # silently called sound.
     recorded = _recorded_digests(src)
+    # R780: which files the current manifest lists at all. A file it does not list is restored as
+    # before and counted per category, apart from "not content-verified".
+    listing = _manifest_listing(src)
+    unlisted: dict[str, int] = {}
 
-    restored = skipped = refused_symlinks = 0
+    restored = skipped = refused_symlinks = refused_dest_links = refused_layout = 0
+    refused_categories: list[str] = []
+    # R784: categories whose LIVE folder cannot take a restore on this computer, with one fixed reason.
+    refused_targets: dict[str, str] = {}
     corrupt: list[dict] = []
+    # R778: what could not be READ. Counted and named like ``corrupt``, and the restore goes on.
+    unread: list[dict] = []
+    unread_total = 0
+    unread_by_why: dict[str, int] = {}
+
+    unread_folders = 0
+
+    def _shown(rel: str) -> str:
+        # A name that is not valid UTF-8 (a foreign drive) comes back from the system with lone surrogates,
+        # which the JSON status responses cannot encode: replace them, so the result always renders.
+        return rel.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+
+    def _unread(cat: str, rel: str, why: str) -> None:
+        # A folder that could not be listed is ONE entry whose files are unknown: counted apart, so
+        # "N files not restored" never counts a folder of forty dumps as one file.
+        nonlocal unread_total, unread_folders
+        if why == UNREAD_FOLDER:
+            unread_folders += 1
+        else:
+            unread_total += 1
+        unread_by_why[why] = unread_by_why.get(why, 0) + 1
+        if len(unread) < _PROBLEM_CAP:
+            unread.append({"category": cat, "rel": _shown(rel), "why": why})
+
     unverifiable = 0
     stopped = False
     for cat in _CATEGORIES:
@@ -724,38 +1363,146 @@ def restore_folder_backup(
             continue
         cat_root = src / cat
         dest_dir = tgt.get(cat)
-        if not cat_root.is_dir() or dest_dir is None:
+        if dest_dir is None:
             continue
-        for p in sorted(cat_root.rglob("*")):
-            if p.name.endswith(_PART_SUFFIX):
+        # R779: the CATEGORY FOLDER ITSELF is checked without following it. ``is_dir()`` and
+        # ``rglob`` both follow a link at this level, so a backup whose ``wiki_dumps`` was a link
+        # to some other place on the machine had that place's files copied into the live data
+        # folder. A junction or other reparse point counts as a link too (Windows).
+        try:
+            linked_cat = is_link(cat_root)
+            is_folder = linked_cat or stat.S_ISDIR(os.stat(cat_root).st_mode)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            if not _process_can_open():
+                raise  # the process, not the backup: stop
+            # R778: the category folder itself could not be looked at. Nothing in it was restored.
+            _unread(cat, "", UNREAD_FOLDER)
+            continue
+        if linked_cat:
+            refused_categories.append(cat)
+            continue
+        if not is_folder:
+            continue
+        if cat == "hf_models":
+            # R784: the hub cache folder as it resolves HERE; one that cannot be used leaves the whole
+            # category out with its reason, and the restore is incomplete.
+            why_target = hf_target_refusal(dest_dir)
+            if why_target is not None:
+                refused_targets[cat] = why_target
                 continue
-            if p.is_symlink():
-                refused_symlinks += 1  # never follow -- see the docstring above
-                continue
-            if not p.is_file():
-                continue
+        # Containment is measured from where the folders really are: the backup folder the person
+        # picked may itself be a link (their choice), and so may a live data folder they moved.
+        cat_real = os.path.realpath(cat_root)
+        dest_real = os.path.realpath(dest_dir)
+        # The folder measured must be the folder that was checked: a drive that swaps the category
+        # folder for a link between the check above and the line before would otherwise have the
+        # containment measured from the link's target. Checked again after the walk, and the category
+        # folder is part of every member's way below (the check-then-open window stays narrowed, not closed).
+        if _category_swapped(cat_root, cat_real):
+            refused_categories.append(cat)
+            continue
+        try:
+            cat_st = os.lstat(cat_root)
+            cat_dev = cat_st.st_dev
+        except OSError:
+            refused_categories.append(cat)
+            continue
+        not_listed: list[tuple[str, str]] = []
+        members, linked_here = _category_members(cat_root, not_listed)
+        if _category_swapped(cat_root, cat_real):
+            refused_categories.append(cat)
+            continue
+        refused_symlinks += linked_here
+        for rel_s, why in not_listed:
+            _unread(cat, rel_s, why)
+        for p, seen in members:
             rel = p.relative_to(cat_root)
-            dst = dest_dir / rel
-            if dst.exists():
+            if cat == "hf_models" and not hf_member_allowed(rel.as_posix()):
+                refused_layout += 1  # R777: only the model cache's own layout is ever placed
+                continue
+            # Belt and braces: whatever the walk handed back, no part of the way from the BACKUP folder
+            # to the member -- the category folder included -- may be a link, and its real path may not
+            # leave the folder.
+            # A member on ANOTHER device than the category folder was reached through something that
+            # is not a plain folder of the backup: a drive that answers "folder" to the checks and
+            # "link" to the walk or the open (a hostile FUSE device can) would otherwise hand over a
+            # file from the machine itself, with the open's own identity check agreeing, since both
+            # looked at that same file. Refused. R783: where the system can (``_FD_RELATIVE``), the open
+            # itself goes from the category folder one name at a time by handle with O_NOFOLLOW, so a folder swapped for a
+            # link after these checks is refused AT the open. STATED LIMIT, where it cannot (Windows):
+            # a racer on the SAME file system as the files it wants read (any local program) can still
+            # swap a folder on the way between these checks and the open.
+            if seen.st_dev != cat_dev:
+                refused_symlinks += 1
+                continue
+            try:
+                linked_way = link_on_the_way(src, Path(cat) / rel.parent)
+            except OSError as exc:
+                if not _process_can_open():
+                    raise
+                _unread(cat, rel.as_posix(), UNREAD_WHY[type(_unread_of(type(exc)))])
+                continue
+            if linked_way or not stays_inside(p, cat_real):
+                refused_symlinks += 1
+                continue
+            # R784: in the model cache, the leading ``hub/`` is the hub cache folder itself.
+            if cat == "hf_models":
+                live_rel = hf_live_rel(rel.as_posix())
+                if live_rel is None:  # pragma: no cover - hf_member_allowed refused it above
+                    refused_layout += 1
+                    continue
+                rel_live = Path(live_rel)
+            else:
+                rel_live = rel
+            dst = dest_dir / rel_live
+            # R779, the destination side: never write THROUGH a link. A link anywhere between the
+            # live folder and the file (a sub-folder, or the file's own name) is refused, and the
+            # resolved destination must stay inside the live folder.
+            # R787 reads: a link AT the file's own name is that file already present (a Hugging Face
+            # cache's snapshot entries are links into its blobs): kept and counted as skipped, never
+            # written through. A link in a folder on the way is still refused.
+            if link_on_the_way(dest_dir, rel_live.parent) or not stays_inside(dst.parent, dest_real):
+                refused_dest_links += 1
+                continue
+            if os.path.islink(dst) or dst.exists():
                 skipped += 1  # never overwrite a local file
                 continue
-            want = recorded.get((cat, rel.as_posix(), p.stat().st_size))
+            want = recorded.get((cat, rel.as_posix(), seen.st_size))
             # VERIFY WHILE COPYING, and only commit the copy if it matches. The bytes
             # are read either way, so the check is free; the temp file is what makes
             # "refuse" possible at all -- a corrupt member is discarded before it can
             # land in the live data directory. Without this a dump that rotted on the
             # external drive was restored silently, and the app then read it as its own.
             h = hashlib.sha256() if want is not None else None
-            if not _atomic_copy(p, dst, should_stop=should_stop, digest=h):
+            try:
+                opener: Callable[[], int] | None = None
+                if _FD_RELATIVE:  # R783: opened by folder handle, never by the path checked above
+                    opener = functools.partial(_open_member_fd, src, cat, cat_st, PurePosixPath(rel.as_posix()))
+
+                done = _atomic_copy(p, dst, should_stop=should_stop, digest=h, nofollow_src=True, expect=seen,
+                                    opener=opener)
+            except SourceChanged:
+                refused_symlinks += 1  # swapped for something else after it was looked at: not read
+                continue
+            except SourceUnreadable as exc:
+                # R778: this one file could not be read. Nothing of it reached the live folder (the
+                # temp is gone, the live name never appeared), so a later run restores exactly it.
+                _unread(cat, rel.as_posix(), UNREAD_WHY.get(type(exc), "read-failed"))
+                continue
+            if not done:
                 stopped = True
                 break
             if h is not None and h.hexdigest() != want:
                 dst.unlink(missing_ok=True)
                 if len(corrupt) < _PROBLEM_CAP:
-                    corrupt.append({"category": cat, "rel": rel.as_posix()})
+                    corrupt.append({"category": cat, "rel": _shown(rel.as_posix())})
                 continue
             if want is None:
-                unverifiable += 1
+                unverifiable += 1  # an unlisted file has no recorded checksum either, so it counts here too
+            if listing is None or rel.as_posix() not in listing.get(cat, ()):
+                unlisted[cat] = unlisted.get(cat, 0) + 1
             restored += 1
             if progress_cb is not None:
                 progress_cb({"restored": restored, "skipped": skipped})
@@ -766,6 +1513,28 @@ def restore_folder_backup(
         "restored": restored,
         "skipped": skipped,
         "refused_symlinks": refused_symlinks,
+        # R779: category folders that are links. NOTHING in them was restored, so the restore is
+        # incomplete -- the person restores them by copying the real folder into the backup.
+        "refused_categories": refused_categories,
+        # R784: categories whose live folder cannot take a restore here, ``{category: reason code}``
+        # (HF_TARGET_*). Nothing of them was restored.
+        "refused_targets": refused_targets,
+        # R779: files not placed because a link sat on the way to their place in the live folder.
+        "refused_dest_links": refused_dest_links,
+        # A member link was never written by a backup, but its place in the restore is still empty:
+        # any link refusal means the restore did not bring back everything the folder showed.
+        "incomplete": bool(refused_categories or refused_targets or refused_dest_links or refused_symlinks or unread_total or unread_folders
+                           or refused_layout),
+        # R777: files in the model-cache folder outside the shape the backup writes there (hidden names,
+        # anything outside hub/models--*/refs|snapshots). Never placed in the Hugging Face home.
+        "refused_layout": refused_layout,
+        # R778: files (or folders, whose files are unknown) that could not be READ, each with one fixed
+        # reason code. Not restored; the rest of the restore went on. Names stay on this machine: the
+        # run journal and the diagnostics carry the count only.
+        "unread_total": unread_total,  # FILES that could not be read
+        "unread_folders": unread_folders,  # folders that could not be listed: their files are unknown
+        "unread_by_why": unread_by_why,  # every one counted, past the named list's cap
+        "unread": unread,
         # A file whose bytes did not match the checksum this backup recorded for it. NOT
         # restored: the copy is removed again, so the live data directory never receives
         # it. Named, so the operator can re-download exactly those.
@@ -775,6 +1544,11 @@ def restore_folder_backup(
         # backup, or a manifest that could not be read). A gap, published as a gap:
         # these were NOT content-verified and must not be counted as if they were.
         "restored_unverified": unverifiable,
+        # R780: restored, but not listed in this backup's CURRENT manifest, per category. They may come
+        # from an earlier or interrupted backup pass (a stopped pass keeps the previous manifest, and a
+        # file removed from the live folder since an earlier pass stays on the drive); counted apart
+        # from "not content-verified", never refused, since the manifest proves no origin.
+        "restored_unlisted": unlisted,
         "stopped": stopped,
     }
 
@@ -817,8 +1591,12 @@ def _blob_sha256_from_name(rel: str) -> str | None:
 
 
 def _sha256_file(path: Path) -> str:
+    """The SHA-256 of a regular file. The verify reaches a member through its name inside the backup folder, so a
+    pipe or a device there raises :class:`NotARegularFile` without blocking or reading (row 312), and
+    a link is never followed either (no backup we write holds one; one swapped in after the traversal guard looked
+    could lead out of the folder), so it reads as a checksum mismatch."""
     h = hashlib.sha256()
-    with open(path, "rb") as f:
+    with open_regular(path) as f:
         for chunk in iter(lambda: f.read(_COPY_BUF), b""):
             h.update(chunk)
     return h.hexdigest()
@@ -866,10 +1644,16 @@ def verify_folder_backup(
         "manifest_found": False,
         "ok": False,
     }
-    try:
-        manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    manifest = read_manifest_json(root / MANIFEST_NAME)  # a link, a pipe, a huge or deeply nested file: none
+    if manifest is None:
+        try:
+            present = os.path.lexists(root / MANIFEST_NAME)
+        except (OSError, ValueError):
+            present = False
         out["reason"] = (
+            "a manifest is at this path but was refused: it is not a regular file, is too large, or is "
+            "not readable JSON -- so there is nothing trustworthy to verify against."
+            if present else
             "no finalized manifest at this path — an interrupted/incomplete folder backup "
             "never writes one, so there is nothing to verify against."
         )
@@ -954,8 +1738,11 @@ def verify_folder_backup(
             want = [h for h in (recorded, blob_hex) if h is not None]
             if want and (blob_hex is None or verify_model_checksums):
                 checksummed += 1
-                actual_hex = _sha256_file(path)
-                status = "ok" if all(actual_hex == h for h in want) else "checksum_mismatch"
+                try:
+                    actual_hex = _sha256_file(path)
+                except NotARegularFile:
+                    actual_hex = ""  # a link, or swapped for a pipe or a device after the look: never a match
+                status = "ok" if actual_hex and all(actual_hex == h for h in want) else "checksum_mismatch"
             else:
                 status = "size_only"  # present + right size; no usable stored checksum
         summary[status] += 1
@@ -1172,7 +1959,11 @@ class FolderBackupManager:
             if self._alive():
                 storage_events.run_refused(what, "folder-running", via="folder")
                 raise RuntimeError("A folder backup is already running.")
-            cats = [c for c in categories if c in _CATEGORIES] or list(_CATEGORIES)
+            cats = [c for c in categories if c in _CATEGORIES] or (
+                # R787 reads: a restore that names no category never places Hugging Face models; only
+                # a request that names them (the person's own tick) does.
+                [c for c in _CATEGORIES if c != "hf_models"] if mode == "restore" else list(_CATEGORIES)
+            )
             items: list[BackupItem] = []
             if mode == "backup":
                 try:
@@ -1312,6 +2103,13 @@ class FolderBackupManager:
                     refused_symlinks=res.get("refused_symlinks"),
                     corrupt_refused=res.get("corrupt_refused"),
                     restored_unverified=res.get("restored_unverified"),
+                    refused_categories=len(res.get("refused_categories") or []),
+                    refused_targets=len(res.get("refused_targets") or {}),  # R784: a count, never the path
+                    refused_dest_links=res.get("refused_dest_links"),
+                    unread=res.get("unread_total"),
+                    unread_folders=res.get("unread_folders"),
+                    refused_layout=res.get("refused_layout"),
+                    restored_unlisted=sum((res.get("restored_unlisted") or {}).values()),
                 )
                 storage_events.run_ended(
                     note,

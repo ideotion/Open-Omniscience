@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.maintenance import ensure_article_identity_columns
@@ -23,12 +23,13 @@ from src.utils.url_utils import (
     content_multihash,
     generate_content_hash,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -95,7 +96,7 @@ def test_dedup_hash_is_untouched_and_still_unique(db):
 
 def test_self_heal_adds_and_backfills_existing_rows():
     # Simulate an OLD-schema store: an articles table without the identity columns.
-    eng = create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     with eng.begin() as c:
         c.execute(
             text(

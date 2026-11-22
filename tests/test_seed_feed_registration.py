@@ -12,7 +12,6 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import (
@@ -24,11 +23,12 @@ from src.catalog.qualification import (
 )
 from src.database.models import Base, Source, SourceQualificationAttempt
 from src.ingest.seed_sources import seed_sources
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def s():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()
     yield session
@@ -278,7 +278,7 @@ def test_a_first_seed_of_more_than_999_domains_runs_on_a_sqlite_that_caps_variab
     that boot. The cap is set on the real connection, so a regression is an OperationalError, not a comment."""
     from sqlalchemy import event
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
 
     @event.listens_for(engine, "connect")
     def _cap(dbapi_con, _record):

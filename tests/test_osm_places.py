@@ -22,12 +22,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.osm import ingest
 from src.osm import places as P
 from tests import _osm_lane_helpers
+from tests._app_engine import app_sqlite_engine
 from tests._osm_lane_helpers import FIXTURE, generator
 from tests.js_source_helper import function_source
 
@@ -40,7 +40,7 @@ STATIC = ROOT / "src" / "static"
 def db():
     from src.database.models import Base
 
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng)()
     try:

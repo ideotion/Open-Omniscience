@@ -34,7 +34,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -45,6 +45,7 @@ from src.ingest.batch import ArticleBatch
 from src.ingest.host_mismatch import check_host
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.utils.url_utils import fetched_host, off_the_source_site
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import python_function_source
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -122,7 +123,7 @@ def _bounded(fn, seconds: float = 10.0):
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="Good News", domain="good.example", language="en", enabled=True))
@@ -254,7 +255,7 @@ def test_off_the_source_site_says_nothing_when_there_is_nothing_to_compare(host,
 
 
 def _store(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'v.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'v.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:
@@ -397,7 +398,7 @@ def test_the_collect_pass_delta_export_carries_it(tmp_path):
 
 
 def test_the_boot_self_heal_adds_the_column_with_nothing_backfilled():
-    eng = create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     with eng.begin() as c:
         c.execute(text("CREATE TABLE articles (id INTEGER PRIMARY KEY, hash VARCHAR(64))"))
         c.execute(text("INSERT INTO articles (id, hash) VALUES (1, 'h')"))
@@ -421,7 +422,7 @@ def _merged(tmp_path, local_host, incoming_host, *, same_hash=True):
     staged, working = tmp_path / "inc.db", tmp_path / "live.db"
     for path, host, (h, body) in ((working, local_host, ("H1", "Same wire story.")),
                                   (staged, incoming_host, ("H1", "Same wire story.") if same_hash else ("H2", "Another story."))):
-        engine = create_engine(f"sqlite:///{path}", future=True)
+        engine = app_sqlite_engine(path, future=True)
         Base.metadata.create_all(engine)
         with sessionmaker(bind=engine, future=True)() as s:
             s.add(Source(name="Good News", domain=SITE))
@@ -432,7 +433,7 @@ def _merged(tmp_path, local_host, incoming_host, *, same_hash=True):
         engine.dispose()
     counts, _ = merge_corpus(staged, working, meta)
     assert counts["articles"]["duplicate" if same_hash else "new"] == 1, "the fixture must exercise the path it names"
-    engine = create_engine(f"sqlite:///{working}", future=True)
+    engine = app_sqlite_engine(working, future=True)
     try:
         with sessionmaker(bind=engine, future=True)() as s:
             return {a.hash: a.fetched_host for a in s.query(Article).all()}
@@ -461,7 +462,7 @@ def test_the_migration_goes_down_and_up_without_rebuilding_the_articles_table(tm
 
     from src.database.migrate import _alembic_config
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'm.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'm.db', future=True)
     Base.metadata.create_all(engine)
 
     def shape(c):

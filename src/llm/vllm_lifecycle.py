@@ -3319,13 +3319,10 @@ def hf_cache_dir() -> Path:
     guard built on this would then refuse a start that would have worked. An
     explicitly-set environment variable still wins, in HF's own precedence.
     """
-    if (explicit := os.environ.get("HF_HUB_CACHE")):
-        return Path(explicit)
-    if (home := os.environ.get("HF_HOME")):
-        return Path(home) / "hub"
-    from src.llm.model_store import hf_home
+    # ONE resolver (R786): this copy had drifted from model_store's (no "~" expansion, no strip).
+    from src.llm.model_store import hf_hub_cache
 
-    return hf_home() / "hub"
+    return hf_hub_cache()
 
 
 #: What vLLM itself requires a model directory to contain, quoted from the error it

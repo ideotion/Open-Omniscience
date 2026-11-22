@@ -13,13 +13,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument, LawRevision, Source
 from src.ingest import FetchResult
 from src.law.catalog import load_legal_catalog, register_documents, seed_legal_sources
 from src.law.track import page_text, track_document, track_watched
+from tests._app_engine import app_sqlite_engine
 
 _BODY = " ".join(
     f"Section {i}: every person shall have the right to liberty and security." for i in range(40)
@@ -57,8 +57,8 @@ class StubFetcher:
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

@@ -15,11 +15,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.headline_body import find_headline_body_mismatch
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 # A rich economics body (clears min_chars; its top keywords are bank/interest/rates…).
 BODY = (
@@ -34,8 +34,8 @@ NOW = datetime.now().replace(microsecond=0)
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

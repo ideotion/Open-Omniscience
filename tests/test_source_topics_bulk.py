@@ -15,20 +15,21 @@ from __future__ import annotations
 import math
 
 import pytest
-from sqlalchemy import create_engine, event, select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import source_topics as st
 from src.database.feed_key import feed_key
 from src.database.models import Base, Source
 from src.database.stand_in import SOURCE_DOMAIN_PREFIX
+from tests._app_engine import app_sqlite_engine
 
 TOPICS = ["politics", "economy"]
 
 
 @pytest.fixture()
 def factory(monkeypatch):
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)
 

@@ -27,11 +27,12 @@ import os
 import time
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar, rollup_marker, rollup_serve
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import wait_until
 
 pytestmark = pytest.mark.skipif(
@@ -91,8 +92,8 @@ def _seed(session, *, keywords: int, mentions_per: int, undated_every: int = 0):
 
 @pytest.fixture()
 def session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     with engine.connect() as c:

@@ -26,12 +26,12 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.bulletin.render import _is_ratio, render
-from src.database.models import Base, Keyword, KeywordMention, Source
+from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _edition(terms: list[dict], *, baseline_days: int | None = 30) -> dict:
@@ -163,14 +163,19 @@ def test_trending_always_says_which_kind_each_row_is(tmp_path):
     """The renderer's ``expected`` fallback exists for old records only. If the
     producer ever stopped setting the flag, every new edition would silently take
     that path -- so the flag's presence is pinned at the source."""
-    engine = create_engine(f"sqlite:///{tmp_path / 'rh.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'rh.db', future=True)
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     today = date.today()
     with Sess() as s:
-        s.add(Source(name="S", domain="x.test"))
+        src = Source(name="S", domain="x.test")
+        s.add(src)
         s.add(Keyword(term="steady", normalized_term="steady", language="en"))
         s.add(Keyword(term="fresh", normalized_term="fresh", language="en"))
+        s.flush()
+        for aid in range(1, 50):  # the parents of the 49 mention rows below (foreign keys are enforced)
+            u = f"https://x.test/{aid}"
+            s.add(Article(id=aid, url=u, canonical_url=u, source_id=src.id, title="t", content="x", hash=f"h{aid}"))
         s.flush()
         # "steady" earns a real baseline; "fresh" arrives only inside the window.
         # A distinct article per row: (keyword_id, article_id) is UNIQUE, so one

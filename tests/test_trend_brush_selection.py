@@ -23,11 +23,11 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.queries import _bucket_span, trend, trend_range_article_ids
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 BASE = datetime(2026, 4, 1, tzinfo=UTC)
 _BODY = "Rainfall across the delta displaced residents from low-lying wards. " * 8
@@ -37,7 +37,7 @@ _BODY = "Rainfall across the delta displaced residents from low-lying wards. " *
 def db():
     """An isolated in-memory corpus -- never SessionLocal, which is shared for the whole
     pytest session and would leak these rows into every later reader."""
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng)()
     try:

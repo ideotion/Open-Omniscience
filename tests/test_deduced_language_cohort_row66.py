@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.analytics import source_quality as sq
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def test_cohort_language_prefers_the_stated_one():
@@ -22,7 +22,7 @@ def test_cohort_language_prefers_the_stated_one():
 
 
 def test_the_report_files_a_deduced_article_under_its_language():
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="S", domain="s.example", source_type="news", language=None, enabled=True)
@@ -50,7 +50,7 @@ def test_the_report_files_a_deduced_article_under_its_language():
 def _zh_corpus():
     from src.database.models import ArticleLink
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="Z", domain="z.example", source_type="news", language=None, enabled=True)

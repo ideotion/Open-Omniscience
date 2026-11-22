@@ -18,13 +18,13 @@ after a stop at that statement, the partial merge IS in the store (the premise, 
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar
 from src.analytics.extract import BaselineExtractor
 from src.database.models import Base, Source
+from tests._app_engine import app_sqlite_engine
 from tests.test_keyword_daily_refresh import _fresh_full, _index
 
 pytestmark = pytest.mark.skipif(
@@ -37,7 +37,7 @@ WATERMARK = "keyword_daily.last_mention_id"
 
 @pytest.fixture()
 def ctx():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="S", domain="x.test", country="fr"))

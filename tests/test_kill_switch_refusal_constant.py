@@ -41,6 +41,7 @@ from src.ingest.fetch_verdict import (
     classify_fetch_failure,
     is_kill_switch_refusal,
 )
+from tests._app_engine import app_sqlite_engine
 
 _SRC = Path(__file__).resolve().parent.parent / "src"
 _TAIL = "collection stopped by operator"
@@ -267,7 +268,6 @@ def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
     predicate is a widening of R293 and a decision of its own, so this pins today's behaviour until someone makes it."""
     from datetime import UTC, datetime, timedelta
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, LawDocument
@@ -287,7 +287,7 @@ def test_the_law_tracker_reads_the_head_and_not_the_wider_predicate():
         def fetch(self, url, **_kw):
             raise self.exc
 
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
     doc = LawDocument(

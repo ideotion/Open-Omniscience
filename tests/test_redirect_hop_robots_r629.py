@@ -33,7 +33,6 @@ from urllib.parse import urlsplit
 import pytest
 import requests
 from requests.adapters import BaseAdapter
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -55,6 +54,7 @@ from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, failure_url
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.ingest.sitemap import discover_sitemap_urls
 from src.monitoring.secret_scrub import record_text
+from tests._app_engine import app_sqlite_engine
 
 A = "https://a.example"
 B = "https://b.example"
@@ -535,7 +535,7 @@ def test_while_a_hop_waits_its_hosts_interval_no_other_request_reaches_that_host
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="Good", domain="good.example", language="en"))

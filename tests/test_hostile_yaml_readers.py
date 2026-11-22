@@ -14,7 +14,6 @@ import logging
 
 import pytest
 import yaml
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import ring_loader
@@ -22,6 +21,7 @@ from src.database.models import Base
 from src.database.source_manager import SourceManager
 from src.utils import safe_yaml
 from src.utils.safe_yaml import YAMLDepthError
+from tests._app_engine import app_sqlite_engine
 
 _DEEP = 100_000
 
@@ -53,7 +53,7 @@ def test_merging_into_a_hostile_local_ring_file_is_refused_and_leaves_it_untouch
 
 
 def test_importing_a_hostile_sources_file_raises_a_yaml_error_not_a_recursion_error(loader, tmp_path):
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()
     try:

@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from src.briefing import card_quality as cq
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parent.parent
 NOW = datetime(2026, 11, 14, 12, 0, tzinfo=UTC)
@@ -224,7 +225,6 @@ def test_the_refresh_calls_the_self_check_after_writing_the_cache_and_keeps_timi
 
 
 def test_run_all_bounded_reports_each_producers_time_and_outcome(monkeypatch, tmp_path):
-    import sqlalchemy as sa
     from sqlalchemy.orm import sessionmaker
 
     from src.briefing import registry
@@ -241,7 +241,7 @@ def test_run_all_bounded_reports_each_producers_time_and_outcome(monkeypatch, tm
         return [Card(type="t", title="T", summary="S", bucket="context", method="m", caveat="c", key="k")]
 
     monkeypatch.setattr(registry, "_REGISTRY", [("empty", _empty), ("bad", _bad), ("one", _one)])
-    s = sessionmaker(bind=sa.create_engine(f"sqlite:///{tmp_path / 's.db'}"))()
+    s = sessionmaker(bind=app_sqlite_engine(tmp_path / 's.db'))()
     try:
         timings: list[dict] = []
         _cards, stats = registry.run_all_bounded(s, timings=timings)
@@ -259,12 +259,11 @@ def test_run_all_bounded_reports_each_producers_time_and_outcome(monkeypatch, tm
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def db():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.database.models import Article, Base, Source
 
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     with Session(eng) as s:
         s.add(Source(id=1, name="Wire", domain="wire.example"))

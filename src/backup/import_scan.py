@@ -22,7 +22,14 @@ from __future__ import annotations
 
 import os
 import re
+import stat
+from collections.abc import Callable
 from pathlib import Path
+
+from src.backup.hf_layout import HF_LAYOUT, hf_member_allowed
+from src.backup.links import is_link, is_link_stat
+from src.backup.manifest_file import read_manifest_json
+from src.backup.regular_file import open_regular
 
 # Volume-set manifest filename mirrored from src.backup.volumes.MANIFEST_NAME --
 # hardcoded so this discovery module stays crypto-free (importing that module pulls in
@@ -40,8 +47,12 @@ _FOLDER_MANIFEST = "oo-folder-backup.json"
 
 # blob category dir on disk -> (import kind key the dialog shows, the folder-restore
 # category name). A blob backup made by the folder engine writes <root>/<catdir>/...
-_BLOB_DIRS = {"wiki_dumps": "wiki", "osm_regions": "maps", "models": "models"}
-_CATKEY_TO_DIR = {"wiki": "wiki_dumps", "maps": "osm_regions", "models": "models"}
+# R777: ``hf_models`` (the Hugging Face cache vLLM reads) has been written by the folder backup since it
+# learned that category, but the scan never listed it, so no restore ever asked for it. It is its own
+# kind here, shown beside ``models`` as the one "LLM models" line, and restored like the others: files
+# only, never downloaded, an existing file never overwritten.
+_BLOB_DIRS = {"wiki_dumps": "wiki", "osm_regions": "maps", "models": "models", "hf_models": "hf_models"}
+_CATKEY_TO_DIR = {"wiki": "wiki_dumps", "maps": "osm_regions", "models": "models", "hf_models": "hf_models"}
 
 # Directory names we never descend into: VCS/build/cache junk + OS recycle bins. A
 # leading-dot dir is also skipped (dotfolders are config/cache, never a backup). This
@@ -65,16 +76,114 @@ _SKIP_DIRS = frozenset(
 _MAX_DEPTH = 8
 
 
-def _dir_totals(d: Path) -> dict:
-    files = [p for p in d.rglob("*") if p.is_file()]
-    return {"count": len(files), "bytes": sum(p.stat().st_size for p in files)}
+# Row 293: why a large-data count is a lower bound, or leaves something out. Whole sentences and locale keys (the
+# Import checklist passes them through t()), so the reason reads in the person's language on the hover.
+SCAN_UNREAD = "Some files or folders here could not be read, so this count includes only the ones that could."
+SCAN_LINKS = "Links in this backup folder are not counted: a restore never follows a link, so they are never restored."
+SCAN_UNSIZED = "This file's size could not be read."
+# R780: never call the manifest proof of origin -- it is signed with a key it carries itself.
+SCAN_UNLISTED = (
+    "Some files here are not listed in this backup's current manifest; they may come from an earlier or interrupted "
+    "backup pass. They are restored like the others, without a recorded checksum to check them against. Anyone who can "
+    "write to this backup folder could also have placed them there, or listed files of their own: the manifest carries "
+    "its own signing key."
+)
+# The suffix of a copy in progress (src.backup.folder_backup._PART_SUFFIX): a restore skips it, so the scan does too.
+_PART_SUFFIX = ".oopart"
+
+
+# R779: what a category folder that is a link holds for a restore: nothing, and why.
+SCAN_LINKED_CATEGORY = (
+    "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. "
+    "To restore it, copy the real folder into the backup in place of the link."
+)
+
+
+def _LINKED_CATEGORY() -> dict:  # noqa: N802 - reads as the constant it stands for, built fresh each time
+    return {"count": 0, "bytes": 0, "linked": True, "reason": SCAN_LINKED_CATEGORY}
+
+
+def _dir_totals(d: Path, allow: Callable[[str], bool] | None = None, listed: set[str] | None = None,
+               check_listed: bool = False) -> dict:
+    """``{count, bytes}`` of what a folder restore would restore from one category folder, plus
+    ``unread_entries`` (folders or files it was refused) and ``refused_links`` when non-zero.
+
+    It counts exactly what ``restore_folder_backup`` copies: regular files, never a ``.oopart``,
+    never a link (restore refuses every link, file or folder, and never follows one). A refusal
+    no longer fails the whole scan (row 293): it is counted, so the page can say the count is a
+    lower bound. A file that vanished mid-scan is gone, not unread.
+
+    ``allow`` (R777, the model-cache folder): a file whose path relative to ``d`` it refuses is not
+    counted but counted apart in ``refused_layout``, exactly as the restore refuses it.
+
+    R780: ``listed`` is the set of ``rel`` names the backup's current manifest lists for this category
+    (``None``: no readable manifest); it is read only when ``check_listed`` is set. A file it does not list is counted in ``unlisted``: it is still
+    restored, and the page says so apart from "not content-verified"."""
+    count = nbytes = unread = links = refused_layout = unlisted = 0
+
+    def _refused(err: OSError) -> None:
+        nonlocal unread
+        if not isinstance(err, FileNotFoundError):
+            unread += 1
+
+    for dirpath, dirnames, names in os.walk(d, onerror=_refused, followlinks=False):
+        # os.walk lists a link to a folder among the folders and never enters it; restore refuses it.
+        # A ".oopart" name is skipped by restore before its link check, so it is not a refused link either.
+        enter: list[str] = []
+        for n in dirnames:
+            try:
+                linked = is_link(os.path.join(dirpath, n))
+            except OSError:
+                unread += 1  # a name it may not look at is said, never taken for a plain folder
+                continue
+            if not linked:
+                enter.append(n)  # restore walks into a plain folder whatever its name, ".oopart" too
+            elif not n.endswith(_PART_SUFFIX):
+                links += 1  # never entered: a junction is pruned here too, whatever os.walk would do
+        dirnames[:] = enter
+        for name in names:
+            if name.endswith(_PART_SUFFIX):
+                continue
+            try:
+                st = os.lstat(os.path.join(dirpath, name))
+            except FileNotFoundError:
+                continue
+            except OSError:
+                unread += 1
+                continue
+            if is_link_stat(st):  # a junction or reparse point too (R779)
+                links += 1
+            elif stat.S_ISREG(st.st_mode):
+                if allow is not None and not allow(Path(os.path.join(dirpath, name)).relative_to(d).as_posix()):
+                    refused_layout += 1
+                    continue
+                count += 1
+                nbytes += st.st_size
+                if check_listed and (listed is None or Path(os.path.join(dirpath, name)).relative_to(d).as_posix() not in listed):
+                    unlisted += 1
+    out: dict = {"count": count, "bytes": nbytes}
+    if refused_layout:
+        out["refused_layout"] = refused_layout
+    if unlisted:
+        out.update(unlisted=unlisted, unlisted_reason=SCAN_UNLISTED)
+    if unread:
+        out.update(unread_entries=unread, reason=SCAN_UNREAD)
+    if links:
+        out["refused_links"] = links
+    return out
+
+
+#: How much of a CSV the source-list sniff reads: its header line, never the whole file.
+_CSV_SNIFF_BYTES = 64 * 1024
 
 
 def _looks_like_source_csv(p: Path) -> bool:
     """A source-list CSV has a 'domain' column in its header (cheap one-line sniff)."""
     try:
-        with p.open("r", encoding="utf-8", errors="ignore") as fh:
-            header = (fh.readline() or "").lower()
+        # Opened as a regular file or not at all (row 312): a pipe named x.csv held the whole scan on its open, and
+        # a link was followed out of the folder. One line, bounded: a file with no newline is never read whole.
+        with open_regular(p) as fh:
+            header = fh.readline(_CSV_SNIFF_BYTES).decode("utf-8", errors="ignore").lower()
         return "domain" in header
     except OSError:
         return False
@@ -97,7 +206,12 @@ def scan_import_folder(
                             first-class importable item — restored additively in turn).
     """
     root = Path(path)
-    if not root.is_dir():
+    try:
+        is_folder = root.is_dir()
+    except OSError:
+        # A folder above it refused the look (row 293): the operator's 400, never a 500.
+        raise ValueError(f"{path} could not be read, so it cannot be scanned.") from None
+    if not is_folder:
         raise ValueError(f"{path} is not a folder to import from.")
 
     corpus_dirs: list[Path] = []
@@ -109,7 +223,15 @@ def scan_import_folder(
     eml_capped = False
 
     root_depth = len(root.parts)
-    for cur, dirnames, filenames in os.walk(root):
+    unread_folders = 0
+
+    def _folder_refused(err: OSError) -> None:
+        nonlocal unread_folders
+        if not isinstance(err, FileNotFoundError):
+            unread_folders += 1  # row 293: said on the page, never silently skipped
+
+    listings: dict[str, dict[str, set[str]] | None] = {}  # R780: each backup folder's manifest, read once
+    for cur, dirnames, filenames in os.walk(root, onerror=_folder_refused):
         curp = Path(cur)
         depth = len(curp.parts) - root_depth
 
@@ -124,8 +246,23 @@ def scan_import_folder(
                 if d in _BLOB_DIRS:
                     # A blob category dir: record its totals but DON'T descend — walking
                     # thousands of model blobs while hunting for the other kinds is waste.
-                    totals = _dir_totals(curp / d)
-                    if totals["count"]:
+                    # R779: a category folder that is itself a link is never walked (``os.walk``
+                    # follows its TOP), because a restore refuses it: it is listed with nothing
+                    # to restore and the reason, so the preview and the restore agree.
+                    try:
+                        linked = is_link(curp / d)
+                    except OSError:
+                        unread_folders += 1
+                        continue
+                    if linked:
+                        totals = _LINKED_CATEGORY()
+                    else:
+                        if str(curp) not in listings:
+                            listings[str(curp)] = _manifest_listing(curp / _FOLDER_MANIFEST)
+                        lst = listings[str(curp)]
+                        totals = _dir_totals(curp / d, hf_member_allowed if d == "hf_models" else None,
+                                             None if lst is None else lst.get(d, set()), check_listed=True)
+                    if totals["count"] or totals.get("unread_entries") or totals.get("linked") or totals.get("refused_layout"):
                         blob_roots.setdefault(str(curp), {})[_BLOB_DIRS[d]] = totals
                     continue
                 keep.append(d)
@@ -147,12 +284,20 @@ def scan_import_folder(
                     source_csv.append(fn)
             elif fn.startswith("open-omniscience-") and not low.endswith(".oomodels"):
                 fp = curp / fn
-                if fp.is_file():
-                    try:
-                        sz = fp.stat().st_size
-                    except OSError:
-                        sz = 0
-                    legacy.append({"path": str(fp), "name": fn, "bytes": sz})
+                # ONE stat, guarded (row 293): Path.is_file() raises a PermissionError rather than
+                # answering False, so it could fail the whole scan from a folder it may list but not enter.
+                item: dict = {"path": str(fp), "name": fn}
+                try:
+                    st = os.stat(fp)
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    item.update(bytes=None, reason=SCAN_UNSIZED)  # unread, never 0; restore says its own error
+                    legacy.append(item)
+                    continue
+                if stat.S_ISREG(st.st_mode):
+                    item["bytes"] = st.st_size
+                    legacy.append(item)
 
     # Manifest-anchored blobs: a completed large-data backup declares its categories
     # authoritatively. Merge them in so a folder backup is recognised even if the plain
@@ -166,12 +311,30 @@ def scan_import_folder(
         root_totals = blob_roots.setdefault(str(mdir), {})
         for catdir, (count, nbytes) in cats.items():
             catkey = _BLOB_DIRS.get(catdir)
-            if not catkey or catkey in root_totals:
-                continue  # unknown category, or the dir-walk already measured it on disk
+            if not catkey:
+                continue  # unknown category
+            seen = root_totals.get(catkey)
+            if seen and (seen["count"] or not seen.get("unread_entries")):
+                continue  # the dir-walk already measured it on disk
             if count:
-                root_totals[catkey] = {"count": count, "bytes": nbytes}
+                # Row 293: a category folder the walk could not read at all keeps its reason, and the
+                # manifest's declared totals stand in for the 0 it read.
+                root_totals[catkey] = {"count": count, "bytes": nbytes, "from_manifest": True,
+                                       **({k: seen[k] for k in ("unread_entries", "reason") if k in seen} if seen else {})}
         if not root_totals:  # a manifest with zero non-empty categories: drop the empty root
             blob_roots.pop(str(mdir), None)
+
+    # R784: whether each backup folder carrying the model cache recorded WHICH folder it read. One
+    # without the record was made when the backup read ``<parent of HF_HUB_CACHE>/hub``: its models
+    # restore to the right place, but a cache folder named otherwise on that computer is not in it.
+    for rd, root_cats in blob_roots.items():
+        hf = root_cats.get("hf_models")
+        if hf is not None and not hf.get("linked"):
+            # Only a manifest that was READ can say it predates the record; a folder with no readable
+            # manifest (copied by hand) is not called old, since nothing says when it was made.
+            data = read_manifest_json(Path(rd) / _FOLDER_MANIFEST)
+            if isinstance(data, dict) and isinstance(data.get("categories"), dict):
+                hf["layout_recorded"] = data.get("hf_layout") == HF_LAYOUT
 
     found: dict = {}
 
@@ -184,6 +347,9 @@ def scan_import_folder(
                 # Unencrypted volume copies an interrupted import left here before R686: named, never removed
                 # unless the operator asks (POST /api/backup/import-scan/remove-leftover-plaintext).
                 "leftover_plaintext": leftover_plaintext(d),
+                # R787: the Hugging Face models the artifact carries, read from its (plaintext, signed)
+                # volume manifest so the checklist can show where they would go and ask before placing.
+                **_artifact_hf(d),
             }
             for d in corpus_dirs
         ]
@@ -200,6 +366,18 @@ def scan_import_folder(
                 a = agg.setdefault(k, {"count": 0, "bytes": 0})
                 a["count"] += tot["count"]
                 a["bytes"] += tot["bytes"]
+                for extra in ("unread_entries", "refused_links", "refused_layout", "unlisted"):
+                    if tot.get(extra):
+                        a[extra] = a.get(extra, 0) + tot[extra]
+                if tot.get("unread_entries"):
+                    a["reason"] = SCAN_UNREAD
+                if tot.get("unlisted"):
+                    a["unlisted_reason"] = SCAN_UNLISTED
+                if k == "hf_models" and tot.get("layout_recorded") is False:
+                    a["layout_unrecorded"] = a.get("layout_unrecorded", 0) + 1  # R784, per backup folder
+                if tot.get("linked"):
+                    # R779: counted per backup folder, since two backups can each hold one.
+                    a["linked"] = a.get("linked", 0) + 1
         found["blobs"] = agg
         found["blob_roots"] = [
             {
@@ -219,7 +397,26 @@ def scan_import_folder(
     if legacy:
         found["legacy_backup"] = sorted(legacy, key=lambda x: x["name"])
 
+    if unread_folders:
+        # Folders the walk was refused: whatever they hold is not listed above.
+        found["unread_folders"] = unread_folders
+
     return {"path": str(root), "found": found}
+
+
+def _manifest_listing(p: Path) -> dict[str, set[str]] | None:
+    """``{catdir: {rel}}`` of every file a folder-backup manifest lists, or ``None`` when there is none
+    that can be read (R780; mirrors ``folder_backup._manifest_listing``, kept here so this discovery
+    module stays crypto-free and import-light)."""
+    data = read_manifest_json(p)  # a link, a pipe, a huge or deeply nested file: no listing
+    cats = data.get("categories") if isinstance(data, dict) else None
+    if not isinstance(cats, dict):
+        return None
+    return {
+        str(c): {e["rel"] for e in items if isinstance(e, dict) and isinstance(e.get("rel"), str)}
+        for c, items in cats.items()
+        if isinstance(items, list)
+    }
 
 
 def _read_folder_manifest(p: Path) -> dict[str, tuple[int, int]]:
@@ -228,20 +425,17 @@ def _read_folder_manifest(p: Path) -> dict[str, tuple[int, int]]:
     The manifest's ``categories`` maps each category dir (wiki_dumps/osm_regions/models)
     to a list of ``{rel, size}`` items. Returns only categories that carry files. Any
     parse error yields ``{}`` (best-effort — never let a stray file break the scan)."""
-    import json
-
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    cats = data.get("categories")
+    data = read_manifest_json(p)  # a link, a pipe, a huge or deeply nested file: nothing
+    cats = data.get("categories") if isinstance(data, dict) else None
     if not isinstance(cats, dict):
         return {}
     out: dict[str, tuple[int, int]] = {}
     for catdir, items in cats.items():
         if not isinstance(items, list) or not items:
             continue
-        nbytes = sum(int(it.get("size", 0)) for it in items if isinstance(it, dict))
+        # A size that is not a whole number (text, null, a list) counts as 0, never stops the scan.
+        nbytes = sum(it["size"] for it in items
+                     if isinstance(it, dict) and isinstance(it.get("size"), int) and not isinstance(it["size"], bool))
         out[catdir] = (len(items), nbytes)
     return out
 
@@ -261,7 +455,7 @@ def looks_like_leftover(name: str) -> bool:
 _V1_KIND = "oo-volumes-1"
 
 
-def _leftovers_from(manifest_text: str, entries: dict[str, bool]) -> list[str]:
+def _leftovers_from(manifest_text: str | object, entries: dict[str, bool]) -> list[str]:
     """The leftover copies one folder holds, from its manifest's text and its own listing (R686, R692).
 
     ``entries`` maps each name the folder lists to whether it is a regular file that is not a link. Pure: no path is
@@ -273,10 +467,12 @@ def _leftovers_from(manifest_text: str, entries: dict[str, bool]) -> list[str]:
     folder lists it as a regular file."""
     import json
 
-    try:
-        m = json.loads(manifest_text)
-    except ValueError:
-        return []
+    m = manifest_text  # already parsed by the hardened reader (row 312), or a manifest's text
+    if isinstance(manifest_text, str):
+        try:
+            m = json.loads(manifest_text)
+        except (ValueError, RecursionError):
+            return []
     if not isinstance(m, dict) or m.get("kind") != _V1_KIND:
         return []
     vols = m.get("volumes")
@@ -304,12 +500,14 @@ def leftovers_in_handle(dir_fd: int) -> list[str]:
     """``leftover_plaintext`` for a folder already opened as a no-follow handle: the manifest and the listing are both
     read through it, so they describe the very folder a removal through the same handle acts on. Never raises."""
     try:
-        fd = os.open(_VOL_MANIFEST, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
-        with os.fdopen(fd, "r", encoding="utf-8") as fh:
-            text = fh.read()
+        # Through the hardened reader (row 312): an open without O_NONBLOCK waited for ever on a pipe there,
+        # and the read had no bound.
+        m = read_manifest_json(_VOL_MANIFEST, dir_fd=dir_fd)
+        if m is None:
+            return []
         with os.scandir(dir_fd) as it:
             entries = {e.name: e.is_file(follow_symlinks=False) for e in it}
-        return _leftovers_from(text, entries)
+        return _leftovers_from(m, entries)
     except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
         return []
 
@@ -336,12 +534,36 @@ def leftover_plaintext(d: str | os.PathLike[str]) -> list[str]:
             finally:
                 os.close(fd)
         folder = Path(d)  # Windows: no folder handles, so one manifest read and one listing of the folder
-        text = (folder / _VOL_MANIFEST).read_text(encoding="utf-8")
+        m = read_manifest_json(folder / _VOL_MANIFEST)  # never a link, a pipe or an unbounded read (row 312)
+        if m is None:
+            return []
         with os.scandir(folder) as it:
             entries = {e.name: e.is_file(follow_symlinks=False) and not e.is_symlink() for e in it}
-        return _leftovers_from(text, entries)
+        return _leftovers_from(m, entries)
     except Exception:  # noqa: BLE001 - a scan must not fail on an unreadable folder
         return []
+
+
+#: The streamed artifact kind (src.backup.stream_backup.STREAM_KIND), mirrored to keep this module import-light.
+_STREAM_KIND = "oo-volumes-2"
+
+
+def _artifact_hf(d: Path) -> dict:
+    """``{"hf_models": {"count", "layout_recorded"}}`` when the artifact in ``d`` carries Hugging Face
+    models (R787), else ``{}``. Read from the volume manifest through the hardened reader; the restore
+    checks its signature before anything is placed, so this is what the checklist SHOWS, never what is
+    trusted. ``layout_recorded`` is false for an artifact made before it recorded which cache folder
+    its ``hub/`` stands for (R784's ``hf_layout``)."""
+    data = read_manifest_json(d / _VOL_MANIFEST)
+    if not isinstance(data, dict) or data.get("kind") != _STREAM_KIND:
+        return {}
+    fms = data.get("file_members")
+    if not isinstance(fms, list):
+        return {}
+    n = sum(1 for fm in fms if isinstance(fm, dict) and fm.get("category") == "hf_models")
+    if not n:
+        return {}
+    return {"hf_models": {"count": n, "layout_recorded": data.get("hf_layout") == HF_LAYOUT}}
 
 
 def _volume_count(d: Path) -> int:

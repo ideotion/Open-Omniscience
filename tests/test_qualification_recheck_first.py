@@ -17,7 +17,6 @@ import copy
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog import qualification as q
@@ -30,6 +29,7 @@ from src.catalog.qualification import (
     qualification_queue,
 )
 from src.database.models import Base, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 from tests.test_qualification_recheck import LONG_AGO, NOW, _attempt, _selected, _src
 
 MEASURED = "oo-source-qualification-3"
@@ -46,7 +46,7 @@ def _COHORT():
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

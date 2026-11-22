@@ -18,12 +18,12 @@ import contextlib
 import uuid
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.ai_layer import langdetect_llm as ld
 from src.database.models import AiKeyword, Article, Base, Source
 from src.llm.ollama import GenerationResult, LLMError, LLMUnavailable
+from tests._app_engine import app_sqlite_engine
 
 
 class _FakeOllama:
@@ -56,7 +56,7 @@ class _FakeOllama:
 
 @pytest.fixture
 def db():
-    eng = create_engine("sqlite:///:memory:")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     session = sessionmaker(bind=eng)()
     try:

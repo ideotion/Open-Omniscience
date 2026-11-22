@@ -22,13 +22,13 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import src.scheduler.storage_guard as sg
 from src.api import heavy, insights
 from src.api.heavy import HeavyBusy, HeavyPaused, guarded_read, run_heavy
 from src.scheduler.storage_guard import GIB, StorageGuard, storage_guard
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import HANG_GUARD_S, wait_until, watch_flight_followers
 
 GUARD = storage_guard
@@ -62,7 +62,7 @@ def client(tmp_path):
     from src.database.models import Base
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'api.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'api.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     TestSession = sessionmaker(bind=engine, future=True)
 
@@ -102,7 +102,7 @@ def fill_the_drive(g: StorageGuard = GUARD) -> None:
 
 
 def _session():
-    return sessionmaker(bind=create_engine("sqlite://"))()
+    return sessionmaker(bind=app_sqlite_engine(":memory:"))()
 
 
 class Counter:

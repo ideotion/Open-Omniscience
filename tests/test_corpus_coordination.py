@@ -16,11 +16,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.queries import corpus_coordination
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -41,8 +41,8 @@ _UNIQUE = (
 
 
 def _mk_session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

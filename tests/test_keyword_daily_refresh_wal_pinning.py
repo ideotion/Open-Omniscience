@@ -60,7 +60,7 @@ import os
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, event, insert
+from sqlalchemy import event, insert
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar
@@ -68,6 +68,7 @@ from src.database import session as db_session
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 from src.scheduler import hygiene
 from src.scheduler.hygiene import checkpoint_wal
+from tests._app_engine import app_sqlite_engine
 
 _JOURNAL_SIZE_LIMIT_MB = 1
 _BASE = datetime(2024, 1, 1, tzinfo=UTC)
@@ -136,7 +137,7 @@ def _wal_engine(tmp_path, name="wal_kd_refresh.db"):
     use, so ``OO_WAL_SIZE_LIMIT_MB`` (set per-test via monkeypatch) is honoured.
     """
     db = tmp_path / name
-    eng = create_engine(f"sqlite:///{db}", future=True)
+    eng = app_sqlite_engine(db, future=True)
     event.listen(eng, "connect", db_session._sqlite_pragmas)
     Base.metadata.create_all(eng)
     return eng, db

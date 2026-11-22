@@ -28,6 +28,7 @@ from src.wiki import lane_search as S
 from src.wiki.identity import external_id_for
 from src.wiki.lane_models import WikiLaneDoc, WikiLaneIndexQueue, WikiLaneIndexState, WikiWarmPage
 from src.wiki.tiers import budget_state
+from tests._app_engine import app_sqlite_engine
 
 EDITION = "oo"
 T0 = datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
@@ -582,11 +583,10 @@ def test_a_released_savepoint_commits_on_this_driver_which_is_why_there_are_none
     changes it is noticed."""
     import sqlite3
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     path = tmp_path / "sp.db"
-    eng = create_engine(f"sqlite:///{path}", future=True)
+    eng = app_sqlite_engine(path, future=True)
     with eng.begin() as c:
         c.exec_driver_sql("CREATE TABLE t(x INT)")
     s = Session(eng)
@@ -895,7 +895,6 @@ def test_the_reader_carries_the_licence_and_the_revision_for_an_added_version(la
 
 
 def test_the_omnibar_wiki_group_carries_the_lane_hits_beside_the_corpus(lane):
-    import sqlalchemy as sa
     from sqlalchemy.orm import sessionmaker
 
     from src.api.search_omni import _wiki_group
@@ -904,7 +903,7 @@ def test_the_omnibar_wiki_group_carries_the_lane_hits_beside_the_corpus(lane):
 
     _warm(title="Omnibar page", latest=(2601, "The omnibar finds molybdenum.", T0))
     _index()
-    eng = sa.create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
     try:

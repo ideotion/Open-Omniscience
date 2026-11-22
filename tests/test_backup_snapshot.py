@@ -44,7 +44,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 
 from src.backup import stream_backup as sb
 from src.backup.artifact import BackupSpaceError
@@ -59,6 +59,7 @@ from src.backup.volumes import VolumeStopped, load_manifest
 from src.database import connect as connect_mod
 from src.database import session as session_mod
 from src.database import writer
+from tests._app_engine import app_sqlite_engine
 
 VOL = 65536
 ROW = "x" * 2000  # ~2 KB a row: a few hundred rows span many pages
@@ -123,9 +124,10 @@ def live(tmp_path, monkeypatch):
     data.mkdir()
     monkeypatch.setenv("OO_DATA_DIR", str(data))
     db = data / "live.db"
-    # A short busy timeout: a TRUNCATE against a pinned reader returns busy in milliseconds, and
-    # the drain's own wait is shortened to match, so the suite does not spend 30 s a test.
-    eng = create_engine(f"sqlite:///{db}", connect_args={"timeout": 0.05})
+    # The app's own pragmas, with one change asked for by name: a 50 ms busy timeout instead of the
+    # app's 30 s, so a TRUNCATE against a pinned reader returns busy in milliseconds. The drain's own
+    # wait is shortened to match, so the suite does not spend 30 s a test (row 288).
+    eng = app_sqlite_engine(db, busy_timeout_ms=50)
 
     @event.listens_for(eng, "connect")
     def _pragmas(dbapi, _rec):  # noqa: ANN001

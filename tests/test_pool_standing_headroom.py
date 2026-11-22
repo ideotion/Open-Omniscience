@@ -14,11 +14,11 @@ arithmetic, unchanged.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 
 from src.config import memory_budget as mb
 from src.database import pool_watch
 from src.database.pool_reserve import ReservingQueuePool, collector_role
+from tests._app_engine import app_sqlite_engine
 
 
 def test_the_default_is_the_pure_arithmetic_and_unchanged():
@@ -41,8 +41,8 @@ def test_a_negative_standing_reading_is_treated_as_none():
 
 @pytest.fixture()
 def eng(tmp_path):
-    e = create_engine(
-        f"sqlite:///{tmp_path / 'sh.db'}", future=True, poolclass=ReservingQueuePool,
+    e = app_sqlite_engine(
+        tmp_path / 'sh.db', future=True, poolclass=ReservingQueuePool,
         pool_size=4, max_overflow=0, pool_timeout=1,
     )
     pool_watch.register(e)
@@ -105,14 +105,13 @@ def test_a_watched_read_snapshot_pool_is_not_a_slot_of_the_corpus_pool(tmp_path)
     read on the read-snapshot engine's own NullPool (a non-collector checkout older than 60 s)
     was subtracted from the CORPUS pool's headroom: the pool showed 0 checked out and the
     headroom read 3 of 4. Each row now names its pool and only the corpus pool's are counted."""
-    from sqlalchemy import create_engine
     from sqlalchemy.pool import NullPool
 
     from src.config.memory_budget import api_headroom_for
     from src.database import pool_watch
 
     pool_watch._reset_for_tests()
-    other = create_engine(f"sqlite:///{tmp_path / 'snap.db'}", future=True, poolclass=NullPool)
+    other = app_sqlite_engine(tmp_path / 'snap.db', future=True, poolclass=NullPool)
     assert pool_watch.register(other, label="read_snapshot") is True
     conn = other.connect()
     try:
@@ -127,12 +126,11 @@ def test_a_watched_read_snapshot_pool_is_not_a_slot_of_the_corpus_pool(tmp_path)
 
 
 def test_a_corpus_pool_checkout_is_still_counted_and_labelled_corpus(tmp_path):
-    from sqlalchemy import create_engine
 
     from src.database import pool_watch
 
     pool_watch._reset_for_tests()
-    e = create_engine(f"sqlite:///{tmp_path / 'corpus.db'}", future=True)
+    e = app_sqlite_engine(tmp_path / 'corpus.db', future=True)
     assert pool_watch.register(e) is True  # the default label: the corpus pool
     conn = e.connect()
     try:

@@ -17,7 +17,7 @@ under the gate, whether a keyword it was told to delete has gained a mention sin
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, event, insert
+from sqlalchemy import event, insert
 from sqlalchemy.pool import QueuePool
 
 from src.database import writer
@@ -30,6 +30,7 @@ from src.database.models import (
     KeywordTag,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 from tests.test_gate_connection_order import GateProbe, _factory
 
 
@@ -37,7 +38,7 @@ from tests.test_gate_connection_order import GateProbe, _factory
 def world(tmp_path, monkeypatch):
     """A pooled engine (two connections, so a seeding session and a site can both run), the writer's own session hooks, empty tables."""
     monkeypatch.setenv("OO_WRITE_GATE_WATCHDOG", "0")
-    eng = create_engine(f"sqlite:///{tmp_path / 'sessions.db'}", poolclass=QueuePool, pool_size=2, max_overflow=0, pool_timeout=5)
+    eng = app_sqlite_engine(tmp_path / 'sessions.db', poolclass=QueuePool, pool_size=2, max_overflow=0, pool_timeout=5)
 
     @event.listens_for(eng, "connect")
     def _wal(dbapi_conn, _rec):  # pragma: no cover - trivial

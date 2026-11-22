@@ -22,7 +22,6 @@ import pytest
 import requests
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -42,6 +41,7 @@ from src.safety.transport_watch import TransportStopped
 from src.stats import climate
 from src.stats.climate import DATASETS, FAILURE_REASONS, failure_reason
 from src.stats.fetch import BodyTooLarge
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "climate_readback.py"
@@ -61,7 +61,7 @@ R = _script()
 
 @pytest.fixture()
 def maker(monkeypatch):
-    engine = create_engine("sqlite:///:memory:", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     mk = sessionmaker(bind=engine, future=True)
 

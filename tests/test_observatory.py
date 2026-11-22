@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.observatory import UNCATEGORIZED, domain_of_group, observatory_payload
@@ -33,13 +32,14 @@ from src.database.models import (
     KeywordSuperGroupMember,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 _FORBIDDEN_SCORE_SUBSTRINGS = ("score", "ranking", "rating", "grade")
 
 
 def _sess():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -218,9 +218,9 @@ def test_galaxy_measures_and_method_caveat_present_no_score():
 
 
 def test_observatory_endpoint_is_deadlined_and_reuses_the_payload():
-    from src.api import insights
-
     import inspect
+
+    from src.api import insights
 
     src = inspect.getsource(insights.insights_observatory)
     assert "_deadlined(" in src

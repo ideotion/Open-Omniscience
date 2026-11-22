@@ -219,6 +219,21 @@ def country_data_date(country: OsmCountry) -> dict[str, Any]:
     }
 
 
+def country_reference(country: OsmCountry) -> tuple[datetime | None, str | None]:
+    """The date the "edited within a year" measures count back from, read from :func:`country_data_date` (row 298, R775/R776).
+
+    It is the date of the data the lane holds: the last daily change file's own date when files were applied (``dated``), the
+    extract's date when none was (``none``). When files were applied but their date was not read, the data is newer than the
+    extract by an unknown span, so there is NO reference and the reason says so (``date-not-read``): the extract's date never
+    stands in for it. ``no-reference`` is the older case of an extract that states no date of its own.
+    """
+    updates = country_data_date(country)["updates"]
+    if updates == "date_not_read":
+        return None, "date-not-read"
+    ref = country.diff_timestamp if updates == "dated" else country.extract_vintage
+    return (ref, None) if ref is not None else (None, "no-reference")
+
+
 class OsmTagChange(LaneBase):
     """Q813 = a: one tag-level change, written by the daily apply (``src/osm/apply.py``, S06-01 S2).
 

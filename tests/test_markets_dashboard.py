@@ -8,10 +8,10 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 
 
 class FakeResp:
@@ -39,8 +39,8 @@ def test_import_all_and_series(tmp_path, monkeypatch):
     import src.api.markets as mk
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'mk.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'mk.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

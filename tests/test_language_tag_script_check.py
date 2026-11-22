@@ -15,13 +15,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.script_check import own_scripts, primary_subtag, script_refutes
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Keyword, Source
+from tests._app_engine import app_sqlite_engine
 
 RU = (
     "Правительство России в четверг представило проект бюджета на следующий год, "
@@ -44,8 +44,8 @@ EN_QUOTING_RU = (
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

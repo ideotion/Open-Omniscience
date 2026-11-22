@@ -33,6 +33,7 @@ from src.wiki import walk as W
 from src.wiki import warm as M
 from src.wiki.lane_models import WikiWarmEdition, WikiWarmPage, WikiWarmScan
 from src.wiki.tiers import budget_state
+from tests._app_engine import app_sqlite_engine
 
 EDITION = "oo"
 T0 = datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
@@ -1054,14 +1055,13 @@ def test_living_sources_says_not_running_when_the_lane_runs_WITHOUT_a_WARM_fetch
 
 
 def test_the_overview_carries_WARM_before_the_walk_in_Q707_s_order(lane, monkeypatch):
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api import living
     from src.database.models import Base, LawDocument, LawRevision, WikiPage, WikiRevision
 
     monkeypatch.setattr("src.wiki.service.lane_service_status", lambda: None)
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(
         engine, tables=[t.__table__ for t in (WikiPage, WikiRevision, LawDocument, LawRevision)]
     )

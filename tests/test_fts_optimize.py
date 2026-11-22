@@ -11,17 +11,17 @@ never breaks the caller, and search stays correct after the merge.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database.fts import ensure_fts, optimize_after_bulk, search_ids
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _engine():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)
     return eng

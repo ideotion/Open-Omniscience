@@ -23,12 +23,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument, LawRevision
 from src.stats import store
 from src.stats.sdmx import StatFigure
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import event_listener_bodies, function_body, read_static
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -36,8 +36,8 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

@@ -40,10 +40,10 @@ from pathlib import Path
 
 import pytest
 import yaml
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.countries import config_country, country_payload_iso3
+from tests._app_engine import app_sqlite_engine
 from tests.os_scope import scope_os
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -195,7 +195,7 @@ def test_registering_the_law_catalogue_twice_in_either_spelling_makes_no_second_
         "  - {jurisdiction: FRA, title: DDHC, url: 'https://example.org/ddhc', country: FRA, language: fr}\n",
         encoding="utf-8",
     )
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     with writing_in(form), sessionmaker(bind=engine)() as s:
         first = register_documents(s, cat, tmp_path / "none.yml")
@@ -210,7 +210,7 @@ def test_a_row_stored_as_uk_is_matched_by_the_alpha3_catalogue(tmp_path):
     from src.database.models import Base, LawDocument
     from src.law.catalog import register_documents
 
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     cat = tmp_path / "c.yml"
     cat.write_text(
@@ -296,7 +296,7 @@ def test_catalog_discovery_finds_an_entry_in_either_spelling(tmp_path, monkeypat
         f"sources:\n  - {{name: Le Monde, domain: lemonde.example, country: {spelling}, language: fr}}\n", encoding="utf-8"
     )
     monkeypatch.setattr(seed_sources, "DEFAULT_SOURCES_PATH", cat)
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine)() as s:
         out = channels.catalog_candidates(s, cap=10)
@@ -542,7 +542,7 @@ def test_a_row_an_older_catalogue_registered_under_another_spelling_is_not_regis
     from src.database.models import Base, LawDocument
     from src.law.catalog import register_documents
 
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     cat = tmp_path / "c.yml"
     cat.write_text(
@@ -820,7 +820,7 @@ def test_the_unchecked_coverage_objects_keep_their_usual_keys_as_null(monkeypatc
     from src.law.coverage import law_coverage_report
 
     _unreadable(monkeypatch)
-    engine = create_engine("sqlite://", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine)() as session:
         report = law_coverage_report(session)
@@ -896,7 +896,7 @@ def test_the_coverage_report_shows_the_denominators_unchecked_with_the_reason(mo
     from src.law.coverage import COVERAGE_UNCHECKED, law_coverage_report
 
     _unreadable(monkeypatch)
-    engine = create_engine("sqlite://", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     from src.database.models import Base
 
     Base.metadata.create_all(engine)

@@ -16,18 +16,18 @@ import contextlib
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar, map_serve, rollup_serve
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 pytestmark = pytest.mark.skipif(not columnar.duckdb_available(), reason="duckdb not installed (optional [columnar] extra)")
 
 
 @pytest.fixture
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(id=1, name="S1", domain="a.test", country="FR"))

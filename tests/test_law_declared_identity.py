@@ -34,7 +34,6 @@ from types import SimpleNamespace
 
 import pytest
 import yaml
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument, LawRevision
@@ -53,6 +52,7 @@ from src.law.model import LawModelError, ensure_identity, identity_group, regist
 from src.law.track import track_document
 from src.law.versions import reader_payload
 from src.versioned import store
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = Path(__file__).resolve().parents[1]
 _TREATY = _ROOT / "tests" / "fixtures" / "law" / "synthetic" / "treaty"
@@ -108,8 +108,8 @@ def _fetcher() -> _UrlFetcher:
 
 @pytest.fixture
 def corpus(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'corpus.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'corpus.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

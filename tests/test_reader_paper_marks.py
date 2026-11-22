@@ -25,6 +25,7 @@ from src.medical import fetch as F
 from src.medical import reader_marks as RM
 from src.medical import store as M
 from src.versioned import store
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "tests" / "fixtures" / "medical" / "pubmed_update_sample.xml"
@@ -117,14 +118,13 @@ def test_the_labels_are_the_papers_subtabs_own_and_keyed_in_every_locale():
 
 def test_the_reader_draws_the_marks_on_its_cited_links(medical, tmp_path):
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, ArticleLink, Base, Source
     from src.database.session import get_db
 
     _apply_fixture()
-    engine = create_engine(f"sqlite:///{tmp_path / 'rd.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'rd.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:

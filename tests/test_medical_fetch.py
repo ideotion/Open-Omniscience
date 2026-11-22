@@ -24,6 +24,7 @@ from src.medical import fetch as F
 from src.medical import store as M
 from src.medical.lane_models import MedicalFile, MedicalPaper
 from src.versioned import store
+from tests._app_engine import app_sqlite_engine
 
 FIXTURE = Path(__file__).parent / "fixtures" / "medical" / "pubmed_update_sample.xml"
 ROOT = Path(__file__).resolve().parent.parent
@@ -148,14 +149,14 @@ def test_cited_ids_reads_pmid_pmcid_and_doi_links_and_guesses_nothing():
 
 
 def test_the_corpus_scan_reads_links_and_writes_nothing():
-    sa = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy")
     from datetime import UTC, datetime
 
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, ArticleLink, Base, Source
 
-    eng = sa.create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
     s.add(Source(id=1, name="Web", domain="w.test", source_type="news"))

@@ -20,7 +20,6 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.briefing.card import Card, assert_no_score_fields
@@ -34,12 +33,13 @@ from src.database.models import (
     MarketExtractionRule,
     Source,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -266,11 +266,13 @@ def test_story_propagation_generic_furniture_term_is_gated_but_a_real_story_surv
     # "vir": ubiquitous furniture across 9 of the 10 active sources, same day (no cascade
     # needed -- the gate must stop it before the span check ever runs).
     for sid in range(20, 29):
+        _add_article(s, aid=aid, source_id=sid)  # the parent the mention names (foreign keys are enforced)
         s.add(KeywordMention(keyword_id=701, article_id=aid, source_id=sid, observed_on=today, count=1))
         aid += 1
     # "event702": a genuine story spreading across exactly 3 of the same 10 sources, over
     # several days -- a real temporal cascade.
     for sid, offset in ((20, 5), (21, 3), (29, 0)):
+        _add_article(s, aid=aid, source_id=sid)
         s.add(KeywordMention(
             keyword_id=702, article_id=aid, source_id=sid,
             observed_on=today - timedelta(days=offset), count=1,

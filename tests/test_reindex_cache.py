@@ -5,11 +5,12 @@ from __future__ import annotations
 import threading
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from src.analytics.reindex_cache import bulk_page_cache, reindex_cache_mb
+from tests._app_engine import app_sqlite_engine
 
 # A faked machine size means "a machine of this size", never bounded by the cgroup of the machine running the suite (R302).
 pytestmark = pytest.mark.usefixtures("no_cgroup_limit")
@@ -17,7 +18,7 @@ pytestmark = pytest.mark.usefixtures("no_cgroup_limit")
 
 @pytest.fixture()
 def sess(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path}/c.db", poolclass=QueuePool, pool_size=2, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(f"{tmp_path}/c.db", poolclass=QueuePool, pool_size=2, connect_args={"check_same_thread": False})
     s = sessionmaker(bind=eng, future=True)()
     yield s
     s.close()
@@ -98,7 +99,7 @@ def test_leaving_the_block_checks_out_nothing(sess):
 
 
 def test_a_session_bound_to_a_connection_does_not_raise(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path}/d.db")
+    eng = app_sqlite_engine(f"{tmp_path}/d.db")
     with eng.connect() as conn:
         s = sessionmaker(bind=conn, future=True)()
         with bulk_page_cache(s, 256) as applied:

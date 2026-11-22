@@ -9,18 +9,18 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.analytics import quarantine_job as qj
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture
 def world():
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    engine = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True, autoflush=False)

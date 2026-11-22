@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from src.ingest.furniture import is_menu_like, strip_furniture, stub_verdict
 from src.ingest.non_article import classify_non_article
+from tests._app_engine import app_sqlite_engine
 
 MENU = [
     "Hopp til Hovedinnhold",
@@ -147,15 +148,14 @@ def test_list_of_full_sentences_is_not_a_menu():
 
 
 def test_quarantine_batch_marks_stubs_but_only_by_stamp_and_only_when_writing():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
     from src.analytics.quarantine_job import default_quarantine_candidates_batch
     from src.database.models import Article, Base, Source
 
-    engine = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    engine = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True, autoflush=False)
@@ -296,6 +296,7 @@ def test_furniture_at_the_very_end_leaves_no_trailing_blank():
 
 def test_store_fetched_strip_is_off_with_the_non_article_switch_off(monkeypatch):
     import inspect
+
     from src.ingest import pipeline
 
     src = inspect.getsource(pipeline.store_fetched)

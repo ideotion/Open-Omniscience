@@ -36,7 +36,6 @@ import threading
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -47,6 +46,7 @@ from src.llm import pull_queue
 from src.safety import transport_watch as tw
 from src.wiki import dump_index
 from src.wiki import dumps as wiki_dumps
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import wait_until
 
 _CANNOT_START = "can't start new thread"
@@ -349,7 +349,7 @@ def _eml(folder: Path, n: int) -> None:
 
 @pytest.fixture()
 def newsletter(tmp_path):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     folder = tmp_path / "nl"
     folder.mkdir()

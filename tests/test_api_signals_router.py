@@ -17,11 +17,11 @@ import json
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.signals import router, signals_bury, signals_fdr_selftest, signals_flood
-from src.database.models import Base, Keyword, KeywordMention, Source
+from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 TODAY = date.today()
 WHEN = TODAY - timedelta(days=5)          # inside the 30-day bury window
@@ -33,8 +33,8 @@ _AID = [10_000]
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -57,6 +57,8 @@ def _km(db, source_id, keyword_id, observed, n):
     neither concentration function reads the Article table)."""
     for _ in range(n):
         _AID[0] += 1
+        u = f"https://s{source_id}.test/{_AID[0]}"  # the parent article the mention names (foreign keys are enforced)
+        db.add(Article(id=_AID[0], url=u, canonical_url=u, source_id=source_id, title="t", content="x", hash=f"h{_AID[0]}"))
         db.add(KeywordMention(
             source_id=source_id, keyword_id=keyword_id, article_id=_AID[0],
             count=1, observed_on=observed,

@@ -29,12 +29,13 @@ import time
 import zipfile
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import QueuePool
 
 from src.api.diagnostics import bundle as _bundle
 from src.database.maintenance import _DEADLINE_KEY, StatementTimeout
+from tests._app_engine import app_sqlite_engine
 
 
 class _Base(DeclarativeBase):
@@ -51,8 +52,8 @@ def _engine(path, *, explicit_begin):
     """A WAL file behind a small QueuePool. ``explicit_begin`` puts pysqlite out of its legacy
     mode and emits a real BEGIN when a SQLAlchemy transaction starts (the ``read_snapshot``
     recipe), so a session that has read holds a snapshot until its transaction ends."""
-    eng = create_engine(
-        f"sqlite:///{path}", future=True, poolclass=QueuePool, pool_size=2, max_overflow=0,
+    eng = app_sqlite_engine(
+        path, future=True, poolclass=QueuePool, pool_size=2, max_overflow=0,
         connect_args={"check_same_thread": False},
     )
 

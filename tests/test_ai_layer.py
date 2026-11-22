@@ -16,11 +16,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.ai_layer import store as ai_store
-from src.database.models import AiKeyword, Base
+from src.database.models import AiKeyword, Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _REPO = Path(__file__).resolve().parents[1]
 # The trusted, rule-based analytics must never read the AI table.
@@ -28,14 +28,21 @@ _TRUSTED_DIR = _REPO / "src" / "analytics"
 
 
 def _sess():
-    """An in-memory MAIN schema (FK enforcement is off in a bare sqlite engine, so the
-    store round-trip doesn't need real articles — that path is covered by the HTTP
-    test in test_ai_keyword_extract.py)."""
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    """An in-memory MAIN schema with the app's pragmas (foreign keys ON), seeded with the
+    articles the round-trip tests attach AI keywords to (ids 1 and 42)."""
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine, future=True)()
+    s = sessionmaker(bind=engine, future=True)()
+    src = Source(name="S", domain="s.example")
+    s.add(src)
+    s.flush()
+    for aid in (1, 42):
+        u = f"http://s.example/{aid}"
+        s.add(Article(id=aid, title=f"a{aid}", content="x", url=u, canonical_url=u, source_id=src.id, hash=f"h{aid}"))
+    s.commit()
+    return s
 
 
 # --- round trip ------------------------------------------------------------- #

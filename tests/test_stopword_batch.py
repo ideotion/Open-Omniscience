@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from tests._app_engine import app_sqlite_engine
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -254,14 +256,13 @@ def test_a_word_shipped_in_a_stoplist_hides_in_the_stored_keywords_with_no_user_
     consult the stoplist are not covered here (R111 steps T2 and T3)."""
     from datetime import UTC, datetime
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.analytics import extract, filters, queries
     from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
     monkeypatch.setattr(filters, "load_settings", lambda: filters.KeywordFilter(use_builtin_stopwords=True))
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, future=True)() as s:
         s.add(Source(id=1, name="A", domain="a.test", country="fr"))

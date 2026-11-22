@@ -96,13 +96,14 @@ import time
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.briefing import registry
 from src.database import session as db_session
 from src.scheduler import hygiene
 from src.scheduler.hygiene import checkpoint_wal
+from tests._app_engine import app_sqlite_engine
 
 _JOURNAL_SIZE_LIMIT_MB = 1
 _JOURNAL_SIZE_LIMIT_BYTES = _JOURNAL_SIZE_LIMIT_MB * 1024 * 1024
@@ -170,7 +171,7 @@ _MIN_ATTEMPTS_TO_JUDGE = 4
 
 def _wal_engine(db_path: Path, *, seed_rows: int, monkeypatch):
     monkeypatch.setenv("OO_WAL_SIZE_LIMIT_MB", str(_JOURNAL_SIZE_LIMIT_MB))  # undone at the test's end: the 1 MiB limit must not reach another test
-    eng = create_engine(f"sqlite:///{db_path}", future=True)
+    eng = app_sqlite_engine(db_path, future=True)
     event.listen(eng, "connect", db_session._sqlite_pragmas)
     with eng.connect() as c:
         c.exec_driver_sql("CREATE TABLE t(x)")

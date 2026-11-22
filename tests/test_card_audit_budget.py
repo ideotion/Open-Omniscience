@@ -14,16 +14,16 @@ from __future__ import annotations
 import time
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api import heavy
 from src.api.diagnostics import corpus
 from src.database import maintenance
+from tests._app_engine import app_sqlite_engine
 
 
 def _session():
-    return sessionmaker(bind=create_engine("sqlite://"))()
+    return sessionmaker(bind=app_sqlite_engine(":memory:"))()
 
 
 def _watch_deadlines(monkeypatch):

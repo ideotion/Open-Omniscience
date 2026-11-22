@@ -21,6 +21,7 @@ from __future__ import annotations
 import pytest
 
 from src.monitoring.collect_perf import CollectionMonitor
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture(autouse=True)
@@ -162,7 +163,6 @@ def test_is_registered_reports_false_before_it_is_attached():
     flag is already True and "register, then assert True" passes for a constant.
     The unattached direction is the one the reading depends on, so the flag is
     driven both ways and restored."""
-    from sqlalchemy import create_engine
 
     from src.database import pool_watch
 
@@ -173,7 +173,7 @@ def test_is_registered_reports_false_before_it_is_attached():
             "is_registered() cannot report an unattached instrument, so an "
             "unwatched pool publishes a reader count of zero"
         )
-        eng = create_engine("sqlite://")
+        eng = app_sqlite_engine(":memory:")
         assert pool_watch.register(eng) is True
         assert pool_watch.is_registered() is True
     finally:

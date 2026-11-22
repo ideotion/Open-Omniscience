@@ -21,13 +21,14 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+from tests._app_engine import app_sqlite_engine
+
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = ROOT / "src" / "static"
 
 
 def _reader_html(tmp_path, monkeypatch) -> str:
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, Base, Source
@@ -35,7 +36,7 @@ def _reader_html(tmp_path, monkeypatch) -> str:
 
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
-    engine = create_engine(f"sqlite:///{tmp_path / 'rd.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'rd.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:

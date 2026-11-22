@@ -17,7 +17,7 @@ import dataclasses
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import day_counts
@@ -25,6 +25,7 @@ from src.analytics.corpus_epoch import CORPUS_EPOCH_KEY, get_corpus_epoch
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article, prune_orphan_keywords, reindex_articles
 from src.database.models import Article, Base, DerivedMeta, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 LO, HI = date(2026, 1, 1), date(2026, 12, 31)
 
@@ -37,7 +38,7 @@ _TEXTS = [
 
 
 def _engine(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path / 'dc.db'}", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(tmp_path / 'dc.db', future=True, connect_args={"check_same_thread": False})
 
     @event.listens_for(eng, "connect")
     def _fk(dbapi, _rec):  # the live app's connections run with foreign keys ON (cascades fire)

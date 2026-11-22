@@ -33,7 +33,6 @@ from types import SimpleNamespace
 
 import pytest
 import requests
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import STATUS_QUALIFIED
@@ -42,6 +41,7 @@ from src.ingest import FetchFailed, activate_kill_switch, clear_kill_switch, kil
 from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL
 from src.ingest.pipeline import IngestOutcome, IngestResult, ingest_source
 from src.safety.fetcher import make_fetcher
+from tests._app_engine import app_sqlite_engine
 
 HOSTS = ("a.example", "b.example", "c.example")
 FEED_HOST = "a.example"
@@ -157,7 +157,7 @@ def _fetcher(tmp_path, calls, *, feed=False, sitemap_urls=(), cut_clear_on=None,
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     yield s
@@ -698,7 +698,7 @@ def test_a_probe_refused_by_name_is_counted_as_the_switch_after_the_switch_is_cl
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'h.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'h.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine, future=True)
     with Session() as s:

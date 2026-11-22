@@ -11,6 +11,7 @@ import uuid
 from src.database.models import Source, SourceMetadata
 from src.database.session import SessionLocal, init_db
 from src.monitoring.preflight import preflight_sources, recent_results
+from tests._app_engine import app_sqlite_engine
 
 
 class _Resp:
@@ -123,13 +124,12 @@ def test_preflight_verdicts_metadata_and_log(tmp_path, monkeypatch):
 
 def test_the_feeds_of_one_outlet_share_one_robots_read_and_each_keeps_its_own_record(tmp_path, monkeypatch):
     """Row J, D1: robots.txt and the homepage belong to the site; three feeds are three records but one visit."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
     for i, feed in enumerate(("en", "ar", "fa")):

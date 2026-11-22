@@ -12,11 +12,11 @@ shown even before any import (latest=null), and nothing fabricated.
 from datetime import date
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, CommodityPrice
 from src.markets.feed_catalog import get_index_feed, load_feeds, load_index_feeds
+from tests._app_engine import app_sqlite_engine
 
 
 def test_index_catalog_wellformed_and_disjoint_from_commodities():
@@ -46,8 +46,8 @@ def _client(tmp_path):
     from src.api.main import app
     from src.database.session import get_db
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'idx.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'idx.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

@@ -11,17 +11,17 @@ import json
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api import diagnostics as d
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db_session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()

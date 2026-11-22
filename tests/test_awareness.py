@@ -11,7 +11,6 @@ from __future__ import annotations
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.llm import get_llm_client
@@ -21,6 +20,7 @@ from src.database.fts import ensure_fts
 from src.database.models import Article, ArticleAnalysis, Base, Source
 from src.database.session import get_db
 from src.llm.ollama import OllamaClient
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # framing (pure function)
@@ -86,8 +86,8 @@ def test_framing_empty_source_skipped():
 
 @pytest.fixture()
 def client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'a.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'a.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     ensure_fts(engine)

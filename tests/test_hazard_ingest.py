@@ -19,7 +19,6 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
@@ -30,12 +29,13 @@ from src.hazards.ingest import (
     ingest_hazard_record,
     ingest_hazard_records,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
@@ -250,7 +250,7 @@ def test_garbage_coordinates_degrade_to_null_never_crash(db, extractor):
 
 def test_missing_or_unparseable_time_stays_null_never_guessed_as_now(db, extractor):
     for bad_time in (None, "", "not-a-date", "yesterday-ish"):
-        db2 = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+        db2 = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
         Base.metadata.create_all(db2)
         s = sessionmaker(bind=db2, future=True)()
         res = ingest_hazard_record(s, _usgs_record(time=bad_time), extractor=extractor)

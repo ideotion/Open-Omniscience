@@ -18,19 +18,19 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.insights import _SQLITE_SAFE_IN_CAP, _resolve_corpus
-from src.database.models import Article, Base
+from src.database.models import Article, Base, Source
 from src.database.stand_in import ARTICLE_REASON
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
     """An empty store: an explicit id set names its ids whether or not a row exists, but the resolver now asks the articles table which of them
     is a stand-in (the place-holder a salvage copy writes at a lost id), so it needs a session to ask."""
-    engine = create_engine("sqlite://", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()
     yield session
@@ -63,6 +63,8 @@ def test_explicit_article_ids_under_the_safe_cap_are_unaffected(db):
 def test_a_stand_in_named_in_an_explicit_set_is_dropped_before_the_cap_and_the_total(db):
     """The stand-in is no article of the set: it takes no place under the cap and is not in the total (dropped after them it would leave the set
     one short of the cap and the total one too large)."""
+    db.add(Source(id=1, name="S", domain="e.org"))  # the parent the two rows' source_id names (foreign keys are enforced)
+    db.flush()
     db.add(Article(id=5, url="(lost articles 5)", canonical_url="(lost articles 5)", source_id=1, content="", hash="(lost articles 5)", quarantined=True, quarantine_reason=ARTICLE_REASON))
     db.add(Article(id=6, url="https://e.org/6", canonical_url="https://e.org/6", source_id=1, content="", hash="h6", quarantined=True, quarantine_reason="link list"))
     db.commit()

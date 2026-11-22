@@ -55,6 +55,7 @@ from src.ingest.fetch_verdict import (
     userinfo_secrets,
 )
 from src.monitoring.secret_scrub import REDACTED, record_text
+from tests._app_engine import app_sqlite_engine
 
 _CRED = "alice:hunter2@"
 _PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy")
@@ -292,13 +293,12 @@ def test_a_held_body_over_the_cap_is_written_masked(tmp_path, url, written):
 
 @pytest.mark.parametrize(("url", "written"), [("https://alice:hunter2@example.com/a0", "https://***@example.com/a0"), ("https://example.com/a0", "https://example.com/a0")])
 def test_the_archive_backfill_logs_a_failed_url_masked_inside_its_repr(tmp_path, caplog, url, written):
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, Source
     from src.ingest.archive_backfill import advance_backfill, enqueue_source
 
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
     try:

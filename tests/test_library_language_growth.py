@@ -35,11 +35,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
 from src.database.snapshots import article_counts_by_language
+from tests._app_engine import app_sqlite_engine
 
 _NOW = datetime(2027, 5, 20, 12, 0, tzinfo=UTC)
 
@@ -57,8 +57,8 @@ def db():
     wearing its other face, since the danger is being polluted as much as
     polluting.
     """
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -474,12 +474,12 @@ def test_the_real_query_plan_is_index_only(tmp_path):
     PLAINTEXT store, with the shape that actually ships: 152 ms -> 71 ms. An
     encrypted store wins proportionally more, per the documented codec cost.
     """
-    from sqlalchemy import create_engine, event, text
+    from sqlalchemy import event, text
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, Base, Source
 
-    eng = create_engine(f"sqlite:///{tmp_path/'plan.db'}")
+    eng = app_sqlite_engine(tmp_path/'plan.db')
     Base.metadata.create_all(eng)
     Local = sessionmaker(bind=eng)
     s = Local()

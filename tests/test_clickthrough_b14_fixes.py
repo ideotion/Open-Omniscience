@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import (
     assert_absent,
     assert_present,
@@ -303,12 +304,11 @@ def test_the_group_cards_follow_a_language_switch_from_cache():
 
 @pytest.fixture
 def _empty_db(tmp_path):
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
 
     from src.database.models import Base
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'q.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'q.db', future=True)
     Base.metadata.create_all(engine)
     s = Session(engine, future=True)
     try:

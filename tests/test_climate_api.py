@@ -18,7 +18,7 @@ import types
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -30,6 +30,7 @@ from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.stats import climate
 from src.stats.oni import parse_oni
 from src.stats.sdmx import StatFigure
+from tests._app_engine import app_sqlite_engine
 
 ONI_V1 = "SEAS YR   TOTAL ANOM\nDJF  1950 24.72 -1.53\nJFM  1950 25.17 -1.34\nFMA  1950 25.75 -99.9\n"
 ONI_V2 = "SEAS YR   TOTAL ANOM\nDJF  1950 24.72 -1.53\nJFM  1950 25.17 -1.30\nFMA  1950 25.75 -99.9\n"
@@ -37,8 +38,8 @@ ONI_V2 = "SEAS YR   TOTAL ANOM\nDJF  1950 24.72 -1.53\nJFM  1950 25.17 -1.30\nFM
 
 @pytest.fixture()
 def maker():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, poolclass=StaticPool, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)

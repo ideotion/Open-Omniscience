@@ -47,12 +47,13 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import keyword_log_export as kle
 from src.analytics import keyword_log_scan as kls
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 from tests.os_scope import hide_os, scope_os
 
 LANGS = ["en", "fr", "de", None, "", "zh"]
@@ -66,7 +67,7 @@ def _build(path: Path, seed: int, *, articles: int, keywords: int, with_boilerpl
     on mentions, NULL and empty languages, mentions naming an article that does not exist, NULL
     dates, and one boilerplate keyword (90 % of it in one source that is 25 % of ... itself)."""
     rnd = random.Random(seed)
-    eng = create_engine(f"sqlite:///{path}")
+    eng = app_sqlite_engine(path)
     Base.metadata.create_all(eng)
     eng.dispose()
     con = sqlite3.connect(path)
@@ -143,7 +144,7 @@ def dbs(tmp_path_factory):
 
 
 def _session(path: Path):
-    eng = create_engine(f"sqlite:///{path}", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(path, future=True, connect_args={"check_same_thread": False})
 
     @event.listens_for(eng, "connect")
     def _q(dbapi, _rec):  # noqa: ANN001
@@ -1132,7 +1133,7 @@ def test_spill_row_constant_covers_the_measured_file_size(tmp_path):
 
 def _counted(path: Path):
     """A session that records every SQL statement it runs."""
-    eng = create_engine(f"sqlite:///{path}", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(path, future=True, connect_args={"check_same_thread": False})
     seen: list[str] = []
 
     @event.listens_for(eng, "before_cursor_execute")
@@ -1448,7 +1449,7 @@ def test_a_direct_call_with_every_default_still_answers(dbs, data_dir):
 
 def test_an_empty_corpus_exports_an_empty_archive_and_empty_streams(tmp_path, data_dir):
     path = tmp_path / "empty.db"
-    eng = create_engine(f"sqlite:///{path}")
+    eng = app_sqlite_engine(path)
     Base.metadata.create_all(eng)
     eng.dispose()
     db = _session(path)
@@ -1476,7 +1477,7 @@ def test_the_json_stream_writes_the_families_exactly_as_one_dumps_would(tmp_path
 
 def test_the_json_stream_with_no_families_still_writes_an_empty_list(tmp_path, data_dir):
     path = tmp_path / "nofam.db"
-    eng = create_engine(f"sqlite:///{path}")
+    eng = app_sqlite_engine(path)
     Base.metadata.create_all(eng)
     eng.dispose()
     db = _session(path)

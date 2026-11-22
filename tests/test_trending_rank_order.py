@@ -15,6 +15,7 @@ import tracemalloc
 import pytest
 
 from src.analytics import queries
+from tests._app_engine import app_sqlite_engine
 
 
 def _old(recent, prior, *, min_recent, baseline_days, window_days):
@@ -87,18 +88,20 @@ def test_scanned_counts_the_keywords_over_the_floor_and_no_others(tmp_path):
     check of PR #1284, mutant E11: counting every keyword passed every test)."""
     from datetime import date
 
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from src.database.models import Base, Keyword, KeywordMention, Source
+    from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'scanned.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'scanned.db', future=True)
     Base.metadata.create_all(engine)
     today = date.today()
     with sessionmaker(bind=engine, future=True)() as s:
         s.add(Source(name="S", domain="x.test"))
         for i, _recent in enumerate([1, 2, 3, 4, 9], start=1):
             s.add(Keyword(term=f"zzscan{i}", normalized_term=f"zzscan{i}", language="en"))
+            # the article the mention below names (foreign keys are enforced)
+            s.add(Article(id=i, url=f"https://x.test/{i}", canonical_url=f"https://x.test/{i}", source_id=1, content="x",
+                          hash=f"h{i}"))
         s.flush()
         for i, recent in enumerate([1, 2, 3, 4, 9], start=1):
             s.add(KeywordMention(keyword_id=i, article_id=i, count=recent, observed_on=today))

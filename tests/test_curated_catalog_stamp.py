@@ -32,7 +32,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.provenance_scope import CURATED_PROVENANCES, is_curated
@@ -55,6 +54,7 @@ from src.catalog.qualification_export import BASIS_CURATED, build_overlay_export
 from src.catalog.qualification_overlay import apply_overlay
 from src.database.models import Base, Source, SourceQualificationAttempt
 from src.discovery.source_trail import source_provenance
+from tests._app_engine import app_sqlite_engine
 
 NOW = datetime(2026, 9, 10, tzinfo=UTC)
 _ROOT = Path(__file__).resolve().parents[1]
@@ -62,7 +62,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 

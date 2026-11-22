@@ -34,7 +34,6 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.analytics import rollup_serve
@@ -45,6 +44,7 @@ from src.monitoring import forensics, session_hwm
 from src.monitoring import session_history as sh
 from src.monitoring import soak_window as sw
 from tests import previous_identity
+from tests._app_engine import app_sqlite_engine
 from tests.os_scope import scope_os
 
 # A faked machine size means "a machine of this size", never bounded by the cgroup of the machine running the suite (R302).
@@ -579,7 +579,7 @@ def test_a_record_written_before_the_tier_was_kept_renders_without_it():
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def session() -> Session:
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as s:
         yield s

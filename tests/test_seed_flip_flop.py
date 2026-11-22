@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
@@ -22,6 +21,7 @@ from src.ingest.seed_sources import (
     repair_erased_feeds,
     seed_sources,
 )
+from tests._app_engine import app_sqlite_engine
 
 DOMAIN = "au.example"
 FEED = f"https://{DOMAIN}/en/rss"
@@ -29,7 +29,7 @@ FEED = f"https://{DOMAIN}/en/rss"
 
 @pytest.fixture()
 def s():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()
     yield session

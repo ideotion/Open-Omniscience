@@ -15,9 +15,10 @@ from __future__ import annotations
 import random
 from datetime import date, timedelta
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import insert, text
 
-from src.database.models import Base, KeywordMention
+from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 # The exact shape trending()._counts emits (no country filter — the Home path).
 _COUNTS_SQL = (
@@ -27,14 +28,26 @@ _COUNTS_SQL = (
 
 
 def _engine():
-    eng = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(eng)
     return eng
 
 
+def _parents(conn, n_articles, n_keywords):
+    """The source, articles (ids 0..n-1) and keywords (ids 1..n) the mention rows name: foreign keys are enforced."""
+    conn.execute(insert(Source), [{"id": 1, "name": "S", "domain": "x.test"}])
+    conn.execute(insert(Keyword), [{"id": k, "term": f"k{k}", "normalized_term": f"k{k}"} for k in range(1, n_keywords + 1)])
+    conn.execute(
+        insert(Article),
+        [{"id": i, "url": f"https://x.test/{i}", "canonical_url": f"https://x.test/{i}", "source_id": 1, "content": "x",
+          "hash": f"h{i}"} for i in range(n_articles)],
+    )
+
+
 def _seed(conn, n=4000):
+    _parents(conn, n, 300)
     today = date.today()
     rows = [
         {

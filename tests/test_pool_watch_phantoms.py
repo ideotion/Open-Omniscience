@@ -17,14 +17,15 @@ from __future__ import annotations
 import threading
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 
 from src.database import pool_watch
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def eng(tmp_path):
-    e = create_engine(f"sqlite:///{tmp_path / 'pw.db'}", future=True)
+    e = app_sqlite_engine(tmp_path / 'pw.db', future=True)
 
     @event.listens_for(e, "connect")
     def _p(dbapi, _rec):

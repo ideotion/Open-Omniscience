@@ -41,6 +41,7 @@ from src.catalog.qid_labels import (
 )
 from src.ingest.airplane import AirplaneModeError
 from src.safety.fetcher import NetworkBlocked, RedirectRefused, TransportUnavailable
+from tests._app_engine import app_sqlite_engine
 
 
 def _entity(qid: str, labels: dict[str, str]) -> dict:
@@ -338,13 +339,12 @@ def test_a_declined_row_carries_the_reason_its_lookup_ended_with() -> None:
 
 def _endpoint_with_getter(monkeypatch, getter):
     """The real route function over a real in-memory database holding one source named by a bare Q-id, with Wikidata's getter replaced."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     import src.api.source_management as sm
     from src.database.models import Base, Source
 
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine, future=True)()
     db.add(Source(name="Q133293483", domain="q133293483.example", source_type="news"))
@@ -421,14 +421,13 @@ def test_a_bare_qid_name_is_shown_as_its_domain():
 
 def test_the_sources_list_counts_candidates_and_carries_the_shown_name(tmp_path):
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api.main import app
     from src.database.models import Base, Source
     from src.database.session import get_db
 
-    engine = create_engine(f"sqlite:///{tmp_path / 'q.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 'q.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)
     with Sess() as s:

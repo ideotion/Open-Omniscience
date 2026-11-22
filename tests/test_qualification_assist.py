@@ -11,11 +11,11 @@ from __future__ import annotations
 import json
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.ai_layer import qualification_assist as QA
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 
 class _FakeResult:
@@ -119,8 +119,8 @@ def test_check_canaries_flags_not_ok_on_a_wrong_client():
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

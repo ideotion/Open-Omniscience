@@ -14,11 +14,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -52,8 +52,8 @@ def _score_like_keys(obj) -> list[str]:
 def db():
     # StaticPool shares ONE in-memory connection across threads, so the async
     # /api/articles endpoint (which runs off the event loop) sees the seeded tables.
-    engine = create_engine(
-        "sqlite:///:memory:", future=True,
+    engine = app_sqlite_engine(
+        ":memory:", future=True,
         connect_args={"check_same_thread": False}, poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
@@ -143,8 +143,8 @@ def test_untyped_bucket_facet_matches_filter():
     facet count for a channel EQUALS what the /api/articles filter returns for it."""
     from src.analytics.queries import SOURCE_TYPE_UNTYPED, source_type_facets
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True,
+    engine = app_sqlite_engine(
+        ":memory:", future=True,
         connect_args={"check_same_thread": False}, poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
@@ -190,8 +190,8 @@ def test_a_quarantined_article_is_absent_from_the_facet_as_well_as_the_filter():
     """
     from src.analytics.queries import source_type_facets
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True,
+    engine = app_sqlite_engine(
+        ":memory:", future=True,
         connect_args={"check_same_thread": False}, poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)

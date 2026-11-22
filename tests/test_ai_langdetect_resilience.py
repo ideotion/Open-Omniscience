@@ -22,15 +22,15 @@ import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.ai_layer import langdetect_llm as ld
 from src.api import ai as ai_api
-from src.llm import backend as llm_backend
 from src.database.models import AiKeyword, Article, Base, Source
+from src.llm import backend as llm_backend
 from src.llm.ollama import GenerationResult, LLMUnavailable
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -75,7 +75,7 @@ class _FlakyOllama:
 
 @pytest.fixture
 def db():
-    eng = create_engine("sqlite:///:memory:")
+    eng = app_sqlite_engine(":memory:")
     Base.metadata.create_all(eng)
     session = sessionmaker(bind=eng)()
     try:
@@ -209,8 +209,8 @@ def test_langdetect_job_reaches_error_state_after_repeated_transient_failures(
     /api/jobs task-manager list has no langdetect-specific knowledge, so raising is the
     only way it can see the outage without special-casing. Exercises the REAL
     BackgroundJob.start() (a thread, joined), the wiring an operator actually hits."""
-    engine = create_engine(
-        "sqlite:///:memory:",
+    engine = app_sqlite_engine(
+        ":memory:",
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,

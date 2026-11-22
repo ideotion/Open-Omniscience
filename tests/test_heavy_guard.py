@@ -15,12 +15,13 @@ import time
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.api import heavy
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.database.maintenance import StatementTimeout, statement_deadline
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import HANG_GUARD_S
 
 
@@ -38,7 +39,7 @@ def _fast_guard(monkeypatch):
 def _sqlite_session() -> Session:
     """A real (plain, unencrypted) SQLite session so statement_deadline has a live DBAPI
     connection to attach its progress handler to — no app DB touched."""
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     return sessionmaker(bind=engine)()
 
 
@@ -285,7 +286,7 @@ def _file_session(tmp_path, **kw):
     which is exactly what a commit inside the guarded block does in production."""
     from sqlalchemy.pool import NullPool
 
-    engine = create_engine(f"sqlite:///{tmp_path/'d.db'}", poolclass=NullPool, **kw)
+    engine = app_sqlite_engine(tmp_path/'d.db', poolclass=NullPool, **kw)
     return sessionmaker(bind=engine)()
 
 

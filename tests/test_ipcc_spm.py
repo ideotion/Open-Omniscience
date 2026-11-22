@@ -8,13 +8,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base
 from src.ingest import ipcc_spm
 from src.ingest.fetch_verdict import NETWORK_REFUSED
 from src.ingest.pdf import pdf_available
+from tests._app_engine import app_sqlite_engine
 
 _FIX = Path(__file__).parent / "fixtures" / "pdf"
 _TEXT_PDF = (_FIX / "text_statute.pdf").read_bytes()
@@ -33,8 +33,8 @@ class _Resp:
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import (
     app_js,
     array_literal,
@@ -229,12 +230,11 @@ def test_the_page_reads_the_stopped_newsletter_free_backup_notices():
 
 @pytest.fixture()
 def db():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     try:

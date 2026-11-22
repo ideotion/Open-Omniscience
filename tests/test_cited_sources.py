@@ -12,17 +12,17 @@ score is ever written. No crypto/main -> runs in every lane.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.provenance import CITED, provenance_of
 from src.database.models import Article, ArticleLink, Base, Source
 from src.discovery.cited_sources import cited_domain_stats, promote_cited_sources
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite://", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     srcs = {

@@ -17,11 +17,12 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.backup.merge import merge_corpus
 from src.database.models import Article, ArticleMentionedDate, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _BATCH_META = {
     "artifact_kind": "oo-backup-2",
@@ -33,7 +34,7 @@ _BATCH_META = {
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 
@@ -60,7 +61,7 @@ def _add_article(s, *, hashv: str, content: str) -> int:
 
 
 def _date_count(path: Path) -> int:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     try:
         with engine.connect() as c:
             return int(c.execute(text("SELECT COUNT(*) FROM article_mentioned_dates")).scalar())
@@ -121,7 +122,7 @@ def test_incoming_corpus_with_its_own_duplicate_date_rows_does_not_abort(tmp_pat
 
     # Simulate a constraint-predating backup: rebuild the staged date table WITHOUT
     # the unique constraint, then insert two rows sharing (article, date, precision).
-    eng = create_engine(f"sqlite:///{staged}", future=True)
+    eng = app_sqlite_engine(staged, future=True)
     with eng.begin() as c:
         c.execute(text("DROP TABLE article_mentioned_dates"))
         c.execute(

@@ -11,18 +11,18 @@ provenance, applied forward-only; nothing is invented and nothing is a score.
 import re
 from datetime import date
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.baseline import BASELINE_AS_OF, baseline_tags
 from src.analytics.extract import ExtractedTerm
 from src.analytics.store import _get_or_create_keyword, backfill_baseline_tags, tags_for_keyword
 from src.database.models import Base, Keyword, KeywordTag
+from tests._app_engine import app_sqlite_engine
 
 
 def _sess():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

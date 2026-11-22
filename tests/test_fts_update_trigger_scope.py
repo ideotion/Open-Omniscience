@@ -19,12 +19,13 @@ correct, which is the one thing that must never happen here.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.database.fts import ensure_fts, search_ids
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 #: The trigger as it was written before the scoping -- the exact SQL an older store
 #: carries on disk today. Recreated here rather than imported so the heal is tested
@@ -40,8 +41,8 @@ END
 
 
 def _engine():
-    return create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    return app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
 
 

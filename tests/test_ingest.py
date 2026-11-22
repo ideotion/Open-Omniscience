@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import pytest
 import requests
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
 from src.ingest import EthicalFetcher, RobotsDisallowed, RobotsUnavailable
 from src.ingest.pipeline import IngestResult, ingest_source, ingest_url
+from tests._app_engine import app_sqlite_engine
 
 # --------------------------------------------------------------------------- #
 # Fake HTTP layer
@@ -69,8 +69,8 @@ def _article_html(title, body_sentence):
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

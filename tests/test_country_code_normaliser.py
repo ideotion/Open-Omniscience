@@ -25,7 +25,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine, text  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from src.backup import country_codes as cc  # noqa: E402
@@ -37,6 +37,7 @@ from src.database.models import (  # noqa: E402
     Source,
     StatSubscription,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +61,7 @@ _T0 = datetime(2026, 9, 1, 9, 0, 0, tzinfo=UTC).replace(tzinfo=None)
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 
@@ -523,7 +524,7 @@ def test_the_bundle_member_drives_the_real_scan(tmp_path):
 
     live = tmp_path / "live.db"
     _corpus(live)
-    engine = create_engine(f"sqlite:///{live}", future=True)
+    engine = app_sqlite_engine(live, future=True)
     sentinel = {"duplicates": 4242, "columns": {}}
     original = mod.scan_country_code_duplicates
     mod.scan_country_code_duplicates = lambda *a, **k: sentinel

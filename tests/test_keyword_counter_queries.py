@@ -15,19 +15,20 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, func
+from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import backfill_keyword_counters, index_article
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
@@ -99,11 +100,12 @@ def test_corpus_wide_ordering_matches_join(db):
     # Direct seed with STRICTLY DISTINCT mention totals (single content words, no
     # n-gram ties) -> one unambiguous descending order, so the counter path's ORDER
     # (not just values) equals the join path's. Counters populated via the backfill.
+    art = _article(db, "o1", "")  # the article the mentions name (foreign keys are enforced); never indexed itself
     for term, total in [("apple", 10), ("mango", 7), ("cherry", 4), ("peach", 2)]:
         k = Keyword(term=term, normalized_term=term, language="en")
         db.add(k)
         db.flush()
-        db.add(KeywordMention(keyword_id=k.id, article_id=1, count=total, observed_on=date.today()))
+        db.add(KeywordMention(keyword_id=k.id, article_id=art.id, count=total, observed_on=date.today()))
     db.commit()
     backfill_keyword_counters(db)
 

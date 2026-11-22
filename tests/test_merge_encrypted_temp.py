@@ -31,7 +31,6 @@ import pytest
 pytest.importorskip("sqlalchemy")
 sqlcipher3 = pytest.importorskip("sqlcipher3")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 import src.database.connect as connect_mod  # noqa: E402
@@ -42,6 +41,7 @@ from src.backup.merge import (  # noqa: E402
     merge_corpus,
 )
 from src.database.models import Article, Base, Source  # noqa: E402
+from tests._app_engine import app_sqlite_engine  # noqa: E402
 
 _META = {
     "artifact_kind": "oo-backup-2", "origin_fingerprint": "test", "app_version": "0.5.0",
@@ -52,7 +52,7 @@ _MB = 1024 * 1024
 
 
 def _plain_corpus(path: Path, *, articles: int, first: int = 0) -> None:
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, future=True)() as s:
         src = Source(name="Wire", domain="wire.example")

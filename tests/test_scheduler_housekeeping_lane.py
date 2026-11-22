@@ -19,6 +19,7 @@ import pytest
 import src.scheduler.runner as runner
 from src.scheduler.runner import BackgroundScheduler
 from src.scheduler.settings import SchedulerSettings
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
@@ -180,7 +181,6 @@ def test_a_dirty_session_from_one_failing_step_does_not_cascade_to_the_next(monk
     empirically confirmed the underlying SQLAlchemy behaviour: a query issued
     on a session with a pending-rollback transaction raises
     PendingRollbackError until session.rollback() is called."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, Base, Source
@@ -189,8 +189,8 @@ def test_a_dirty_session_from_one_failing_step_does_not_cascade_to_the_next(monk
         runner, "_LANE_LADDER", runner.KindLadder(rates=runner._LANE_RATES, floors=runner._LANE_FLOORS)
     )
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()

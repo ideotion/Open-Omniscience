@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import create_engine, func
+from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -25,12 +25,13 @@ from src.analytics.store import (
     reconcile_source_counters,
 )
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _session():
-    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    eng = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng, future=True)()
 

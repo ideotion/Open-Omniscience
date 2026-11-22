@@ -19,18 +19,18 @@ import zipfile
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.bulletin.evidence import DISCLOSURE, build_evidence_archive, evidence_plan
 from src.bulletin.period import resolve_period
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _P = resolve_period("weekly", end=date(2026, 8, 1))  # 2026-07-25 .. 2026-07-31
 
 
 def _corpus(n: int = 5, *, quarantined: int = 0, outside: int = 0) -> Session:
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     s = Session(engine)
     src = Source(name="Alpha", domain="alpha.test", country="fr", source_type="news")

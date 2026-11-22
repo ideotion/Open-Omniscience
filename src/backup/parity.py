@@ -38,7 +38,15 @@ import os
 from pathlib import Path
 from typing import Any
 
-from src.backup.volumes import MANIFEST_NAME, VolumeError, _sha256_file, load_manifest
+from src.backup.regular_file import NotARegularFile, open_regular
+from src.backup.volumes import (
+    MANIFEST_NAME,
+    VolumeError,
+    _digest_matches,
+    _plain_volume_name,
+    _sha256_file,
+    load_manifest,
+)
 
 PARITY_KIND = "oo-parity-1"
 _GF_LIMIT = 256  # GF(2^8): at most 255 data+parity volumes (128 GiB at 512 MiB volumes)
@@ -193,10 +201,12 @@ def _read_band(path: Path, offset: int, length: int) -> Any:
     past EOF (the same stripe padding the old whole-file read applied)."""
     np = _np()
     try:
-        with open(path, "rb") as fh:
+        # A regular file or nothing (row 312): a pipe or a link in a backup folder reads as an absent volume, so the
+        # rebuild that used it fails its manifest checksum and is discarded, never installed.
+        with open_regular(path) as fh:
             fh.seek(offset)
             raw = fh.read(length)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotARegularFile):
         raw = b""
     arr = np.frombuffer(raw, dtype=np.uint8)
     if arr.size < length:
@@ -340,9 +350,17 @@ def recover_volumes(
     bad_set = set(bad)
     # A corrupt parity volume must not poison recovery: re-verify parity integrity too.
     for pv in par["volumes"]:
+        if not _plain_volume_name(pv.get("name")):  # never joined to the folder: a path would read outside it (row 312)
+            bad_set.add(str(pv.get("name")))
+            continue
         p = out / pv["name"]
-        if not p.exists() or _sha256_file(p) != pv["sha256"]:
+        if not p.exists() or not _digest_matches(p, pv["sha256"]):
             bad_set.add(pv["name"])
+    # A data volume whose name is a path is never rebuilt: the rebuild writes beside and then over that name, which
+    # would be outside the folder. Nothing is recovered from such a manifest (row 312; both callers refuse it first).
+    unsafe = [str(v.get("name")) for v in data_meta if not _plain_volume_name(v.get("name"))]
+    if unsafe:
+        return sorted(set(bad) | set(unsafe))
 
     present_rows: list[tuple[int, Path]] = []
     erased_data: list[int] = []

@@ -15,12 +15,12 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.ai_layer import perception_extract as PE
 from src.bulletin import introduction as I
 from src.database.models import Base
+from tests._app_engine import app_sqlite_engine
 
 
 # --------------------------------------------------------------------------- #
@@ -30,7 +30,7 @@ def _built_edition():
     from src.bulletin.edition import build_edition
     from src.bulletin.period import resolve_period
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     with Session(engine) as s:
         return build_edition(s, resolve_period("weekly", end=date(2026, 8, 11)))

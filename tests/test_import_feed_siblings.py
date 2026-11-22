@@ -7,19 +7,19 @@ store raising an IntegrityError where it used to return the existing row. Real s
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.csv_io import parse_sources_csv, upsert_sources, write_csv
 from src.database.models import Base, Source
 from src.database.source_manager import SourceManager
+from tests._app_engine import app_sqlite_engine
 
 EN, AR, FA = ("https://outlet.example/%s.xml" % x for x in ("en", "ar", "fa"))
 
 
 @pytest.fixture()
 def s():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine, future=True)()
     yield session

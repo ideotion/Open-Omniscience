@@ -1085,7 +1085,7 @@ def test_a_download_lands_where_the_server_will_look_for_it():
     assert "_install_env(" in dl, "the download must not build its own environment"
     assert "launch_env()" in inspect.getsource(vl._install_env)
     # PROBE: the question "is it already here?", which must ask about the same folder.
-    assert "hf_home()" in inspect.getsource(vl.hf_cache_dir)
+    assert "hf_hub_cache()" in inspect.getsource(vl.hf_cache_dir)  # R786: the one resolver
 
 
 def test_a_rate_limited_call_still_says_what_is_going_on(monkeypatch):

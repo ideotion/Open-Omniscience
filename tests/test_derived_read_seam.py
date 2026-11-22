@@ -32,7 +32,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
@@ -42,13 +42,14 @@ from src.database.derived_views import (
     ensure_derived_views,
 )
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 _SRC = Path(__file__).resolve().parent.parent / "src"
 
 
 @pytest.fixture()
 def db(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'seam.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'seam.db', future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="S", domain="x.test", country="fr"))
@@ -145,7 +146,7 @@ def test_ensure_is_idempotent_and_repairs_a_stale_view(db):
 
 
 def test_ensure_skips_a_database_with_no_table_yet(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'empty.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'empty.db', future=True)
     assert ensure_derived_views(engine) == "skipped"
 
 
@@ -437,7 +438,7 @@ def test_a_migration_can_drop_a_mentions_column_while_the_view_exists(tmp_path):
     migration) will alter one, so env.py drops the view before ANY migration runs and the
     next init_db re-creates it. Found by the Opus review of PR #1232."""
     db = tmp_path / "open_omniscience.db"
-    engine = create_engine(f"sqlite:///{db}", future=True)
+    engine = app_sqlite_engine(db, future=True)
     Base.metadata.create_all(engine)  # has the view
     with engine.connect() as c:
         assert c.execute(text("SELECT count(*) FROM sqlite_master WHERE name=:v"),
@@ -446,7 +447,7 @@ def test_a_migration_can_drop_a_mentions_column_while_the_view_exists(tmp_path):
     assert _alembic(["stamp", "head"], tmp_path).returncode == 0
     res = _alembic(["downgrade", "d6e7f8a9b0c1-1"], tmp_path)  # drops keyword_mentions.source_id
     assert res.returncode == 0, res.stdout + res.stderr
-    engine = create_engine(f"sqlite:///{db}", future=True)
+    engine = app_sqlite_engine(db, future=True)
     assert ensure_derived_views(engine) == "created"  # the next boot puts it back
     engine.dispose()
 

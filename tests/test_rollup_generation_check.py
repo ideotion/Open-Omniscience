@@ -26,11 +26,12 @@ import threading
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.analytics import rollup_marker, rollup_serve
 from src.database import library_generation as gen
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture(autouse=True)
@@ -60,8 +61,8 @@ class _World:
         self.dir = tmp_path
         self.live = tmp_path / "live.db"
         _store(self.live, "OLD")
-        self.engine = create_engine(
-            f"sqlite:///{self.live}",
+        self.engine = app_sqlite_engine(
+            self.live,
             creator=gen.guarded_creator(lambda: sqlite3.connect(str(self.live), check_same_thread=False)),
         )
         gen.attach(self.engine)
@@ -377,7 +378,7 @@ def test_the_real_build_stops_with_the_guards_refusal_at_the_boundary_the_swap_l
     from src.database.models import Base
     from tests.test_rollup_build_streaming import _seed
 
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     with engine.connect() as c:
         c.execute(text("PRAGMA foreign_keys=OFF"))

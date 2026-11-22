@@ -126,6 +126,7 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
                                        "_LOG.info is kept as a name, a log call the scan cannot read": 1},
     "src/wiki/lane_search.py": {"getattr reaches how, a way round the scan of the log calls": 1},
     "src/backup/runlog.py": {"getattr reaches attr, a way round the scan of the log calls": 1},
+    "src/backup/folder_backup.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # R787: reads the errno of the OSError from placing one artifact member to tell a name this system cannot hold (refused, that member only) from any other failure (raised); its words are not used
 }
 
 #: Functions that take a caught exception to CLASSIFY it (a bool, an enum, an int, a class name) or to build an in-memory dedupe

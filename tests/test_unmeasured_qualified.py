@@ -13,12 +13,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.catalog import qualification as q
 from src.database.models import Article, Base, Source, SourceQualificationAttempt
+from tests._app_engine import app_sqlite_engine
 
 _BODY = "Real article text with enough words to read as an article. " * 20
 _N = 0
@@ -26,7 +26,7 @@ _N = 0
 
 @pytest.fixture
 def Session():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True, autoflush=False)
 

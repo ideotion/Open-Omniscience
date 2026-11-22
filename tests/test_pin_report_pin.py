@@ -14,18 +14,19 @@ import threading
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.pool import QueuePool
 
 from src.database import pool_watch, writer
 from src.scheduler import storage_guard
 from src.scheduler.hygiene import checkpoint_wal
+from tests._app_engine import app_sqlite_engine
 from tests.wallclock_helpers import HANG_GUARD_S, wait_until
 
 
 def _wal_engine(tmp_path):
     db = tmp_path / "pin.db"
-    eng = create_engine(f"sqlite:///{db}", future=True)
+    eng = app_sqlite_engine(db, future=True)
 
     @event.listens_for(eng, "connect")
     def _pragmas(dbapi, _rec):
@@ -216,7 +217,7 @@ def test_a_real_second_checkpointer_gives_the_busy_answer_and_the_guard_does_not
     try:
         # 'other' holds the checkpoint lock while it waits for the reader: SQLite says so to anyone who asks, with ``(1, -1, -1)``
         assert wait_until(lambda: probe.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()[1] < 0), "'other' never took the checkpoint lock"
-        eng = create_engine(f"sqlite:///{p}")
+        eng = app_sqlite_engine(p)
         rec = checkpoint_wal(engine=eng, force=True, gate_timeout_s=5, passive_without_gate=True)
     finally:
         stop.set()
@@ -396,7 +397,7 @@ def test_a_page_size_that_cannot_be_read_leaves_the_record_and_the_bytes_absent_
         c.execute("PRAGMA wal_autocheckpoint=0")
         return c
 
-    eng = create_engine("sqlite://", creator=creator, poolclass=QueuePool, pool_size=5, future=True)
+    eng = app_sqlite_engine(":memory:", creator=creator, poolclass=QueuePool, pool_size=5, future=True)
     with eng.begin() as c:
         c.exec_driver_sql("CREATE TABLE t(id INTEGER PRIMARY KEY, b BLOB)")
     _burst(eng)

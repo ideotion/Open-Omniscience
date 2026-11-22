@@ -30,10 +30,11 @@ function of whether the fix is present.
 
 from __future__ import annotations
 
-from sqlalchemy import Column, Integer, String, create_engine, text
+from sqlalchemy import Column, Integer, String, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 import src.api.insights as ins
+from tests._app_engine import app_sqlite_engine
 
 
 class _PoisonBase(DeclarativeBase):
@@ -52,7 +53,7 @@ class _Dup(_PoisonBase):
 
 
 def _real_session():
-    eng = create_engine("sqlite:///:memory:", future=True)
+    eng = app_sqlite_engine(":memory:", future=True)
     _PoisonBase.metadata.create_all(eng)
     Session = sessionmaker(bind=eng, future=True)
     session = Session()

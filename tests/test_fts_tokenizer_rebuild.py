@@ -18,13 +18,14 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.backup import country_migration as cm
 from src.database import fts
 from src.database.fts import ensure_fts, fts_tokenizer, rebuild_with_current_tokenizer, search_ids
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _DOCS = {
     "hi1": ("भारत सरकार ने नई नीति जारी की", "hi"),
@@ -61,7 +62,7 @@ def _store(tmp_path: Path, *, legacy: bool) -> tuple[Path, object]:
     """A scratch store file whose search index was created the old way (``legacy``) or the new way, then filled by the
     app's own ``ensure_fts`` rebuild: the same path a real store's index was made by."""
     path = tmp_path / "s.db"
-    eng = create_engine(f"sqlite:///{path}", future=True)
+    eng = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(eng)
     if legacy:
         with eng.begin() as c:
@@ -183,7 +184,7 @@ def test_an_explicit_reindex_that_dies_leaves_the_old_index_not_an_empty_one(tmp
 
 
 def test_the_tokenizer_swap_needs_an_index_to_swap(tmp_path):
-    eng = create_engine(f"sqlite:///{tmp_path / 'e.db'}", future=True)
+    eng = app_sqlite_engine(tmp_path / 'e.db', future=True)
     Base.metadata.create_all(eng)
     with eng.begin() as c:
         assert fts_tokenizer(c) is None
@@ -244,7 +245,7 @@ def test_the_migration_rebuilds_the_index_in_its_own_window_and_says_what_it_cos
     assert 0 <= lo <= hi and "981 to 1,645 s" in seen_estimate["fts"]["basis"]
     phases = [e["phase"] for e in events]
     assert phases.index("verify") < phases.index("fts") < phases.index("fts-done") < phases.index("done")
-    eng2 = create_engine(f"sqlite:///{path}", future=True)
+    eng2 = app_sqlite_engine(path, future=True)
     with eng2.connect() as c:
         assert fts_tokenizer(c) == "current"
     assert _hits(eng2, "सरकार") and not _hits(eng2, "सरक")
@@ -296,7 +297,7 @@ def test_a_failed_index_rebuild_does_not_undo_the_migrated_codes_and_the_next_ru
     assert rep.state == "fts-pending"
     assert rep.fts == {"state": "failed", "error": "OSError"}
     assert "/secret/path" not in rep.message and "disk full" not in rep.message, "the engine's text is never carried"
-    chk = create_engine(f"sqlite:///{path}", future=True)
+    chk = app_sqlite_engine(path, future=True)
     with chk.connect() as c:
         assert fts_tokenizer(c) == "legacy", "the failed rebuild must leave the OLD index, not an empty current one"
         assert c.execute(text("SELECT count(*) FROM article_fts_docsize")).scalar() == len(_DOCS)

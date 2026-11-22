@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import equivalence as eq
 from src.analytics import queries as q
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def test_ring_translation_and_translate_term_resolve_via_rings():
@@ -43,7 +43,7 @@ def test_ring_translation_and_translate_term_resolve_via_rings():
 
 
 def _sess():
-    e = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    e = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(e)
     return sessionmaker(bind=e, future=True)()
 

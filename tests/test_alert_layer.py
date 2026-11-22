@@ -19,7 +19,6 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.alerts import _hazard_tier, compute_alerts
@@ -32,12 +31,13 @@ from src.database.models import (
     Watch,
     WatchMatch,
 )
+from tests._app_engine import app_sqlite_engine
 
 
 @pytest.fixture()
 def session():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

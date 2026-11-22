@@ -37,7 +37,6 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from src.catalog.qualification import (  # noqa: E402
@@ -63,6 +62,7 @@ from src.database.models import (  # noqa: E402
     SourceAdmissionEvent,
     SourceQualificationAttempt,
 )
+from tests._app_engine import app_sqlite_engine
 
 NOW = datetime(2026, 9, 18, 12, 0, tzinfo=UTC)
 
@@ -104,7 +104,7 @@ def isolated_settings(monkeypatch, tmp_path):
 
 @pytest.fixture
 def db(tmp_path) -> Session:
-    engine = create_engine(f"sqlite:///{tmp_path / 'ov.db'}", future=True)
+    engine = app_sqlite_engine(tmp_path / 'ov.db', future=True)
     Base.metadata.create_all(engine)
     s = Session(engine, future=True)
 

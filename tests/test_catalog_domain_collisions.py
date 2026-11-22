@@ -44,7 +44,6 @@ collision someone adds.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
@@ -53,6 +52,7 @@ from src.ingest.seed_sources import (
     load_sources_from_yaml,
     seed_sources,
 )
+from tests._app_engine import app_sqlite_engine
 
 #: (The 2026-09-07 multiplicity budgets -- 54/227 per file, 299/475 on a boot -- are retired: after row J they measure how many
 #: entries share a domain, not what is lost. The losses are pinned by ``_UNREGISTERED_BUDGET`` below.)
@@ -119,7 +119,7 @@ def boot_catalog() -> list[dict]:
 @pytest.fixture()
 def session():
     """An isolated in-memory corpus -- the seeder is the only writer here."""
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     try:

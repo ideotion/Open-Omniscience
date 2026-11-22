@@ -19,13 +19,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, func
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import ExtractedTerm
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 class _FakeExtractor:
@@ -44,8 +45,8 @@ class _FakeExtractor:
 
 @pytest.fixture()
 def session(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 't.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 't.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -31,6 +31,7 @@ import src.analytics.store as store
 from src.analytics.extract import ExtractedTerm
 from src.analytics.store import index_article, reindex_articles
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 _MT = KeywordMention.__table__
 
@@ -52,8 +53,8 @@ def _t(norm, count=1, offset=0, kind="term"):
 
 
 def _session():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
@@ -452,8 +453,8 @@ def _gated_sessionmaker(tmp_path):
 
     from src.database.writer import _on_after_transaction_end, _on_before_flush, _on_orm_execute
 
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'diff.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'diff.db', future=True, connect_args={"check_same_thread": False}
     )
 
     @event.listens_for(engine, "connect")
