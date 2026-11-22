@@ -353,3 +353,43 @@ def test_an_annotations_member_outside_annotations_json_is_refused(monkeypatch, 
     ann = merge_side_files(staged)["annotations"]
     assert len(ann["errors"]) == 1 and "refused" in ann["errors"][0]
     assert not (base / name).exists()
+
+
+def test_a_swap_that_keeps_the_count_changes_nothing(monkeypatch, tmp_path):
+    """Security read of row 339: the click names the authors it showed, so one record removed and another from the
+    same key added between the look and the click (count unchanged) applies nothing."""
+    from src.backup.merge import merge_side_files
+
+    staged_a = _member_from_another_install(monkeypatch, tmp_path, "Alice")
+    staged_b = _member_from_another_install(monkeypatch, tmp_path, "Bob")
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
+    merge_side_files(staged_a)
+    shown = [a["author_id"] for a in store.withheld_trust()[0]["authors"]]
+    alice = store.list_authors()[0]["author_id"]
+    assert store.remove_author(alice)
+    merge_side_files(staged_b)  # Bob arrives from the same key: still one withheld decision
+    with pytest.raises(ValueError, match="no longer the ones shown"):
+        store.settle_withheld_trust(OTHER_KEY, apply=True, expected_count=1, expected_authors=shown)
+    assert all(a["trusted"] is False for a in store.list_authors())
+    bob = [a["author_id"] for a in store.withheld_trust()[0]["authors"]]
+    assert store.settle_withheld_trust(OTHER_KEY, apply=True, expected_count=1, expected_authors=bob) == 1
+
+
+def test_the_endpoint_passes_the_authors_it_was_shown(monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src.api import annotations as api_mod
+    from src.backup.merge import merge_side_files
+
+    staged = _member_from_another_install(monkeypatch, tmp_path)
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "b"))
+    merge_side_files(staged)
+    app = FastAPI()
+    app.include_router(api_mod.router)
+    c = TestClient(app)
+    body = {"signer": OTHER_KEY, "count": 1, "apply": True, "authors": ["0" * 32]}
+    assert c.post("/api/annotations/withheld-trust", json=body).status_code == 409
+    body["authors"] = [store.list_authors()[0]["author_id"]]
+    r = c.post("/api/annotations/withheld-trust", json=body)
+    assert r.status_code == 200 and r.json()["applied"] == 1

@@ -269,12 +269,16 @@ def withheld_trust() -> list[dict]:
     return [{"signer": k, "count": len(v), "authors": v} for k, v in sorted(groups.items())]
 
 
-def settle_withheld_trust(signer: str, *, apply: bool, expected_count: int) -> int:
+def settle_withheld_trust(
+    signer: str, *, apply: bool, expected_count: int, expected_authors: list[str] | None = None
+) -> int:
     """Apply (trust) or decline (leave untrusted) every decision withheld from ``signer``'s backups; returns how many.
 
     ``expected_count`` is the number the person was shown: when it no longer matches (another backup from that key
-    landed since), nothing changes and ValueError says so, so a click never applies more than it named. Each record is
-    re-read under its own lock and changed only while it still carries the marker for this signer."""
+    landed since), nothing changes and ValueError says so, so a click never applies more than it named. With
+    ``expected_authors`` (the author ids the person was shown) the SET must match too, so a record removed and another
+    from the same key added between the look and the click (the count unchanged) changes nothing either. Each record
+    is re-read under its own lock and changed only while it still carries the marker for this signer."""
     signer = str(signer or "").lower()
     if not _SIGNER_HEX.match(signer):
         raise ValueError("not a signing key")
@@ -285,14 +289,19 @@ def settle_withheld_trust(signer: str, *, apply: bool, expected_count: int) -> i
         except Exception:  # noqa: BLE001 - a corrupt record is skipped, as everywhere here
             continue
         if _withheld_signer(r) == signer:
-            paths.append(p)
+            paths.append((p, str(r.get("author_id"))))
+    if expected_authors is not None and sorted({a for _p, a in paths}) != sorted(set(map(str, expected_authors))):
+        raise ValueError(
+            "the withheld trust decisions from this key are no longer the ones shown; nothing was changed, look again "
+            "before deciding"
+        )
     if len(paths) != expected_count:
         raise ValueError(
             f"the number of withheld trust decisions from this key is now {len(paths)}, not {expected_count}; "
             "nothing was changed, look again before deciding"
         )
     done = 0
-    for p in paths:
+    for p, _author in paths:
         with file_lock(p):
             try:
                 r = json.loads(p.read_text("utf-8"))

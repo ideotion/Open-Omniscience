@@ -106,6 +106,7 @@ class WithheldTrustDecision(BaseModel):
     signer: str
     count: int
     apply: bool = False
+    authors: list[str] | None = None  # the author ids shown; when given, the set must still match (row 339)
 
 
 @router.get("/withheld-trust")
@@ -121,7 +122,7 @@ def settle_withheld_trust(body: WithheldTrustDecision) -> dict:
     if not re.fullmatch(r"[0-9a-fA-F]{64}", body.signer or "") or body.count < 0:
         raise HTTPException(status_code=400, detail="not a signing key and a count")
     try:
-        done = store.settle_withheld_trust(body.signer, apply=body.apply, expected_count=body.count)
+        done = store.settle_withheld_trust(body.signer, apply=body.apply, expected_count=body.count, expected_authors=body.authors)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
     return {"signer": body.signer.lower(), "applied" if body.apply else "declined": done}
