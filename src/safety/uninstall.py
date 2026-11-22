@@ -103,9 +103,9 @@ try:
 except ImportError:
     fcntl = None
 LAYOUT = "hhqqi" if sys.platform.startswith("linux") else ("qqihh" if sys.platform == "darwin" else None)
-BOUND = 2.0; STEP = 0.1; GROWTH = 256 * 1024 * 1024
+BOUND = 2.0; STEP = 0.1; GROWTH = 256 * 1024 * 1024; MAX_KEPT = 64
 _SQL = tuple(n for n in _ENC if "duckdb" not in n)
-kept = []; held_stat = {"missed": 0, "seen": 0}
+kept = []; held_stat = {"missed": 0, "seen": 0, "ever": False}
 def sqlite_kind(name):
     for b in _SQL:
         if name == b: return "head"
@@ -115,6 +115,7 @@ def sqlite_kind(name):
 def keep(p, kind):
     held_stat["seen"] += 1
     if os.name != "posix": return               # an open descriptor would make the unlink fail there
+    if len(kept) >= MAX_KEPT: held_stat["missed"] += 1; return   # a bounded number of descriptors; the rest is "could not check"
     try: fd = os.open(p, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0))
     except FileNotFoundError: return
     except OSError: held_stat["missed"] += 1; return
@@ -137,22 +138,25 @@ def holder(fd):
 def holder_state():
     if os.name != "posix" or fcntl is None or LAYOUT is None: return "unknown"
     unknown = held_stat["missed"] > 0
+    if not kept: return "unknown"                # nothing was probed, so nothing was checked
     for fd, _k, _c in kept:
         h = holder(fd)
-        if h: return "held"
+        if h: held_stat["ever"] = True; return "held"
         unknown = unknown or h is None
     return "unknown" if unknown else "none"
 def rewrite_kept(deadline):
-    for fd, kind, cap in kept:
+    # the salt-bearing heads first, so a long log cannot use the whole bound before a main file's first page is reached
+    for fd, kind, cap in sorted(kept, key=lambda e: e[1] == "whole"):
         try:
             size = min(os.fstat(fd).st_size, cap)
             limit = size if kind == "whole" else min(size, PAGE1)
             os.lseek(fd, 0, os.SEEK_SET); w = 0
             while w < limit:
-                if time.monotonic() >= deadline: return
+                if time.monotonic() >= deadline: break
                 n = min(CHUNK, limit - w)
                 w += os.write(fd, bytes(n) if kind == "shm" else os.urandom(n))   # a log index's head is zeroed, never randomised
             os.fsync(fd)
+            if time.monotonic() >= deadline: return
         except OSError: pass
 def check_other_holders():
     if fcntl is not None and LAYOUT is not None:
@@ -166,15 +170,14 @@ def check_other_holders():
         deadline = time.monotonic() + BOUND
         while True:
             rewrite_kept(deadline)
-            if time.monotonic() >= deadline:
-                state = holder_state(); break
+            if time.monotonic() >= deadline: break
             time.sleep(STEP)
-            state = holder_state()
-            if state != "held":
-                rewrite_kept(time.monotonic() + BOUND)   # what it committed just before it let go
-                break
+            if holder_state() != "held": break
+    rewrite_kept(time.monotonic() + BOUND)   # always, whatever was found: what a holder committed before it let go, or unseen
+    state = holder_state()
+    if held_stat["ever"]: state = "held"     # a program seen holding it during the erase may have written behind the rewrite
     if state == "held":
-        rec("THE ERASE MAY BE INCOMPLETE: another program still had the database open when the erase ended, and it may have "
+        rec("THE ERASE MAY BE INCOMPLETE: another program had the database open while the erase ran, and it may have "
             "written the database's key material back to the disk. Close that program or restart the computer; overwriting the "
             "disk's free space after that may reach what it wrote, but not reliably on SSDs or copy-on-write file systems.")
     elif state == "unknown":
@@ -182,10 +185,11 @@ def check_other_holders():
             "the erase may be incomplete: close such a program or restart the computer.")
     else:
         rec("Checked: no other program was seen holding the database when the erase ended (a program that had it open "
-            "without holding a lock on it at that moment cannot be seen).")
+            "without holding a lock on it at that moment, or one on another computer through a network share, cannot be seen).")
     for fd, _k, _c in kept:
         try: os.close(fd)
         except OSError: pass
+    kept.clear()
 rec("uninstall watcher start (pid %d)" % pid)
 for f in plan.get("files", []):
     try: os.remove(f); rec("removed launcher " + f)
@@ -223,8 +227,9 @@ if wd and os.path.isdir(wd):
     seen = wiped = 0
     for top in roots():
         if top != wd and (linkish(top) or not os.path.isdir(top)):
-            k = None if linkish(top) else sqlite_kind(os.path.basename(top))
-            if k: keep(top, k)
+            k = sqlite_kind(os.path.basename(top))
+            if k and linkish(top): held_stat["seen"] += 1; held_stat["missed"] += 1   # a linked store file is never followed
+            elif k: keep(top, k)
             seen += 1; overwrite(top, header_only(os.path.basename(top)))
             try: os.remove(top); wiped += 1
             except OSError: pass
@@ -234,13 +239,20 @@ if wd and os.path.isdir(wd):
             for nm in names:
                 seen += 1; fp = os.path.join(root, nm)
                 k = sqlite_kind(nm)
-                if k and not os.path.islink(fp): keep(fp, k)
+                if k and os.path.islink(fp): held_stat["seen"] += 1; held_stat["missed"] += 1
+                elif k: keep(fp, k)
                 overwrite(fp, header_only(nm))
                 try: os.remove(fp); wiped += 1
                 except OSError: pass
         if top != wd: shutil.rmtree(top, ignore_errors=True)
     if held_stat["seen"]:
-        check_other_holders()
+        try: check_other_holders()
+        except Exception:                     # never let the check stop the rest of the wipe or the audit log
+            rec("The erase could not check whether another program had the database open. If one did, the erase may be "
+                "incomplete: close such a program or restart the computer.")
+            for fd, _k, _c in kept:
+                try: os.close(fd)
+                except OSError: pass
     scrubbed = 0                              # optional defence-in-depth free-space scrub
     passes = plan.get("passes")
     if passes in (1, 3, 8):

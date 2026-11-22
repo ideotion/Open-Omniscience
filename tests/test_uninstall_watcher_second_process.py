@@ -123,7 +123,8 @@ def test_with_no_other_process_the_watcher_says_checked_and_does_not_wait(tmp_pa
     elapsed = time.monotonic() - t0
     assert any(_CHECKED in ln for ln in lines), lines
     assert not any(_INCOMPLETE in ln or "could not check" in ln for ln in lines)
-    assert elapsed < 2.0, f"the watcher took {elapsed:.2f} s with no other process (the bound is only for a holder)"
+    # the bound loop is 2 s and only runs for a holder; the margin is for interpreter start-up and the store overwrite
+    assert elapsed < 3.0, f"the watcher took {elapsed:.2f} s with no other process (the bound is only for a holder)"
 
 
 def test_the_holder_lines_carry_no_process_id_and_no_path():
@@ -134,3 +135,55 @@ def test_the_holder_lines_carry_no_process_id_and_no_path():
     recs = [ln for ln in body.splitlines() if "rec(" in ln]
     assert len(recs) == 3, recs
     assert all("%" not in ln and "+" not in ln for ln in recs), recs
+
+
+# A holder that lets go during the erase: a shared lock on SQLite's lock bytes, kept until the watcher's first rescrub has
+# changed the (already unlinked) main file's head -- proof the watcher saw it -- then released, the descriptor kept open.
+_RELEASER = r"""
+import fcntl, os, struct, sys, time
+fd = os.open(sys.argv[1], os.O_RDWR)
+fcntl.fcntl(fd, fcntl.F_SETLK, struct.pack("hhqqi", fcntl.F_RDLCK, 0, 0x40000002, 1, 0))
+print("READY", flush=True)
+deadline = time.monotonic() + 60
+while os.fstat(fd).st_nlink and time.monotonic() < deadline: time.sleep(0.005)
+first = os.pread(fd, 16, 0)
+while os.pread(fd, 16, 0) == first and time.monotonic() < deadline: time.sleep(0.005)
+fcntl.fcntl(fd, fcntl.F_SETLK, struct.pack("hhqqi", fcntl.F_UNLCK, 0, 0x40000002, 1, 0))
+print("RELEASED", flush=True)
+sys.stdin.readline()
+"""
+
+
+def test_a_holder_seen_during_the_erase_is_never_reported_as_none_after_it_lets_go(tmp_path):
+    """Both security reads (R792 part B): once a holder was seen, its release does not turn the log into "Checked" -- it
+    may have written behind the last rewrite before letting go."""
+    data, _salt = _store(tmp_path)
+    db = data / "open_omniscience.db"
+    with subprocess.Popen([sys.executable, "-c", _RELEASER, str(db)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          text=True) as other:
+        try:
+            assert _line(other) == "READY"
+            lines = _run_watcher(tmp_path, data)
+            released = _line(other)
+            other.stdin.write("done\n")
+            other.stdin.flush()
+            other.wait(timeout=30)
+        finally:
+            if other.poll() is None:
+                other.kill()
+    assert released == "RELEASED", released
+    assert any(_INCOMPLETE in ln for ln in lines), lines
+    assert not any(_CHECKED in ln for ln in lines), lines
+
+
+def test_a_linked_store_file_is_never_followed_and_is_reported_as_not_checked(tmp_path):
+    """A store file that is a symbolic link is neither written through nor kept, so the check cannot cover it."""
+    data = tmp_path / "data"
+    data.mkdir()
+    outside = tmp_path / "elsewhere.db"
+    outside.write_bytes(b"x" * 8192)
+    (data / "open_omniscience.db").symlink_to(outside)
+    lines = _run_watcher(tmp_path, data)
+    assert any("could not check" in ln for ln in lines), lines
+    assert not any(_CHECKED in ln for ln in lines), lines
+    assert outside.read_bytes() == b"x" * 8192
