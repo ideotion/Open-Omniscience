@@ -17,6 +17,7 @@ lowered in the same change, so the ratchet cannot hold room for a regression (th
 * a date ALONE in its own table cell (measured monotonic, no text before it): app-ai-tools, app-analysis,
   app-claim, app-settings, investigate, app-map's three timestamp cells;
 * a date already isolated by its own element (app-backup's ``dir=ltr`` span);
+* a signing key's first 16 hex, not a date (app-backup's ``backupSignerWords``, R800);
 * computation, not rendering: query-string / range bounds, chart axes, ids, hashes, filenames, array
   windows (app-agenda, app-analysis, app-core, app-corpus, app-diagnostics, app-evidence, app-insights,
   app-markets, ootimeline), the helpers' own slices (app-core), and plain-text export lines (app-analysis; its synthesis.html export too, a saved file
@@ -42,7 +43,7 @@ _PINS = {
     "app-agenda.js": 1,
     "app-ai-tools.js": 2,
     "app-analysis.js": 8,
-    "app-backup.js": 2,
+    "app-backup.js": 3,
     "app-claim.js": 1,
     "app-core.js": 3,
     "app-corpus.js": 1,
