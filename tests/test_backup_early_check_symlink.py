@@ -54,7 +54,15 @@ def test_a_volume_that_links_out_of_the_folder_is_never_read(tmp_path, monkeypat
     assert opened == [] and hashed == []
 
 
-def test_a_real_volume_still_gets_its_early_verdict(tmp_path):
+def test_a_real_volume_still_gets_its_early_verdict(tmp_path, monkeypatch):
+    import src.reporting.evidence as EV
+    from src.backup.stream_backup import _sign_manifest, backup_passphrase_check
+
     chosen, _ = _set(tmp_path, link=False)
+    assert backup_passphrase_check(chosen, "wrong") == ("unchecked", "this backup has no signature")  # R795
+    monkeypatch.setattr(EV, "_default_key_path", lambda: tmp_path / "keys" / "evidence_ed25519.pem")
+    manifest = json.loads((chosen / "volumes.json").read_text(encoding="utf-8"))
+    manifest["signature"] = _sign_manifest(manifest)  # signed by this installation's own key
+    (chosen / "volumes.json").write_text(json.dumps(manifest), encoding="utf-8")
     assert backup_passphrase_is_wrong(chosen, "wrong") is True
     assert backup_passphrase_is_wrong(chosen, "right") is False

@@ -2280,24 +2280,72 @@ def _crosscheck_envelope(env_bytes: bytes, vman: dict[str, Any]) -> dict[str, An
 # --------------------------------------------------------------------------- #
 #  Read / restore staging
 # --------------------------------------------------------------------------- #
-def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: str) -> None:
-    """Refuse a wrong backup passphrase in seconds, before the checksum pass reads the whole set.
+# R795: the early check names a passphrase wrong only when it can trust the backup's list of volumes. That list carries
+# the public key it was signed with, so a valid signature alone proves nothing about who wrote it: anyone who changes a
+# volume can re-sign the list with a key of their own. Only a signature by THIS installation's own key makes "these are
+# exactly the bytes the backup wrote" a fact, and only that fact turns "does not open" into "wrong passphrase". Every
+# other case is still refused, in words that say the two causes could not be told apart and why.
+WRONG_BACKUP_PASSPHRASE = (
+    "wrong passphrase for this backup: its first volume matches the list of volumes signed by this installation but "
+    "does not open with the passphrase given. Nothing was read past that volume and nothing was changed on this computer."
+)
+UNCHECKED_BACKUP_PASSPHRASE = (
+    "could not check the passphrase for this backup: its first volume does not open with the passphrase given, and the "
+    "backup's list of volumes could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a "
+    "changed backup. Nothing was read past that volume and nothing was changed on this computer."
+)
+REASON_UNSIGNED = "this backup has no signature"
+REASON_BAD_SIGNATURE = "its signature does not match its list of volumes"
+REASON_OTHER_INSTALLATION = (
+    "this backup was signed by another installation (for example another computer), so this one cannot confirm its list"
+)
+REASON_OWN_KEY_UNREADABLE = "this installation's own signing key could not be read"
+UNCHECKED_REASONS = (REASON_UNSIGNED, REASON_BAD_SIGNATURE, REASON_OTHER_INSTALLATION, REASON_OWN_KEY_UNREADABLE)
 
-    Until this check a wrong passphrase was found only when the reassembly decrypted the first volume, AFTER every volume
-    of the set had been hashed: on a large set, many minutes to learn about a typo, and in a queue of backups, that many
-    minutes per backup. The check opens the first chunk of the first volume the first member uses. When it opens, the key
-    is right. When it does not, the volume's checksum against the manifest tells the two causes apart: a volume whose
-    bytes are exactly the ones the backup wrote and still does not open was locked with another passphrase, so the
-    restore stops here and says so. A volume that is damaged or missing gives no verdict and the restore goes on, so the
-    checksum pass and parity recovery deal with it exactly as before: this check never refuses a set that the full path
-    could have restored."""
+
+class WrongBackupPassphrase(EncryptionError):
+    """The first volume is exactly what this installation signed, and it does not open: the passphrase is wrong."""
+
+
+class BackupPassphraseUnchecked(EncryptionError):
+    """The first volume does not open, and the list it was checked against cannot be trusted: no verdict, still refused."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(UNCHECKED_BACKUP_PASSPHRASE.format(reason=reason))
+        self.reason = reason
+
+
+def _why_the_volume_list_is_not_ours(m: dict[str, Any]) -> str | None:
+    """None when the manifest is signed, validly, by this installation's own key; else the plain reason it is not.
+
+    The key is read, never created (``signing_key_state`` -> ``existing_public_key_hex``): a check that wrote a key to
+    answer would change the installation it is checking against."""
+    state = _manifest_signature_state(m)
+    if state == "unsigned":
+        return REASON_UNSIGNED
+    if state != "verified":
+        return REASON_BAD_SIGNATURE
+    from src.reporting.evidence import signing_key_state
+
+    key_state, own = signing_key_state()
+    if key_state == "unreadable":
+        return REASON_OWN_KEY_UNREADABLE
+    try:  # the keys as bytes: the hex in the list may differ in case or spacing and still name the same key
+        same = own is not None and bytes.fromhex(own) == bytes.fromhex(str(m["signature"]["public_key"]))
+    except ValueError:
+        same = False
+    return None if same else REASON_OTHER_INSTALLATION
+
+
+def _passphrase_verdict(src: Path, m: dict[str, Any], passphrase: str) -> tuple[str, str | None]:
+    """``("wrong", None)``, ``("unchecked", reason)`` or ``("none", None)``: see ``_refuse_a_wrong_backup_passphrase``."""
     vol_by_name = {v.get("name"): v for v in m.get("volumes") or []}
     first = next((v for mm in m.get("members") or [] for v in mm.get("volumes") or [] if v in vol_by_name), None)
     if first is None:
-        return
+        return "none", None
     path = src / first
     if path.is_symlink() or not path.is_file():
-        return  # a link is never followed out of the chosen folder; the restore refuses it by name
+        return "none", None  # a link is never followed out of the chosen folder; the restore refuses it by name
     # One read answers both questions (row 329): the checksum is taken over the very bytes the key failed on, through one
     # handle, so a file swapped in, or rewritten, for the key check and put back for the checksum can never make the right
     # passphrase read as wrong.
@@ -2306,38 +2354,60 @@ def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: 
             path, passphrase, follow_links=False, max_bytes=volume_expectation(vol_by_name[first])["expect_bytes"]
         )
     except (EncryptionError, OSError):
-        return  # an unreadable header, or a refused open, is no verdict on the key: the restore's own pass reports it
+        # an unreadable header, or a refused open, is no verdict on the key: the restore's own pass reports it
+        return "none", None
     if opens or digest != vol_by_name[first].get("sha256"):
-        return
-    raise EncryptionError(
-        "wrong passphrase for this backup: its first volume is intact (its checksum matches the backup's manifest) "
-        "but does not open with the passphrase given. Nothing was read past that volume and nothing was changed."
-    )
+        return "none", None
+    reason = _why_the_volume_list_is_not_ours(m)
+    return ("wrong", None) if reason is None else ("unchecked", reason)
 
 
-def backup_passphrase_is_wrong(src_dir: Path | str, passphrase: str) -> bool:
-    """True only when ``src_dir`` is a volume set whose first volume is intact and does not open with ``passphrase``.
+def _refuse_a_wrong_backup_passphrase(src: Path, m: dict[str, Any], passphrase: str) -> None:
+    """Refuse a wrong backup passphrase in seconds, before the checksum pass reads the whole set.
+
+    Until this check a wrong passphrase was found only when the reassembly decrypted the first volume, AFTER every volume
+    of the set had been hashed: on a large set, many minutes to learn about a typo, and in a queue of backups, that many
+    minutes per backup. The check opens the first chunk of the first volume the first member uses. When it opens, the key
+    is right. When it does not, the volume's checksum against the manifest tells the two causes apart, but only when the
+    manifest itself can be trusted (R795): signed, validly, by this installation's own key. Then the restore stops with
+    "wrong passphrase". A manifest that is unsigned, badly signed or signed by another key cannot tell a wrong passphrase
+    from a changed backup, so the restore stops with "could not check" and the reason. A volume that is damaged or
+    missing gives no verdict and the restore goes on, so the checksum pass and parity recovery deal with it exactly as
+    before: this check never refuses a set that the full path could have restored."""
+    verdict, reason = _passphrase_verdict(src, m, passphrase)
+    if verdict == "unchecked" and reason:
+        raise BackupPassphraseUnchecked(reason)
+    if verdict == "wrong":
+        raise WrongBackupPassphrase(WRONG_BACKUP_PASSPHRASE)
+
+
+def backup_passphrase_check(src_dir: Path | str, passphrase: str) -> tuple[str, str | None]:
+    """``("wrong", None)``, ``("unchecked", reason)`` or ``("none", None)`` for the volume set at ``src_dir``.
 
     The import queue asks this of every backup before its run starts, so a typo in one backup's passphrase stops the run
     before anything is merged, rather than failing that backup halfway through and discarding the work of the backups
-    staged with it. Anything this cannot read (no manifest, another kind of set, a damaged volume) answers False: the
-    restore itself reports those, exactly as before."""
+    staged with it. ``wrong``: the first volume is exactly what this installation signed and does not open. ``unchecked``:
+    it does not open and the list it matches cannot be trusted (R795), so the run is refused with the reason. Anything
+    this cannot read (no manifest, another kind of set, a damaged volume) answers ``none``: the restore itself reports
+    those, exactly as before."""
     src = Path(src_dir)
     try:
         m = load_manifest(src)
         if m.get("kind") != STREAM_KIND:
-            return False
+            return "none", None
         _require_safe_manifest_names(m)
         # The restore's own volume checks first (a link, a volume listed twice): this runs before the run is started, so
         # it must not read anything the restore itself would refuse to read.
         _require_each_volume_read_once(m, src)
         _require_distinct_member_names(m)
-        _refuse_a_wrong_backup_passphrase(src, m, passphrase)
-    except EncryptionError:
-        return True
+        return _passphrase_verdict(src, m, passphrase)
     except Exception:  # noqa: BLE001 - no verdict: the restore reads the set itself and says what is wrong with it
-        return False
-    return False
+        return "none", None
+
+
+def backup_passphrase_is_wrong(src_dir: Path | str, passphrase: str) -> bool:
+    """True only when ``backup_passphrase_check`` names the passphrase wrong (see there)."""
+    return backup_passphrase_check(src_dir, passphrase)[0] == "wrong"
 
 
 def read_stream_backup(
