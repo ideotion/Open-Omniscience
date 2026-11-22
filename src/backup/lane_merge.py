@@ -155,6 +155,7 @@ def snapshot_lane_for_backup(kind: str, dest: Path) -> dict[str, Any]:
         get_passphrase,
         is_encrypted_file,
         snapshot_to_plaintext,
+        sqlite_opening,
     )
     from src.versioned.store import lane_path
 
@@ -181,7 +182,8 @@ def snapshot_lane_for_backup(kind: str, dest: Path) -> dict[str, Any]:
     conn = connect(src, check_same_thread=False)
     try:
         # The key is a bound parameter, never SQL text.
-        conn.execute("ATTACH DATABASE ? AS snap KEY ?", (str(dest), key))
+        with sqlite_opening():  # R789: an ATTACH opens a file the audit hook does not see
+            conn.execute("ATTACH DATABASE ? AS snap KEY ?", (str(dest), key))
         conn.execute(f"PRAGMA snap.cipher_page_size = {int(page_size)}")
         _export(conn, "snap")
         conn.execute("DETACH DATABASE snap")
@@ -199,7 +201,7 @@ def snapshot_lane_for_backup(kind: str, dest: Path) -> dict[str, Any]:
 def _attach(conn: Any, path: Path, keys: Iterable[str | None]) -> None:
     """ATTACH ``path`` as ``inc``, trying each key; refuse by name when none opens it."""
     from src.backup.volumes import member_in_use
-    from src.database.connect import held_by_another, is_encrypted_file
+    from src.database.connect import held_by_another, is_encrypted_file, sqlite_opening
 
     encrypted = is_encrypted_file(path)
     if encrypted is None:
@@ -214,7 +216,8 @@ def _attach(conn: Any, path: Path, keys: Iterable[str | None]) -> None:
     for key in candidates:
         try:
             # Some driver builds refuse a wrong key at ATTACH, others at the first read.
-            conn.execute("ATTACH DATABASE ? AS inc KEY ?", (str(path), key))  # the key is bound, never SQL text
+            with sqlite_opening():  # R789: an ATTACH opens a file the audit hook does not see
+                conn.execute("ATTACH DATABASE ? AS inc KEY ?", (str(path), key))  # the key is bound, never SQL text
             conn.execute("SELECT count(*) FROM inc.sqlite_master").fetchone()
             return
         except Exception as exc:  # noqa: BLE001 - a wrong key reads as "not a database": try the next; a held member stops here

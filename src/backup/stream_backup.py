@@ -1270,7 +1270,11 @@ def _emit_member(st: _EmitState, mf: MemberFile) -> dict[str, Any]:
     n_slices = max(1, math.ceil(size / st.volume_size)) if size else 1
     whole = hashlib.sha256()
     vol_names: list[str] = []
-    with open(mf.path, "rb") as fh:
+    # Read through the descriptor kept for the file (R789): the corpus is the LIVE store, and closing a descriptor of our
+    # own on it would drop every lock this process holds on it, letting another process write under the running app.
+    from src.database import connect as _connect
+
+    with _connect.store_file(mf.path) as fh:
         for i in range(n_slices):
             if st.should_stop is not None and st.should_stop():
                 if st.volumes:  # never replace the previous run's resume log with an empty one

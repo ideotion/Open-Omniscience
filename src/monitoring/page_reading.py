@@ -85,7 +85,9 @@ def read_header(path: Path) -> dict[str, Any]:
     """
     out: dict[str, Any] = {"source": "header-bytes"}
     try:
-        with open(path, "rb") as fh:
+        from src.database.connect import store_file
+
+        with store_file(path) as fh:  # R789: never a close of our own on a store SQLite may hold here
             head = fh.read(HEADER_BYTES)
             file_bytes = os.fstat(fh.fileno()).st_size
     except FileNotFoundError:
