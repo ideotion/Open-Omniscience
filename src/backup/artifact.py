@@ -166,7 +166,7 @@ class StagedArtifact:
     custody_path: Path | None
     manifest: dict | None
     signature_state: str  # verified | bad-signature | unsigned
-    origin_fingerprint: str  # signer pubkey hex or "unsigned"
+    origin_fingerprint: str  # the signing key (hex) the file carries, or "unsigned"; a key, never a proven origin (R800)
     members: list[dict] = field(default_factory=list)
     # S6.2: where the artifact's large public files (wiki dumps / OSM extracts / model
     # weights) go back to, when it carries any. Empty for every artifact written before
@@ -204,6 +204,49 @@ class StagedArtifact:
                 if p is not None and p.exists():
                     out.append((member_name(m["name"]), p))
         return out
+
+
+#: R800 (row 340): what a backup's signature can be said to show about its signer. The key that
+#: signed is carried by the same file, so a verified signature proves only that the content is
+#: unchanged since it was signed -- never where it came from. The one comparison the app can make is
+#: with ITS OWN signing key, so these are the only statements it makes about a signer:
+#: ``this-installation`` (the key equals this installation's), ``another-installation`` (it does
+#: not; a statement of fact, never a tampering warning), ``not-compared`` (this installation's key
+#: could not be read, so no comparison was made) and ``unsigned``.
+SIGNER_RELATIONS = ("this-installation", "another-installation", "not-compared", "unsigned")
+
+
+def this_installation_key() -> str | None:
+    """This installation's public signing key (hex), or None when it has none or it cannot be read.
+
+    Read-only: a display never creates a key (see ``existing_public_key_hex``)."""
+    try:
+        from src.reporting.evidence import existing_public_key_hex
+
+        return existing_public_key_hex()
+    except Exception:  # noqa: BLE001 - an unreadable key is "not compared", never a guess
+        return None
+
+
+def signer_relation(signer_key: str | None, local_key: str | None) -> str:
+    """One of ``SIGNER_RELATIONS`` for a signer key, compared at display time with ``local_key``
+    (``this_installation_key()``). Stored values ("unsigned", "unknown-origin", a key) are read as
+    they are and never rewritten (R755)."""
+    key = (signer_key or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", key):
+        return "unsigned"
+    if not local_key:
+        return "not-compared"
+    return "this-installation" if _is_this_installations_key(key, local_key) else "another-installation"
+
+
+def _is_this_installations_key(key: str, local_key: str) -> bool:
+    """THE one place the comparison is made, so it can be swapped whole.
+
+    Plan's ruling for row 340: this is to be ``evidence.is_this_installations_key`` (lane I), which
+    also counts a key placed by a restore as another installation's while its restored-key marker
+    exists. Until that lands on main it is the plain comparison with this installation's key."""
+    return key == local_key.strip().lower()
 
 
 def member_name(name: str) -> str:
@@ -1017,8 +1060,10 @@ def _finalize_staged(
             f"(this build reads {', '.join(ACCEPTED_BACKUP_SCHEMAS)})"
         )
 
-    # Verify the manifest signature with the EMBEDDED key: this proves integrity
-    # and binds an origin fingerprint -- it does NOT make the content trusted.
+    # Verify the manifest signature with the EMBEDDED key: this proves the manifest is
+    # unchanged since that key signed it, and records which key that was. It proves
+    # nothing about where the file came from (the key travels inside it), and it does
+    # NOT make the content trusted (R800).
     signature_state = "unsigned"
     fingerprint = "unsigned"
     if envelope.get("signature") and envelope.get("public_key"):

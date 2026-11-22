@@ -2124,13 +2124,25 @@ def verify_stream_backup(
     if m.get("kind") == STREAM_KIND:
         state = _manifest_signature_state(m)
         report["signature"] = state
+        # R800: a verified signature shows the index is unchanged since this key signed it,
+        # never where the set came from; say whose key it is, compared with this
+        # installation's own, and nothing more.
+        from src.backup.artifact import signer_relation, this_installation_key
+
+        sig = m.get("signature")
+        signer = str(sig.get("public_key") or "") if state == "verified" and isinstance(sig, dict) else ""
+        report["signer_key"] = signer or None
+        report["signed_by"] = signer_relation(signer, this_installation_key()) if signer else "unsigned"
         if state != "verified":
+            what = "is not signed" if state == "unsigned" else "signature does not match its content"
             _fail(
-                f"volume manifest signature: {state} — the set's index cannot be "
-                "trusted (an interrupted finalize or tampering); re-run the backup"
+                f"the volume manifest {what}, so the set's index cannot be relied on "
+                "(an interrupted finalize, or a change after it was written); re-run the backup"
             )
     else:
         report["signature"] = "not-applicable (oo-volumes-1 sets are unsigned)"
+        report["signer_key"] = None
+        report["signed_by"] = "unsigned"
 
     status = verify_volume_set(src)
     report["bad_volumes"] = status["bad"]
