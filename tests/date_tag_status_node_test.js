@@ -40,8 +40,9 @@ assert.strictEqual(page("confirmed"), "T[confirmed by you]");
 assert.strictEqual(page("rejected"), "T[rejected by you]");
 assert.strictEqual(page("candidate"), "T[not checked]", "an unconfirmed extraction says it was not checked");
 
-// Without the i18n engine yet (i18n.js loads after investigate.js) the English key itself is returned, which the
-// page's text-node walker then translates because it stands alone in its cell.
+// A safety net, not the usual path (the cell is built after an awaited fetch, by which time i18n.js has normally run):
+// with no i18n engine the English key itself is returned, which the page's text-node walker translates because it
+// stands alone in its cell.
 const bare = new Function("window", extract(INV, "_tagStatusLabel") + "\nreturn _tagStatusLabel;")({});
 assert.strictEqual(bare("candidate"), "not checked");
 

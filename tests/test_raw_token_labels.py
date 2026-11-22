@@ -15,7 +15,9 @@ move the pin AND say below which kind it is. What the pinned remainder is (read,
 
 * STANDING ALONE in its own node, so the walker translates it when the key exists: app-map.js (dump status pill),
   app-sources.js (``x.status`` pill). (investigate.js's date-tag cell left this list in row 316: it now says the
-  status through ``_tagStatusLabel``, the agenda's words.)
+  status through ``_tagStatusLabel``, the agenda's words. That map departs from "unknown shown as sent" on purpose:
+  it matches the agenda's ``_agStatusLabel`` token for token, so a tag reads the same on both pages, and the datestore's
+  status set is closed (``VALID_STATUS``); a new status would need both maps and this note changed together.)
 * AN IDENTIFIER OR USER-DEFINED OPEN SET, so it is shown as sent on purpose: app-map.js ``e.kind`` (a Wikimedia
   dump file name), reader.js (AI keyword kind, set by a custom prompt), app-home.js (annotation and claim kinds: the
   server accepts any string, the UI's own select offers six that could be mapped later), app-insights.js (``data-kind`` attributes, never drawn), ooversions.js (a CSS class).
