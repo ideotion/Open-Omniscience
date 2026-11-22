@@ -90,6 +90,7 @@ def performance_report(
     from src.database.connect import locked_state
     from src.database.session import engine
     from src.paths import data_dir as _data_dir
+    from src.paths import wal_file_bytes
 
     db_file = _data_dir() / "open_omniscience.db"
 
@@ -112,7 +113,11 @@ def performance_report(
     }
 
     # -- store facts (real PRAGMA readings) --------------------------------- #
-    store: dict = {"db_bytes": db_file.stat().st_size if db_file.exists() else None}
+    # Row 321: wal_bytes is the write-ahead log beside the store, apart from db_bytes (the main file alone).
+    store: dict = {
+        "db_bytes": db_file.stat().st_size if db_file.exists() else None,
+        "wal_bytes": wal_file_bytes(db_file),
+    }
     if engine.url.get_backend_name() == "sqlite":
         with engine.connect() as conn:
             for pragma in (

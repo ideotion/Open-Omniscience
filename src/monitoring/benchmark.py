@@ -394,11 +394,12 @@ def _store_and_corpus(session: Session) -> tuple[dict, dict]:
     from src.database.connect import locked_state
     from src.database.models import Article, Keyword, Source
     from src.database.session import engine
-    from src.paths import data_dir
+    from src.paths import data_dir, wal_file_bytes
 
     db_file = data_dir() / "open_omniscience.db"
     store: dict = {
         "db_bytes": db_file.stat().st_size if db_file.exists() else None,
+        "wal_bytes": wal_file_bytes(db_file),  # row 321: the log beside the store, apart from db_bytes
         "at_rest_state": locked_state(db_file),
     }
     if engine.url.get_backend_name() == "sqlite":
