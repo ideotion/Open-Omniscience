@@ -3411,6 +3411,15 @@
     // ONE label for a country anywhere in the picker: the name in the reader's language with the
     // alpha-3 code beside it (the pickers' convention, Q302/Q308), the server's English name as
     // the fallback when the browser has no region names.
+    // Row 279: one line when the language-to-country list (configs/language_countries.yml) was not read as a list
+    // with countries ("" when it was). Absent, empty and unreadable are three different facts and are said apart.
+    function osmFloorLine(fl, t) {
+      const st = fl && fl.state;
+      if (!st || st === "present") return "";
+      if (st === "absent") return t("The language-to-country list was not found on this install, so no country is counted from it.");
+      if (st === "empty") return t("The language-to-country list on this install was read and lists no country.");
+      return t("The language-to-country list on this install could not be read, so no country is counted from it.");
+    }
     function _osmPickLabel(cc, fallback) {
       const code = ooCountryCode(cc), name = ooCountryName(cc, fallback || "");
       return name && name !== code ? `${name} (${code})` : (code || fallback || cc);
@@ -3432,6 +3441,29 @@
       if (bytes == null) return `<span class="muted">—</span>`;
       const hover = `${t(d.method || "")} ${t(d.caveat || "")}`.trim();
       return `~${humanBytes(bytes)} ${esc(t("a day"))} <span class="muted" title="${esc(hover)}">${esc(t("estimate"))}</span>`;
+    }
+    // Row 278 (Q824): once daily change files are applied for a chosen country, the size measured here leads and the estimate
+    // moves to the hover; without a measurement the estimate stays as it was, and the reason it is not measured is in the hover.
+    // A missing figure is never drawn as 0.
+    function _osmDiffCell(r) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const osmTf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const d = (_osmPicker || {}).diff || {};
+      const m = r && r.diff_measured;
+      const estimate = r && r.diff_daily_estimate_bytes != null
+        ? osmTf("Before the first daily update: about {size} a day (estimate).", { size: humanBytes(r.diff_daily_estimate_bytes) })
+          + ` ${t(d.method || "")} ${t(d.caveat || "")}`
+        : "";
+      if (!m || m.median_bytes == null) {
+        const cell = _osmDiffEstimate(r ? r.diff_daily_estimate_bytes : null);
+        const why = r && r.diff_measured_reason ? t(r.diff_measured_reason) : "";
+        return why ? `${cell} <span class="muted" title="${esc(why)}">${esc(t("not measured yet"))}</span>` : cell;
+      }
+      const label = m.through
+        ? osmTf("measured here: {n} files, through {date}", { n: m.files_measured, date: ooIsoDate(m.through) })
+        : osmTf("measured here: {n} files", { n: m.files_measured });
+      const hover = `${t(m.method || "")} ${estimate}`.trim();
+      return `${humanBytes(m.median_bytes)} ${esc(t("a file"))} <span class="muted" title="${esc(hover)}">${esc(label)}</span>`;
     }
     function _osmPickDownloadCell(r) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -3477,7 +3509,7 @@
           const rows = p.selected.map((r) => `<tr>
               <td><strong>${esc(_osmPickLabel(r.cc, r.name))}</strong></td>
               <td>${r.extract ? `${esc(t(r.extract.name))} · ${_osmSizeEstimate(r.extract.size_estimate_bytes)}` : `<span class="muted">—</span>`}</td>
-              <td>${_osmDiffEstimate(r.diff_daily_estimate_bytes)}</td>
+              <td>${_osmDiffCell(r)}</td>
               <td>${_osmPickDownloadCell(r)}</td>
               <td>${_osmPickLaneCell(r)}</td>
               <td><button class="tiny secondary" data-on-click="osmPickRemove(${esc(JSON.stringify(r.cc))})">${esc(t("Remove"))}</button></td>
@@ -3513,9 +3545,12 @@
             + `<button class="tiny" data-on-click="osmPickAddCode(${esc(JSON.stringify(f.cc))})">${esc(osmTf("Start with {country}", { country: _osmPickLabel(f.cc, f.name) }))}</button>${cost}`
             + (f.extract ? "" : ` <span class="hint">${esc(t(f.extract_reason || ""))}</span>`) + `</div>`;
         }
+        const floorLine = osmFloorLine(p.suggested_floor, t);
         html += open.length
           ? `<div class="hint" style="margin-bottom:4px">${esc(t(p.suggestion_basis || ""))}</div>` + open.map((r) => chip(r)).join(" ")
           : "";
+        // Row 279: a language-to-country list that was not read is said, never drawn as a language with no country.
+        if (floorLine) html += `<div class="hint" style="color:var(--caveat);margin-top:4px">${esc(floorLine)}</div>`;
         if (law.length) {
           html += `<div class="hint" style="margin:8px 0 4px">${esc(t(p.law_basis || ""))}</div>`
             + law.map((r) => chip(r, osmTf("{n} watched legal documents", { n: r.law_documents }))).join(" ");

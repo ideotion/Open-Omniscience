@@ -247,7 +247,8 @@ def test_an_unreadable_catalogue_is_unchecked_never_no_source():
 def test_an_absent_or_empty_floor_is_unchecked_with_a_reason_not_zero_of_zero():
     rep = floor_report([], {"sources": []}, {"countries": [], "languages": {}})
     assert rep["state"] == "unchecked" and rep["reason"]
-    assert rep["by_state"] is None and rep["languages"] is None and rep["countries"] == 0
+    # row 279: the floor's size is unknown (None), never the 0 a floor of nothing would give
+    assert rep["by_state"] is None and rep["languages"] is None and rep["countries"] is None
 
 
 def test_no_fraction_or_score_exists_anywhere_in_the_block():
