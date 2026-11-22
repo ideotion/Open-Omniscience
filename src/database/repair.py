@@ -426,12 +426,13 @@ def _scrap(target: Path, damaged: Path, finished: Path | None, sidecar: Path | N
     file this repair gave (the damaged name, and the names a fallback moved away from, which only the sidecar records, so they are read
     from it first). Each name goes only when it is the live file's own second name (:func:`_drop_extra_names`)."""
     earlier = _replaced_names(target, _sidecar_doc(sidecar))
+    # The names first, the sidecar last: a cut in between leaves a sidecar that still records every name, never a name nothing records.
+    for name in (damaged, *earlier):
+        _drop_extra_names(target, name)
     for spent in (finished, sidecar):
         if spent is not None:
             with contextlib.suppress(OSError):
                 spent.unlink()
-    for name in (damaged, *earlier):
-        _drop_extra_names(target, name)
 
 
 def _numbered(target: Path, damaged: Path, n: int) -> Path:
