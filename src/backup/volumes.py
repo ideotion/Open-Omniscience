@@ -33,7 +33,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from src.backup.regular_file import NotARegularFile, open_regular
+from src.backup.regular_file import NotARegularFile, create_new, open_regular, replace_with
 from src.safety.crypto import decrypt_file, encrypt_stream_to
 
 MANIFEST_NAME = "volumes.json"
@@ -173,7 +173,9 @@ def write_volume_set(
         "volumes": volumes,
         "parity": None,  # slice 2: Reed-Solomon erasure parity
     }
-    (out / MANIFEST_NAME).write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    # Through a temporary file and a rename: a link planted at the manifest's name in the destination is replaced, never
+    # written through (row 313).
+    replace_with(out / MANIFEST_NAME, json.dumps(manifest, indent=1).encode("utf-8"))
     return manifest
 
 
@@ -436,7 +438,7 @@ def read_volume_set(
     written = 0
     tmp = Path(dest).with_name(Path(dest).name + ".reassembling")
     try:
-        with open(tmp, "wb") as outf:
+        with create_new(tmp) as outf:  # never through a link at the working copy's name (row 313)
             for v in m["volumes"]:
                 if should_stop is not None and should_stop():
                     raise VolumeStopped("stopped while reassembling the backup")

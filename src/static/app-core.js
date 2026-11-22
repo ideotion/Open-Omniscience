@@ -2176,6 +2176,17 @@
       if (_inuse) {
         return tf("Another program is using the staged backup member {name} right now, so it could not be opened. Try again in a moment.", { name: iso(_inuse[1]) });
       }
+      // Row 313: backup/folder_backup.py write_folder_backup, a folder inside the backup folder that
+      // is a link. Whole-message only; the folder is a path inside the backup folder, the target where
+      // the link really points.
+      const _lnk0 = /^The large-data backup stopped before copying anything: the folder (.+?) inside the backup folder is a link to (.+), and a backup never writes through a link\. Replace the link with a real folder, or choose a backup folder on that other drive\.$/.exec(s.trim());
+      if (_lnk0) {
+        return tf("The large-data backup stopped before copying anything: the folder {folder} inside the backup folder is a link to {target}, and a backup never writes through a link. Replace the link with a real folder, or choose a backup folder on that other drive.", { folder: iso(_lnk0[1]), target: iso(_lnk0[2]) });
+      }
+      const _lnk1 = /^The large-data backup stopped: the folder (.+?) inside the backup folder became a link to (.+) while it ran, and nothing was written through it\. Replace the link with a real folder, or choose a backup folder on that other drive\.$/.exec(s.trim());
+      if (_lnk1) {
+        return tf("The large-data backup stopped: the folder {folder} inside the backup folder became a link to {target} while it ran, and nothing was written through it. Replace the link with a real folder, or choose a backup folder on that other drive.", { folder: iso(_lnk1[1]), target: iso(_lnk1[2]) });
+      }
       // newsletter_export.py: a stopped newsletter-free backup. Two fixed sentences, whole-message
       // only, the second carrying a reason that is the server's own fixed text or an exception class.
       if (s.trim() === "The backup without newsletters was stopped: there is not enough free space to make the clean copy of your corpus. No new backup was written, your earlier backups are untouched, and a backup with the newsletters was not made instead. Free up space and try again.") {

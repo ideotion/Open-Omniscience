@@ -708,8 +708,9 @@ def write_backup_v2(
 
             blob = encrypt_bytes(zip_path.read_bytes(), passphrase)
             tmp_out = dest.with_name(dest.name + ".tmp")
-            tmp_out.write_bytes(blob)
-            os.replace(tmp_out, dest)
+            from src.backup.regular_file import replace_with
+
+            replace_with(dest, blob, tmp=tmp_out)  # never through a link at either name in the destination (row 313)
         else:
             os.replace(zip_path, dest)
         return envelope
