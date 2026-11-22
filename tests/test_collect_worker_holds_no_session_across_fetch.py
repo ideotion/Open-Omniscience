@@ -35,6 +35,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.session import _note_rows_changed_at_begin, release_idle_connection
 from src.ingest.fetch_release import SessionReleasingFetcher, wrap_fetcher
+from tests._app_engine import app_sqlite_engine
 
 
 # --------------------------------------------------------------------------- #
@@ -48,8 +49,8 @@ def _pooled_engine(path, *, pool_size=2, overflow=4):
     fixture would be measuring the wrong thing. ``check_same_thread=False`` for the
     same reason production sets it — pooled connections cross threads.
     """
-    return sa.create_engine(
-        f"sqlite:///{path}",
+    return app_sqlite_engine(
+        path,
         poolclass=sa.pool.QueuePool,
         pool_size=pool_size,
         max_overflow=overflow,
@@ -238,7 +239,6 @@ def test_the_session_double_implements_everything_the_guard_reads():
     """
     import ast as _ast
     import inspect as _inspect
-
     import textwrap as _tw
 
     tree = _ast.parse(_tw.dedent(_inspect.getsource(release_idle_connection)))

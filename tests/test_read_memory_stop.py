@@ -27,6 +27,7 @@ from sqlalchemy.pool import QueuePool
 from src.database import maintenance
 from src.database.maintenance import MemoryShort, StatementTimeout, statement_deadline
 from src.scheduler import memguard
+from tests._app_engine import app_sqlite_engine
 
 # ~400k iterations: comfortably past the 20,000-opcode granularity at which the
 # progress handler fires (the same query tests/test_statement_deadline_pool.py uses).
@@ -45,8 +46,8 @@ _LONGER = sa.text(
 def session(tmp_path):
     from src.database.session import _disarm_progress_handler
 
-    eng = sa.create_engine(
-        f"sqlite:///{tmp_path / 'd.db'}",
+    eng = app_sqlite_engine(
+        tmp_path / 'd.db',
         connect_args={"check_same_thread": False},
         poolclass=QueuePool,
         pool_size=1,

@@ -38,6 +38,7 @@ from src.database.session import (
     _driver_rows_changed,
     release_idle_connection,
 )
+from tests._app_engine import app_sqlite_engine
 
 _META = sa.MetaData()
 _NOTE = sa.Table(
@@ -52,8 +53,8 @@ _SPARE = sa.Table("spare", _META, sa.Column("id", sa.Integer, primary_key=True))
 def _engine(path, *, explicit_begin: bool, pool_size: int = 2):
     """A WAL file behind a small QueuePool. ``explicit_begin`` is the ``read_snapshot`` recipe: pysqlite out of its legacy mode and a real
     BEGIN when a SQLAlchemy transaction starts."""
-    engine = sa.create_engine(
-        f"sqlite:///{path}", future=True, poolclass=QueuePool, pool_size=pool_size, max_overflow=0,
+    engine = app_sqlite_engine(
+        path, future=True, poolclass=QueuePool, pool_size=pool_size, max_overflow=0,
         connect_args={"check_same_thread": False},
     )
 
@@ -521,7 +522,7 @@ def test_the_encrypted_driver_is_counted_too(tmp_path):
         conn.execute("PRAGMA key = 'a-test-key'")
         return conn
 
-    engine = sa.create_engine("sqlite://", creator=creator, poolclass=QueuePool, pool_size=2, max_overflow=0, future=True)
+    engine = app_sqlite_engine(":memory:", creator=creator, poolclass=QueuePool, pool_size=2, max_overflow=0, future=True)
     try:
         _META.create_all(engine)
         with engine.begin() as conn:

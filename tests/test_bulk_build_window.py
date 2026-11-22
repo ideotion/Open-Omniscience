@@ -22,7 +22,7 @@ the module's own bookkeeping, because bookkeeping is exactly what a crash corrup
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -150,8 +150,7 @@ def test_the_marker_is_committed_before_the_first_drop(tmp_path, monkeypatch):
     """
     import src.analytics.bulk_build as bb
 
-    url = f"sqlite:///{tmp_path / 'bulk.db'}"
-    eng = create_engine(url, future=True)
+    eng = app_sqlite_engine(tmp_path / 'bulk.db')
     Base.metadata.create_all(eng)
     s = _session(eng)
 
@@ -160,7 +159,7 @@ def test_the_marker_is_committed_before_the_first_drop(tmp_path, monkeypatch):
 
     def _watching_drop(session, names):
         # A SEPARATE engine + connection: it can only see what is already committed.
-        other = create_engine(url, future=True)
+        other = app_sqlite_engine(tmp_path / 'bulk.db')
         try:
             with other.connect() as conn:
                 seen["marker"] = conn.execute(

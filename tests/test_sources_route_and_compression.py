@@ -19,7 +19,6 @@ import zlib
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api.main import app
@@ -53,7 +52,7 @@ def client(tmp_path):
 
 
 def _seed(n: int, db_url: str) -> None:
-    engine = create_engine(db_url, future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(db_url.removeprefix("sqlite:///"), future=True, connect_args={"check_same_thread": False})
     Sess = sessionmaker(bind=engine, future=True)
     db = Sess()
     for i in range(n):

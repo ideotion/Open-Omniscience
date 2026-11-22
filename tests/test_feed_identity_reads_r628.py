@@ -28,10 +28,11 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, ArticleLink, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _DOMAIN = "news.example"
 _NEEDLE, _NEEDLE_B, _NEEDLE_C = "hunter2", "sw0rdfish", "newpass9"
@@ -54,8 +55,8 @@ def _needle_free(said: str) -> None:
         assert word not in said, said
 
 
-def _engine(url: str = "sqlite:///:memory:"):
-    engine = create_engine(url, future=True, connect_args={"check_same_thread": False})
+def _engine(path=":memory:"):
+    engine = app_sqlite_engine(path, future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     return engine
 
@@ -89,7 +90,7 @@ def db():
 
 @pytest.fixture()
 def sess_factory(tmp_path):
-    engine = _engine(f"sqlite:///{tmp_path / 's.db'}")
+    engine = _engine(tmp_path / 's.db')
     yield sessionmaker(bind=engine, future=True)
     engine.dispose()
 
@@ -273,7 +274,7 @@ def test_an_import_and_an_add_of_a_two_logins_pairs_feed_find_the_same_row(db, u
 
 def _corpus(path: Path, rows) -> None:
     """A store at ``path`` holding ``rows`` (``(url, key)``), each with one article whose text names its feed URL and store."""
-    engine = _engine(f"sqlite:///{path}")
+    engine = _engine(path)
     with sessionmaker(bind=engine, future=True)() as s:
         ids = _plant(s, rows)
         for n, (sid, (url, _key)) in enumerate(zip(ids, rows, strict=True)):

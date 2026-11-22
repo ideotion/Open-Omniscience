@@ -22,6 +22,7 @@ import pytest
 from src.medical import fetch as F
 from src.medical import store as M
 from src.versioned import store
+from tests._app_engine import app_sqlite_engine
 
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = ROOT / "tests" / "fixtures" / "medical" / "pubmed_update_sample.xml"
@@ -94,7 +95,6 @@ def test_nothing_cited_lists_nothing(medical):
 
 @pytest.fixture
 def client(medical):
-    import sqlalchemy as sa
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from sqlalchemy.orm import sessionmaker
@@ -104,7 +104,7 @@ def client(medical):
     from src.database.models import Article, ArticleLink, Base, Source
     from src.database.session import get_db
 
-    eng = sa.create_engine("sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    eng = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(eng)
     make = sessionmaker(bind=eng, future=True)
     with make() as s:

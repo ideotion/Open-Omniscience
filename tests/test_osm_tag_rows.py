@@ -16,6 +16,7 @@ from src.osm import ingest
 from src.osm.lane_models import OsmDiffRun, OsmTagChange
 from src.versioned import store
 from tests import _osm_lane_helpers
+from tests._app_engine import app_sqlite_engine
 from tests.test_osm_apply import DAY1, Mirror, _extract, _osc, _stamp
 
 osm_lane_dir = _osm_lane_helpers.osm_lane_dir
@@ -190,7 +191,7 @@ def test_a_file_that_fails_after_its_rows_were_written_leaves_none_of_them(cut, 
 def test_an_older_lane_file_gets_the_two_new_columns_and_keeps_its_rows(tmp_path):
     from src.versioned.store import add_missing_columns
 
-    engine = sa.create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    engine = app_sqlite_engine(tmp_path / 'old.db')
     with engine.begin() as conn:
         conn.execute(
             sa.text(

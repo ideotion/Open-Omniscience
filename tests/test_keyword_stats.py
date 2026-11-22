@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
+
 _ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -42,13 +44,13 @@ def _score_like_keys(obj) -> list[str]:
 
 @pytest.fixture()
 def db():
-    sa = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy")
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base, Source
 
-    engine = sa.create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

@@ -78,12 +78,12 @@ def test_summarize_histograms_bucket_correctly():
 
 @pytest.fixture()
 def corpus():
-    sa = pytest.importorskip("sqlalchemy")
+    pytest.importorskip("sqlalchemy")
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, ArticleLink, Base, Source
 
-    eng = sa.create_engine("sqlite:///:memory:", future=True,
+    eng = app_sqlite_engine(":memory:", future=True,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
@@ -235,7 +235,7 @@ def quarantined_corpus():
 
     from src.database.models import Article, ArticleLink, Base, Source
 
-    eng = sa.create_engine("sqlite:///:memory:", future=True,
+    eng = app_sqlite_engine(":memory:", future=True,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
