@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 locais",
-  "🛒 Draft (": "🛒 Rascunho ("
+  "🛒 Draft (": "🛒 Rascunho (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "Restauração incompleta — estas pastas do backup são links, e uma restauração nunca segue um link, por isso nada nelas foi restaurado. Para restaurá-las, copie a pasta real para o backup no lugar do link",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "Restauração incompleta — não restaurados, porque há um link no caminho até o lugar deles na sua pasta de dados, e uma restauração nunca grava através de um link",
+  "Not restored — links inside the backup, which a restore never follows": "Não restaurados — links dentro do backup, que uma restauração nunca segue",
+  "Import incomplete — some files were not restored": "Importação incompleta — alguns arquivos não foram restaurados",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "Esta pasta do backup é um link, e uma restauração nunca segue um link, por isso nada nela será restaurado. Para restaurá-la, copie a pasta real para o backup no lugar do link.",
+  "a link, not restored": "um link, não restaurado"
 }

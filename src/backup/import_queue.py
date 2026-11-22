@@ -1497,6 +1497,12 @@ class ImportQueueManager:
             "corrupt_refused": p.get("corrupt_refused", 0),
             "corrupt": list(p.get("corrupt") or []),
             "restored_unverified": p.get("restored_unverified", 0),
+            # R779: what a restore refused because a link stood in the way. Category NAMES only
+            # (fixed words such as wiki_dumps), never a path from the person's disk.
+            "refused_symlinks": p.get("refused_symlinks", 0),
+            "refused_categories": list(p.get("refused_categories") or []),
+            "refused_dest_links": p.get("refused_dest_links", 0),
+            "incomplete": bool(p.get("incomplete")),
         }
 
     def _run_newsletters(self, item: dict) -> dict:

@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "Восстановление неполное — эти папки в резервной копии являются ссылками, а восстановление никогда не следует по ссылке, поэтому из них ничего не восстановлено. Чтобы восстановить их, скопируйте настоящую папку в резервную копию вместо ссылки",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "Восстановление неполное — не восстановлены, потому что на пути к их месту в вашей папке данных стоит ссылка, а восстановление никогда не записывает через ссылку",
+  "Not restored — links inside the backup, which a restore never follows": "Не восстановлены — ссылки внутри резервной копии, по которым восстановление никогда не следует",
+  "Import incomplete — some files were not restored": "Импорт неполный — некоторые файлы не восстановлены",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "Эта папка в резервной копии является ссылкой, а восстановление никогда не следует по ссылке, поэтому из неё ничего не будет восстановлено. Чтобы восстановить её, скопируйте настоящую папку в резервную копию вместо ссылки.",
+  "a link, not restored": "ссылка, не восстанавливается"
 }

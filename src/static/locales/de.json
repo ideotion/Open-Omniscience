@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ Zoom",
   "－ zoom": "－ Zoom",
   "📍 places": "📍 Orte",
-  "🛒 Draft (": "🛒 Entwurf ("
+  "🛒 Draft (": "🛒 Entwurf (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "Wiederherstellung unvollständig — diese Ordner in der Sicherung sind Links, und eine Wiederherstellung folgt nie einem Link, daher wurde nichts aus ihnen wiederhergestellt. Um sie wiederherzustellen, kopieren Sie den echten Ordner anstelle des Links in die Sicherung",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "Wiederherstellung unvollständig — nicht wiederhergestellt, weil auf dem Weg zu ihrem Platz in Ihrem Datenordner ein Link liegt, und eine Wiederherstellung schreibt nie durch einen Link",
+  "Not restored — links inside the backup, which a restore never follows": "Nicht wiederhergestellt — Links innerhalb der Sicherung, denen eine Wiederherstellung nie folgt",
+  "Import incomplete — some files were not restored": "Import unvollständig — einige Dateien wurden nicht wiederhergestellt",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "Dieser Ordner in der Sicherung ist ein Link, und eine Wiederherstellung folgt nie einem Link, daher wird nichts aus ihm wiederhergestellt. Um ihn wiederherzustellen, kopieren Sie den echten Ordner anstelle des Links in die Sicherung.",
+  "a link, not restored": "ein Link, nicht wiederhergestellt"
 }

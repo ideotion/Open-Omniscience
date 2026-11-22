@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lugares",
-  "🛒 Draft (": "🛒 Borrador ("
+  "🛒 Draft (": "🛒 Borrador (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "Restauración incompleta — estas carpetas de la copia son enlaces, y una restauración nunca sigue un enlace, así que no se restauró nada de ellas. Para restaurarlas, copie la carpeta real en la copia en lugar del enlace",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "Restauración incompleta — no restaurados, porque hay un enlace en el camino hacia su lugar en su carpeta de datos, y una restauración nunca escribe a través de un enlace",
+  "Not restored — links inside the backup, which a restore never follows": "No restaurados — enlaces dentro de la copia, que una restauración nunca sigue",
+  "Import incomplete — some files were not restored": "Importación incompleta — algunos archivos no se restauraron",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "Esta carpeta de la copia es un enlace, y una restauración nunca sigue un enlace, así que no se restaurará nada de ella. Para restaurarla, copie la carpeta real en la copia en lugar del enlace.",
+  "a link, not restored": "un enlace, no restaurado"
 }

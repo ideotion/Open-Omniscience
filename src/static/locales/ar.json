@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "الاستعادة غير مكتملة — هذه المجلدات في النسخة الاحتياطية روابط، والاستعادة لا تتبع رابطًا أبدًا، لذا لم يُستعد شيء منها. لاستعادتها، انسخ المجلد الحقيقي إلى النسخة الاحتياطية مكان الرابط",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "الاستعادة غير مكتملة — لم تُستعد، لأن رابطًا يقع في الطريق إلى مكانها في مجلد بياناتك، والاستعادة لا تكتب عبر رابط أبدًا",
+  "Not restored — links inside the backup, which a restore never follows": "لم تُستعد — روابط داخل النسخة الاحتياطية، لا تتبعها الاستعادة أبدًا",
+  "Import incomplete — some files were not restored": "الاستيراد غير مكتمل — لم تُستعد بعض الملفات",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "هذا المجلد في النسخة الاحتياطية رابط، والاستعادة لا تتبع رابطًا أبدًا، لذا لن يُستعاد شيء منه. لاستعادته، انسخ المجلد الحقيقي إلى النسخة الاحتياطية مكان الرابط.",
+  "a link, not restored": "رابط، لن يُستعاد"
 }

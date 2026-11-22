@@ -25,6 +25,8 @@ import re
 import stat
 from pathlib import Path
 
+from src.backup.links import is_link, is_link_stat
+
 # Volume-set manifest filename mirrored from src.backup.volumes.MANIFEST_NAME --
 # hardcoded so this discovery module stays crypto-free (importing that module pulls in
 # the cryptography stack). A CI test (test_import_scan) asserts it stays in sync.
@@ -75,6 +77,25 @@ SCAN_UNSIZED = "This file's size could not be read."
 _PART_SUFFIX = ".oopart"
 
 
+# R779: what a category folder that is a link holds for a restore: nothing, and why.
+SCAN_LINKED_CATEGORY = (
+    "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. "
+    "To restore it, copy the real folder into the backup in place of the link."
+)
+
+
+def _LINKED_CATEGORY() -> dict:  # noqa: N802 - reads as the constant it stands for, built fresh each time
+    return {"count": 0, "bytes": 0, "linked": True, "reason": SCAN_LINKED_CATEGORY}
+
+
+def _quiet_is_link(p: str) -> bool:
+    """``is_link`` for counting: a name it may not look at is not counted as a link (the walk says it was not read)."""
+    try:
+        return is_link(p)
+    except OSError:
+        return False
+
+
 def _dir_totals(d: Path) -> dict:
     """``{count, bytes}`` of what a folder restore would restore from one category folder, plus
     ``unread_entries`` (folders or files it was refused) and ``refused_links`` when non-zero.
@@ -93,7 +114,7 @@ def _dir_totals(d: Path) -> dict:
     for dirpath, dirnames, names in os.walk(d, onerror=_refused, followlinks=False):
         # os.walk lists a link to a folder among the folders and never enters it; restore refuses it.
         # A ".oopart" name is skipped by restore before its link check, so it is not a refused link either.
-        links += sum(1 for n in dirnames if not n.endswith(_PART_SUFFIX) and os.path.islink(os.path.join(dirpath, n)))
+        links += sum(1 for n in dirnames if not n.endswith(_PART_SUFFIX) and _quiet_is_link(os.path.join(dirpath, n)))
         for name in names:
             if name.endswith(_PART_SUFFIX):
                 continue
@@ -104,7 +125,7 @@ def _dir_totals(d: Path) -> dict:
             except OSError:
                 unread += 1
                 continue
-            if stat.S_ISLNK(st.st_mode):
+            if is_link_stat(st):  # a junction or reparse point too (R779)
                 links += 1
             elif stat.S_ISREG(st.st_mode):
                 count += 1
@@ -183,8 +204,16 @@ def scan_import_folder(
                 if d in _BLOB_DIRS:
                     # A blob category dir: record its totals but DON'T descend — walking
                     # thousands of model blobs while hunting for the other kinds is waste.
-                    totals = _dir_totals(curp / d)
-                    if totals["count"] or totals.get("unread_entries"):
+                    # R779: a category folder that is itself a link is never walked (``os.walk``
+                    # follows its TOP), because a restore refuses it: it is listed with nothing
+                    # to restore and the reason, so the preview and the restore agree.
+                    try:
+                        linked = is_link(curp / d)
+                    except OSError:
+                        unread_folders += 1
+                        continue
+                    totals = _LINKED_CATEGORY() if linked else _dir_totals(curp / d)
+                    if totals["count"] or totals.get("unread_entries") or totals.get("linked"):
                         blob_roots.setdefault(str(curp), {})[_BLOB_DIRS[d]] = totals
                     continue
                 keep.append(d)
@@ -278,6 +307,9 @@ def scan_import_folder(
                         a[extra] = a.get(extra, 0) + tot[extra]
                 if tot.get("unread_entries"):
                     a["reason"] = SCAN_UNREAD
+                if tot.get("linked"):
+                    # R779: counted per backup folder, since two backups can each hold one.
+                    a["linked"] = a.get("linked", 0) + 1
         found["blobs"] = agg
         found["blob_roots"] = [
             {

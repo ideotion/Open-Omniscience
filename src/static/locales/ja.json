@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "復元は不完全です — バックアップ内のこれらのフォルダーはリンクであり、復元はリンクをたどらないため、中身は何も復元されませんでした。復元するには、リンクの代わりに実際のフォルダーをバックアップにコピーしてください",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "復元は不完全です — データフォルダー内の配置先までの経路にリンクがあり、復元はリンクを通して書き込まないため、復元されませんでした",
+  "Not restored — links inside the backup, which a restore never follows": "復元されません — バックアップ内のリンク。復元はこれをたどりません",
+  "Import incomplete — some files were not restored": "インポートは不完全です — 一部のファイルが復元されませんでした",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "バックアップ内のこのフォルダーはリンクであり、復元はリンクをたどらないため、中身は何も復元されません。復元するには、リンクの代わりに実際のフォルダーをバックアップにコピーしてください。",
+  "a link, not restored": "リンク、復元されません"
 }

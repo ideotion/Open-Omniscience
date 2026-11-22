@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from src.backup.links import is_link, link_on_the_way, stays_inside
 from src.monitoring.secret_scrub import log_failure, record_text
 
 MANIFEST_NAME = "oo-folder-backup.json"
@@ -348,8 +349,13 @@ def _atomic_copy(
     A stopped copy leaves the digest partial; the caller discards it with the temp."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(dst.name + _PART_SUFFIX)
+    # R779: a leftover ``.oopart`` is removed and the temp file is CREATED, never opened if it is
+    # there. ``open(tmp, "wb")`` follows a link, so a ``.oopart`` planted as a link to another file
+    # had the copy written through it. ``unlink`` removes a link itself, never what it points at.
+    tmp.unlink(missing_ok=True)
     try:
-        with open(src, "rb") as r, open(tmp, "wb") as w:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o666)
+        with open(src, "rb") as r, os.fdopen(fd, "wb") as w:
             while True:
                 if should_stop is not None and should_stop():
                     w.close()
@@ -715,7 +721,8 @@ def restore_folder_backup(
     # silently called sound.
     recorded = _recorded_digests(src)
 
-    restored = skipped = refused_symlinks = 0
+    restored = skipped = refused_symlinks = refused_dest_links = 0
+    refused_categories: list[str] = []
     corrupt: list[dict] = []
     unverifiable = 0
     stopped = False
@@ -724,18 +731,42 @@ def restore_folder_backup(
             continue
         cat_root = src / cat
         dest_dir = tgt.get(cat)
-        if not cat_root.is_dir() or dest_dir is None:
+        if dest_dir is None:
             continue
+        # R779: the CATEGORY FOLDER ITSELF is checked without following it. ``is_dir()`` and
+        # ``rglob`` both follow a link at this level, so a backup whose ``wiki_dumps`` was a link
+        # to some other place on the machine had that place's files copied into the live data
+        # folder. A junction or other reparse point counts as a link too (Windows).
+        if is_link(cat_root):
+            refused_categories.append(cat)
+            continue
+        if not cat_root.is_dir():
+            continue
+        # Containment is measured from where the folders really are: the backup folder the person
+        # picked may itself be a link (their choice), and so may a live data folder they moved.
+        cat_real = os.path.realpath(cat_root)
+        dest_real = os.path.realpath(dest_dir)
         for p in sorted(cat_root.rglob("*")):
             if p.name.endswith(_PART_SUFFIX):
                 continue
-            if p.is_symlink():
+            if p.is_symlink() or is_link(p):
                 refused_symlinks += 1  # never follow -- see the docstring above
                 continue
             if not p.is_file():
                 continue
+            # Belt and braces: whatever the walk handed back, a member whose real path leaves its
+            # category folder is not restored. Fails closed.
+            if not stays_inside(p, cat_real):
+                refused_symlinks += 1
+                continue
             rel = p.relative_to(cat_root)
             dst = dest_dir / rel
+            # R779, the destination side: never write THROUGH a link. A link anywhere between the
+            # live folder and the file (a sub-folder, or the file's own name) is refused, and the
+            # resolved destination must stay inside the live folder.
+            if link_on_the_way(dest_dir, rel) or not stays_inside(dst, dest_real):
+                refused_dest_links += 1
+                continue
             if dst.exists():
                 skipped += 1  # never overwrite a local file
                 continue
@@ -766,6 +797,12 @@ def restore_folder_backup(
         "restored": restored,
         "skipped": skipped,
         "refused_symlinks": refused_symlinks,
+        # R779: category folders that are links. NOTHING in them was restored, so the restore is
+        # incomplete -- the person restores them by copying the real folder into the backup.
+        "refused_categories": refused_categories,
+        # R779: files not placed because a link sat on the way to their place in the live folder.
+        "refused_dest_links": refused_dest_links,
+        "incomplete": bool(refused_categories or refused_dest_links),
         # A file whose bytes did not match the checksum this backup recorded for it. NOT
         # restored: the copy is removed again, so the live data directory never receives
         # it. Named, so the operator can re-download exactly those.
@@ -1312,6 +1349,8 @@ class FolderBackupManager:
                     refused_symlinks=res.get("refused_symlinks"),
                     corrupt_refused=res.get("corrupt_refused"),
                     restored_unverified=res.get("restored_unverified"),
+                    refused_categories=len(res.get("refused_categories") or []),
+                    refused_dest_links=res.get("refused_dest_links"),
                 )
                 storage_events.run_ended(
                     note,

@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 places",
-  "🛒 Draft (": "🛒 Draft ("
+  "🛒 Draft (": "🛒 Draft (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link",
+  "Not restored — links inside the backup, which a restore never follows": "Not restored — links inside the backup, which a restore never follows",
+  "Import incomplete — some files were not restored": "Import incomplete — some files were not restored",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.",
+  "a link, not restored": "a link, not restored"
 }

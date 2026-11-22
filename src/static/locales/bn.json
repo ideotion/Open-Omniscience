@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ জুম",
   "－ zoom": "－ জুম",
   "📍 places": "📍 স্থান",
-  "🛒 Draft (": "🛒 খসড়া ("
+  "🛒 Draft (": "🛒 খসড়া (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "পুনরুদ্ধার অসম্পূর্ণ — ব্যাকআপের এই ফোল্ডারগুলো লিংক, এবং পুনরুদ্ধার কখনো কোনো লিংক অনুসরণ করে না, তাই এগুলোর কিছুই পুনরুদ্ধার হয়নি। এগুলো পুনরুদ্ধার করতে, লিংকের জায়গায় আসল ফোল্ডারটি ব্যাকআপে কপি করুন",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "পুনরুদ্ধার অসম্পূর্ণ — পুনরুদ্ধার হয়নি, কারণ আপনার ডেটা ফোল্ডারে তাদের জায়গায় যাওয়ার পথে একটি লিংক আছে, এবং পুনরুদ্ধার কখনো লিংকের মধ্য দিয়ে লেখে না",
+  "Not restored — links inside the backup, which a restore never follows": "পুনরুদ্ধার হয়নি — ব্যাকআপের ভেতরের লিংক, যা পুনরুদ্ধার কখনো অনুসরণ করে না",
+  "Import incomplete — some files were not restored": "আমদানি অসম্পূর্ণ — কিছু ফাইল পুনরুদ্ধার হয়নি",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "ব্যাকআপের এই ফোল্ডারটি একটি লিংক, এবং পুনরুদ্ধার কখনো কোনো লিংক অনুসরণ করে না, তাই এর কিছুই পুনরুদ্ধার হবে না। এটি পুনরুদ্ধার করতে, লিংকের জায়গায় আসল ফোল্ডারটি ব্যাকআপে কপি করুন।",
+  "a link, not restored": "একটি লিংক, পুনরুদ্ধার হবে না"
 }

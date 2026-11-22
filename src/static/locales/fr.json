@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon ("
+  "🛒 Draft (": "🛒 Brouillon (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "Restauration incomplète — ces dossiers de la sauvegarde sont des liens, et une restauration ne suit jamais un lien, donc rien de leur contenu n’a été restauré. Pour les restaurer, copiez le vrai dossier dans la sauvegarde à la place du lien",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "Restauration incomplète — non restaurés, car un lien se trouve sur le chemin de leur emplacement dans votre dossier de données, et une restauration n’écrit jamais à travers un lien",
+  "Not restored — links inside the backup, which a restore never follows": "Non restaurés — liens à l’intérieur de la sauvegarde, qu’une restauration ne suit jamais",
+  "Import incomplete — some files were not restored": "Import incomplet — certains fichiers n’ont pas été restaurés",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "Ce dossier de la sauvegarde est un lien, et une restauration ne suit jamais un lien, donc rien de son contenu ne sera restauré. Pour le restaurer, copiez le vrai dossier dans la sauvegarde à la place du lien.",
+  "a link, not restored": "un lien, non restauré"
 }

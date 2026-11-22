@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ perbesar",
   "－ zoom": "－ perkecil",
   "📍 places": "📍 tempat",
-  "🛒 Draft (": "🛒 Draf ("
+  "🛒 Draft (": "🛒 Draf (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "Pemulihan tidak lengkap — folder-folder ini di cadangan adalah tautan, dan pemulihan tidak pernah mengikuti tautan, jadi tidak ada isinya yang dipulihkan. Untuk memulihkannya, salin folder yang sebenarnya ke cadangan menggantikan tautan",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "Pemulihan tidak lengkap — tidak dipulihkan, karena ada tautan di jalan menuju tempatnya di folder data Anda, dan pemulihan tidak pernah menulis melalui tautan",
+  "Not restored — links inside the backup, which a restore never follows": "Tidak dipulihkan — tautan di dalam cadangan, yang tidak pernah diikuti pemulihan",
+  "Import incomplete — some files were not restored": "Impor tidak lengkap — beberapa file tidak dipulihkan",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "Folder di cadangan ini adalah tautan, dan pemulihan tidak pernah mengikuti tautan, jadi tidak ada isinya yang akan dipulihkan. Untuk memulihkannya, salin folder yang sebenarnya ke cadangan menggantikan tautan.",
+  "a link, not restored": "tautan, tidak dipulihkan"
 }

@@ -8740,5 +8740,11 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link": "恢复不完整——备份中的这些文件夹是链接，而恢复从不跟随链接，因此其中的内容均未恢复。要恢复它们，请将真实文件夹复制到备份中以替换该链接",
+  "Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link": "恢复不完整——未恢复，因为在通往其在您数据文件夹中位置的路径上有一个链接，而恢复从不通过链接写入",
+  "Not restored — links inside the backup, which a restore never follows": "未恢复——备份内部的链接，恢复从不跟随",
+  "Import incomplete — some files were not restored": "导入不完整——部分文件未恢复",
+  "This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.": "备份中的此文件夹是一个链接，而恢复从不跟随链接，因此其中的内容都不会被恢复。要恢复它，请将真实文件夹复制到备份中以替换该链接。",
+  "a link, not restored": "链接，不会恢复"
 }

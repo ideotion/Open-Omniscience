@@ -1461,9 +1461,14 @@
       const files = (n) => (n === 1 ? tfs("{n} file", { n: fmtNum(n, 0) }) : tfs("{n} files", { n: fmtNum(n, 0) }));
       const UNREAD = t("Some files or folders here could not be read, so this count includes only the ones that could.");
       const LINKS = t("Links in this backup folder are not counted: a restore never follows a link, so they are never restored.");
+      const LINKED = t("This folder in the backup is a link, and a restore never follows a link, so nothing in it will be restored. To restore it, copy the real folder into the backup in place of the link.");
       const cat = (c, label) => {
         if (!c) return;
-        parts.push(ooLabelText(t(label), (c.unread_entries ? t("at least") + " " : "") + files(c.count || 0)));
+        // R779: a category folder that is a link restores nothing; said on the row, the remedy on hover.
+        const value = (c.linked && !c.count) ? t("a link, not restored")
+          : (c.unread_entries ? t("at least") + " " : "") + files(c.count || 0);
+        parts.push(ooLabelText(t(label), value));
+        if (c.linked && !why.includes(LINKED)) why.push(LINKED);
         if (c.unread_entries && !why.includes(UNREAD)) why.push(UNREAD);
         if (c.refused_links && !why.includes(LINKS)) why.push(LINKS);
       };
@@ -2051,7 +2056,7 @@
             // last-completed summary (removed 2026-09-16 with R1); the queue's own
             // summary is the post-hoc artifact now, and it never carried it -- so the
             // fields travel through the queue item and are rendered here.
-            caveat: _fbRefusalLines(sm) });
+            caveat: _fbRefusalLines(sm), incomplete: !!sm.incomplete });
         } else if (it.kind === "newsletters") {
           const tl = sm.tally || {};
           const TF = _uxDurTf();
@@ -3563,7 +3568,11 @@
       const okCount = perItem.length - failed.length;
       const allOk = failed.length === 0;
       const stoppedOnly = !allOk && failed.every((r) => r.state === "cancelled" || r.state === "stopped" || r.state === "skipped");
-      const head = allOk
+      // R779: a restore that left something out because of a link is never called a success.
+      const incompleteRun = summaries.some((s2) => s2 && s2.incomplete);
+      const head = (allOk && incompleteRun)
+        ? { icon: "⚠", text: t("Import incomplete — some files were not restored"), col: "var(--warn, #e0a800)" }
+        : allOk
         ? { icon: "✓", text: t("Import successful"), col: "var(--ok, #4caf50)" }
         : (stoppedOnly
             ? { icon: "■", text: t("Import stopped — not everything was imported"), col: "var(--muted, #888)" }
@@ -3784,6 +3793,23 @@
         // other figure the app prints.
         lines.push(ooLabelText(t("Refused — bytes did not match the checksum this backup recorded, so they were NOT restored"),
           fmtNum(refused, 0) + tail));
+      }
+      // R779: a category folder that is a LINK was not restored at all, so the restore is
+      // incomplete. The category is a fixed folder name, never a path; the remedy rides along.
+      const linkedCats = (p.refused_categories || []).map((c) => String(c));
+      if (linkedCats.length) {
+        lines.push(ooLabelText(t("Restore incomplete — these folders in the backup are links, and a restore never follows a link, so nothing in them was restored. To restore them, copy the real folder into the backup in place of the link"),
+          linkedCats.join(" · ")));
+      }
+      const destLinks = p.refused_dest_links || 0;
+      if (destLinks) {
+        lines.push(ooLabelText(t("Restore incomplete — not restored, because a link stands on the way to their place in your data folder, and a restore never writes through a link"),
+          fmtNum(destLinks, 0)));
+      }
+      const memberLinks = p.refused_symlinks || 0;
+      if (memberLinks) {
+        lines.push(ooLabelText(t("Not restored — links inside the backup, which a restore never follows"),
+          fmtNum(memberLinks, 0)));
       }
       const unverified = p.restored_unverified || 0;
       if (unverified) {
