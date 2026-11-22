@@ -15,12 +15,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,8 +35,8 @@ def _load_analyzer():
 
 
 def _client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'kz.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'kz.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

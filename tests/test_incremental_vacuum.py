@@ -13,7 +13,8 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-from sqlalchemy import create_engine
+
+from tests._app_engine import app_sqlite_engine
 
 
 def _engine_at(path):
@@ -22,8 +23,8 @@ def _engine_at(path):
     isolated from the process-global test engine."""
     from src.database.connect import connect
 
-    return create_engine(
-        f"sqlite:///{path}",
+    return app_sqlite_engine(
+        path,
         future=True,
         creator=lambda: connect(path, check_same_thread=False),
     )
@@ -182,7 +183,7 @@ def test_never_raises_on_a_locked_or_broken_store(tmp_path):
 
     bogus = tmp_path / "not_a_db.db"
     bogus.write_bytes(b"not a sqlite file at all")
-    engine = create_engine(f"sqlite:///{bogus}", future=True)
+    engine = app_sqlite_engine(bogus, future=True)
     try:
         out = maybe_incremental_vacuum(engine)
     finally:

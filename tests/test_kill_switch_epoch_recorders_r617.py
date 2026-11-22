@@ -39,7 +39,6 @@ from types import SimpleNamespace
 
 import pytest
 import requests
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import src.ingest as ingest_pkg
@@ -47,6 +46,7 @@ from src.database.models import Base, Source, SourceQualificationAttempt
 from src.ingest import FetchFailed, activate_kill_switch, clear_kill_switch, kill_switch_active
 from src.ingest.fetch_verdict import KILL_SWITCH_REFUSAL, NETWORK_REFUSED
 from src.safety.fetcher import NetworkBlocked, make_fetcher
+from tests._app_engine import app_sqlite_engine
 
 #: The raw requests error of a Stop on the LAST request through an HTTP proxy: not our sentence at the start, so only the switch or the
 #: epoch can say it was a Stop.
@@ -130,7 +130,7 @@ def _stop_right_after_the_check(monkeypatch, function, anchor_line):
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     yield s

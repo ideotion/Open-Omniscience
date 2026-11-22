@@ -17,6 +17,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._app_engine import app_sqlite_engine
+
 _ROOT = Path(__file__).resolve().parents[1]
 
 # A real wire paragraph, reprinted verbatim across sources (near-dup).
@@ -225,13 +227,12 @@ def test_url_is_the_local_reader(corpus):
 def _prefix_corpus():
     """Two articles that SHARE a long lede (within the prefix) but differ after it, plus a
     third that shares text with the first only in the TAIL (beyond the prefix)."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, Base, Source
 
-    eng = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
@@ -315,14 +316,13 @@ def test_neardup_prefix_bounds_the_comparison_window(monkeypatch):
     compares only the (distinct) openings -> NOT collapsed; a LARGE prefix reaches the shared
     body -> collapsed. Proves the collapse compares exactly the disclosed prefix window (the
     honest limitation stated in the method), and that the fold reads that window, not the blob."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.analytics.latest import latest_articles
     from src.database.models import Article, Base, Source
 
-    eng = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    eng = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()
@@ -376,13 +376,12 @@ def test_endpoint_is_wired():
 def test_latest_endpoint(tmp_path):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Article, Base, Source
 
-    eng = create_engine(
-        f"sqlite:///{tmp_path / 'l.db'}", future=True,
+    eng = app_sqlite_engine(
+        tmp_path / 'l.db', future=True,
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(eng)

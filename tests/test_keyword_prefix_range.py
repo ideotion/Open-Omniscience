@@ -7,19 +7,20 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.api.search_omni import _keywords_group, _like_escape, _prefix_predicate
 from src.database.models import Base, Keyword
+from tests._app_engine import app_sqlite_engine
 
 _TERMS = ["WHO", "NATO", "US", "who", "us", "usa", "climate", "climate change", "climat", "clima_te", "50%", "50 percent", "été", "ete", "zebra", "z", "ñandú"]
 
 
 @pytest.fixture
 def db():
-    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    eng = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
     Base.metadata.create_all(eng)
     with sessionmaker(bind=eng, future=True)() as s:
         for i, t in enumerate(_TERMS):

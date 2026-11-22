@@ -5,13 +5,13 @@ from __future__ import annotations
 import sqlite3
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, Source
 from src.ingest import FetchFailed
 from src.ingest.pipeline import IngestResult, ingest_url
 from src.monitoring.secret_scrub import record_text
+from tests._app_engine import app_sqlite_engine
 
 FRAGMENT = "horse-battery"
 
@@ -28,7 +28,7 @@ def _driver_quoting_fetch_failed() -> FetchFailed:
 
 @pytest.fixture()
 def session(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 't.db'}", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(tmp_path / 't.db', future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     yield s

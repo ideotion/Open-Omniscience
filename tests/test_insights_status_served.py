@@ -23,7 +23,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
@@ -31,6 +31,7 @@ from src.api import insights, served_cache
 from src.database.maintenance import MemoryShort, StatementTimeout
 from src.database.models import Article, Base, Source
 from src.database.session import SessionLocal, engine, init_db
+from tests._app_engine import app_sqlite_engine
 
 
 def setup_module(_module):
@@ -265,7 +266,7 @@ def test_the_scans_are_the_only_statements_under_the_statement_deadline(monkeypa
 
 
 def test_scans_made_over_one_database_are_never_carried_to_another(tmp_path):
-    other = create_engine(f"sqlite:///{tmp_path / 'o.db'}", future=True)
+    other = app_sqlite_engine(tmp_path / 'o.db', future=True)
     Base.metadata.create_all(other)
     mine = SessionLocal()
     theirs = sessionmaker(bind=other, future=True)()

@@ -25,7 +25,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -38,6 +38,7 @@ from src.analytics.store import (
     index_article,
 )
 from src.database.models import Article, Base, Keyword, Source
+from tests._app_engine import app_sqlite_engine
 
 _PER_TERM = re.compile(r"FROM keywords\b.*normalized_term = \?", re.S)
 _BATCHED = re.compile(r"FROM keywords\b.*normalized_term IN ", re.S)
@@ -62,8 +63,8 @@ class _Spy:
 
 
 def _session_and_spy():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)
     spy = _Spy(eng)

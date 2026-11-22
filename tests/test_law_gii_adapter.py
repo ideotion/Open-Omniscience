@@ -23,6 +23,7 @@ import pytest
 from src.law.adapters import AdapterRefusal, gii
 from src.law.adapters.gii import looks_like_gii, parse_gii, unpack_zip
 from src.law.adapters.registry import adapter_for, parse_with
+from tests._app_engine import app_sqlite_engine
 
 _DIR = Path(__file__).parent / "fixtures" / "law" / "gii"
 GG = _DIR / "gg_excerpt.xml"
@@ -404,13 +405,12 @@ def test_the_bare_xml_is_read_too_and_html_is_untouched():
 
 @pytest.fixture()
 def db():
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

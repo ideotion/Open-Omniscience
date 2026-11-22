@@ -26,7 +26,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -34,13 +33,14 @@ import src.analytics.engine_identity as ei
 from src.analytics.extract import ExtractedTerm, get_extractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, KeywordMention, Source  # noqa: F401
+from tests._app_engine import app_sqlite_engine
 
 _REPO = Path(__file__).resolve().parents[1]
 
 
 def _session():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng, future=True)()

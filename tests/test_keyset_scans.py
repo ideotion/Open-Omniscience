@@ -24,12 +24,12 @@ import tracemalloc
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database import query as query_mod
 from src.database.models import ArticleLink, Base, Keyword
 from src.database.query import keyset_scan
+from tests._app_engine import app_sqlite_engine
 
 _CHUNK = 500
 _SMALL = 4_000
@@ -38,8 +38,8 @@ _LARGE = 4 * _SMALL
 
 @pytest.fixture()
 def db(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'k.db'}", future=True,
+    engine = app_sqlite_engine(
+        tmp_path / 'k.db', future=True,
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(engine)

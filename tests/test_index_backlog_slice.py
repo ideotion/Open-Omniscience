@@ -8,13 +8,13 @@ up. ``index_backlog_slice`` runs the same batches inside the idle-maintenance wi
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, KeywordMention, Source
 from src.scheduler import maintenance as m
+from tests._app_engine import app_sqlite_engine
 
 _REAL = (
     "Parliament approved the regional infrastructure budget after a long committee "
@@ -27,7 +27,7 @@ def db(monkeypatch):
     monkeypatch.setattr(m, "_backlog_clear_at", 0.0)
     monkeypatch.setattr(m, "_page_drain_at", 0.0)
     monkeypatch.setattr(m, "_job_drain_at", 0.0)
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="Backlog News", domain="backlog.test", enabled=True))

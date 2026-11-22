@@ -22,16 +22,16 @@ snapshot, so the signature it computes must still be the same one.
 
 from __future__ import annotations
 
-
-from sqlalchemy import create_engine, insert, text
+from sqlalchemy import insert, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.store import reconcile_keyword_language
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _corpus(tmp_path, *, articles=60, langs=("en", "fr")):
-    eng = create_engine(f"sqlite:///{tmp_path / 'c.db'}")
+    eng = app_sqlite_engine(tmp_path / 'c.db')
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng)()
     with eng.begin() as c:
@@ -120,7 +120,7 @@ def _sparse_corpus(root):
     `keywords_with_signature`.
     """
     root.mkdir(parents=True, exist_ok=True)
-    eng = create_engine(f"sqlite:///{root / 'c.db'}")
+    eng = app_sqlite_engine(root / 'c.db')
     Base.metadata.create_all(eng)
     s = sessionmaker(bind=eng)()
     with eng.begin() as c:

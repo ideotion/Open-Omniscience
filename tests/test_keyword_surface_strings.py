@@ -26,7 +26,14 @@ from pathlib import Path
 
 import pytest
 
-from tests.js_source_helper import app_js, function_body, object_literal, read_static, strip_comments
+from tests._app_engine import app_sqlite_engine
+from tests.js_source_helper import (
+    app_js,
+    function_body,
+    object_literal,
+    read_static,
+    strip_comments,
+)
 
 _ROOT = Path(__file__).resolve().parents[1]
 _LOCALES = _ROOT / "src" / "static" / "locales"
@@ -227,15 +234,14 @@ def test_the_trend_resolved_keyword_walks_the_translation_ladder() -> None:
     endpoint must hand it the same tier fields every other keyword row carries -- and the
     keyword's language, without which a foreign word cannot be told apart from a native
     one. Without ``target_lang`` the payload is unchanged."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.api.insights import insights_trend
     from src.database.models import Base, Source
     from tests.test_exact_term_resolution import _COLLIDING_TEXT, _mk
 
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

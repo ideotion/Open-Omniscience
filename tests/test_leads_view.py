@@ -17,6 +17,7 @@ import pytest
 
 from src.briefing.card import Card
 from src.briefing.leads import assemble_leads_view
+from tests._app_engine import app_sqlite_engine
 
 _NOW = datetime(2026, 7, 13)
 
@@ -105,7 +106,6 @@ def test_endpoint_serves_the_view_over_the_cached_briefing(monkeypatch):
     """The /api/insights/leads-view endpoint reads the cached briefing and assembles the view;
     sort=default preserves Home's order, a bad sort is 400."""
     from fastapi.testclient import TestClient
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
 
@@ -119,7 +119,7 @@ def test_endpoint_serves_the_view_over_the_cached_briefing(monkeypatch):
         svc, "get_briefing", lambda *a, **k: {"generated_at": "2026-07-13T00:00:00", "cards": cards}
     )
 
-    eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
+    eng = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False},
                         poolclass=StaticPool, future=True)
     Base.metadata.create_all(eng)
     Sess = sessionmaker(bind=eng, future=True)

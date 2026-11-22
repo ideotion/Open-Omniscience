@@ -16,19 +16,19 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.analytics.lemma import lemmatize, lemmatizer_available
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 pytestmark = pytest.mark.skipif(not lemmatizer_available(), reason="simplemma not importable here")
 
 
 @pytest.fixture()
 def s():
-    eng = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    eng = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     sess = sessionmaker(bind=eng, future=True)()
     sess.add(Source(name="S", domain="x.test", country="fr"))

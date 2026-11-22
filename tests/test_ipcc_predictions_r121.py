@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -30,6 +30,7 @@ from src.database.models import Article, Base, IpccPrediction
 from src.database.session import get_db
 from src.ingest import ipcc_predictions as ip
 from src.ingest.ipcc_spm import ensure_ipcc_source, spm_entry
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import function_source
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -114,7 +115,7 @@ def test_the_spm_layout_splits_where_statements_end_and_quotes_what_the_report_p
 # ------------------------------------------------------------------ the routes
 @pytest.fixture
 def world():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
+    engine = app_sqlite_engine(":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True, autoflush=False)
 
@@ -229,7 +230,7 @@ _META = {"artifact_kind": "oo-backup-2", "origin_fingerprint": "test", "app_vers
 
 
 def _corpus(path: Path):
-    engine = create_engine(f"sqlite:///{path}", future=True)
+    engine = app_sqlite_engine(path, future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)
 

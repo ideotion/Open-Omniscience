@@ -16,12 +16,12 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
 from src.scheduler import equilibrium as EQ
 from src.scheduler import settings as S
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import app_js
 
 # --- pure: normalize_target / language_pace --------------------------------- #
@@ -100,8 +100,8 @@ def test_filter_defers_recent_over_represented_but_keeps_others():
 
 @pytest.fixture()
 def db():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()

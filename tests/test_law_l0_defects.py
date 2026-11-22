@@ -38,11 +38,11 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base, LawDocument, LawRevision
 from src.law.track import baseline_diff, track_document
+from tests._app_engine import app_sqlite_engine
 
 # ---------------------------------------------------------------------------
 # Fixtures: a real session, and a fetcher double that answers a scripted series
@@ -81,8 +81,8 @@ def _page(*paragraphs: str) -> str:
 
 @pytest.fixture
 def store(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'corpus.db'}",
+    engine = app_sqlite_engine(
+        tmp_path / 'corpus.db',
         future=True,
         connect_args={"check_same_thread": False},
     )

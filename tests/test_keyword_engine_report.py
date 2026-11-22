@@ -10,7 +10,6 @@ translation/tag coverage + the self-test + timings are reported.
 
 from datetime import date
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.engine_report import (
@@ -20,11 +19,12 @@ from src.analytics.engine_report import (
     lemma_preview_report,
 )
 from src.database.models import Article, Base, Keyword, KeywordMention, KeywordTag, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _sess():
-    engine = create_engine(
-        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        ":memory:", future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()

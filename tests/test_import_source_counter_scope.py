@@ -25,18 +25,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.analytics.store import reconcile_source_counters
 from src.backup.merge import _touched_source_ids
 from src.database.models import Article, Base, MergeBatch, MergedRow, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _session():
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    eng = app_sqlite_engine(
+        ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
     )
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng, future=True)()

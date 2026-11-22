@@ -12,6 +12,7 @@ Imports fastapi/sqlalchemy -> runs in CI.
 from __future__ import annotations
 
 import src.api.insights as ins
+from tests._app_engine import app_sqlite_engine
 
 
 def test_cached_helper_memoizes():
@@ -95,14 +96,13 @@ def test_ckey_caches_are_bind_qualified_no_fixture_live_sharing():
     its own engine and the live store compute the same query params but get DISTINCT cache
     keys (the latent Wave-1 cross-corpus-share class). Byte-identical on ONE engine (a
     constant prefix); an unknown bind stays UNqualified (shared), never per-instance."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    e1 = create_engine("sqlite:///:memory:", future=True)
+    e1 = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(e1)
-    e2 = create_engine("sqlite:///:memory:", future=True)
+    e2 = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(e2)
     s1 = sessionmaker(bind=e1, future=True)()
     s2 = sessionmaker(bind=e2, future=True)()
@@ -119,12 +119,11 @@ def test_warmer_and_endpoint_agree_on_the_bind_qualified_key():
     """D5 dead-warm guard (P0-4): warm_cache and the endpoint both route the SAME (name,
     params) through _bind_key(db, _ckey(...)), so for the SAME engine the keys are identical
     by construction — a warmed value is a HIT, never dead."""
-    from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
     from src.database.models import Base
 
-    e = create_engine("sqlite:///:memory:", future=True)
+    e = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(e)
     s = sessionmaker(bind=e, future=True)()
     lim, st = ins.WARM_TRENDING_HOME

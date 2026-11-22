@@ -36,12 +36,13 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, event, insert, text
+from sqlalchemy import event, insert, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar
 from src.database import session as db_session
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 
 def _columnar_engine_available() -> bool:
@@ -104,7 +105,7 @@ def _ts(n: int) -> datetime:
 
 
 def _fresh_engine(db_path: Path):
-    eng = create_engine(f"sqlite:///{db_path}", future=True)
+    eng = app_sqlite_engine(db_path, future=True)
     event.listen(eng, "connect", db_session._sqlite_pragmas)
     Base.metadata.create_all(eng)
     return eng

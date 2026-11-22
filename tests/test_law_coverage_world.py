@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.countries import ISO_3166_1_ALPHA2
@@ -32,6 +31,7 @@ from src.law.coverage import (
     law_coverage_report,
     world_report,
 )
+from tests._app_engine import app_sqlite_engine
 
 _NO_POP = {"status": "absent", "reason": "no population table has been placed (an operator step)", "weights": {}}
 
@@ -58,7 +58,7 @@ def _states(block):
 
 
 def _session():
-    engine = create_engine("sqlite://")
+    engine = app_sqlite_engine(":memory:")
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)()
 

@@ -19,12 +19,13 @@ import json
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import event, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Source
+from tests._app_engine import app_sqlite_engine
 
 # A keyword that recurs ACROSS articles with DIFFERENT dates (so MIN != MAX) and
 # MULTIPLE times WITHIN one article (so SUM(count) > distinct-article-count) — both
@@ -39,8 +40,8 @@ _DOCS = [
 
 
 def _client(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'pc.db'}", future=True, connect_args={"check_same_thread": False}
+    engine = app_sqlite_engine(
+        tmp_path / 'pc.db', future=True, connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(engine)
     Sess = sessionmaker(bind=engine, future=True)

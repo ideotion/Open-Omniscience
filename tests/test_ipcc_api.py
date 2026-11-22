@@ -17,13 +17,13 @@ from datetime import UTC, datetime
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.api import ipcc as ipcc_api
 from src.database.models import Article, Base
 from src.ingest import activate_kill_switch, clear_kill_switch, ipcc_spm
 from src.ingest.fetch_verdict import NETWORK_REFUSED
+from tests._app_engine import app_sqlite_engine
 from tests.js_source_helper import function_source, read_static
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -38,7 +38,7 @@ def client():
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite:///:memory:", future=True)
+    engine = app_sqlite_engine(":memory:", future=True)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, future=True)()
 
