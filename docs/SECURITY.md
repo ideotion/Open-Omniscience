@@ -827,7 +827,15 @@ imply a protection we cannot deliver.
   that folder (which the app would have opened as its own) is erased too. The folder is kept, and the report says
   `scope: "app-only"` and names, without reading them, the entries left (`left_untouched`), the common names left
   (`left_common_names`) and any of the app's own a removal failed on (`not_removed`). A scope that cannot be read counts as
-  shared. A secure uninstall's watcher applies the same names and writes only a count of what it left to its audit log. Such
+  shared. A secure uninstall's watcher applies the same names and writes only a count of what it left to its audit log. That watcher (R792 part B) also keeps a descriptor on each SQLite file of an encrypted database through its
+  unlink and, after its walk, does what the panic wipe does about another process holding the store (the lock bytes, one
+  `F_GETLK` per kept file, a rewrite every 100 ms for about 2 s while a holder is seen, then always one more rewrite bounded
+  by another 2 s plus the disk's flush, salt-bearing heads first, each file capped at its size when kept plus 256 MiB, at
+  most 64 files kept); its audit log (`~/.open-omniscience-uninstall.log`) then says, without a path or a process id, that
+  another program had the database open while the erase ran (once a holder is seen, never "none"), that it could not check
+  (always so on Windows, and whenever a store file was a link, could not be kept or nothing was probed), or that none was
+  seen. A holder with no lock at that moment, one using a locking scheme `F_GETLK` does not see, or one on another computer
+  through a network share cannot be seen, so "none" is never a proof. Such
   a folder is also said at every start: a warning in the log and the terminal, and a notice on the unlock page and in the
   app, which carries a reason code and never the path. A step of the tidying after a completed erase that fails is
   named in the report (`after_erase_failures`), never answered as a failed wipe. **Honest limit:** overwrite-in-place does *not*

@@ -4183,7 +4183,13 @@
         if (r && r.encrypted) toast(t("Encrypted. Your passphrase is now required at every start — there is no recovery."), "ok");
         loadAtRestState();
       } catch (e) {
-        msg.textContent = t(e.message);  // a keyed refusal (the library still in use R741, a partial run R742) is translated
+        // A keyed refusal (the library still in use R741, a partial run R742) is translated whole; a store refused for room (R793)
+        // is read back into its parts by ooServerText, alone or after the partial words.
+        const said = String(e.message || "");
+        const partial = "The library is now encrypted with this passphrase and stays open with it: keep the passphrase, it is required at every start. Some other stores could not be encrypted yet and are still unencrypted; they are finished at the next unlock, or press the encrypt button again now. Settings shows which.";
+        msg.textContent = said.startsWith(partial) && said.length > partial.length
+          ? t(partial) + " " + ooServerText(said.slice(partial.length).trim())
+          : (ooServerText(said) !== said ? ooServerText(said) : t(said));
         loadAtRestState();  // a partial run changed the state: the library is encrypted and open with its key
       }
       finally { btn.disabled = false; }

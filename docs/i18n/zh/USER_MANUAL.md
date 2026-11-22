@@ -1893,6 +1893,7 @@ OpenStreetMap · 日程 · 数据与备份 · 高级**。
     应用文件夹会留在原处，供你手动删除。等同于
     `./install.sh --uninstall`，或安装程序在两个应用启动器旁创建的
     **“卸载 Open Omniscience”（Uninstall Open Omniscience）**桌面图标。
+    如果你选择的模式也会擦除你的数据，该擦除会在应用停止后运行，并把所做的事记录在你主文件夹中的 `.open-omniscience-uninstall.log`。它同样只有在没有其他程序打开数据库时才是完整的：日志会说明何时另一个程序仍打开着数据库，或何时擦除无法检查这一点（在 Windows 上始终无法检查）。打开着数据库但在那一刻没有持有任何锁的程序无法被看到，因此检查可能漏掉它。
 
   约束这一切的治理规则和双重用途红线见
   [`GOVERNANCE.md`](GOVERNANCE.md)（也可在**帮助与文档**中查看）。

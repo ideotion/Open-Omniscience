@@ -341,8 +341,7 @@ def encrypt_db(body: EncryptBody) -> dict:
     from src.database.connect import get_passphrase, set_passphrase
 
     # R742's fixed 409 words come in here, never at module level: importing the app must not import the store.
-    from src.database.encrypt_tool import PARTIAL as PARTIAL_DETAIL
-    from src.database.encrypt_tool import EncryptPartial, EncryptToolError, encrypt_all
+    from src.database.encrypt_tool import EncryptNoRoom, EncryptPartial, EncryptToolError, encrypt_all
     from src.database.session import dispose_engine
 
     state = app_lock_state()
@@ -382,11 +381,17 @@ def encrypt_db(body: EncryptBody) -> dict:
             # R742: the key is held from the moment the library is ciphertext, so a later store's failure leaves the app open on
             # the library it can read, never keyless against an encrypted file.
             reports = encrypt_all(body.passphrase, on_library_encrypted=lambda: set_passphrase(body.passphrase))
-        except EncryptPartial:
+        except EncryptPartial as partial:
             dispose_engine()  # next connection opens through the keyed factory
             _close_plaintext_serves()
             _LOG.warning("store encryption partly done: the library is encrypted, other stores are still pending")
-            raise HTTPException(status_code=409, detail=PARTIAL_DETAIL) from None
+            # R793: a store refused for room is said after the partial words (``str(partial)``), in its own fixed sentence (no path,
+            # no key), through the one scrub every detail carrying an exception takes.
+            raise HTTPException(status_code=409, detail=http_detail(partial, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
+        except EncryptNoRoom as refused:
+            # R793: the library refused for room before any file was made, so every store is as it was. Fixed words that name the
+            # needed and the free space (or which was not read), never a path or a key: 507, as the other space refusals.
+            raise HTTPException(status_code=507, detail=http_detail(refused, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         except EncryptToolError as exc:
             raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         set_passphrase(body.passphrase)
