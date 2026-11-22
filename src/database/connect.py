@@ -1119,12 +1119,142 @@ def _match_source_pragmas(conn, alias: str) -> None:
     conn.execute(f"PRAGMA {alias}.auto_vacuum = {auto_vacuum}")
 
 
+#: R794: the one sentence said when a plaintext copy failed part-way and its unfinished file could not be removed. It names the
+#: path (the operator must find it) and nothing else: no key, no driver text. Translated x12 through ``ooServerText``.
+SNAPSHOT_LEFT_ON_DISK = (
+    'A plaintext copy of the store did not finish, and the unfinished file could not be removed: an incomplete plaintext copy is '
+    'still on disk at "{path}". It is not a usable snapshot; delete it yourself.'
+)
+_SIDES = ("-journal", "-wal", "-shm")
+
+
+class SnapshotLeftOnDisk(OSError):
+    """R794: a plaintext copy failed part-way and the unfinished file it made could not be removed. The message is
+    :data:`SNAPSHOT_LEFT_ON_DISK` with the path; raised with no cause or context, so no driver text travels with it and the
+    words reach the operator whole (``http_detail`` keeps only the class of a chain that holds a driver's error)."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(SNAPSHOT_LEFT_ON_DISK.format(path=path))
+        self.path = path
+
+
+def _make_new(dest_p: Path) -> tuple[int, int]:
+    """Create ``dest_p`` as a new, empty regular file (never through a link, never over a file already there) and return its
+    device and inode: the identity :func:`_remove_made` removes by, so a failure removes the file this call made and nothing
+    else. An empty file opens as a new database; the descriptor is closed before SQLite opens the name."""
+    fd = os.open(dest_p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o644)
+    try:
+        st = os.fstat(fd)
+    finally:
+        os.close(fd)
+    return st.st_dev, st.st_ino
+
+
+def _still_made(dest_p: Path, made: tuple[int, int]) -> bool:
+    """Whether ``dest_p`` is still the regular file :func:`_make_new` created (the name not followed)."""
+    try:
+        st = os.lstat(dest_p)
+    except OSError:
+        return False
+    return stat.S_ISREG(st.st_mode) and (st.st_dev, st.st_ino) == made
+
+
+def _side_files_absent(dest_p: Path) -> list[Path]:
+    """The journal, log and index names beside ``dest_p`` that are NOT there now: the only ones a failure may remove, since
+    whatever is there before the copy starts was not made by it."""
+    out = []
+    for side in _SIDES:
+        name = Path(str(dest_p) + side)
+        try:
+            os.lstat(name)
+        except FileNotFoundError:
+            out.append(name)
+        except OSError:
+            continue  # unreadable: not ours to remove
+    return out
+
+
+def _remove_made(dest_p: Path, made: tuple[int, int] | None, sides: list[Path]) -> Path | None:
+    """Remove what a failed copy made: ``dest_p`` while it is still the regular file this call created (same device and inode,
+    the name not followed if it became a link), and the side files that appeared during the copy, each a regular file and
+    never through a link. Returns the path of an unfinished copy still on disk (the main file, or a side file that held its
+    pages), or ``None`` when nothing of it is left. Never raises."""
+    left: Path | None = None
+    if made is None:
+        return None  # the file was never made (the name was taken first): nothing of a copy exists, and nothing here is ours
+    if made is not None:
+        try:
+            st = os.lstat(dest_p)
+        except FileNotFoundError:
+            st = None
+        except OSError:
+            left = dest_p  # cannot tell what is there: say it, never assume it is gone
+            st = None
+        if st is not None:
+            if stat.S_ISREG(st.st_mode) and (st.st_dev, st.st_ino) == made:
+                try:
+                    os.unlink(dest_p)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    left = dest_p
+            else:
+                left = dest_p  # the name no longer holds the file this call made: it is not removed, and the copy is not accounted for
+    for side in sides:
+        try:
+            st = os.lstat(side)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            left = left or side
+            continue
+        if not stat.S_ISREG(st.st_mode):
+            continue  # a link or anything else: not a file this copy wrote
+        try:
+            os.unlink(side)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            left = left or side
+    return left
+
+
 def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
     """Consistent PLAINTEXT snapshot of ``src`` (artifact members; the artifact's
-    own envelope is the at-rest protection there)."""
+    own envelope is the at-rest protection there).
+
+    R794: a name this returns is always a WHOLE copy. On any failure (a full disk, a driver error, an interrupt) the file this
+    call made is removed, by its exact path and identity, never through a link and never anything else in the folder; if that
+    removal fails, :class:`SnapshotLeftOnDisk` names the path that still holds an incomplete plaintext copy (an interrupt is
+    raised again as it was, with that path logged as an error)."""
     src_p, dest_p = Path(src), Path(dest)
     dest_p.parent.mkdir(parents=True, exist_ok=True)
     dest_p.unlink(missing_ok=True)
+    sides = _side_files_absent(dest_p)
+    made: tuple[int, int] | None = None
+    try:
+        made = _make_new(dest_p)
+        _snapshot_into(src_p, dest_p)
+        if not _still_made(dest_p, made):
+            # SQLite reopened the NAME: one replaced (a link, another file) between the create and that open means the copy went
+            # elsewhere, so this name is not a whole copy and is never returned as one.
+            raise OSError("the snapshot's name no longer holds the file this copy made")
+    except BaseException as failed:
+        left = _remove_made(dest_p, made, sides)
+        if left is None:
+            raise
+        _LOG.error("a plaintext copy failed (%s) and its unfinished file could not be removed: %s", type(failed).__name__, left)
+        if not isinstance(failed, Exception):
+            # an interrupt, an exit: passed on as it is, carrying the path, so no caller removes that name again by itself
+            with contextlib.suppress(Exception):
+                failed.oo_snapshot_left = left  # type: ignore[attr-defined]
+            raise
+    else:
+        return dest_p
+    raise SnapshotLeftOnDisk(left)  # outside the handler: no cause, no context, no driver text
+
+
+def _snapshot_into(src_p: Path, dest_p: Path) -> None:
     if is_encrypted_file(src_p):
         conn = connect(src_p, check_same_thread=False)
         try:
@@ -1133,7 +1263,7 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
             conn.execute("DETACH DATABASE snap")
         finally:
             conn.close()
-        return dest_p
+        return
     with sqlite_opening():  # R789: the live store, opened outside connect()
         src_conn = sqlite3.connect(str(src_p))
     try:
@@ -1144,7 +1274,6 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
             dst_conn.close()
     finally:
         src_conn.close()
-    return dest_p
 
 
 def reencrypt_plain_to(src_plain: Path | str, dest: Path | str, key: str) -> Path:
