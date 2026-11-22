@@ -3676,6 +3676,7 @@
   "Not an index operation: the field of every candidate article is compared, so it is slower on a large corpus.": "Not an index operation: the field of every candidate article is compared, so it is slower on a large corpus.",
   "Not attempted (batch limit)": "Not attempted (batch limit)",
   "Not available here:": "Not available here:",
+  "Not available: daily change files were applied and their data date was not read, so there is no date to measure the ages from.": "Not available: daily change files were applied and their data date was not read, so there is no date to measure the ages from.",
   "Not available: neither the extract nor a change file states a date to measure the ages from.": "Not available: neither the extract nor a change file states a date to measure the ages from.",
   "Not available: the full-history planet has not been read for this country.": "Not available: the full-history planet has not been read for this country.",
   "Not available: the full-history read for this country did not finish.": "Not available: the full-history read for this country did not finish.",

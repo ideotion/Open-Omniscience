@@ -3676,6 +3676,7 @@
   "Not an index operation: the field of every candidate article is compared, so it is slower on a large corpus.": "এটি সূচক অপারেশন নয়: প্রতিটি প্রার্থী নিবন্ধের ক্ষেত্র তুলনা করা হয়, তাই বড় কর্পাসে এটি ধীর।",
   "Not attempted (batch limit)": "চেষ্টা করা হয়নি (ব্যাচ সীমা)",
   "Not available here:": "এখানে পাওয়া যায় না:",
+  "Not available: daily change files were applied and their data date was not read, so there is no date to measure the ages from.": "পাওয়া যাচ্ছে না: দৈনিক পরিবর্তন ফাইল প্রয়োগ করা হয়েছে কিন্তু তাদের ডেটার তারিখ পড়া যায়নি, তাই বয়স মাপার কোনো তারিখ নেই।",
   "Not available: neither the extract nor a change file states a date to measure the ages from.": "পাওয়া যাচ্ছে না: এক্সট্র্যাক্ট বা কোনো পরিবর্তন ফাইল কোনোটিই বয়স মাপার তারিখ জানায় না।",
   "Not available: the full-history planet has not been read for this country.": "পাওয়া যাচ্ছে না: এই দেশের জন্য পূর্ণ ইতিহাসের গ্রহ-ফাইল পড়া হয়নি।",
   "Not available: the full-history read for this country did not finish.": "পাওয়া যাচ্ছে না: এই দেশের পূর্ণ ইতিহাস পড়া শেষ হয়নি।",

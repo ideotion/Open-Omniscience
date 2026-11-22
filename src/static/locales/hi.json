@@ -3676,6 +3676,7 @@
   "Not an index operation: the field of every candidate article is compared, so it is slower on a large corpus.": "यह अनुक्रमणिका का काम नहीं है: हर संभावित लेख का फ़ील्ड तुलना किया जाता है, इसलिए बड़े कॉर्पस पर यह धीमा है।",
   "Not attempted (batch limit)": "प्रयास नहीं किया गया (बैच सीमा)",
   "Not available here:": "यहाँ उपलब्ध नहीं:",
+  "Not available: daily change files were applied and their data date was not read, so there is no date to measure the ages from.": "उपलब्ध नहीं: दैनिक परिवर्तन फ़ाइलें लागू की गईं और उनके डेटा की तारीख़ नहीं पढ़ी गई, इसलिए आयु मापने के लिए कोई तिथि नहीं है।",
   "Not available: neither the extract nor a change file states a date to measure the ages from.": "उपलब्ध नहीं: न एक्सट्रैक्ट और न किसी परिवर्तन फ़ाइल में वह तिथि है जिससे आयु मापी जाए।",
   "Not available: the full-history planet has not been read for this country.": "उपलब्ध नहीं: इस देश के लिए पूर्ण इतिहास वाला ग्रह-फ़ाइल नहीं पढ़ा गया है।",
   "Not available: the full-history read for this country did not finish.": "उपलब्ध नहीं: इस देश के लिए पूर्ण इतिहास का पढ़ना पूरा नहीं हुआ।",

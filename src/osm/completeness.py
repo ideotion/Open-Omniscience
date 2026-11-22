@@ -221,7 +221,7 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
     """
     from sqlalchemy import select
 
-    from src.osm.lane_models import OsmAdmin1Split, OsmCountry, country_basis, osm_objects_table
+    from src.osm.lane_models import OsmAdmin1Split, OsmCountry, country_basis, country_reference, osm_objects_table
     from src.versioned import store
 
     doc = load_outlines(path)
@@ -237,7 +237,7 @@ def count_admin1(alpha3: str, *, path: Path | None = None) -> dict:
         if country is None or country.status != "complete":
             raise Admin1Error("not-ingested")
         basis = country_basis(country)
-        reference = country.diff_timestamp or country.extract_vintage
+        reference, _why = country_reference(country)  # row 298: never the extract's date once files were applied undated
         row = s.query(OsmAdmin1Split).filter_by(alpha3=alpha3).one_or_none()
         if row is None:
             row = OsmAdmin1Split(alpha3=alpha3)
@@ -330,7 +330,7 @@ def start_count(alpha3: str, *, path: Path | None = None) -> dict:
 
 def admin1_state(alpha3: str, *, path: Path | None = None) -> dict:
     """What the page shows under the country: the split, or why there is none."""
-    from src.osm.lane_models import OsmAdmin1Split, OsmCountry, country_basis
+    from src.osm.lane_models import OsmAdmin1Split, OsmCountry, country_basis, country_reference
     from src.versioned import store
 
     base: dict[str, Any] = {"method": ADMIN1_METHOD, "caveat": ADMIN1_CAVEAT}
@@ -347,6 +347,9 @@ def admin1_state(alpha3: str, *, path: Path | None = None) -> dict:
         row = s.query(OsmAdmin1Split).filter_by(alpha3=alpha3).one_or_none()
         country = s.query(OsmCountry).filter_by(alpha3=alpha3).one_or_none()
         basis = country_basis(country)
+        # Row 298: a split counted before that fix, while the daily files' date was unread, holds an edited_1y aged from the extract's
+        # date under a basis that still matches; with no reference now, that figure is not shown (the other measures stand).
+        no_reference = country is not None and country_reference(country)[0] is None
         if row is None:
             return {**base, "status": "not-counted", "outline": outline}
         counted_from = {"ingest": row.basis_ingest, "outline_vintage": row.outline_vintage,
@@ -374,9 +377,12 @@ def admin1_state(alpha3: str, *, path: Path | None = None) -> dict:
             rows.append({"key": key, "name": r.get("name"), "names": r.get("names") or {}, "n": None, "keys": [], "measures": None})
             continue
         n = int(got["n"])
+        measures = got.get("measures")
+        if no_reference and measures is not None:
+            measures = {k: v for k, v in measures.items() if k != "edited_1y"}
         # None = counted before the geography measures existed (a recount adds them): not a zero.
         rows.append({"key": key, "name": r.get("name"), "names": r.get("names") or {}, "n": n,
-                     "keys": _keys(n, [got["present"].get(k, 0) for k, _ in KEYS]), "measures": got.get("measures")})
+                     "keys": _keys(n, [got["present"].get(k, 0) for k, _ in KEYS]), "measures": measures})
     return {**base, **facts, "status": "stale" if stale else "complete", "regions": rows,
             "outside": outside, "no_point": no_point}
 

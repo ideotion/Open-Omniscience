@@ -3676,6 +3676,7 @@
   "Not an index operation: the field of every candidate article is compared, so it is slower on a large corpus.": "インデックス操作ではありません：候補となるすべての記事のフィールドを比較するため、大きなコーパスでは遅くなります。",
   "Not attempted (batch limit)": "未実施(バッチ上限)",
   "Not available here:": "ここでは利用できません:",
+  "Not available: daily change files were applied and their data date was not read, so there is no date to measure the ages from.": "利用できません：日次の変更ファイルは適用済みですが、そのデータの日付が読み取れなかったため、経過期間の起点となる日付がありません。",
   "Not available: neither the extract nor a change file states a date to measure the ages from.": "利用できません：抽出ファイルにも変更ファイルにも、経過期間の起点となる日付がありません。",
   "Not available: the full-history planet has not been read for this country.": "利用できません: この国については、全履歴プラネットを読み込んでいません。",
   "Not available: the full-history read for this country did not finish.": "利用できません: この国の全履歴の読み込みが完了しませんでした。",

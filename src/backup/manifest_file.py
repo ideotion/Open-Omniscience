@@ -23,9 +23,12 @@ import stat
 MANIFEST_MAX_BYTES = 64 * 1024 * 1024
 
 
-def read_manifest_json(path: str | os.PathLike) -> object | None:
+def read_manifest_json(path: str | os.PathLike, max_bytes: int | None = None) -> object | None:
     """The manifest's JSON value, or ``None`` when it is missing, not a regular file, a link,
-    larger than :data:`MANIFEST_MAX_BYTES`, unreadable, not UTF-8 or not JSON (nesting included)."""
+    larger than ``max_bytes`` (:data:`MANIFEST_MAX_BYTES` unless the caller's own format allows more,
+    row 308), unreadable, not UTF-8 or not JSON (nesting included)."""
+    if max_bytes is None:  # read at call time, so the module's ceiling stays the one place it is set
+        max_bytes = MANIFEST_MAX_BYTES
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         # Anything but a regular file is refused by name first: Windows has no O_NOFOLLOW, and opening a
@@ -37,12 +40,12 @@ def read_manifest_json(path: str | os.PathLike) -> object | None:
         return None
     try:
         st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode) or st.st_size > MANIFEST_MAX_BYTES:
+        if not stat.S_ISREG(st.st_mode) or st.st_size > max_bytes:
             return None
         with os.fdopen(fd, "rb") as f:
             fd = -1
-            raw = f.read(MANIFEST_MAX_BYTES + 1)
-        if len(raw) > MANIFEST_MAX_BYTES:
+            raw = f.read(max_bytes + 1)
+        if len(raw) > max_bytes:
             return None
         return json.loads(raw.decode("utf-8"))
     except (OSError, ValueError, RecursionError, MemoryError):

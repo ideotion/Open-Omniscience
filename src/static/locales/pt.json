@@ -3676,6 +3676,7 @@
   "Not an index operation: the field of every candidate article is compared, so it is slower on a large corpus.": "Não é uma operação do índice: o campo de cada artigo candidato é comparado, por isso é mais lento num corpus grande.",
   "Not attempted (batch limit)": "Não tentado (limite do lote)",
   "Not available here:": "Indisponível aqui:",
+  "Not available: daily change files were applied and their data date was not read, so there is no date to measure the ages from.": "Indisponível: foram aplicados arquivos de alterações diários e a data dos seus dados não foi lida, por isso não há uma data a partir da qual medir as idades.",
   "Not available: neither the extract nor a change file states a date to measure the ages from.": "Indisponível: nem o extrato nem um arquivo de alterações indica uma data a partir da qual medir as idades.",
   "Not available: the full-history planet has not been read for this country.": "Indisponível: o planeta com histórico completo não foi lido para este país.",
   "Not available: the full-history read for this country did not finish.": "Indisponível: a leitura do histórico completo deste país não terminou.",
