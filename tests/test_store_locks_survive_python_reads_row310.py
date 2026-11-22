@@ -873,7 +873,8 @@ def test_a_freed_number_now_on_another_file_is_never_read_or_closed(tmp_path):
 
 
 def test_a_read_only_connection_that_reuses_a_freed_number_of_ours_keeps_its_lock(tmp_path):
-    # A read-only SQLite connection opens O_RDONLY on the same file: only the O_NONBLOCK part of the check tells it apart.
+    # A read-only SQLite connection opens O_RDONLY on the same file: only the flags tell it apart (SQLite sets O_NOFOLLOW and
+    # never O_NONBLOCK, so each of those two parts alone suffices here).
     import sqlite3
 
     path, number = _parked_then_freed(tmp_path)
@@ -951,3 +952,26 @@ def test_a_record_forgotten_while_a_sweep_lists_still_counts_as_held(tmp_path, m
         conn.execute("ROLLBACK")
     finally:
         conn.close()
+
+
+def test_a_header_read_that_keeps_landing_on_another_file_answers_encrypted_never_absent(tmp_path, monkeypatch):
+    """Row 335 review: three reads that each end on another file are not the store's bytes. ``None`` would read as "absent"
+    or "plaintext" to the callers, so the answer is the fail-closed "encrypted"."""
+    path = tmp_path / "s.db"
+    path.write_bytes(b"SQLite format 3\x00" + b"\x00" * 100)  # a plaintext header: a wrong answer would be False
+    other = tmp_path / "other.bin"
+    other.write_bytes(b"SQLite format 3\x00" + b"\x00" * 100)
+    reads = []
+
+    @contextlib.contextmanager
+    def elsewhere(_p):
+        fd = os.open(other, os.O_RDONLY)
+        reads.append(fd)
+        try:
+            yield fd
+        finally:
+            os.close(fd)
+
+    monkeypatch.setattr(connect_mod, "store_reader", elsewhere)
+    assert connect_mod.is_encrypted_file(path) is True
+    assert len(reads) == 3

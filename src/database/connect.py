@@ -271,15 +271,19 @@ def is_encrypted_file(path: Path | str) -> bool | None:
             with store_reader(p) as fd:
                 head = os.pread(fd, 16, 0)
                 after = os.fstat(fd)
-                if (after.st_dev, after.st_ino) != (st.st_dev, st.st_ino):
-                    # Row 335: the number led to another file by the end of the read (a close elsewhere freed it and an
-                    # open took it), or the name was replaced: these bytes are not the store's. Read again.
-                    st = p.stat()
-                    continue
+            if (after.st_dev, after.st_ino) == (st.st_dev, st.st_ino):
                 return head != _SQLITE_MAGIC
+            # Row 335: the number led to another file by the end of the read (a close elsewhere freed it and an open took
+            # it), or the name was replaced: these bytes are not the store's. Read again, from the start.
+            st = p.stat()
         except OSError:
             return None
-    return None
+        if st.st_size == 0:
+            return None
+    # Still another file after three reads (the name keeps being replaced): answer "encrypted", never None, which callers
+    # read as "absent" or "plaintext". The encrypted path then fails loudly at its key on a file that is not, where the
+    # plaintext path would have read an encrypted store as fresh (fail closed).
+    return True
 
 
 # --- R789: header reads that never drop a lock ----------------------------------------------------------------- #
@@ -380,13 +384,22 @@ def _still_ours_locked(fd: int, key: tuple[int, int]) -> bool:
     A number is only a number: a double close anywhere in the process (a library, another component) frees it, and the next
     open of any file takes it, a SQLite connection's above all. Closing it then drops that connection's locks; reading it
     reads another file. Ours is a regular file on ``key`` opened read-only with ``O_NONBLOCK``, which SQLite never sets, and
-    without ``O_NOFOLLOW``, which this repository's other non-blocking readers set. A descriptor that fails any part, or that
+    without ``O_NOFOLLOW``, which SQLite sets, as do this repository's other non-blocking readers except
+    ``regular_file`` with ``follow_links=True`` (sealed and backup files, never a store's group: the (device, inode) half
+    keeps those apart). A descriptor that fails any part, or that
     ``fstat`` or ``fcntl`` cannot answer for, is not ours: never closed, never read.
 
-    STATED LIMITS: the ``fstat`` runs under ``_hdr_lock`` (the ruling: the check and the use in one hold), so a stalled
-    network mount holding one of our files stalls the opens that wait for the lock with it. A number freed and reused WHILE
+    STATED LIMITS: the ``fstat`` runs under ``_hdr_lock`` (the ruling: the check and the use in one hold), and a sweep checks
+    EVERY record (a stale record of any file may be the number a connection on the store being closed now holds), so a stalled
+    network mount or a pulled drive holding any parked descriptor stalls the opens that wait for the lock with it. An
+    ``fstat`` or ``fcntl`` error, even a passing one, forgets the record without closing it (the ruling: fail closed), so a
+    flaky mount can leave descriptors open. On macOS ``F_GETFL`` does not report ``O_NOFOLLOW``, so there the flags half tells
+    ours from SQLite's (``O_NONBLOCK``) but not from this repository's other non-blocking readers; the (device, inode) half
+    still holds, and a sweep closes a number only while no connection holds the store's group, so no lock is dropped. A number freed and reused WHILE
     a reader of ours is using it (between :func:`_acquire` and :func:`_release`) cannot be seen by any check here; the header
     read checks the file again after reading (:func:`is_encrypted_file`)."""
+    if os.name == "nt":
+        return False  # no descriptor is ever recorded on Windows (its readers return early); never reach the absent fcntl
     try:
         st = os.fstat(fd)
         flags = fcntl.fcntl(fd, fcntl.F_GETFL)
@@ -489,6 +502,9 @@ def _acquire(p: Path) -> tuple[tuple[int, int], int]:
 def _release(key: tuple[int, int]) -> None:
     with _hdr_lock:
         _hdr_uses[key] -= 1
+        if not _hdr_uses[key] and key not in _hdr_fds:  # its record was forgotten while in use (row 335): drop the rest
+            _hdr_uses.pop(key, None)
+            _hdr_names.pop(key, None)
     _sweep()
 
 
