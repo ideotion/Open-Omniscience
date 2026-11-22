@@ -23,6 +23,12 @@ from pathlib import Path
 
 import pytest
 
+from tests.js_source_helper import (
+    function_body,
+    object_literal,
+    python_function_source,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "src" / "static"
 
@@ -112,7 +118,7 @@ def test_the_ots_provider_hands_the_counts_to_the_receipt(monkeypatch):
 
 def test_ots_stamp_records_the_counts_beside_its_english_detail():
     src = (ROOT / "src" / "custody" / "timestamp.py").read_text(encoding="utf-8")
-    body = src[src.index("def ots_stamp(") :]
+    body = python_function_source(src, "ots_stamp")
     assert (
         "calendars=(reached, len(calendars))" in body
         and 'f"Submitted to {reached}/{len(calendars)}' in body
@@ -140,15 +146,14 @@ def test_the_ai_check_entries_carry_ids_and_the_client_keeps_their_english_words
     import src.monitoring.ai_check as AC
 
     entries = {e["id"]: e for e in (*AC.SEPARATE_RUNS, AC.NEEDS_A_HUMAN)}
-    assert set(entries) == {"model-bench", "anchor-grading"}
+    assert set(entries) == {"model_bench", "anchor_grading"}
     js = (STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
-    block = js[js.index("const _AI_NOT_RUN_WORDS = {") :]
-    block = block[: block.index("};") + 2]
+    block = object_literal(js, "_AI_NOT_RUN_WORDS")
     for eid, e in entries.items():
         m = re.search(
-            r'"'
+            r"\b"
             + re.escape(eid)
-            + r'": \["((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"\]',
+            + r': \["((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)",\s*"((?:[^"\\]|\\.)*)"\]',
             block,
         )
         assert m, eid
@@ -188,7 +193,7 @@ def test_the_activity_notes_carry_codes_and_the_client_keeps_their_english_words
                 "the client's English drifted from the server's",
             )
     (tmp_path / "translation_sweep_progress_state.json").write_text(
-        json.dumps({"target_lang": "fr", "position": 7})
+        json.dumps({"target_lang": "fr", "position": 7}), encoding="utf-8"
     )
     tr = next(
         s
@@ -206,20 +211,17 @@ def test_the_verdicts_the_client_words_are_the_triage_set():
     from src.ai_layer.triage import VERDICTS
 
     js = (STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
-    body = js[js.index("function _aiTriageVerdictWords(") :]
-    body = body[: body.index("\n    }\n")]
+    body = function_body(js, "_aiTriageVerdictWords")
     assert set(re.findall(r'v === "([a-z]+)"', body)) == set(VERDICTS)
 
 
 def test_the_batch_statuses_the_client_words_are_the_ones_the_route_sends():
     src = (ROOT / "src" / "api" / "ingestion.py").read_text(encoding="utf-8")
-    body = src[src.index("def ingest_batch_endpoint(") :]
-    body = body[: body.index("\n@router")]
+    body = python_function_source(src, "ingest_batch_endpoint")
     sent = set(re.findall(r'"status": "([a-z_]+)"', body))
     assert sent == {"ok", "not_found", "no_feed", "error"}, sent
     js = (STATIC / "app-sources.js").read_text(encoding="utf-8")
-    fn = js[js.index("function batchIngestStatusWords(") :]
-    fn = fn[: fn.index("\n    }\n")]
+    fn = function_body(js, "batchIngestStatusWords")
     assert set(re.findall(r'st === "([a-z_]+)"', fn)) == sent - {"ok"}, (
         "ok is drawn as its tally, never as a word"
     )

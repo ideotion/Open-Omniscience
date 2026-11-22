@@ -55,7 +55,7 @@ AI_CHECK_SCHEMA = "oo-ai-check-1"
 #: no machine can do for the operator — see :func:`not_run_here`.
 SEPARATE_RUNS: tuple[dict, ...] = (
     {
-        "id": "model-bench",  # row 322: the UI words each entry by this id, in the reader's language
+        "id": "model_bench",  # row 322: the UI words each entry by this id, in the reader's language
         "name": "Model bench",
         "where": "the same button, with 'bench the model' ticked",
         "why": (
@@ -71,7 +71,7 @@ SEPARATE_RUNS: tuple[dict, ...] = (
 #: the bench reports that one metric as unmeasured with its reason, rather than filling
 #: it with something that looks like a number.
 NEEDS_A_HUMAN: dict = {
-    "id": "anchor-grading",
+    "id": "anchor_grading",
     "name": "Anchor grading",
     "where": "Settings → Advanced → AI diagnostics → grade a sitting",
     "why": (

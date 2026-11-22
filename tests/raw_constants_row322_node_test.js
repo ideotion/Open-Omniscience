@@ -67,9 +67,9 @@ assert.strictEqual(R.batchIngestStatusWords("brand_new", t), "brand_new");
 assert.strictEqual(R.batchIngestStatusWords(undefined, t), "");
 
 // 3. AI check: known ids worded, an unknown entry as sent, an inherited name is not an id
-const bench = R._aiNotRunHereLine({ id: "model-bench", name: "x", why: "y", where: "z" }, t);
+const bench = R._aiNotRunHereLine({ id: "model_bench", name: "x", why: "y", where: "z" }, t);
 assert.ok(bench.startsWith("T[Model bench] — T[It runs the frozen input set"), bench);
-assert.ok(R._aiNotRunHereLine({ id: "anchor-grading" }, t).includes("T[Settings → Advanced → AI diagnostics → grade a sitting]"));
+assert.ok(R._aiNotRunHereLine({ id: "anchor_grading" }, t).includes("T[Settings → Advanced → AI diagnostics → grade a sitting]"));
 assert.strictEqual(R._aiNotRunHereLine({ id: "later", name: "N", why: "W", where: "H" }, t), "N — W (H)");
 assert.strictEqual(R._aiNotRunHereLine({ id: "toString", name: "N", why: "W", where: "H" }, t), "N — W (H)");
 assert.strictEqual(R._aiNotRunHereLine({ name: "<i>", why: "", where: "" }, t), "&lt;i&gt; —  ()");

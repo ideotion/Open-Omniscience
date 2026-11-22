@@ -2525,12 +2525,13 @@
 
     // Row 322: what the AI check did not run, in the reader's language. The report names each entry in English
     // (src/monitoring/ai_check.py SEPARATE_RUNS / NEEDS_A_HUMAN) with a stable id; a known id is worded here, and an entry
-    // this build does not know is shown as the report sent it.
+    // this build does not know is shown as the report sent it. The ids use underscores and stay unquoted keys,
+    // because a quoted dash form reads to scripts/route_callers.py as a ${job} value and claims the bench last route.
     const _AI_NOT_RUN_WORDS = {
-      "model-bench": ["Model bench",
+      model_bench: ["Model bench",
         "It runs the frozen input set through the model task by task and is resumable, because it takes tens of minutes. A quick check is minutes, so the two are one button with a choice rather than two buttons.",
         "the same button, with “bench the model” ticked"],
-      "anchor-grading": ["Anchor grading",
+      anchor_grading: ["Anchor grading",
         "Triage anchor accuracy is measured against verdicts a person graded. Nothing here can supply those: two models agreeing is not either being right, and a model asked to grade itself measures nothing at all. Every other metric in this report is measured without you; this one is reported as unmeasured until a sitting exists.",
         "Settings → Advanced → AI diagnostics → grade a sitting"],
     };
