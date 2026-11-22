@@ -467,11 +467,38 @@
           { label: t("Failed"), value: String(st.error || 0) },
           { label: t("On disk"), value: humanBytes(m.bytes_on_disk || 0),
             hover: t("The bytes the map files hold on this machine, partial downloads included.") },
-          { label: t("Date of the map data"), value: t("Not recorded"),
-            hover: t("A map extract carries the date of its data in its own header, which the app does not read yet. The date the file was written here is a different fact, so it is not shown in its place.") },
+          ...livingMapDataDates(src.daily, t),
         ];
       }
       return [{ title: t("Map regions"), facts }, livingDailyGroup(src.daily, t, tf), livingStorageGroup(src.storage, t)];
+    }
+
+    // R790 (row 311): the date of the map data, from the cut countries' own dates (R775's one reading, sent by the daily block): the
+    // newest and the oldest, a country whose daily files were applied without their date being read named apart and never in either.
+    // With no cut country the row reads exactly as before: a downloaded file's date is read only when its country is cut.
+    function livingMapDataDates(d, t) {
+      if (!d || d.measured !== true || !(d.countries_cut > 0) || !("newest_data_at" in d)) {
+        return [{ label: t("Date of the map data"), value: t("Not recorded"),
+          hover: t("A map extract carries the date of its data in its own header, which the app does not read yet. The date the file was written here is a different fact, so it is not shown in its place.") }];
+      }
+      const rows = [
+        { label: t("Newest map data"), value: d.newest_data_at ? livingWhen(d.newest_data_at, t) : t("Not recorded"),
+          hover: t("The newest data date among the cut countries: the own date of the last daily change file applied, or the extract's own date where none was. Never the day a file was applied here.") },
+        { label: t("Oldest map data"), value: d.oldest_data_at ? livingWhen(d.oldest_data_at, t) : t("Not recorded"),
+          hover: t("The cut country whose data is oldest, by the same date. Freshness is shown as dates, never judged.") },
+      ];
+      const unread = d.date_not_read || [];
+      if (unread.length) {
+        rows.push({ label: t("Data date not read"), html: true, value: unread.map((a) => ooCountryCell(a)).join(", "),
+          hover: t("Countries whose daily change files were applied without their data date being read. They are left out of the newest and oldest dates, because neither would be their own.") });
+      }
+      if (d.data_undated > 0) {
+        rows.push({ label: t("Extract states no date"), value: String(d.data_undated),
+          hover: t("Cut countries whose extract carries no date of its own and that no daily change file has reached. They are left out of the newest and oldest dates.") });
+      }
+      rows.push({ label: t("Downloaded files not yet cut"), value: t("Not recorded"),
+        hover: t("A downloaded file's data date is read when its country is cut. Until then it is not recorded, and the date the file was written here is a different fact, so it is not shown in its place.") });
+      return rows;
     }
 
     // The OSM lane's daily change files (S06-01 S5): counts and the newest file's own date, then every re-baseline as a dated
