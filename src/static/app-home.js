@@ -2572,7 +2572,8 @@
         const sig = esc(JSON.stringify(g.signer)), n = Number(g.count) || 0;
         const ids = esc(JSON.stringify((g.authors || []).map(a => String(a.author_id))));
         return `<div class="draft-item withheld-trust" role="group"><div class="di-body">
-          <p>${esc(tf("A backup signed by another installation carried trust decisions that were not applied (count: {count}). Import them too?", {count: n}))}</p>
+          <p>${esc(tf("Trust decisions signed with a key this installation did not make were not applied (count: {count}). Import them too?", {count: n}))}</p>
+          <p translate="no" dir="auto">${esc((g.authors || []).map(a => String(a.author_name || a.author_id || "")).join(", "))}</p>
           <p class="hint">${esc(t("Its signing key:"))} <code dir="ltr">${esc(key)}</code></p>
           <p class="hint">${esc(t("Its signature shows the backup is unchanged since it was signed, not who signed it. Import them only if you know that installation is yours or someone you trust."))}</p></div>
           <button class="ghost tiny" data-autofocus data-on-click="answerWithheldTrust(${sig}, ${n}, false, ${ids})">${esc(t("No"))}</button>

@@ -222,6 +222,7 @@ def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
             # any file found there (a caller with no passphrase may have made it plaintext)
             raw, seen = keyfile.read_settled(path)
         else:
+            _drop_restored_marker(path)  # R801: this installation made its own key, so no restore placed this one
             return key
     key, legacy_plaintext = _parse_key(path, raw, passphrase)
     if legacy_plaintext and passphrase is not None:
@@ -249,6 +250,93 @@ def existing_public_key_hex(path: Path | None = None) -> str | None:
     return public_key_hex(key)
 
 
+#: R801: the file beside the evidence key that says a restore placed it (``evidence_ed25519.pem.restored-from-backup``).
+RESTORED_KEY_MARKER_SUFFIX = ".restored-from-backup"
+#: Where a restore of an older build recorded an identity it placed (an import report's ``side_files.keys.identities``).
+_EVIDENCE_KEY_MEMBER = "keys/evidence_ed25519.pem"
+
+
+def restored_key_marker(path: Path | None = None) -> Path:
+    """The marker beside the evidence key ``path`` (R801): while it exists, that key counts as ANOTHER installation's."""
+    path = path or _default_key_path()
+    return path.with_name(path.name + RESTORED_KEY_MARKER_SUFFIX)
+
+
+def _marker_present(marker: Path) -> bool:
+    """True unless the marker is plainly absent: a link, a folder, an unreadable or odd file all count as present, and
+    so does a check that fails (R801 (3)). Only its presence is read, never its content."""
+    try:
+        os.lstat(marker)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def mark_key_as_restored(path: Path | None = None, *, backup_key: object = None) -> Path | None:
+    """Write the R801 marker for the evidence key at ``path``; returns it when THIS call created it, else None.
+
+    Called by a restore BEFORE it places the key, so there is never a restored key without its marker. Never replaces
+    a marker that is there (any one, whatever it holds). ``OSError`` other than "already there" leaves, so the restore
+    fails before it places a key it could not mark."""
+    marker = restored_key_marker(path)
+    body = {"placed_by": "a restore", "backup_signing_key": str(backup_key) if backup_key else None}
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        keyfile.create_new(marker, (json.dumps(body) + "\n").encode("utf-8"))
+    except FileExistsError:
+        return None
+    return marker
+
+
+def _drop_restored_marker(path: Path) -> None:
+    """Remove the R801 marker: only :func:`load_or_create_signing_key` calls this, right after it made a NEW key, the one
+    moment a marker is known to describe a key that is gone. Whatever is at that name goes (a link is removed, never
+    followed); a marker that cannot be removed stays and keeps counting, which only costs a click."""
+    marker = restored_key_marker(path)
+    with keyfile.KEY_FILES_LOCK:
+        try:
+            if os.path.isdir(marker) and not os.path.islink(marker):
+                os.rmdir(marker)
+            else:
+                os.unlink(marker)
+        except FileNotFoundError:
+            return
+        except OSError:
+            return
+        keyfile.flush_key_folder(marker.parent, marker.name)
+
+
+def _placed_by_an_earlier_restore(own_hex: str, path: Path) -> bool:
+    """True when an import report a restore left in this data folder lists ``own_hex`` as an evidence identity it
+    placed (R801 (5)): how a key a restore placed BEFORE the marker existed is recognised. A report the person deleted
+    cannot be read, so such a key keeps counting as this installation's own (the release note says so)."""
+    reports = path.parent.parent / "import_reports"
+    try:
+        files = sorted(reports.glob("*.json"))
+    except OSError:
+        return False
+    for f in files:
+        try:
+            if not f.is_file() or f.is_symlink() or f.stat().st_size > 16 * 1024 * 1024:
+                continue
+            body = json.loads(f.read_text("utf-8"))
+            side = body.get("side_files") if isinstance(body, dict) else None
+            keys = side.get("keys") if isinstance(side, dict) else None
+            ids = keys.get("identities") if isinstance(keys, dict) else None
+        except Exception:  # noqa: BLE001 - an unreadable report proves nothing either way
+            continue
+        for entry in ids if isinstance(ids, list) else ():
+            if (
+                isinstance(entry, dict)
+                and str(entry.get("name", "")).replace("\\", "/") == _EVIDENCE_KEY_MEMBER
+                and str(entry.get("ed25519_public_key", "")).lower() == own_hex.lower()
+            ):
+                return True
+    return False
+
+
 def is_this_installations_key(public_key: object, path: Path | None = None) -> bool | None:
     """True when ``public_key`` (hex, any case or spacing) is the public half of THIS installation's signing key.
 
@@ -263,9 +351,17 @@ def is_this_installations_key(public_key: object, path: Path | None = None) -> b
     if own is None:
         return None
     try:
-        return bytes.fromhex(str(public_key)) == bytes.fromhex(own)
+        same = bytes.fromhex(str(public_key)) == bytes.fromhex(own)
     except ValueError:
         return False
+    # R801: a key a restore placed is another installation's until this one makes its own, whoever made the backup (an
+    # import-only install has no key, so a crafted backup could otherwise plant the key its next backup is signed with).
+    if _marker_present(restored_key_marker(path)):
+        return False
+    if same and _placed_by_an_earlier_restore(own, path):
+        mark_key_as_restored(path)  # a restore before R801 placed it: marked once, so a deleted report changes nothing
+        return False
+    return same
 
 
 def signing_key_state(path: Path | None = None) -> tuple[str, str | None]:

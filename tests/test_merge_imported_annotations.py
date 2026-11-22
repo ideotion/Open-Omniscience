@@ -225,7 +225,7 @@ def test_another_installations_trust_decisions_are_withheld_and_named(monkeypatc
     assert ann["imported_authors"] == 1 and ann["errors"] == []  # the rest imports as before
     withheld = ann["trust_withheld"]
     assert withheld["count"] == 1 and withheld["signer"] == OTHER_KEY and withheld["offered"] is True
-    assert "another installation" in withheld["reason"]
+    assert "a key this installation did not make" in withheld["reason"]
     author = store.list_authors()[0]
     assert author["trusted"] is False and author["trust_withheld_by"] == OTHER_KEY
     assert store.withheld_trust() == [{"signer": OTHER_KEY, "count": 1, "authors": [

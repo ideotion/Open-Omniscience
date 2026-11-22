@@ -7227,7 +7227,8 @@ def merge_side_files(staged: StagedArtifact) -> dict:
             "authors": withheld_authors,
             "signer": staged.origin_fingerprint if offered else None,
             "reason": (
-                "this backup was signed by another installation, so its trust decisions are not applied without a click"
+                "this backup was signed with a key this installation did not make, so its trust decisions are not applied "
+                "without a click"
                 if offered
                 else "this backup's signature was not verified, so its trust decisions are not applied"
             ),
@@ -7366,6 +7367,7 @@ _KEY_EVIDENCE_PKCS8 = (
     "it under in a form it does read; it is not written and stays in the backup"
 )
 _EVIDENCE_KEY_FILE = "evidence_ed25519.pem"
+_KEY_MARKER_CARRIED = "this install writes this marker itself when a restore places its key; one carried in a backup is never written"
 #: How a carried key that is placed was written (:func:`_reseal_key`).
 _KEY_PLACED_HOW = ("as_carried", "resealed", "still_encrypted")
 
@@ -7516,6 +7518,9 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
     from src.custody.signing import SigningError
     from src.custody.signing import _passphrase as held_key_passphrase
     from src.database.connect import get_passphrase
+    from src.reporting.evidence import RESTORED_KEY_MARKER_SUFFIX as _RESTORED_MARKER_SUFFIX
+    from src.reporting.evidence import mark_key_as_restored
+    from src.shared_text import said
 
     out: dict = {
         "restored": [],
@@ -7583,6 +7588,11 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
         if slot is not None:
             pairs.setdefault(slot[0], []).append((name, path, slot[1]))
             continue
+        if rel.name.endswith(_RESTORED_MARKER_SUFFIX):
+            # R801: only this install writes its restored-key marker (below, before the key); a backup never places,
+            # replaces or removes one
+            out["not_placed"].append({"name": name, **said("reason", _KEY_MARKER_CARRIED)})
+            continue
         # not a key file this app writes: carried as it is, and said so
         local = base / rel
         if local.exists() or local.is_symlink():
@@ -7616,6 +7626,16 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
                 out["not_placed"].append({"name": name, "reason": refused.get(name, _KEY_PAIR_HALF)})
             continue
         made: list[tuple[Path, tuple[int, int, int, int]]] = []  # the halves THIS call created, and which file each is
+        marker: Path | None = None
+        made_marker: tuple[Path, tuple[int, int, int, int]] | None = None
+        if any(Path(name).name == _EVIDENCE_KEY_FILE for name, *_rest in placeable):
+            # R801: the marker is written BEFORE the key, so a restored evidence key never exists without it; while it
+            # exists the key counts as another installation's (src.reporting.evidence.is_this_installations_key)
+            marker = mark_key_as_restored(keys_dir / _EVIDENCE_KEY_FILE, backup_key=staged.origin_fingerprint)
+            if marker is not None:
+                with suppress(OSError):
+                    made_marker = (marker, keyfile.identity(os.lstat(marker)))
+        evidence_placed = False
         for i, (name, data, how, public, opener) in enumerate(placeable):
             local = base / name
             try:
@@ -7632,6 +7652,7 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
                 break
             with suppress(OSError):
                 made.append((local, keyfile.identity(os.lstat(local))))
+            evidence_placed = evidence_placed or local.name == _EVIDENCE_KEY_FILE
             out["restored"].append(name)
             if how == "resealed":
                 out["resealed"].append(name)
@@ -7639,6 +7660,10 @@ def _restore_key_members(staged: StagedArtifact, base: Path) -> dict:
                 out["still_encrypted"].append({"name": name, "opened_with": roles[opener]})
             if public is not None:
                 out["identities"].append({"name": name, "ed25519_public_key": public})
+        if made_marker is not None and not evidence_placed:
+            # the key this marker was written for was not placed (another caller made one meanwhile): the marker this
+            # call made goes again, only while it is still that file, so it never sticks to a key this install made
+            _take_back_key_files([made_marker])
     return out
 
 
