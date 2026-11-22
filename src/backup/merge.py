@@ -7979,12 +7979,32 @@ def _verify_chain_rows(rows: Iterable[tuple]) -> tuple[bool, list[str], int]:
 
 
 def _signed_by(staged: StagedArtifact) -> str:
-    """R800: the signer stated the one way the app can state it (``artifact.SIGNER_RELATIONS``)."""
+    """R800: the signer stated the one way the app can state it (``artifact.SIGNER_RELATIONS``).
+    Here the live state is known, so an unverified artifact is ``unsigned`` or ``bad-signature``."""
     from src.backup.artifact import signer_relation, this_installation_key
 
     if staged.signature_state != "verified":
-        return "unsigned"
+        return "bad-signature" if staged.signature_state == "bad-signature" else "unsigned"
     return signer_relation(staged.origin_fingerprint, this_installation_key())
+
+
+def _stored_signer(staged: StagedArtifact) -> str:
+    """What ``merge_batches.origin_fingerprint`` records: the verified key, ``bad-signature`` for a
+    signature that did not match (row 345), else the artifact's own value ("unsigned")."""
+    if getattr(staged, "signature_state", None) == "bad-signature":
+        return "bad-signature"
+    return staged.origin_fingerprint
+
+
+def _custody_chain_id(origin_fingerprint: str) -> str:
+    """The chain id an imported custody chain is filed under: the verified signing key, else
+    ``unknown-origin``. The two stored states that are not a key -- "unsigned", and "bad-signature"
+    (row 345) -- file under ``unknown-origin``, so a failed signature is never a chain of its own beside genuine
+    signers and never shares one with them."""
+    # A key is kept exactly as written: an earlier import of the same chain filed it under it.
+    if not origin_fingerprint or origin_fingerprint in ("unsigned", "bad-signature"):
+        return "unknown-origin"
+    return origin_fingerprint
 
 
 def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
@@ -8016,9 +8036,7 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
         # (chain id, the query that walks it in seq order, its parameters)
         sources: list[tuple[str, str, tuple]] = []
         if "custody_entries" in src_tables:
-            their_chain = (
-                origin_fingerprint if origin_fingerprint != "unsigned" else "unknown-origin"
-            )
+            their_chain = _custody_chain_id(origin_fingerprint)
             sources.append((
                 their_chain,
                 f"SELECT {_CUSTODY_COLS} FROM custody_entries ORDER BY seq ASC",  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -9678,7 +9696,9 @@ def run_restore(
 
     meta = {
         "artifact_kind": staged.kind,
-        "origin_fingerprint": staged.origin_fingerprint,
+        # Row 345 (R800): a signature that was present but did not match is recorded as such,
+        # never folded into "unsigned". Earlier rows are not rewritten (R755).
+        "origin_fingerprint": _stored_signer(staged),
         "app_version": (staged.manifest or {}).get("app_version"),
         "alembic_rev": original_rev,
         "manifest": staged.manifest,

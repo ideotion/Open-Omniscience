@@ -1394,7 +1394,11 @@
     function backupSignerWords(signedBy, key, t, tf) {
       const k = String(key || "");
       const fp = "\u2068" + k.slice(0, 16) + "\u2069";
-      if (!/^[0-9a-f]{64}$/i.test(k) || signedBy === "unsigned") return t("Not signed");
+      // Row 345: "Not signed" only where the record is known to be unsigned; a stored record that
+      // cannot tell unsigned from a signature that did not match reads "No verified signature".
+      if (signedBy === "bad-signature") return t("Signature does not match its content");
+      if (signedBy === "unsigned") return t("Not signed");
+      if (!/^[0-9a-f]{64}$/i.test(k)) return t("No verified signature");
       if (signedBy === "this-installation") return tf("Signed by this installation, key {fp}", { fp });
       if (signedBy === "another-installation") return tf("Signed by another installation, key {fp}", { fp });
       return tf("Signed by key {fp}", { fp });
