@@ -171,7 +171,8 @@ function harness(answers) {
     await h.fns.undoNewsletterAttach({ disabled: false });
     const out = h.nodes["nl-result"];
     assert.ok(out.innerHTML.startsWith("<b>1</b> newsletter moved back to the import bucket."), out.innerHTML);
-    assert.ok(out.innerHTML.includes("example.org"), out.innerHTML);
+    // the whole line, label and list, so the source name is checked in place (not as a substring anywhere)
+    assert.ok(out.innerHTML.endsWith(">Removed the now-empty sources this filing had created: example.org</div>"), out.innerHTML);
     assert.deepStrictEqual(h.calls.toasts, [["1 newsletter moved back to the import bucket.", "ok"]]);
     const n = h.calls.api.length;
     h.switchTo("fr");
