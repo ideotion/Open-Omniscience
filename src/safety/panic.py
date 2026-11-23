@@ -76,11 +76,14 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
             try:
                 _tidy_after_erase(failed)
             finally:
-                _dispose_after_erase(generation)  # whatever the tidying above did: the late-commit rewrite must still run
+                own_open = _dispose_after_erase(generation)  # whatever the tidying above did: the late-commit rewrite must still run
     # R792: only now, with the app offline and this process's own pool closed (its close would undo the lock this takes), look
     # for ANOTHER process still holding the store and rewrite while it does, within the bound; the report says what was found.
     from src.paths import erase_owned
 
+    # R805 (a): this process's own connections a request thread still held when the pool was closed are a holder the probe cannot
+    # see (one process's POSIX locks never conflict), so they are counted; not knowing is "unknown", never "none".
+    report["own_connections_open"] = own_open
     with erase_owned():  # the wipe's own rewrite through the descriptors it kept
         finish_holder_check(report, generation)
     if failed:
@@ -196,16 +199,18 @@ _COLLECTOR_THREADS = ("oo-scheduler", "oo-collect", "oo-briefing-bg", "oo-housek
 _LATE_RESCRUB_S = 15.0
 
 
-def _dispose_after_erase(generation: int | None = None) -> None:
+def _dispose_after_erase(generation: int | None = None) -> int | None:
     """Close the pool once the key is gone, then rewrite through the kept descriptors what a transaction already under way
     put back into the unlinked files (its commit writes page 1, salt included): once now, and once more after
     :data:`_LATE_RESCRUB_S` on a timer that never holds the wipe up. Only this wipe's descriptors (``generation``), so a
     second wipe within the delay never shortens the first one's late pass, nor the first one's timer the second's. Never
     raises."""
+    still_open: int | None = None
     try:
         from src.database.session import dispose_engine
 
-        dispose_engine()
+        n = dispose_engine().get("checked_out")
+        still_open = n if isinstance(n, int) else None
     except Exception:  # noqa: BLE001 - the wipe is done; this is tidying  # nosec B110
         pass
     try:
@@ -219,3 +224,4 @@ def _dispose_after_erase(generation: int | None = None) -> None:
             late.start()
     except Exception:  # noqa: BLE001 - never raises  # nosec B110
         pass
+    return still_open

@@ -65,10 +65,10 @@ def running_app(tmp_path, monkeypatch):
             log.warning("a background warning")
             counts["warnings"] += 1
             for attempt in (
-                lambda: (paths.data_dir() / "settings.json").write_text("{}"),
+                lambda: (paths.data_dir() / "settings.json").write_text("{}", encoding="utf-8"),
                 lambda: paths.diagnostics_dir(),
                 lambda: held.parent.mkdir(parents=True, exist_ok=True),
-                lambda: (data / "late.txt").write_text("late"),
+                lambda: (data / "late.txt").write_text("late", encoding="utf-8"),
                 lambda: os.close(os.open(data / "late.bin", os.O_CREAT | os.O_WRONLY, 0o600)),
             ):
                 with contextlib.suppress(Exception):
@@ -128,7 +128,7 @@ def test_a_folder_the_erase_keeps_is_never_written_into_after_it(running_app, mo
     from src.safety import data_scope
 
     data = running_app
-    (data / "my-notes.txt").write_text("the operator's")
+    (data / "my-notes.txt").write_text("the operator's", encoding="utf-8")
     monkeypatch.setattr(data_scope, "folder_scope", lambda base: {"broad": True, "reason": "test"})
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert report["scope"] == "app-only", report
@@ -158,29 +158,29 @@ def test_data_dir_refuses_the_latched_folder_and_never_makes_it(tmp_path, monkey
     assert not data.exists()
     # Reading is never refused, and a folder beside it is untouched.
     (tmp_path / "beside").mkdir()
-    (tmp_path / "beside" / "f").write_text("ok")
-    assert (tmp_path / "beside" / "f").read_text() == "ok"
+    (tmp_path / "beside" / "f").write_text("ok", encoding="utf-8")
+    assert (tmp_path / "beside" / "f").read_text(encoding="utf-8") == "ok"
 
 
 def test_the_latch_refuses_writes_into_a_folder_that_is_still_there(tmp_path):
     data = tmp_path / "kept"
     data.mkdir()
-    (data / "old.txt").write_text("old")
+    (data / "old.txt").write_text("old", encoding="utf-8")
     paths.latch_erased(data)
     for write in (
-        lambda: (data / "new.txt").write_text("x"),
-        lambda: open(data / "old.txt", "a").close(),  # noqa: SIM115
+        lambda: (data / "new.txt").write_text("x", encoding="utf-8"),
+        lambda: open(data / "old.txt", "a", encoding="utf-8").close(),  # noqa: SIM115
         lambda: os.close(os.open(data / "n2", os.O_CREAT | os.O_WRONLY)),
         lambda: os.rename(tmp_path / "src.txt", data / "moved.txt"),
         lambda: os.symlink("old.txt", data / "link"),
     ):
-        (tmp_path / "src.txt").write_text("s")
+        (tmp_path / "src.txt").write_text("s", encoding="utf-8")
         with pytest.raises(paths.DataFolderErased):
             write()
-    assert (data / "old.txt").read_text() == "old"
+    assert (data / "old.txt").read_text(encoding="utf-8") == "old"
     assert sorted(p.name for p in data.iterdir()) == ["old.txt"]
     with paths.erase_owned():  # the erase's own work, on its own thread
-        (data / "scrub").write_text("s")
+        (data / "scrub").write_text("s", encoding="utf-8")
     (data / "scrub").unlink()
 
 
@@ -262,7 +262,7 @@ def test_the_secure_uninstall_latches_the_folder_when_it_is_scheduled(tmp_path, 
     with pytest.raises(paths.DataFolderErased):
         paths.data_dir()
     with pytest.raises(OSError):
-        (data / "app_errors.jsonl").write_text("x")
+        (data / "app_errors.jsonl").write_text("x", encoding="utf-8")
 
 
 def test_a_minimal_uninstall_latches_nothing(tmp_path, monkeypatch):
@@ -445,7 +445,9 @@ def test_the_scrub_says_where_and_keeps_the_reserve(tmp_path, monkeypatch):
         return real_urandom(n)
 
     monkeypatch.setattr(crypto_erase, "_free_bytes", _free)
-    monkeypatch.setattr(crypto_erase.os, "urandom", _write)
+    from tests.os_scope import scope_os
+
+    scope_os(monkeypatch, crypto_erase, urandom=_write)
     out = crypto_erase.full_secure_erase(1, _cap_bytes=1 << 16)
     assert out["bytes_written"] == 5000 and out["scrub_folder"] == str(tmp_path) and out["reserve_bytes"], out
 
@@ -513,7 +515,7 @@ def test_a_write_relative_to_a_folder_handle_is_placed_and_refused(tmp_path):
             os.mkdir("sub", dir_fd=fd)
         with pytest.raises(paths.DataFolderErased):
             os.symlink("/nowhere", "ln", dir_fd=fd)
-        (other / "f").write_text("x")
+        (other / "f").write_text("x", encoding="utf-8")
         with pytest.raises(paths.DataFolderErased):
             os.rename("f", "f", src_dir_fd=ofd, dst_dir_fd=fd)
         os.mkdir("fine", dir_fd=ofd)  # a folder handle elsewhere is let through
@@ -527,7 +529,7 @@ def test_a_replace_into_the_latched_folder_is_refused(tmp_path):
     data = tmp_path / "kept"
     data.mkdir()
     src = tmp_path / "tmp.json"
-    src.write_text("{}")
+    src.write_text("{}", encoding="utf-8")
     paths.latch_erased(data)
     with pytest.raises(paths.DataFolderErased):
         os.replace(src, data / "settings.json")
@@ -559,11 +561,11 @@ def test_a_store_an_override_puts_outside_the_folder_is_latched_by_its_files(tmp
     _fill(data)
     store = tmp_path / "columnar"
     store.mkdir()
-    (store / "mine.txt").write_text("the operator's")
+    (store / "mine.txt").write_text("the operator's", encoding="utf-8")
     crypto_erase._latch_outside({"main_db": None, "store_dir": store}, data)
     with pytest.raises(paths.DataFolderErased):
         (store / "analytics.duckdb").write_bytes(b"again")
-    (store / "mine.txt").write_text("still the operator's to write")  # the folder itself is never latched whole
+    (store / "mine.txt").write_text("still the operator's to write", encoding="utf-8")  # the folder itself is never latched whole
 
 
 def test_a_record_never_waits_on_the_journal_once_the_folder_is_latched(tmp_path, monkeypatch, capsys):
@@ -626,3 +628,116 @@ def test_the_panic_latches_from_its_first_step(tmp_path, monkeypatch):
     monkeypatch.setattr(panic, "_close_database_now", lambda: seen.append(paths.erased_folder_of(data)))
     panic.panic_wipe(data, confirm=True)
     assert seen == [True]
+
+
+# ---- the second pair of security reads ----
+
+
+def test_the_panic_counts_its_own_connections_still_open_as_a_holder(tmp_path, monkeypatch):
+    """R805 (a) on the panic path: a connection a request thread still holds when the pool is closed is a holder the probe cannot see."""
+    from src.database import session
+    from src.safety import panic
+
+    data = tmp_path / "OOS data"
+    _fill(data)
+    monkeypatch.setattr(session, "dispose_engine", lambda: {"checked_out": 1})
+    report = panic.panic_wipe(data, confirm=True)
+    assert report["own_connections_open"] == 1 and report["other_holder"] == "held", report
+    monkeypatch.setattr(session, "dispose_engine", lambda: {"checked_out": None})
+    data2 = tmp_path / "OOS data 2"
+    _fill(data2)
+    report = panic.panic_wipe(data2, confirm=True)
+    assert report["other_holder"] in ("held", "unknown"), report
+
+
+def test_the_scrub_never_says_overwritten_when_it_wrote_nothing(tmp_path, monkeypatch):
+    _erased(tmp_path, monkeypatch)
+    monkeypatch.setattr(crypto_erase, "_free_bytes", lambda _f: crypto_erase._DISK_RESERVE)  # a full drive
+    out = crypto_erase.full_secure_erase(1, _cap_bytes=1 << 16)
+    assert out["bytes_written"] == 0 and out["scrub_not_done"] == "nothing_written", out
+    assert out["scrub_not_done"] in crypto_erase.SCRUB_NOT_DONE
+
+
+def test_a_scrub_folder_that_could_not_be_removed_is_named(tmp_path, monkeypatch):
+    _erased(tmp_path, monkeypatch)
+    real_rmtree = crypto_erase.shutil.rmtree
+    monkeypatch.setattr(crypto_erase.shutil, "rmtree", lambda *_a, **_k: None)
+    out = crypto_erase.full_secure_erase(1, _cap_bytes=1 << 10)
+    left = out["scrub_folder_left"]
+    assert left and os.path.basename(left).startswith(".oo_scrub_"), out
+    with paths.erase_owned():
+        real_rmtree(left)
+
+
+def test_a_folder_made_again_before_the_erase_s_own_log_lines_reads_came_back(tmp_path):
+    data = tmp_path / "d"
+    data.mkdir()
+    report = {"scope": "data-folder", "data_dir": str(data), "removed": False, "removed_at_rmtree": True,
+              "limit": crypto_erase._LIMIT_NOTE}
+    crypto_erase.settle_removed(report)
+    assert report.get("folder_back") is True and report["limit"].startswith(crypto_erase._FOLDER_BACK_SENTENCE), report
+
+
+def test_an_uninstall_after_a_panic_never_says_the_data_is_kept(tmp_path, monkeypatch):
+    from src.safety import uninstall
+
+    data = tmp_path / "OOS data"
+    monkeypatch.setenv("OO_DATA_DIR", str(data))
+    monkeypatch.setattr(paths, "_memo", None)
+    paths.latch_erased(data)  # the panic removed it
+    plan = uninstall.plan_uninstall(wipe_data=True)
+    assert plan["data_erased_earlier"] is True and plan["wipe_data_dir"] is None, plan
+    monkeypatch.setattr(uninstall, "plan_uninstall", lambda *_a, **_k: {**plan, "audit_log": str(tmp_path / "audit.log")})
+    out = uninstall.request_uninstall(confirm=True, wipe_data=True, _spawn=lambda p, pid: None, _arm_shutdown=lambda: None)
+    assert out["data_kept"] is False and "KEPT" not in out["note"] and "already erased" in out["note"], out
+    assert not data.exists()
+
+
+def test_the_watcher_says_incomplete_when_the_app_had_not_stopped():
+    from src.safety.uninstall import _WATCHER_SRC
+
+    assert "or not server_gone:" in _WATCHER_SRC
+
+
+_PRELUDE_DISK = r"""
+import shutil, collections
+_U = collections.namedtuple("usage", "total used free")
+_calls = []
+def _usage(p):
+    _calls.append(p)
+    return _U(1 << 40, 0, (64 * 1024 * 1024 + 1000) if len(_calls) == 1 else 64 * 1024 * 1024)
+shutil.disk_usage = _usage
+"""
+
+
+def test_the_watcher_scrub_keeps_the_reserve_and_writes_in_a_private_folder(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    from src.safety.uninstall import _WATCHER_SRC
+
+    data = tmp_path / "home" / "oo-data"
+    data.mkdir(parents=True)
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    env = {**os.environ, "HOME": str(tmp_path / "home"), "USERPROFILE": str(tmp_path / "home")}
+    plan = {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log"), "passes": 1}
+    subprocess.run([sys.executable, "-c", _PRELUDE_DISK + _WATCHER_SRC, str(dead.pid), json.dumps(plan)], timeout=60, check=True,
+                   env=env)
+    text = (tmp_path / "audit.log").read_text(encoding="utf-8")
+    assert "free disk space overwritten: 1000 bytes" in text and "left unwritten" in text, text
+    assert not data.exists() and not list((tmp_path / "home").glob(".oo_scrub*")), text
+
+
+def test_a_record_on_stderr_carries_no_traceback_and_no_whole_path(tmp_path, monkeypatch, capsys):
+    from src.monitoring import errorlog
+
+    data = tmp_path / "gone"
+    monkeypatch.setenv("OO_DATA_DIR", str(data))
+    monkeypatch.setattr(paths, "_memo", None)
+    secret_place = "/srv/private/case-files/witness.txt"
+    errorlog._append({"level": "ERROR", "message": f"could not read {secret_place}", "traceback": "Traceback: frame in /srv/x.py"})
+    err = capsys.readouterr().err
+    assert "could not read" in err and secret_place not in err and "Traceback" not in err, err

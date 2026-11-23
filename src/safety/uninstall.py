@@ -56,7 +56,7 @@ AUDIT_LOG = Path.home() / ".open-omniscience-uninstall.log"
 # absolute paths + flags — the detached process computes NO paths itself (so it can only
 # ever remove exactly what plan_uninstall decided in-process).
 _WATCHER_SRC = r"""
-import os, re, sys, json, time, shutil, datetime, stat, struct
+import os, re, sys, json, time, shutil, datetime, stat, struct, tempfile
 pid = int(sys.argv[1]); plan = json.loads(sys.argv[2])
 os.chdir(os.path.expanduser("~"))          # never sit inside a folder we may delete
 __PID_PROBE__
@@ -94,7 +94,7 @@ def tok(p):
 # and is never rewritten. Everything else under the data dir is small and fully
 # overwritten. The old code capped EVERY file at the first 4 MiB, so most of a large
 # corpus survived (audit OO-02).
-PAGE1 = 4096; CHUNK = 8 * 1024 * 1024
+PAGE1 = 4096; CHUNK = 8 * 1024 * 1024; RESERVE = 64 * 1024 * 1024   # R805 (c)3, the panic scrub's reserve
 # The lane databases join from the plan (row 30): each is an encrypted database with its own salt page, and a whole rewrite of a
 # 100 GB lane would turn the uninstall's wipe into hours. Their names come from the lane registry, in-process.
 _ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb") + tuple(plan.get("enc_names") or ())
@@ -302,21 +302,40 @@ if wd and os.path.isdir(wd):
     scrubbed = 0                              # optional defence-in-depth free-space scrub
     passes = plan.get("passes")
     if passes in (1, 3, 8):
-        try: os.makedirs(wd, exist_ok=True)
-        except OSError: pass
-        for i in range(passes):
-            fp = os.path.join(wd, ".oo_scrub_%d.bin" % i)
+        # R805 (c), as in the panic's scrub: on the data folder's own drive (it is the data folder), in a private 0700 folder made
+        # there (never the data folder made again, never through a link), with RESERVE bytes left unwritten, removed on every way out.
+        sd = None
+        try:
+            if stat.S_ISDIR(os.lstat(wd).st_mode): sd = tempfile.mkdtemp(prefix=".oo_scrub_", dir=wd)
+        except OSError: sd = None
+        if sd is None:
+            rec("free disk space was not overwritten: the data folder was not there to hold the overwrite's files")
+        else:
             try:
-                with open(fp, "wb", buffering=0) as f:
-                    while True:
-                        try: f.write(os.urandom(CHUNK))
-                        except OSError: break
-                        scrubbed += CHUNK
-                    try: f.flush(); os.fsync(f.fileno())
+                for i in range(passes):
+                    fp = os.path.join(sd, "scrub_%d.bin" % i)
+                    try:
+                        fd = os.open(fp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                        with os.fdopen(fd, "wb", buffering=0) as f:
+                            while True:
+                                try: n = min(CHUNK, shutil.disk_usage(sd).free - RESERVE)
+                                except OSError: break
+                                if n <= 0: break
+                                try: f.write(os.urandom(n))
+                                except OSError: break
+                                scrubbed += n
+                            try: f.flush(); os.fsync(f.fileno())
+                            except OSError: pass
                     except OSError: pass
-            except OSError: pass
-            try: os.remove(fp)
-            except OSError: pass
+                    try: os.remove(fp)
+                    except OSError: pass
+            finally:
+                shutil.rmtree(sd, ignore_errors=True)
+            if not scrubbed:
+                rec("free disk space was not overwritten: nothing could be written on the drive (it may already be full)")
+            else:
+                rec("free disk space overwritten: %d bytes; %d bytes were left unwritten so the disk would not fill, and anything "
+                    "in that part was not overwritten" % (scrubbed, RESERVE))
     if only:
         try: os.rmdir(os.path.join(wd, "keys"))     # only when empty: what is left in it is not the app's
         except OSError: pass
@@ -340,7 +359,7 @@ if wd and os.path.isdir(wd):
             "it afterwards. Restart the computer, then remove that folder." % tok(wd))
     elif kept:
         rec("the data folder %s itself could not be removed, so something may be left in it: check it and remove it by hand" % tok(wd))
-    if gone or not_overwritten or back or kept:
+    if gone or not_overwritten or back or kept or not server_gone:
         rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
             % (tok(wd), wiped, seen, not_overwritten, scrubbed))
     else:
@@ -433,6 +452,7 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
     root = Path(src_dir) if src_dir else repo_root()
     venv = root / ".venv"
     launchers = [p for p in _launcher_paths() if p.exists()]
+    erased_earlier = False
     try:
         from src.paths import DataFolderErased, data_dir_path
         from src.paths import data_dir as _data_dir
@@ -440,6 +460,7 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
             data = str(_data_dir())
         except DataFolderErased:
             data = str(data_dir_path())  # R802: after a wipe in this process, the folder is named, never made again; wiped if it is there
+            erased_earlier = True
         data_exists = Path(data).is_dir()
     except Exception:  # pragma: no cover - paths always importable in practice
         data, data_exists = None, False
@@ -482,6 +503,8 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
         "app_folder": app_folder,               # the folder removed in full/secure
         "wipe_data": wipe_data,
         "wipe_data_dir": wipe_data_dir,         # the data dir wiped in secure
+        # R802: the data was erased by a wipe earlier in this process and its folder is gone: never "kept", never made again.
+        "data_erased_earlier": bool(erased_earlier and not data_exists),
         "wipe_store_dir": wipe_store_dir,       # OO_COLUMNAR_DIR override, wiped in secure
         "data_scope": data_scope,               # R711: a broad folder keeps everything but the app's own files
         "audit_log": str(AUDIT_LOG),
@@ -608,8 +631,10 @@ def request_uninstall(*, confirm: bool, remove_folder: bool = False, wipe_data: 
         note += ", the app folder is deleted"
     if plan.get("wipe_data_dir"):
         note += ", and your data and keys are wiped (irreversible)"
+    elif plan.get("data_erased_earlier"):
+        note += "; your data was already erased by the wipe earlier in this session"
     else:
         note += "; your data is KEPT (use Secure mode, or Panic wipe, to destroy it)"
     note += f". An uninstall log is written to {plan['audit_log']}."
-    return {**plan, "scheduled": True, "data_kept": not bool(plan.get("wipe_data_dir")),
+    return {**plan, "scheduled": True, "data_kept": not (plan.get("wipe_data_dir") or plan.get("data_erased_earlier")),
             "overwrite_limit": overwrite_note, "note": note}

@@ -226,10 +226,15 @@ def latch_erased(folder: str | os.PathLike) -> None:
     except OSError:
         dev = None
     with _ERASED_LOCK:
-        for spelling in _spellings(folder):
-            _ERASED_DEV.setdefault(spelling, dev)
-        add = [s for s in _spellings(folder) if s not in _ERASED]
-        _ERASED = _ERASED + tuple(dict.fromkeys(add))
+        given, resolved = _spellings(folder)
+        _ERASED_DEV.setdefault(given, dev)
+        _ERASED_DEV.setdefault(resolved, dev)
+        latched = _ERASED  # no loop under the lock (tests/test_loop_heads_reach.py): two spellings, each added once
+        if given not in latched:
+            latched += (given,)
+        if resolved not in latched:
+            latched += (resolved,)
+        _ERASED = latched
         _memo = None  # the memo would answer a folder that is still there without asking
         if not _HOOKED:
             sys.addaudithook(_erase_audit)  # once per process; free while nothing is latched
@@ -253,8 +258,8 @@ def erase_owned() -> Iterator[None]:
     """For the erase's own work in a folder it latched (its overwrites, and the free-space scrub's private files, removed before it
     returns): this thread only, never a writer of the app's."""
     before = getattr(_ERASE_OWN, "on", False)
-    _ERASE_OWN.on = True
     try:
+        _ERASE_OWN.on = True
         yield
     finally:
         _ERASE_OWN.on = before

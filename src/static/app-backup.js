@@ -4394,6 +4394,7 @@
           other_drive: "Free disk space was not overwritten: the folder above the erased data folder is on another drive, so writing there would not reach the erased data.",
           drive_unread: "Free disk space was not overwritten: the app could not tell which drive held the erased data folder.",
           no_folder: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
+          nothing_written: "Free disk space was not overwritten: nothing could be written on the drive that held the data, which may already be full.",
         }[r.scrub_not_done];
         const tfw = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
@@ -4402,14 +4403,17 @@
           box.innerHTML += `<div class="card-caveat" style="margin-top:6px">${esc(t(notDone || "Free disk space was not overwritten: no folder on the drive that held the data could be used for it."))}</div>`;
         } else if (box) {
           box.innerHTML +=
-            `<div class="hint" style="margin-top:6px"><span class="pill warn">overwritten</span> ` +
+            `<div class="hint" style="margin-top:6px"><span class="pill warn">${esc(t("overwritten"))}</span> ` +
             `${r.passes}× — ${esc(_fmtBytes(r.bytes_written || 0))}. <span class="muted">${esc(r.limit)}</span></div>` +
             // R805 (c)4: the folder is now outside the data folder, so it is shown as the plain path it is.
+            (r.scrub_folder_left
+              ? `<div class="card-caveat">${esc(tfw("The overwrite could not remove all its temporary files from {path}: remove that folder by hand.", { path: "\u0001path\u0002" })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder_left))}</bdi>`)}</div>`
+              : "") +
             (r.scrub_folder
-              ? `<div class="hint">${esc(tfw("The overwrite wrote its temporary files in {path} and removed them; {reserve} of the disk was left free.", { path: r.scrub_folder, reserve: _fmtBytes(r.reserve_bytes || 0) }))}</div>`
+              ? `<div class="hint">${esc(tfw("The overwrite wrote its temporary files in {path} and removed them. It left {reserve} of free space unwritten so the disk would not fill completely; anything in that part was not overwritten.", { path: "\u0001path\u0002", reserve: _fmtBytes(r.reserve_bytes || 0) })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder))}</bdi>`)}</div>`
               : "");
         }
-        toast(r.scrub_not_done ? t("Free disk space was not overwritten. Restart the app.") : "Full overwrite complete. Restart the app.", "warn");
+        toast(r.scrub_not_done ? t("Free disk space was not overwritten. Restart the app.") : t("Full overwrite complete. Restart the app."), "warn");
       } catch (e) { toast(_failMsg("Full overwrite failed: {error}", e), "err"); }
     }
 

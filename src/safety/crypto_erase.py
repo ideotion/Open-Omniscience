@@ -126,7 +126,7 @@ def settle_removed(report: dict) -> bool:
     try:
         if report.get("scope") != "data-folder" or not report.get("data_dir"):
             return bool(report.get("removed"))
-        removed_before = bool(report.get("removed"))
+        removed_before = bool(report.get("removed")) or bool(report.get("removed_at_rmtree"))
         removed = not _present(Path(report["data_dir"]))
         report["removed"] = removed
         if not removed and not removed_before:
@@ -1240,12 +1240,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         seen += _s
         wiped += _w
     left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}
+    removed_at_rmtree = False
     if app_only:
         _remove_app_folders(roots)
         left = _left_entries(base)
     else:
         with contextlib.suppress(OSError):
             shutil.rmtree(base, ignore_errors=True)
+        removed_at_rmtree = not _present(base)  # before any log line: one that makes it again then reads "came back", never "not removed"
 
     overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
     unlisted_folders[:] = list(dict.fromkeys(unlisted_folders))  # 5b and 6 walk the same folders
@@ -1294,6 +1296,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "left_common_names": left["common"],
         "not_removed": left["not_removed"],
         "removed": not _present(base),
+        "removed_at_rmtree": removed_at_rmtree,
         # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
         "unlisted_folders": len(unlisted_folders),
         # R805 (a): this process's own connections on the store still open when the erase ran (None: could not tell).
@@ -1376,7 +1379,7 @@ def _sweep_crash_left_scrubs(where: Path) -> None:
 
 
 #: Why the free space was not overwritten (R805 (c)1/2; R798 style: "could not", never a success). The UI words each ×12.
-SCRUB_NOT_DONE = ("other_drive", "drive_unread", "no_folder")
+SCRUB_NOT_DONE = ("other_drive", "drive_unread", "no_folder", "nothing_written")
 
 
 def full_secure_erase(
@@ -1429,6 +1432,7 @@ def full_secure_erase(
         not_done = "no_folder"  # never through a link: the fill files would land wherever it leads
     total = 0
     scrub_dir: Path | None = None
+    left_behind = False
     if not_done is None:
         with erase_owned() if latched else contextlib.nullcontext():  # the scrub's own private files, on this thread
             _sweep_crash_left_scrubs(where)
@@ -1445,6 +1449,9 @@ def full_secure_erase(
                             fill.unlink()
                 finally:  # every way out, an interrupt included
                     shutil.rmtree(scrub_dir, ignore_errors=True)
+                    left_behind = os.path.lexists(scrub_dir)
+            if not_done is None and total == 0:
+                not_done = "nothing_written"  # a full drive, a free space that could not be read, a fill file that could not be made
 
     _LOG.warning("SECURE-ERASE scrub on %s (%d passes, %d bytes total)", _masked([str(base)], base)[0], passes, total)
     return {
@@ -1458,6 +1465,8 @@ def full_secure_erase(
         "scrub_folder": None if scrub_dir is None else str(where),
         # R805 (c)1: why the free space was not overwritten (one of SCRUB_NOT_DONE), never a scrubbed claim then.
         "scrub_not_done": not_done,
+        # The private folder when it could not be removed (shown as a plain path, to remove by hand); None when it was.
+        "scrub_folder_left": str(scrub_dir) if (scrub_dir is not None and left_behind) else None,
         "reserve_bytes": _DISK_RESERVE,
         "limit": _LIMIT_NOTE,
     }
