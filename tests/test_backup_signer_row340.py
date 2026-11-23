@@ -34,12 +34,16 @@ def test_signer_relation_states_only_what_the_comparison_shows():
     assert signer_relation(KEY, OTHER) == "another-installation"
     assert signer_relation(KEY, None) == "not-compared"
     for stored in ("unsigned", "unknown-origin", "local", "", None, "ab" * 31):
-        assert signer_relation(stored, KEY) == "unsigned", stored
+        # row 345: a stored value that is not a key cannot tell unsigned from a failed signature
+        assert signer_relation(stored, KEY) == "unverified", stored
+    assert signer_relation("bad-signature", KEY) == "bad-signature"
     assert set(SIGNER_RELATIONS) == {
         "this-installation",
         "another-installation",
         "not-compared",
         "unsigned",
+        "bad-signature",
+        "unverified",
     }
 
 

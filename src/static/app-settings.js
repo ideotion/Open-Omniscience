@@ -1694,31 +1694,76 @@
 
     // Local fixity audit (B-2): re-hash the corpus vs the capture-time hash. Loud,
     // read-only; nothing is auto-fixed. Backend: /api/integrity/fixity.
-    async function runFixity(btn) {
+    // Row 352 fix + R804 (row 353): the result is drawn from the LAST report kept in _fixityState, on
+    // hosts index.html marks data-i18n-dyn, so a language switch repaints it (fixityRepaint, from the
+    // oo:langchange listener) without re-hashing the corpus. A row with NO stored hash was never
+    // checked: it is counted apart as not checkable, never as diverged and never as evidence of
+    // tampering, and the computed hash the server returns for it is not shown (a hash computed now is
+    // not a capture-time hash). With such rows present the verdict never reads "all match".
+    let _fixityState = null;
+    const _FIXITY_LIST_CAP = 200;
+    // A no-hash row: the backend sends stored_hash null for an absent OR empty hash
+    // (src/verification/fixity.py), and the UI treats absent, empty and blank alike. THAT test is the
+    // guarantee the split rests on; the per-row reason is display text matched as an extra signal only,
+    // so a rewording of it changes nothing here.
+    function _fixityNoHash(m) {
+      if (m && m.reason === "no stored hash recorded for this row") return true;
+      return !m || m.stored_hash == null || String(m.stored_hash).trim() === "";
+    }
+    function _fixityPaint() {
+      const st = _fixityState;
+      const sum = $("fixity-summary"), res = $("fixity-result");
+      if (!st || !sum || !res) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      if (st.kind === "checking") { sum.textContent = t("Checking…"); res.innerHTML = ""; return; }
+      if (st.kind === "error") { sum.innerHTML = `<span class="note err">${esc(st.message)}</span>`; res.innerHTML = ""; return; }
+      const r = st.report;
+      // fmtNum, never toLocaleString(): the browser's locale is not the app's language.
+      const n = (x) => fmtNum(x || 0, 0);
+      const diverged = r.mismatched || 0, noHash = r.missing_hash || 0;
+      sum.innerHTML =
+        // "checked" counts only rows that HAD a hash to compare: the backend's `checked` also holds the
+        // not-checkable rows, which beside "{n} not checkable" would contradict itself.
+        `<b>${esc(tf("{n} checked", {n: n(Math.max(0, (r.checked || 0) - noHash))}))}</b> · ` +
+        `<span class="pill ok">${esc(tf("{n} intact", {n: n(r.ok)}))}</span>` +
+        (diverged ? ` · <span class="pill err">${esc(tf("{n} diverged", {n: n(diverged)}))}</span>` : "") +
+        (noHash ? ` · <span class="pill warn">${esc(tf("{n} not checkable (no stored hash)", {n: n(noHash)}))}</span>` : "");
+      const all = r.mismatches || [];
+      // Row 356: each list draws at most _FIXITY_LIST_CAP rows; the backend's list is complete, so when
+      // it is longer the line under it says how many are shown of how many -- never a silent cut.
+      const capped = (list) => list.length > _FIXITY_LIST_CAP
+        ? `<div class="hint">${esc(tf("Showing the first {shown} of {total}.", {shown: n(_FIXITY_LIST_CAP), total: n(list.length)}))}</div>` : "";
+      const divergedAll = all.filter(m => !_fixityNoHash(m)), noHashAll = all.filter(_fixityNoHash);
+      const rows = divergedAll.slice(0, _FIXITY_LIST_CAP).map(m =>
+        `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span>` +
+        `<b class="muted" title="${esc(ooSaidText(m, "reason"))}">${esc(String(m.stored_hash).slice(0, 12))} ≠ ${esc((m.computed_hash || "").slice(0, 12))}</b></div>`).join("");
+      const missingRows = noHashAll.slice(0, _FIXITY_LIST_CAP).map(m =>
+        `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span></div>`).join("");
+      let html = "";
+      // Each note follows its count, each list its own rows: a row the counts and the lists classify
+      // differently is still shown, and the clean verdict needs both counts AND both lists empty.
+      if (diverged) html += `<div class="note err">${esc(tf("{n} articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.", {n: n(diverged)}))}</div>`;
+      html += rows + capped(divergedAll);
+      if (noHash) html += `<div class="note warn">${esc(tf("{n} articles have no capture-time hash, so they could not be checked. Nothing was changed.", {n: n(noHash)}))}</div>`;
+      html += missingRows + capped(noHashAll);
+      if (!diverged && !noHash && !rows && !missingRows) html = `<div class="note ok">${esc(t("All articles match their capture-time hash."))}</div>`;
+      res.innerHTML = html;
+    }
+    function fixityRepaint() { _fixityPaint(); }
+    async function runFixity(btn) {
       btn.disabled = true;
-      $("fixity-summary").textContent = t("Checking…");
-      $("fixity-result").innerHTML = "";
+      _fixityState = {kind: "checking"}; _fixityPaint();
       try {
         const r = await api("/api/integrity/fixity");
-        const bad = (r.mismatched || 0) + (r.missing_hash || 0);
-        // fmtNum, never toLocaleString(): the browser's locale is not the app's language.
-        const n = (x) => fmtNum(x || 0, 0);
-        $("fixity-summary").innerHTML =
-          `<b>${n(r.checked)}</b> ${esc(t("checked"))} · ` +
-          `<span class="pill ok">${n(r.ok)} ${esc(t("intact"))}</span>` +
-          (bad ? ` · <span class="pill err">${n(bad)} ${esc(t("diverged"))}</span>` : "");
-        if (bad) {
-          const rows = (r.mismatches || []).slice(0, 200).map(m =>
-            `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span>` +
-            `<b class="muted" title="${esc(ooSaidText(m, "reason"))}">${esc((m.stored_hash || "—").slice(0, 12))} ≠ ${esc((m.computed_hash || "").slice(0, 12))}</b></div>`).join("");
-          $("fixity-result").innerHTML =
-            `<div class="note err">${esc(n(bad))} ${esc(t("articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed."))}</div>` + rows;
-        } else {
-          $("fixity-result").innerHTML = `<div class="note ok">${esc(t("All articles match their capture-time hash."))}</div>`;
-        }
-      } catch (e) { $("fixity-summary").innerHTML = `<span class="note err">${esc(e.message)}</span>`; }
-      finally { btn.disabled = false; }
+        if (!r || typeof r !== "object") throw new Error(String(r));
+        _fixityState = {kind: "done", report: r};
+      } catch (e) { _fixityState = {kind: "error", message: e.message}; }
+      finally {
+        btn.disabled = false;   // first: a paint that throws must never leave the button dead
+        _fixityPaint();
+      }
     }
 
     // ---- Local .eml newsletter import (zero network; anonymised at ingest) ---- //
