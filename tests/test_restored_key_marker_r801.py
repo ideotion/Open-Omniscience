@@ -77,7 +77,7 @@ def test_the_marker_is_written_before_the_key(tmp_path, monkeypatch):
 def test_a_new_key_of_this_installations_own_removes_the_marker(tmp_path):
     live = tmp_path / "live"
     (live / "keys").mkdir()
-    (live / MARKER).write_text("left behind")  # a marker with no key (a restore that failed after writing it)
+    (live / MARKER).write_text("left behind", encoding="utf-8")  # a marker with no key (a restore that failed after writing it)
     key = ev.load_or_create_signing_key()
     assert not (live / MARKER).exists()
     assert ev.is_this_installations_key(ev.public_key_hex(key)) is True
@@ -96,14 +96,14 @@ def test_any_marker_counts_as_present(tmp_path, form):
     key = ev.load_or_create_signing_key()
     m = tmp_path / "live" / MARKER
     if form == "link":
-        (tmp_path / "elsewhere").write_text("x")
+        (tmp_path / "elsewhere").write_text("x", encoding="utf-8")
         os.symlink(tmp_path / "elsewhere", m)
     elif form == "dangling-link":
         os.symlink(tmp_path / "nowhere", m)
     elif form == "folder":
         m.mkdir()
     elif form == "unreadable":
-        m.write_text("{}")
+        m.write_text("{}", encoding="utf-8")
         m.chmod(0)
     else:
         m.write_bytes(b"")
@@ -147,7 +147,7 @@ def test_an_import_report_never_marks_a_key(tmp_path):
     reports = tmp_path / "live" / "import_reports"
     reports.mkdir()
     (reports / "restore-x.json").write_text(json.dumps({"side_files": {"keys": {"identities": [
-        {"name": EVIDENCE, "ed25519_public_key": ev.public_key_hex(key)}]}}}))
+        {"name": EVIDENCE, "ed25519_public_key": ev.public_key_hex(key)}]}}}), encoding="utf-8")
     assert ev.is_this_installations_key(ev.public_key_hex(key)) is True
     assert not (tmp_path / "live" / MARKER).exists()
 

@@ -342,9 +342,9 @@ def test_an_annotations_member_outside_annotations_json_is_refused(monkeypatch, 
     (staging / name).parent.mkdir(parents=True, exist_ok=True)
     if name == "annotations":
         (staging / name).mkdir(exist_ok=True)
-        (staging / name / "x").write_text("x")
+        (staging / name / "x").write_text("x", encoding="utf-8")
     else:
-        (staging / name).write_text("{}")
+        (staging / name).write_text("{}", encoding="utf-8")
     staged = _staged_from(staging, name)
     base = tmp_path / "b"
     monkeypatch.setenv("OO_DATA_DIR", str(base))
