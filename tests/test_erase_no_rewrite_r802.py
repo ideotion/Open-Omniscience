@@ -695,7 +695,8 @@ def test_an_uninstall_after_a_panic_never_says_the_data_is_kept(tmp_path, monkey
     paths.latch_erased(data)  # the panic removed it
     plan = uninstall.plan_uninstall(wipe_data=True)
     assert plan["data_erased_earlier"] is True and plan["wipe_data_dir"] is None, plan
-    monkeypatch.setattr(uninstall, "plan_uninstall", lambda *_a, **_k: {**plan, "audit_log": str(tmp_path / "audit.log")})
+    monkeypatch.setattr(uninstall, "plan_uninstall", lambda *_a, **_k: {**plan, "removable": True,  # a core-only install has no venv to find
+                                                                      "audit_log": str(tmp_path / "audit.log")})
     out = uninstall.request_uninstall(confirm=True, wipe_data=True, _spawn=lambda p, pid: None, _arm_shutdown=lambda: None)
     assert out["data_kept"] is False and "KEPT" not in out["note"] and "already erased" in out["note"], out
     assert not data.exists()

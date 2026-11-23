@@ -605,7 +605,7 @@ def request_uninstall(*, confirm: bool, remove_folder: bool = False, wipe_data: 
     if passes is not None:
         plan["passes"] = passes  # honored by the watcher only when data is wiped
     if not plan["removable"]:
-        return {**plan, "scheduled": False,
+        return {**plan, "scheduled": False, "data_kept": not plan.get("data_erased_earlier"),  # nothing is wiped from here
                 "note": "Nothing to remove (no virtualenv or launchers found). "
                         "Delete the app folder manually if needed."}
     _spawn(plan, os.getpid())
