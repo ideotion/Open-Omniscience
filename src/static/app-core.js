@@ -180,20 +180,28 @@
 
     // TEXT DRAWN IN THE ACTIVE LANGUAGE THAT FOLLOWS A LANGUAGE SWITCH (row 364, for the row 352 list). The i18n walker
     // records the first text it sees on a node as "the English", so a renderer that writes t() output into an ordinary
-    // node leaves text no later switch can change. ooLive(el, render) marks el data-i18n-dyn (the walker keeps out),
-    // keeps render, and writes render() as text; ooLiveHtml writes it as HTML, so the render must escape what it
-    // interpolates. ooLiveRepaint, called from the one oo:langchange listener in app-boot.js, calls each kept render
-    // again in the new language: it never fetches, so a render must draw from what it already holds.
+    // node leaves text no later switch can change. The walker keeps out of anything under [data-i18n-dyn].
+    //   ooLive(el, render) keeps render and writes render() as TEXT, into one child <span data-i18n-dyn> it puts in el:
+    //     el itself stays unmarked, so the walker goes on translating its own title, aria-label and placeholder (a
+    //     button with a translated hover can take a live label).
+    //   ooLiveHtml(el, render) writes render() as HTML into el and marks el itself (an HTML host may be a <tbody> or a
+    //     <ul>, where a wrapping span would be wrong); the render must escape what it interpolates, and el's own hover
+    //     attributes are left alone by the walker while it is held.
+    //   ooLiveRepaint, called from the one oo:langchange listener in app-boot.js, calls each kept render again in the
+    //     new language: it never fetches, so a render must draw from what it already holds.
     //   * Only the node passed is covered; scripts/i18n_frozen_renderers.py exempts that node and no other.
-    //   * ooLive(el, null) releases el: the marker goes (unless the page had put it there) and the nodes el held when
-    //     ooLive first took it come back, so a button's static label returns to the walker, which still knows its
-    //     English. A status line that held nothing is left empty.
+    //   * ooLive(el, null) releases el: a marker ooLiveHtml put there goes (one the page put there stays) and the nodes
+    //     el held when it was first taken come back, so a button's static label returns to the walker, which still knows
+    //     its English. A status line that held nothing is left empty.
     //   * A node something else has written since its last draw is dropped from the list and left as it is: its text
     //     is no longer this render's. A node that left the document is dropped too, so nothing is kept for nothing.
     //   * Give ooLive a node that is in the page: one still detached may be dropped as gone by the next call.
     //   * A render that throws is caught for its node alone, so one surface cannot stop the others repainting.
-    //   * While marked, the walker also leaves the node's title/aria-label alone; keep translated hovers off it.
     const _ooLiveNodes = new Set();
+    function _ooLiveMark(el, s) {
+      if (s.html) el.setAttribute("data-i18n-dyn", "");
+      else if (!s.hadMarker) el.removeAttribute("data-i18n-dyn");
+    }
     function _ooLiveDrop(el, restore) {
       const s = el.__ooLive;
       _ooLiveNodes.delete(el);
@@ -207,7 +215,11 @@
       const v = s.render();
       if (el.__ooLive !== s) return;   // the render released its own node: what it returned is no longer kept
       const str = v == null ? "" : String(v);
-      if (s.html) el.innerHTML = str; else el.textContent = str;
+      if (s.html) el.innerHTML = str;
+      else {
+        if (s.span.parentNode !== el || el.childNodes.length !== 1) el.replaceChildren(s.span);
+        s.span.textContent = str;
+      }
       // The TEXT is the fingerprint, also for HTML: the hover convention (app-boot.js) adds a class, and on SVG a role
       // and an aria-label, to every [title] it finds after the write, so comparing innerHTML would take that for a
       // foreign write and drop every titled node at the first switch. Nothing of ours changes the text.
@@ -218,10 +230,12 @@
       for (const n of _ooLiveNodes) if (n !== el && !n.isConnected) _ooLiveDrop(n, false);
       if (render == null) { if (el.__ooLive) _ooLiveDrop(el, true); return; }
       if (!el.__ooLive) {
-        el.__ooLive = {saved: Array.from(el.childNodes), hadMarker: el.hasAttribute("data-i18n-dyn")};
-        el.setAttribute("data-i18n-dyn", "");
+        const span = document.createElement("span");
+        span.setAttribute("data-i18n-dyn", "");
+        el.__ooLive = {saved: Array.from(el.childNodes), hadMarker: el.hasAttribute("data-i18n-dyn"), span};
       }
       Object.assign(el.__ooLive, {render, html: !!html});
+      _ooLiveMark(el, el.__ooLive);
       _ooLiveNodes.add(el);
       _ooLiveDraw(el);
     }
@@ -230,7 +244,9 @@
     function ooLiveRepaint() {
       for (const el of Array.from(_ooLiveNodes)) {
         const s = el.__ooLive;
-        if (!s || !el.isConnected || el.textContent !== s.drawn) { _ooLiveDrop(el, false); continue; }
+        const gone = !s || !el.isConnected || el.textContent !== s.drawn
+          || (!s.html && (s.span.parentNode !== el || el.childNodes.length !== 1));
+        if (gone) { _ooLiveDrop(el, false); continue; }
         try { _ooLiveDraw(el); }
         catch (e) { if (window.console) console.warn("ooLiveRepaint", e); }
       }

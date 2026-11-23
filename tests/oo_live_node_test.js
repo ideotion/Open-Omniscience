@@ -46,6 +46,7 @@ class El {
   get isConnected() { return this.attached; }
   hasAttribute(a) { return Object.prototype.hasOwnProperty.call(this.attrs, a); }
   setAttribute(a, v) { this.attrs[a] = String(v); }
+  getAttribute(a) { return this.hasAttribute(a) ? this.attrs[a] : null; }
   removeAttribute(a) { delete this.attrs[a]; }
   closest(sel) {
     assert.strictEqual(sel, '[data-i18n-dyn],[translate="no"]', "the walker's selector changed: update this harness");
@@ -63,15 +64,20 @@ class El {
   set innerHTML(v) { this.replaceChildren(new Text(String(v))); this._html = String(v); }
 }
 
-// ---- the shipped walker rule (doText + tr), over the live map ----
+// ---- the shipped walker rule (doText + doAttrs + tr), over the live map ----
 function walkerFor(map) {
   const plural = I18N.slice(I18N.indexOf("// >>> PLURAL FORMS"), I18N.indexOf("// <<< PLURAL FORMS"));
-  const src = ["const SKIP = /^(SCRIPT|STYLE|TEXTAREA|CODE|PRE)$/; const origText = new WeakMap();", plural,
-    extractFrom(I18N, "tr"), extractFrom(I18N, "doText"), "return doText;"].join("\n");
-  const doText = new Function("map", src)(map);
-  // apply(): every text node under the given roots, as the TreeWalker would visit them
+  const src = ['const SKIP = /^(SCRIPT|STYLE|TEXTAREA|CODE|PRE)$/; const ATTRS = ["placeholder", "title", "aria-label"];',
+    "const origText = new WeakMap(); const origAttr = new WeakMap();", plural,
+    extractFrom(I18N, "tr"), extractFrom(I18N, "doText"), extractFrom(I18N, "doAttrs"), "return { doText, doAttrs };"].join("\n");
+  const { doText, doAttrs } = new Function("map", src)(map);
+  // apply(): every text node under the given roots, as the TreeWalker would visit them, then every element's hovers
   return function apply(...roots) {
-    const visit = (n) => { if (n instanceof Text) doText(n); else n.childNodes.forEach(visit); };
+    const visit = (n) => {
+      if (n instanceof Text) { doText(n); return; }
+      if (n.hasAttribute("title")) doAttrs(n);
+      n.childNodes.forEach(visit);
+    };
     roots.forEach(visit);
   };
 }
@@ -83,9 +89,10 @@ function harness() {
   const t = OOI18N.t;
   const warned = [];
   const src = ["const _ooLiveNodes = new Set();",
-    ...["_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml", "ooLiveRepaint"].map((n) => extractFrom(APP, n)),
+    ...["_ooLiveMark", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml", "ooLiveRepaint"].map((n) => extractFrom(APP, n)),
     "return { ooLive, ooLiveHtml, ooLiveRepaint, nodes: _ooLiveNodes };"].join("\n");
-  const fns = new Function("window", "console", src)({ console: true }, { warn: (...a) => warned.push(a) });
+  const document = { createElement: (tag) => new El(tag.toUpperCase()) };
+  const fns = new Function("window", "console", "document", src)({ console: true }, { warn: (...a) => warned.push(a) }, document);
   const apply = walkerFor(map);
   return {
     fns, t, apply, warned,
@@ -106,7 +113,9 @@ function harness() {
   h.switchTo("fr", st);
   h.fns.ooLive(st, () => h.t("Running…"));
   assert.strictEqual(st.textContent, "En cours…");
-  assert.ok(st.hasAttribute("data-i18n-dyn"), "the node is marked, so the walker keeps out");
+  assert.ok(!st.hasAttribute("data-i18n-dyn"), "text mode leaves the node itself unmarked");
+  assert.strictEqual(st.childNodes.length, 1);
+  assert.ok(st.childNodes[0].hasAttribute("data-i18n-dyn"), "the text sits in one marked child, so the walker keeps out");
   h.switchTo("de", st);
   assert.strictEqual(st.textContent, "Läuft…", "repainted in the new language");
   h.switchTo("en", st);
@@ -151,6 +160,50 @@ function harness() {
   h.switchTo("fr", btn);
   assert.strictEqual(btn.textContent, "Start sweep", "the static label is back, not the render's output");
   assert.ok(!btn.hasAttribute("data-i18n-dyn"));
+}
+
+// 1e. A BUTTON WITH A TRANSLATED HOVER: text mode leaves the button unmarked, so the walker keeps translating its title
+// while the live label is held; HTML mode marks the host itself.
+{
+  const h = harness();
+  const btn = new El("BUTTON", { title: "Start sweep" });
+  btn.replaceChildren(new Text("Start sweep"));
+  h.apply(btn);
+  h.fns.ooLive(btn, () => h.t("Running…"));
+  h.switchTo("fr", btn);
+  assert.strictEqual(btn.textContent, "En cours…");
+  assert.strictEqual(btn.getAttribute("title"), "Démarrer le balayage", "the hover follows the switch while the label is live");
+  h.switchTo("de", btn);
+  assert.strictEqual(btn.getAttribute("title"), "Durchlauf starten");
+  const host = new El("DIV");
+  h.fns.ooLiveHtml(host, () => "<b>" + h.t("Running…") + "</b>");
+  assert.ok(host.hasAttribute("data-i18n-dyn"), "HTML mode marks the host");
+  h.fns.ooLive(host, () => h.t("Running…"));
+  assert.ok(!host.hasAttribute("data-i18n-dyn"), "and text mode on the same host takes the marker off again");
+  h.fns.ooLive(host, null);
+  assert.ok(!host.hasAttribute("data-i18n-dyn"));
+}
+
+// 1f. A foreign write of the SAME text in text mode (the live span replaced) is still a foreign write.
+{
+  const h = harness();
+  const st = new El("SPAN");
+  h.fns.ooLive(st, () => h.t("Running…"));
+  st.textContent = "Running…";
+  h.switchTo("fr", st);
+  assert.ok(!h.fns.nodes.has(st), "dropped");
+  assert.strictEqual(st.textContent, "En cours…", "and the walker, not ooLive, translated the plain text it now holds");
+}
+
+// 1g. The same, for text no locale translates: the walker leaves it alone, so only the span check can tell.
+{
+  const h = harness();
+  const st = new El("SPAN");
+  h.fns.ooLive(st, () => "Job 7");
+  st.textContent = "Job 7";
+  h.switchTo("fr", st);
+  assert.ok(!h.fns.nodes.has(st), "dropped although its text is unchanged");
+  assert.ok(!st.hasAttribute("data-i18n-dyn"), "and left unmarked");
 }
 
 // 2. RELEASE: a button's static label comes back, and the walker translates it again on every switch.
