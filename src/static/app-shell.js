@@ -223,7 +223,7 @@
     // blocking every click with no visual cue (only Escape recovered). Close EVERY
     // open dialog on Back/Forward via the one shared native mechanism -- this covers
     // all of them (#ux-import/#ux-export/#chart-enlarge/#synth-window/#link-preview/
-    // #wiki-tc/#folder-picker/#net-consent/#guide-wizard/#corpus-win), not just one.
+    // #wiki-tc/#folder-picker/#net-consent/#guide-wizard), not just one.
     //
     // A BARE .close() is not enough: per the <dialog> spec it fires only "close",
     // never "cancel" -- and #net-consent's ensureOnline() Promise only ever resolves

@@ -47,6 +47,8 @@ that nothing opens -- so the truncation repaired there was real in the SOURCE
 and unreachable at RUNTIME. The live surface is ``app-analysis.js``'s
 ``an-sources``, which reads the same endpoint and never fetched the catalogue at
 all. Only the batch picker below is a live, measured-before-and-after fix.
+(Row 357 later deleted ``renderCorpusSources`` with the rest of the dead modal code;
+the guards that named it now read the live ``an-sources`` path.)
 
 AND THE CORRECTION FOUND SOMETHING. ``index.html``'s retirement note says every
 subtab of the retired modal is "covered by the ONE #an window (a strict
@@ -186,11 +188,22 @@ def test_corpus_sources_carries_the_catalog_facts_from_the_row_it_read() -> None
 
 
 def test_the_sources_subtab_no_longer_merges_a_truncated_catalogue() -> None:
-    js = function_source(read_static("app-corpus.js"), "renderCorpusSources")
-    assert_absent(js, "/api/sources/?limit=1000",
-                  why="that ceiling IS 1000 against a 3,618-row catalogue")
-    assert_present(js, "/api/insights/corpus-sources",
-                   why="the corpus source list is still the source of truth here")
+    # Row 357: re-anchored from the deleted renderCorpusSources (retired #corpus-win)
+    # onto the live analysis window's Sources path -- its loader and both renderers.
+    an = read_static("app-analysis.js")
+    js = (
+        function_source(an, "loadAnalysis")
+        + function_source(an, "_anSourcesHtml")
+        + function_source(an, "_anSourceCatalogHtml")
+    )
+    assert_absent(
+        js, "/api/sources/?limit=1000", why="that ceiling IS 1000 against a 3,618-row catalogue"
+    )
+    assert_present(
+        js,
+        "/api/insights/corpus-sources",
+        why="the corpus source list is still the source of truth here",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -357,11 +370,16 @@ def test_the_live_sources_subtab_shows_the_catalogue_facts_the_retired_modal_did
     assert_absent(js, "/api/sources/?limit=", why="no catalogue fetch belongs here")
 
 
-def test_the_retired_modal_renderer_is_marked_as_unreachable() -> None:
-    """So the next reader does not take its repair for a live fix, as this pass's
-    own commit message briefly did."""
-    js = function_source(read_static("app-corpus.js"), "renderCorpusSources")
-    assert "UNREACHABLE" in js, (
-        "renderCorpusSources belongs to the retired #corpus-win modal; the note "
-        "saying so is what stops its fix being read as a live one"
+def test_the_retired_modal_renderer_is_gone_so_its_repair_cannot_be_read_as_live() -> None:
+    """The UNREACHABLE note existed so the next reader would not take the dead
+    renderer's repair for a live fix, as this pass's own commit message briefly did.
+    Row 357 deleted the renderer itself, which settles that for good: there is no
+    second Sources renderer left to mistake for the live one."""
+    assert_absent(
+        read_static("app-corpus.js"),
+        "function renderCorpusSources(",
+        why="row 357 deleted the retired #corpus-win modal's renderer",
+    )
+    assert read_static("app-analysis.js").count("function _anSourcesHtml(") == 1, (
+        "the analysis window's Sources renderer is the ONE live Sources view"
     )

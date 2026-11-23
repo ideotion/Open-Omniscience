@@ -5,7 +5,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 WHY THIS EXISTS, and it is the whole point of the file. ``index.html``'s retirement
 note says the retired ``#corpus-win`` modal's every subtab is "covered by the ONE #an
-window (a strict superset)", and that claim is what licenses deleting the modal. The
+window (a strict superset)", and that claim is what licensed deleting the modal (done in
+row 357; the facets this file names as absorbed are the live #an ones). The
 guard that was supposed to enforce it --
 ``test_ui_corpus_win_retired.py::test_an_window_absorbs_every_modal_subtab`` -- asserts
 only that the #an nav carries a ``data-tab`` with each modal facet's NAME. A name is not

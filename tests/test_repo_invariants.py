@@ -285,11 +285,33 @@ def test_prune_unused_keywords_action_is_discoverable():
     er = (_SRC / "analytics" / "engine_report.py").read_text(encoding="utf-8")
     assert "mention_distribution" in er, "the report must surface the mention distribution"
     app = app_js()
-    assert "_pruneCore(" in app and "/api/insights/prune-keywords" in app
+    # Row 357 re-anchor: the client prune core (_pruneCore -> POST /prune-keywords) had no
+    # caller and was deleted. The live prune is the background re-index job's
+    # prune_after: the UI starts the job with it, the route accepts it, and the job runs
+    # the SAME prune_orphan_keywords GC once the pass completes.
+    start = _js_function_source(app, "_startReindexJob")
+    _assert_js_present(start, "/api/insights/reindex-job?", why="the UI starts the background job")
+    _assert_js_present(
+        start, "prune_after=${pruneAfter", why="the UI asks the job to prune after the pass"
+    )
+    route = _py_function_source(api, "insights_reindex_job")
+    assert "prune_after" in route, "the reindex-job route must accept prune_after"
+    job = (_SRC / "analytics" / "reindex_job.py").read_text(encoding="utf-8")
+    run = _py_function_source(job, "_run")
+    assert "self._prune_after" in run and "prune_orphan_keywords(" in run, (
+        "the job must chain the SAME orphan-keyword GC the prune endpoint runs"
+    )
     # The one-click "clean up" chains re-index THEN prune (the recommended order) so
-    # the operator runs one action, reusing the confirm-free cores.
+    # the operator runs one action: ONE background job with prune_after on.
     assert "function cleanupKeywords(" in app, "the one-click clean-up convenience must exist"
-    assert "_reindexAllLoop(" in app and "_pruneCore(" in app, "it must reuse the shared cores"
+    _assert_js_present(
+        _js_function_source(app, "cleanupKeywords"),
+        "_startReindexJob(true",
+        why="the clean-up must start the job WITH prune_after (re-index THEN prune)",
+    )
+    # The deleted client cores stay gone (nothing may call them back into being).
+    _assert_js_absent(app, "_pruneCore(", why="row 357 deleted the uncalled client prune core")
+    _assert_js_absent(app, "_reindexAllLoop(", why="row 357 deleted the uncalled client loop")
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     assert "cleanupKeywords(" in html, "the one-click clean-up button must be discoverable"
 
@@ -306,7 +328,19 @@ def test_reindex_whole_corpus_action_is_discoverable():
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     assert "cleanupKeywords(" in html, "a discoverable re-index button must exist"
     app = app_js()
-    assert "_reindexAllLoop(" in app and "/api/insights/reindex-all" in app
+    # Row 357 re-anchor: the client loop over /reindex-all (_reindexAllLoop) had no caller
+    # and was deleted. The button drives the background job, which runs the SAME
+    # force-all batch helper the /reindex-all endpoint wraps.
+    _assert_js_present(
+        _js_function_source(app, "_startReindexJob"),
+        "/api/insights/reindex-job?",
+        why="the discoverable button must drive the whole-corpus re-index job",
+    )
+    _assert_js_present(_js_function_source(app, "cleanupKeywords"), "_startReindexJob(")
+    job = (_SRC / "analytics" / "reindex_job.py").read_text(encoding="utf-8")
+    assert "reindex_all_batch(" in _py_function_source(job, "_run"), (
+        "the job must drive the same reindex_all_batch the /reindex-all endpoint wraps"
+    )
 
 
 def test_reindex_background_job_is_wired():
@@ -333,7 +367,7 @@ def test_reindex_background_job_is_wired():
     assert "/api/insights/reindex-job" in app
     # The Settings button drives the background job. reindexAllCorpus/pruneKeywords were
     # removed 2026-07-31 (Settings review) as redundant with "Clean up keywords", which
-    # chains the same two cores — so it is now the sole surviving driver.
+    # starts the one job with prune_after — so it is now the sole surviving driver.
     assert "cleanupKeywords(" in app
     # Phase 1.2: keyword-only scope plumbs end-to-end (index_article -> reindex_all_batch
     # -> the job -> the endpoint -> the cleanup button uses the keyword-only scope).
@@ -2672,7 +2706,8 @@ def test_ui_invariants():
     #     reusable helper drives the vertical subtab grammar everywhere — lateral
     #     sidebar = main tabs, vertical subtabs = facets. It owns ARIA + keyboard
     #     + roving tabindex; it must be reused on >=3 surfaces (Insights, Settings,
-    #     corpus window) and the old per-surface attributes must be gone.
+    #     and -- since row 357 deleted the retired corpus window -- the analysis/Explore
+    #     window, #22) and the old per-surface attributes must be gone.
     assert "function ooSubtabs(" in html, (
         "the universal subtab component must exist (CLAUDE.md #18)"
     )
@@ -2680,8 +2715,10 @@ def test_ui_invariants():
         "the subtab component must set ARIA roles/selection (accessibility)"
     )
     for surface in ('ooSubtabs($("ins-subtabs")', 'ooSubtabs($("set-subtabs")',
-                    'ooSubtabs($("corpus-subtabs")'):
+                    'ooSubtabs($("an-subtabs")'):
         assert surface in html, f"the subtab component must drive: {surface} (>=3 surfaces)"
+    # the retired corpus window's adopter is gone with its markup (row 357), never revived
+    assert 'ooSubtabs($("corpus-subtabs")' not in html and 'id="corpus-subtabs"' not in html
     assert "data-ins" not in html and "data-set=" not in html and "data-ctab" not in html, (
         "divergent per-surface subtab attributes must be unified onto data-tab (CLAUDE.md #18)"
     )
@@ -4711,7 +4748,8 @@ def test_ootimescope_range_control():
 def test_ootimescope_reused():
     """The reusable ooTimeScope control (maintainer: "reuse it so date filtering
     is consistent app-wide") is wired onto the keyword-trend surfaces beyond
-    Markets: the Insights Explore trend and the corpus-window Trend sub-tab.
+    Markets: the Insights Explore trend and (since row 357 deleted the dead
+    corpus-window Trend sub-tab) the Explore/analysis window's period.
 
     Both fetch /api/insights/trend (the FULL bucketed series, no date params), so
     the window is applied CLIENT-SIDE by FILTERING the already-fetched points and
@@ -4736,14 +4774,22 @@ def test_ootimescope_reused():
     assert '_buildTrendScope($("ins-trend-scope")' in html, (
         "Insights Explore must build the time-scope over its trend series"
     )
-    # (2) Corpus window Trend sub-tab: a new container + the factory wiring.
-    assert 'id="corpus-timescope"' in html, "the corpus window Trend tab must mount #corpus-timescope"
-    assert '_buildTrendScope($("corpus-timescope")' in html, (
-        "the corpus Trend tab must build the time-scope over its trend series"
-    )
-    # both surfaces keep handing points to the UNCHANGED ooChart renderer.
+    # (2) Row 357: the corpus-window Trend sub-tab (#corpus-timescope / #corpus-chart) was
+    # dead code -- corpusTab had no caller -- and was deleted. The live analysis window's
+    # period is the Explore search's ooTimeScope: the SAME component (never a fork), whose
+    # window reaches the analysed set as start_date/end_date, sent ONLY when narrowed so a
+    # plain search never silently drops articles. (Server-side, not the client-side point
+    # filter above: recorded in the row-357 notes, not asserted as if it were the same.)
+    scope = _js_function_source(html, "buildSearchTimeScope")
+    _assert_js_present(scope, "ooTimeScope(box, {", why="Explore must reuse the ONE ooTimeScope")
+    params = _js_function_source(html, "searchTimeScopeParams")
+    _assert_js_present(params, "sel.from > _searchTsBounds.min")
+    _assert_js_present(params, "sel.to < _searchTsBounds.max")
+    assert 'id="corpus-timescope"' not in html
+    assert '_buildTrendScope($("corpus-timescope")' not in html
+    # the surviving surface keeps handing points to the UNCHANGED ooChart renderer.
     assert html.count('ooChart($("ins-trend-oo")') == 1
-    assert html.count('ooChart($("corpus-chart")') == 1
+    assert 'ooChart($("corpus-chart")' not in html
 
 
 def test_temporal_map_retired_into_ooMap():
@@ -5096,126 +5142,132 @@ def test_commodity_corpus_entry():
     assert "COMMODITY_QUERY[s.symbol] || s.name" in html, (
         "the commodity term must be the curated family seed, defaulting to the name"
     )
+
+
+def _an_subtab_nav(html: str) -> str:
+    """The analysis/Explore window's subtab nav (#an-subtabs), matched by regex.
+
+    Row 357 deleted the retired #corpus-win modal and its corpus-subtabs nav; the five
+    corpus-window subtab pins below were re-anchored onto THIS nav and the live #an
+    renderers in app-analysis.js / app-corpus.js, property by property."""
+    m = re.search(r'<nav[^>]*id="an-subtabs".*?</nav>', html, re.S)
+    assert m, "the analysis window's #an-subtabs nav must exist"
+    return m.group(0)
+
+
 def test_corpus_window_mindmap_subtab():
-    """Mindmap sub-tab on THE corpus analysis window (ledger "ONE CORPORA
-    SYSTEM": Mindmap is one of the ruled sub-tabs). It must REUSE the existing
-    associations mind-map (renderMindmap → renderGraph) — the same radial
-    renderer that carries the maintainer mind-map rules + in-map controls — NOT
-    a new graph impl, and NOT a new backend endpoint. Pinned so it cannot
-    regress between sessions:
-      * a data-tab="mindmap" button exists in the corpus window's ooSubtabs nav;
-      * corpusTab() handles "mindmap" by relocating the SHARED mind-map kit and
-        calling renderMindmap() for THIS window's corpus term;
-      * the renderer is reused, not forked (one renderMindmap / one renderGraph).
+    """Mindmap sub-tab of THE corpus analysis window (ledger "ONE CORPORA SYSTEM").
+
+    RE-ANCHORED (row 357): the retired #corpus-win modal (its corpusTab dispatcher and
+    the #mm-kit relocation into it) was dead code and was deleted. The live Mindmap is
+    the analysis/Explore window's (#an, CLAUDE.md #22/#22c). Pinned so it cannot regress:
+      * a data-tab="mindmap" button (DOM-text label) in the #an ooSubtabs nav, beside
+        its Trend/Articles/Links siblings (nothing lost);
+      * loadAnalysis renders it for THIS window's scope through the EXISTING graph
+        endpoint (no new backend) into #an-mindmap;
+      * no renderer is forked: one renderMindmap, one renderGraph (Insights) and one
+        renderAnMindmap (#an).
     """
     html = _ui_source()
-    # 1. the Mindmap button lives in the corpus window's subtab nav.
-    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
-    assert 'data-tab="mindmap"' in nav, (
-        "the corpus window must carry a Mindmap sub-tab button in its ooSubtabs nav"
-    )
+    nav = _an_subtab_nav(html)
+    assert 'data-tab="mindmap"' in nav, "the analysis window must carry a Mindmap sub-tab button"
     assert "Mindmap" in nav, "the sub-tab button label must be DOM text (auto-translated)"
-    # the Trend/Articles/Links siblings stay (nothing lost).
     for sib in ('data-tab="trend"', 'data-tab="articles"', 'data-tab="links"'):
-        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
-    # 2. corpusTab dispatches "mindmap" → the SHARED renderer for the window term.
-    body = _js_function_body(html, "corpusTab")
-    assert 'which === "mindmap"' in body, "corpusTab must handle the mindmap sub-tab"
-    assert "renderMindmap(_corpusTerm)" in body, (
-        "the Mindmap sub-tab must render the EXISTING associations mind-map for "
-        "THIS window's corpus term (renderMindmap → renderGraph), not a new graph"
+        assert sib in nav, f"analysis sub-tab regressed: {sib} missing"
+    load = _js_function_source(html, "loadAnalysis")
+    _assert_js_present(load, '$("an-mindmap")', why="the Mindmap renders into its own #an panel")
+    # The graph's own params are a CLONE of the window's scope, and that clone is what is
+    # sent (an-mindmap-wrong-corpus-scope, P1): a bare "new URLSearchParams(p)" also matches
+    # the lens line at the top of loadAnalysis, so it would pass a corpus-wide graph.
+    _assert_js_present(
+        load,
+        "const gp = new URLSearchParams(p)",
+        why="the graph is scoped to THIS window's corpus, never corpus-wide",
     )
-    assert 'appendChild(kit)' in body or '$("mm-kit")' in body, (
-        "the Mindmap sub-tab must RELOCATE the shared #mm-kit (no fork, no "
-        "duplicate IDs) rather than re-implement the control bar"
+    _assert_js_present(
+        load,
+        '"/api/insights/graph?" + gp.toString()',
+        why="the EXISTING graph endpoint, asked with the window-scoped params",
     )
-    # 3. the renderer is reused, not forked: exactly one of each.
+    _assert_js_present(load, "renderAnMindmap(g, mm)")
     assert html.count("async function renderMindmap(") == 1, "renderMindmap must not be forked"
     assert html.count("function renderGraph(") == 1, "renderGraph must not be forked"
-    # 4. the shared kit has a home anchor so it returns to Insights on leave/close.
-    assert 'id="mm-kit"' in html and 'id="mm-kit-home"' in html, (
-        "the relocatable mind-map kit needs a home anchor so Insights is never "
-        "left without its mind-map"
+    assert html.count("function renderAnMindmap(") == 1, "renderAnMindmap must not be forked"
+    # the retired relocation machinery stays gone
+    _assert_js_absent(
+        html, "function _mmKitHome(", why="row 357 deleted the corpus-window kit relocation"
     )
-    assert "function _mmKitHome(" in html, "the kit must be restorable to Insights"
+    _assert_js_absent(html, "function corpusTab(", why="row 357 deleted the retired dispatcher")
 
 
 def test_corpus_window_sentiment_subtab():
-    """Sentiment sub-tab on THE corpus analysis window (ledger "ONE CORPORA
-    SYSTEM": Sentiment analysis is one of the ruled sub-tabs). It must REUSE the
-    existing Insights framing renderer (loadFraming -> /api/framing) pointed at
-    the window's corpus term -- NOT a new sentiment engine, NOT a new endpoint --
-    and it MUST carry the English-only VADER disclosure (audit finding B1) so the
-    honesty travels onto this surface. Pinned so it cannot regress between
-    sessions:
-      * a data-tab="sentiment" button exists in the corpus window's ooSubtabs nav
-        (DOM-text label, no inline onclick) and the Trend/Articles/Links/Mindmap
-        siblings stay (nothing lost);
-      * corpusTab() handles "sentiment" by calling loadFraming() for _corpusTerm;
-      * the renderer is reused, not forked (exactly one loadFraming);
-      * the English-only VADER disclosure is reachable on this surface (the
-        button's hover title states it AND the shared renderer emits the
-        endpoint's caveat -- which is the English-lexicon VADER disclosure).
+    """Sentiment sub-tab of THE corpus analysis window (ledger "ONE CORPORA SYSTEM").
+
+    RE-ANCHORED (row 357) from the deleted #corpus-win modal onto the live #an window.
+    It reuses an EXISTING endpoint (/api/insights/corpus-sentiment -- no new sentiment
+    engine) and MUST carry the English-only VADER disclosure (audit finding B1). The
+    modal carried it in a hover title; #an carries it VISIBLY, from the endpoint's own
+    caveat, beside the English-scored share. Pinned:
+      * a data-tab="sentiment" button (DOM-text label) with every sibling it had;
+      * loadAnalysis fetches corpus-sentiment for THIS window's params and draws it with
+        the ONE renderer (_anSentimentHtml), not a fork;
+      * the endpoint's caveat names VADER + ENGLISH, and the renderer shows it visibly
+        together with the English-scored count and n.
     """
     html = _ui_source()
-    # 1. the Sentiment button lives in the corpus window's subtab nav.
-    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
-    assert 'data-tab="sentiment"' in nav, (
-        "the corpus window must carry a Sentiment sub-tab button in its ooSubtabs nav"
-    )
+    nav = _an_subtab_nav(html)
+    assert 'data-tab="sentiment"' in nav, "the analysis window must carry a Sentiment sub-tab"
     assert "Sentiment" in nav, "the sub-tab button label must be DOM text (auto-translated)"
-    # the Trend/Articles/Links/Mindmap siblings stay (nothing lost).
-    for sib in ('data-tab="trend"', 'data-tab="articles"', 'data-tab="links"', 'data-tab="mindmap"'):
-        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
-    # the English-only VADER disclosure is present in the button's hover long-form
-    # (informed-consent layering) -- VADER + ENGLISH must both be named.
-    assert "VADER" in nav and "ENGLISH" in nav.upper(), (
-        "the Sentiment sub-tab must disclose the English-only VADER limit (audit B1) "
-        "in its hover title"
+    for sib in (
+        'data-tab="trend"',
+        'data-tab="articles"',
+        'data-tab="links"',
+        'data-tab="mindmap"',
+    ):
+        assert sib in nav, f"analysis sub-tab regressed: {sib} missing"
+    load = _js_function_source(html, "loadAnalysis")
+    _assert_js_present(
+        load,
+        '"/api/insights/corpus-sentiment?" + p.toString()',
+        why="the EXISTING endpoint, scoped to THIS window's corpus",
     )
-    # 2. corpusTab dispatches "sentiment" -> the SHARED framing renderer, term-keyed.
-    body = _js_function_body(html, "corpusTab")
-    assert 'which === "sentiment"' in body, "corpusTab must handle the sentiment sub-tab"
-    assert "loadFraming(_corpusTerm" in body, (
-        "the Sentiment sub-tab must render the EXISTING Insights framing surface "
-        "(loadFraming -> /api/framing) for THIS window's corpus term, not a new engine"
-    )
-    # 3. the renderer is reused, not forked: exactly one loadFraming.
+    _assert_js_present(load, "_anSentimentHtml(d)")
+    assert html.count("function _anSentimentHtml(") == 1, "_anSentimentHtml must not be forked"
     assert html.count("async function loadFraming(") == 1, "loadFraming must not be forked"
-    # 4. loadFraming emits the endpoint's caveat (the English-only VADER disclosure)
-    #    so the disclosure is VISIBLE on this surface, not just the hover title.
-    framing_fn = html.split("async function loadFraming(", 1)[1].split("\n    async function ", 1)[0]
-    assert 'ooSaidHtml(d, "caveat")' in framing_fn, (
-        "the framing renderer must surface the endpoint caveat (English-only VADER "
-        "disclosure) on every surface that reuses it, including the corpus window"
+    # the disclosure is VISIBLE on this surface: the endpoint's caveat, through t()
+    sent = _js_function_source(html, "_anSentimentHtml")
+    _assert_js_present(sent, "d.caveat ? t(d.caveat)", why="the VADER English-only caveat is shown")
+    _assert_js_present(
+        sent, "English-scored (reliable)", why="the English share is shown beside it"
     )
+    _assert_js_present(sent, "d.n_scored", why="n is shown")
+    queries = (_SRC / "analytics" / "queries.py").read_text(encoding="utf-8")
+    cav = re.search(r"_SENTIMENT_CAVEAT = \((.*?)\)\n", queries, re.S)
+    assert cav and "VADER" in cav.group(1) and "ENGLISH" in cav.group(1).upper(), (
+        "the corpus-sentiment caveat must disclose the English-only VADER limit (audit B1)"
+    )
+    assert "_SENTIMENT_CAVEAT" in _py_function_source(queries, "corpus_sentiment")
 
 
 def test_corpus_window_keywords_subtab():
-    """Keywords sub-tab on THE corpus analysis window (ledger "ONE CORPORA
-    SYSTEM": Keyword analysis is one of the ruled sub-tabs). It must REUSE the
-    existing associations data (/api/insights/associations -> q.associations,
-    the SAME data the mind-map plots) rendered as a ranked TABLE -- NOT a new
-    keyword engine, NOT a new endpoint -- and present REAL per-keyword numbers
-    with no composite score, distinct from the radial Mindmap. Pinned so it
-    cannot regress between sessions:
-      * a data-tab="keywords" button exists in the corpus window's ooSubtabs nav
-        (DOM-text label, no inline onclick) and the Trend/Articles/Links/Mindmap/
-        Sentiment siblings stay (nothing lost);
-      * corpusTab() handles "keywords" by calling the table renderer for the
-        window's _corpusTerm via the existing associations endpoint;
-      * each row opens that keyword as its own corpus (openCorpus reuse) and the
-        table is honest -- the endpoint method/caveat travel onto the surface,
-        and n is shown; no composite score is invented.
+    """Keywords sub-tab of THE corpus analysis window (ledger "ONE CORPORA SYSTEM").
+
+    RE-ANCHORED (row 357) from the deleted #corpus-win modal (a sortable PMI table over
+    /api/insights/associations) onto the live #an Keywords subtab: chips over the
+    EXISTING article-set endpoint, whose #oo-tip hover renders the shared-article count
+    and PMI that keyword-stats returns (the absorption recorded in
+    tests/test_corpus_win_absorption_content.py). The ranked, sortable TABLE itself has
+    no live equivalent and is recorded in the row-357 notes, not asserted. Pinned:
+      * a data-tab="keywords" button (DOM-text label) with every sibling it had;
+      * loadAnalysis fetches the EXISTING corpus-keywords endpoint for THIS corpus;
+      * each keyword opens its own analysis (openCorpus reuse);
+      * honesty: the endpoint's caveat travels onto the surface, n is shown per keyword,
+        and the association numbers are real counts and PMI -- no composite score.
     """
     html = _ui_source()
-    # 1. the Keywords button lives in the corpus window's subtab nav (DOM text).
-    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
-    assert 'data-tab="keywords"' in nav, (
-        "the corpus window must carry a Keywords sub-tab button in its ooSubtabs nav"
-    )
+    nav = _an_subtab_nav(html)
+    assert 'data-tab="keywords"' in nav, "the analysis window must carry a Keywords sub-tab"
     assert "Keywords" in nav, "the sub-tab button label must be DOM text (auto-translated)"
-    # the Trend/Articles/Links/Mindmap/Sentiment siblings stay (nothing lost).
     for sib in (
         'data-tab="trend"',
         'data-tab="articles"',
@@ -5223,62 +5275,59 @@ def test_corpus_window_keywords_subtab():
         'data-tab="mindmap"',
         'data-tab="sentiment"',
     ):
-        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
-    # 2. corpusTab dispatches "keywords" -> the ranked-table renderer for _corpusTerm.
-    body = _js_function_body(html, "corpusTab")
-    assert 'which === "keywords"' in body, "corpusTab must handle the keywords sub-tab"
-    assert "renderCorpusKeywords(_corpusTerm" in body, (
-        "the Keywords sub-tab must render the ranked table for THIS window's corpus term"
+        assert sib in nav, f"analysis sub-tab regressed: {sib} missing"
+    load = _js_function_source(html, "loadAnalysis")
+    _assert_js_present(
+        load,
+        '"/api/insights/corpus-keywords?" + p.toString()',
+        why="the EXISTING keyword endpoint, scoped to THIS window's corpus",
     )
-    # 3. the renderer reuses the EXISTING associations endpoint (no new keyword engine).
-    kfn = html.split("async function renderCorpusKeywords(", 1)[1].split(
-        "\n    function ", 1
-    )[0]
-    assert "/api/insights/associations?" in kfn, (
-        "the Keywords table must reuse the existing associations endpoint, not a new engine"
+    _assert_js_present(load, "anRenderKwChips()")
+    chips = _js_function_source(html, "anRenderKwChips")
+    _assert_js_present(
+        chips, "openCorpus(", why="each keyword opens its own analysis (openCorpus reuse)"
     )
-    # 4. it renders a TABLE (distinct from the radial Mindmap graph).
-    assert "<table" in kfn, "the Keywords sub-tab must render a TABLE (not a graph)"
-    # 5. rows are clickable into that keyword's own corpus window (openCorpus reuse).
-    assert "openCorpus(" in kfn, (
-        "each Keywords row must open that keyword as its own corpus (openCorpus reuse)"
+    _assert_js_present(chips, "d.caveat", why="the endpoint's caveat travels onto the surface")
+    _assert_js_present(chips, "term.articles", why="n (the keyword's article count) is shown")
+    _assert_js_present(
+        chips, "No keywords indexed across the matched articles yet.", why="honest empty state"
     )
-    # 6. honesty: the endpoint method/caveat travel onto the surface and n is shown;
-    #    no composite score is invented.
-    assert 'ooSaidHtml(d, "method")' in kfn and 'ooSaidHtml(d, "caveat")' in kfn, (
-        "the Keywords table must surface the endpoint's method + caveat (PMI honesty)"
+    assert _score_leak(chips) is None, (
+        f"the Keywords subtab must not compute a score: {_score_leak(chips)}"
     )
-    assert "n_articles_with_term" in kfn, "the Keywords table must show n (real corpus count)"
+    # the measured association numbers ride on the hover (keyword-stats), never dropped
+    hover = _js_function_source(html, "fmt")
+    _assert_js_present(hover, "c.cooccur", why="the shared-article count per co-occurrence")
+    _assert_js_present(hover, "c.pmi", why="PMI association strength")
+    assert "/api/insights/keyword-stats?term=" in html, (
+        "the hover reuses the EXISTING keyword-stats endpoint"
+    )
+    _assert_js_absent(
+        html, "function renderCorpusKeywords(", why="row 357 deleted the retired table"
+    )
 
 
 def test_corpus_window_sources_subtab():
-    """THE ONE CORPORA SYSTEM: the corpus analysis window carries a SOURCES
-    (source-description) sub-tab -- WHICH sources feed this corpus, with their
-    REAL per-corpus article count + the catalog metadata they ASSERT (domain,
-    country, region, language, tags). Descriptive provenance, NOT the (future)
-    competitive/angle tab and NOT tone (Sentiment owns that). It REUSES an
-    existing endpoint -- no new backend, no fork. Pinned so it cannot regress:
-      * a data-tab="sources" button exists in the corpus window's ooSubtabs nav
-        (DOM-text label, no inline onclick) and every sibling sub-tab stays;
-      * corpusTab() handles "sources" by calling renderCorpusSources for the
-        window's _corpusTerm into a fresh #corpus-sources-host;
-      * the renderer reuses /api/insights/corpus-sources (the corpus's distinct
-        sources + REAL per-corpus article count) and enriches client-side from
-        the bulk /api/sources catalog (no new keyword/source engine);
-      * two-class honesty + no fabricated description: catalog metadata is
-        labelled ASSERTED (not deduced), and a source with nothing on file reads
-        an honest "No catalog metadata on file." (never a generated bio);
-      * the source name reuses the EXISTING source-profile view (loadProfile),
-        not an invented destination.
+    """THE ONE CORPORA SYSTEM: the corpus analysis window's SOURCES sub-tab -- WHICH
+    sources feed this corpus, with their REAL per-corpus article count and the catalogue
+    metadata they ASSERT. Descriptive provenance; no score, no ranking.
+
+    RE-ANCHORED (row 357) from the deleted #corpus-win modal onto the live #an Sources
+    subtab. Pinned:
+      * a data-tab="sources" button (DOM-text label) with every sibling it had;
+      * loadAnalysis reuses the EXISTING /api/insights/corpus-sources for THIS corpus
+        and draws it with the ONE renderer (_anSourcesHtml);
+      * the catalogue facts ride on the row that endpoint read -- no second, truncated
+        /api/sources fetch (the modal's former client-side merge, removed 2026-09-09);
+      * REAL per-source counts + the asserted fields (country, region, language, tags);
+      * two-class honesty: the column is labelled ASSERTED, not deduced; a source with
+        nothing on file reads an em dash (never a generated description); the set with
+        no sources reads an honest empty state; no composite score.
     """
     html = _ui_source()
-    # 1. the Sources button lives in the corpus window's subtab nav (DOM text).
-    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
-    assert 'data-tab="sources"' in nav, (
-        "the corpus window must carry a Sources sub-tab button in its ooSubtabs nav"
-    )
+    nav = _an_subtab_nav(html)
+    assert 'data-tab="sources"' in nav, "the analysis window must carry a Sources sub-tab"
     assert "Sources" in nav, "the sub-tab button label must be DOM text (auto-translated)"
-    # every sibling sub-tab stays (nothing lost).
     for sib in (
         'data-tab="trend"',
         'data-tab="articles"',
@@ -5287,72 +5336,63 @@ def test_corpus_window_sources_subtab():
         'data-tab="sentiment"',
         'data-tab="keywords"',
     ):
-        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
-    # 2. corpusTab dispatches "sources" -> the source-description renderer for _corpusTerm.
-    body = _js_function_body(html, "corpusTab")
-    assert 'which === "sources"' in body, "corpusTab must handle the sources sub-tab"
-    assert "renderCorpusSources(_corpusTerm" in body, (
-        "the Sources sub-tab must render for THIS window's corpus term into a fresh host"
+        assert sib in nav, f"analysis sub-tab regressed: {sib} missing"
+    load = _js_function_source(html, "loadAnalysis")
+    _assert_js_present(
+        load,
+        '"/api/insights/corpus-sources?" + p.toString()',
+        why="the EXISTING endpoint, scoped to THIS window's corpus",
     )
-    assert 'id="corpus-sources-host"' in body, (
-        "the Sources sub-tab must mount a fresh #corpus-sources-host (the function-into-host pattern)"
+    _assert_js_present(load, '$("an-sources").innerHTML = _anSourcesHtml(d)')
+    assert html.count("function _anSourcesHtml(") == 1, "_anSourcesHtml must not be forked"
+    srcs = _js_function_source(html, "_anSourcesHtml")
+    cell = _js_function_source(html, "_anSourceCatalogHtml")
+    _assert_js_absent(
+        srcs + cell + load,
+        "/api/sources/?",
+        why="the catalogue facts ride on the corpus-sources row; no truncated merge",
     )
-    # 3. the renderer reuses EXISTING endpoints (no new backend, no fork).
-    sfn = html.split("async function renderCorpusSources(", 1)[1].split(
-        "\n    function ", 1
-    )[0]
-    assert "/api/insights/corpus-sources?" in sfn, (
-        "the Sources tab must reuse /api/insights/corpus-sources for the corpus's sources"
+    _assert_js_present(srcs, "s.articles", why="each source row shows its REAL per-corpus count")
+    for field in ("s.country", "s.region", "s.language", "s.tags"):
+        _assert_js_present(cell, field, why=f"the asserted catalogue field {field}")
+    _assert_js_present(
+        srcs,
+        "asserted, not deduced from text",
+        why="catalogue metadata is labelled ASSERTED, not deduced",
     )
-    assert "/api/sources/?" in sfn, (
-        "the Sources tab must enrich from the bulk /api/sources catalog (client-side merge)"
+    _assert_js_present(
+        cell,
+        'if (!facts && !tags) return "\\u2014"',
+        why="nothing on file reads an em dash, never a fabricated description",
     )
-    # 4. REAL per-source numbers + asserted metadata fields (no fabrication).
-    assert "r.articles" in sfn, "each source row must show its REAL per-corpus article count"
-    for field in ("meta.country", "meta.region", "meta.language", "meta.tags"):
-        assert field in sfn, f"the Sources tab must show the asserted metadata field: {field}"
-    # 5. honesty: asserted-not-deduced is stated, no generated description, honest empties.
-    assert "asserted" in sfn.lower() and "deduced" in sfn.lower(), (
-        "the Sources tab must label catalog metadata ASSERTED, not deduced from text"
-    )
-    assert "No catalog metadata on file." in sfn, (
-        "a source with nothing on file must read an honest empty, never a fabricated description"
-    )
-    assert "No sources for this corpus yet." in sfn, "honest empty state when the corpus has no sources"
-    # 6. the source name reuses the EXISTING source-profile view (loadProfile).
-    assert "loadProfile()" in sfn, (
-        "the source name must reuse the existing source-profile view, not an invented destination"
+    _assert_js_present(srcs, "No sources in this set.", why="honest empty state")
+    _assert_js_present(srcs, "d.caveat ? t(d.caveat)", why="the endpoint's caveat is shown")
+    assert _score_leak(srcs + cell) is None, f"no composite score: {_score_leak(srcs + cell)}"
+    _assert_js_absent(
+        html, "function renderCorpusSources(", why="row 357 deleted the retired renderer"
     )
 
 
 def test_corpus_window_competitive_subtab():
-    """THE ONE CORPORA SYSTEM: the corpus analysis window's LAST design facet --
-    the corpus-only SOURCE-COMPETITIVE sub-tab. It shows how each source DIFFERS
-    (volume / tone / timing / emphasis) side by side: a DESCRIPTIVE comparison of
-    divergence, NEVER a ranking, a winner or a credibility verdict, and NEVER a
-    composite score. It JOINS two EXISTING endpoints per source -- no new backend,
-    no fork. Pinned so it cannot regress:
-      * a data-tab="competitive" button exists in the corpus window's ooSubtabs
-        nav (DOM-text label, no inline onclick) and every sibling sub-tab stays;
-      * corpusTab() handles "competitive" by calling renderCorpusCompetitive for
-        the window's _corpusTerm into a fresh #corpus-competitive-host;
-      * the renderer JOINS /api/insights/corpus-sources (volume/timing/mean tone)
-        with /api/framing (tone label + emphasised terms) -- both existing;
-      * the four REAL dimensions are shown (volume = exact count, tone = VADER,
-        timing = real first/last dates, emphasis = framing top_terms);
-      * the n=1 honest state exists ("nothing to compare");
-      * the "not a ranking / not credibility" + the VADER English-only
-        disclosures are reachable (informed consent).
+    """THE ONE CORPORA SYSTEM: the corpus analysis window's SOURCE-COMPETITIVE sub-tab.
+    It shows how each source DIFFERS (volume / tone / timing / emphasis) side by side: a
+    DESCRIPTIVE comparison of divergence, NEVER a ranking, a winner or a credibility
+    verdict, and NEVER a composite score. It JOINS two EXISTING endpoints per source.
+
+    RE-ANCHORED (row 357) from the deleted #corpus-win modal's renderCorpusCompetitive
+    onto the live #an port (renderAnCompetitive + _anCompetitiveHtml). Pinned:
+      * a data-tab="competitive" button (DOM-text label, no inline onclick) with every
+        sibling it had;
+      * the subtab is rendered lazily for THIS window's params (anSelectTab);
+      * the renderer JOINS /api/insights/corpus-sources with /api/framing;
+      * the four REAL dimensions; the n=1 and empty honest states; the not-a-ranking,
+        not-credibility and VADER disclosures; no composite score (_score_leak).
     """
     html = _ui_source()
-    # 1. the Competitive button lives in the corpus window's subtab nav (DOM text).
-    nav = html.split('id="corpus-subtabs"', 1)[1].split("</nav>", 1)[0]
-    assert 'data-tab="competitive"' in nav, (
-        "the corpus window must carry a Competitive sub-tab button in its ooSubtabs nav"
-    )
+    nav = _an_subtab_nav(html)
+    assert 'data-tab="competitive"' in nav, "the analysis window must carry a Competitive sub-tab"
     assert "Competitive" in nav, "the sub-tab button label must be DOM text (auto-translated)"
     assert "onclick" not in nav.lower(), "no inline onclick -- the ooSubtabs component owns clicks"
-    # every sibling sub-tab stays (nothing lost).
     for sib in (
         'data-tab="trend"',
         'data-tab="articles"',
@@ -5362,51 +5402,48 @@ def test_corpus_window_competitive_subtab():
         'data-tab="keywords"',
         'data-tab="sources"',
     ):
-        assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
-    # 2. corpusTab dispatches "competitive" -> the renderer for _corpusTerm.
-    body = _js_function_body(html, "corpusTab")
-    assert 'which === "competitive"' in body, "corpusTab must handle the competitive sub-tab"
-    assert "renderCorpusCompetitive(_corpusTerm" in body, (
-        "the Competitive sub-tab must render for THIS window's corpus term into a fresh host"
+        assert sib in nav, f"analysis sub-tab regressed: {sib} missing"
+    sel = _js_function_source(html, "anSelectTab")
+    _assert_js_present(
+        sel,
+        'if (key === "competitive") renderAnCompetitive(_anLastParams)',
+        why="the Competitive subtab renders for THIS window's params",
     )
-    assert 'id="corpus-competitive-host"' in body, (
-        "the Competitive sub-tab must mount a fresh #corpus-competitive-host (function-into-host)"
+    fetch = _js_function_source(html, "renderAnCompetitive")
+    cfn = fetch + _js_function_source(html, "_anCompetitiveHtml")
+    _assert_js_present(
+        fetch,
+        '"/api/insights/corpus-sources?" + p.toString()',
+        why="Competitive reuses corpus-sources for volume/timing/tone",
     )
-    # 3. the renderer JOINS the two EXISTING endpoints (no new backend, no fork).
-    cfn = html.split("async function renderCorpusCompetitive(", 1)[1].split(
-        "\n    function ", 1
-    )[0]
-    assert "/api/insights/corpus-sources?" in cfn, (
-        "Competitive must reuse /api/insights/corpus-sources for volume/timing/tone"
+    _assert_js_present(
+        fetch,
+        '"/api/framing?query="',
+        why="Competitive reuses /api/framing for the tone label + emphasised terms",
     )
-    assert "/api/framing?" in cfn, (
-        "Competitive must reuse /api/framing for the tone label + emphasised terms"
-    )
-    # 4. the four REAL dimensions are present (no score, no invented value).
-    assert "r.articles" in cfn, "Volume must be the REAL per-source article count"
+    _assert_js_present(cfn, "r.articles", why="Volume is the REAL per-source article count")
     assert "mean_tone" in cfn or "avg_tone" in cfn, "Tone must be the REAL VADER value"
-    assert "r.first" in cfn and "r.last" in cfn, "Timing must use REAL first/last dates"
-    assert "top_terms" in cfn, "Emphasis must come from the framing top_terms (real)"
-    # 5. n=1 honest state -- "nothing to compare" (the ledger's n=1 has no competition).
-    assert "rows.length === 1" in cfn, "the Competitive tab must special-case the single-source corpus"
+    _assert_js_present(cfn, "r.first", why="Timing uses REAL dates")
+    _assert_js_present(cfn, "r.last", why="Timing uses REAL dates")
+    _assert_js_present(cfn, "top_terms", why="Emphasis comes from the framing top_terms (real)")
+    _assert_js_present(cfn, "rows.length === 1", why="the single-source corpus is special-cased")
     assert "Only one source in this corpus — nothing to compare." in cfn, (
         "n=1 must read an honest 'nothing to compare', never a fake comparison"
     )
-    assert "No sources for this corpus yet." in cfn, "honest empty state when the corpus has no sources"
-    # 6. the disclosures are reachable: 'not a ranking/credibility' + VADER English-only.
-    assert "never a ranking" in cfn.lower(), "the 'descriptive, not a ranking' disclosure must be visible"
+    assert "No sources for this corpus yet." in cfn, (
+        "honest empty state when the corpus has no sources"
+    )
+    assert "never a ranking" in cfn.lower(), (
+        "the 'descriptive, not a ranking' disclosure must be visible"
+    )
     assert "credibility" in cfn.lower(), "the 'not a credibility judgement' framing must be present"
     assert "VADER" in cfn, "the VADER tone disclosure must be reachable (tone is shown)"
-    # honesty by construction: the comparison is ordered, never scored/ranked-as-quality.
-    # The old form was `"composite score" not in cfn or "no composite score" in
-    # cfn.lower() or "never a" in cfn.lower()`, and its third arm is guaranteed by the
-    # `assert "never a ranking" in cfn.lower()` four lines above -- so the disjunction
-    # was true whatever the renderer computed. Assert the property instead: every
-    # occurrence of the word is inside a disclosure that NEGATES it, and no field is
-    # named for one -- see _score_leak, whose own bite is pinned by
-    # test_the_no_score_guard_actually_bites.
+    _assert_js_present(cfn, "cs.n_articles", why="n is shown")
     assert _score_leak(cfn) is None, (
         f"the Competitive tab must not compute a composite score: {_score_leak(cfn)}"
+    )
+    _assert_js_absent(
+        html, "function renderCorpusCompetitive(", why="row 357 deleted the retired renderer"
     )
 
 
@@ -6585,8 +6622,12 @@ def test_auto_update_note_removed_and_country_names_localized():
     # tests/country_display_node_test.js, where "code visible, name in title" is
     # asserted against the rendered HTML -- which is the one thing a substring in
     # this file cannot distinguish from its exact inverse.
-    assert "ooCountryCell(meta.country)" in app, (
-        "the source-profile Country: fact must render through the one country helper"
+    # Row 357 re-anchor: this pin read `ooCountryCell(meta.country)`, which lived only in
+    # the deleted renderCorpusSources (the retired #corpus-win modal). The live source
+    # profile -- the view that renderer linked to -- draws its country fact here.
+    _assert_js_present(
+        _js_function_source(app, "loadProfile"), "ooCountryCell(tr.country)",
+        why="the source-profile country fact must render through the one country helper",
     )
     assert "ooCountryCell(m.country)" in app, (
         "the map-mention readout must render through the one country helper"

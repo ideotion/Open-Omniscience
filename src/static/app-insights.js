@@ -84,7 +84,7 @@
       return def;
     }
 
-    let _insSubtabs = null, _setSubtabs = null, _corpusSubtabs = null;
+    let _insSubtabs = null, _setSubtabs = null;
 
     // -- Insights (keyword & entity analytics) ------------------------------ //
     const _insLoaded = new Set();
