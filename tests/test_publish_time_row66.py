@@ -73,7 +73,10 @@ def test_the_extensive_search_flag_still_reaches_htmldate(monkeypatch):
     monkeypatch.delenv("OO_EXTENSIVE_DATE_SEARCH")
     params = ex._date_params()
     assert params["extensive_search"] is False and params["outputformat"] == "%Y-%m-%dT%H:%M:%S%z"
-    assert "max_date" not in params  # htmldate's default: the END of today, so today's times survive
+    # The END of today, stated rather than left out: trafilatura 2.4.0 merges our dict over its own
+    # defaults, so a missing key comes back as today's date (00:00) and today's times are lost.
+    end = params["max_date"]
+    assert (end.hour, end.minute, end.second) == (23, 59, 59) and end.date() == datetime.now().date()
 
 
 def test_an_end_day_bound_keeps_that_days_timed_articles():
