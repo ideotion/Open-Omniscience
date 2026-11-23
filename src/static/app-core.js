@@ -178,6 +178,60 @@
       return ooLabelHtml(esc(t("Server text, in English")), `<span lang="en" dir="ltr">${esc(r.text)}</span>`);
     }
 
+    // TEXT DRAWN IN THE ACTIVE LANGUAGE THAT FOLLOWS A LANGUAGE SWITCH (row 364, for the row 352 list). The i18n walker
+    // records the first text it sees on a node as "the English", so a renderer that writes t() output into an ordinary
+    // node leaves text no later switch can change. ooLive(el, render) marks el data-i18n-dyn (the walker keeps out),
+    // keeps render, and writes render() as text; ooLiveHtml writes it as HTML, so the render must escape what it
+    // interpolates. ooLiveRepaint, called from the one oo:langchange listener in app-boot.js, calls each kept render
+    // again in the new language: it never fetches, so a render must draw from what it already holds.
+    //   * Only the node passed is covered; scripts/i18n_frozen_renderers.py exempts that node and no other.
+    //   * ooLive(el, null) releases el: the marker goes (unless the page had put it there) and the nodes el held when
+    //     ooLive first took it come back, so a button's static label returns to the walker, which still knows its
+    //     English. A status line that held nothing is left empty.
+    //   * A node something else has written since its last draw is dropped from the list and left as it is: its text
+    //     is no longer this render's. A node that left the document is dropped too, so nothing is kept for nothing.
+    //   * Give ooLive a node that is in the page: one still detached may be dropped as gone by the next call.
+    //   * A render that throws is caught for its node alone, so one surface cannot stop the others repainting.
+    //   * While marked, the walker also leaves the node's title/aria-label alone; keep translated hovers off it.
+    const _ooLiveNodes = new Set();
+    function _ooLiveDrop(el, restore) {
+      const s = el.__ooLive;
+      _ooLiveNodes.delete(el);
+      if (!s) return;
+      el.__ooLive = null;
+      if (!s.hadMarker) el.removeAttribute("data-i18n-dyn");
+      if (restore) el.replaceChildren(...s.saved);
+    }
+    function _ooLiveDraw(el) {
+      const s = el.__ooLive;
+      const v = s.render();
+      const str = v == null ? "" : String(v);
+      if (s.html) { el.innerHTML = str; s.drawn = el.innerHTML; }
+      else { el.textContent = str; s.drawn = el.textContent; }
+    }
+    function _ooLiveTake(el, render, html) {
+      if (!el) return;
+      for (const n of _ooLiveNodes) if (n !== el && !n.isConnected) _ooLiveDrop(n, false);
+      if (render == null) { if (el.__ooLive) _ooLiveDrop(el, true); return; }
+      if (!el.__ooLive) {
+        el.__ooLive = {saved: Array.from(el.childNodes), hadMarker: el.hasAttribute("data-i18n-dyn")};
+        el.setAttribute("data-i18n-dyn", "");
+      }
+      Object.assign(el.__ooLive, {render, html: !!html});
+      _ooLiveNodes.add(el);
+      _ooLiveDraw(el);
+    }
+    function ooLive(el, render) { _ooLiveTake(el, render, false); }
+    function ooLiveHtml(el, render) { _ooLiveTake(el, render, true); }
+    function ooLiveRepaint() {
+      for (const el of Array.from(_ooLiveNodes)) {
+        const s = el.__ooLive;
+        if (!s || !el.isConnected || (s.html ? el.innerHTML : el.textContent) !== s.drawn) { _ooLiveDrop(el, false); continue; }
+        try { _ooLiveDraw(el); }
+        catch (e) { if (window.console) console.warn("ooLiveRepaint", e); }
+      }
+    }
+
     // WHERE THE PAGE CAME FROM, BESIDE THE SOURCE IT IS CREDITED TO (queue item 61, R635). A feed item's
     // link may redirect to another site, and the article is still the source's: this says so on the row
     // that credits the source. HTML, escaped here; empty unless the server said the host it was fetched

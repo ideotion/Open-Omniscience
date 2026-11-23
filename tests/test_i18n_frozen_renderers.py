@@ -132,6 +132,39 @@ def test_a_renderer_that_marks_its_output_is_exempt(src):
 @pytest.mark.parametrize(
     "src",
     [
+        'function paint() { ooLive($("x"), () => t("Hello")); }',
+        'function paint() { ooLiveHtml($("x"), () => `<b>${esc(tf("{n} items", {n: 2}))}</b>`); }',
+        # the render's own sinks and calls are inside the call, so they are the helper's to redraw
+        'function paint(h) { ooLive(h, () => { const s = t("Hello"); return s; }); }',
+        # a DATA write to another node beside a helper draw: no translator is left outside the call
+        'function paint(h, n) { ooLive(h, () => t("Hello")); $("count").textContent = n; }',
+    ],
+)
+def test_a_node_drawn_through_oolive_is_exempt(src):
+    """Row 364: ooLive keeps the render and redraws that node on a switch, so it is not counted."""
+    assert _keys({"a.js": src}) == set()
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        # another node in the same unit, written with t(): still counted
+        'function paint(h) { ooLive(h, () => t("Hello")); $("y").textContent = t("Bye"); }',
+        # the same node written outside the call is not kept by the helper
+        'function paint(h) { ooLive(h, () => t("Hello")); h.textContent = t("Bye"); }',
+        # released: what is written after the release is an ordinary write
+        'function paint(h) { ooLive(h, null); h.textContent = t("Bye"); }',
+        # a namesake method is not the helper
+        'function paint(h) { x.ooLive(h, () => 1); h.textContent = t("Bye"); }',
+    ],
+)
+def test_oolive_exempts_only_the_node_it_is_given(src):
+    assert _keys({"a.js": src}) == {"a.js paint"}
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
         # a comparison, then a selector: not a tag in a string
         'function paint() { for (let i = 0; i<3; i++) {} const h = $("x").closest("[data-i18n-dyn]"); h.textContent = t("Hello"); }',
         # a read of the marker is not marking
