@@ -212,8 +212,12 @@ class StagedArtifact:
 #: with ITS OWN signing key, so these are the only statements it makes about a signer:
 #: ``this-installation`` (the key equals this installation's), ``another-installation`` (it does
 #: not; a statement of fact, never a tampering warning), ``not-compared`` (this installation's key
-#: could not be read, so no comparison was made) and ``unsigned``.
-SIGNER_RELATIONS = ("this-installation", "another-installation", "not-compared", "unsigned")
+#: could not be read, so no comparison was made), ``unsigned`` and ``bad-signature`` (where the live
+#: state is known), and ``unverified`` (row 345: a stored record that cannot tell unsigned from a
+#: signature that did not match -- every "unsigned" row merged before ``bad-signature`` was stored).
+SIGNER_RELATIONS = (
+    "this-installation", "another-installation", "not-compared", "unsigned", "bad-signature", "unverified",
+)
 
 
 def this_installation_key() -> str | None:
@@ -229,12 +233,16 @@ def this_installation_key() -> str | None:
 
 
 def signer_relation(signer_key: str | None, local_key: str | None) -> str:
-    """One of ``SIGNER_RELATIONS`` for a signer key, compared at display time with ``local_key``
-    (``this_installation_key()``). Stored values ("unsigned", "unknown-origin", a key) are read as
-    they are and never rewritten (R755)."""
+    """One of ``SIGNER_RELATIONS`` for a STORED signer value, compared at display time with
+    ``local_key`` (``this_installation_key()``). Stored values ("unsigned", "bad-signature",
+    "unknown-origin", a key) are read as they are and never rewritten (R755). A stored value that is
+    not a key reads as ``bad-signature`` when it says so, else ``unverified``: an "unsigned" row may
+    have held a signature that did not match (row 345)."""
     key = (signer_key or "").strip().lower()
+    if key == "bad-signature":
+        return "bad-signature"
     if not re.fullmatch(r"[0-9a-f]{64}", key):
-        return "unsigned"
+        return "unverified"
     if not local_key:
         return "not-compared"
     same = _is_this_installations_key(key, local_key)

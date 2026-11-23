@@ -2132,7 +2132,8 @@ def verify_stream_backup(
         sig = m.get("signature")
         signer = str(sig.get("public_key") or "") if state == "verified" and isinstance(sig, dict) else ""
         report["signer_key"] = signer or None
-        report["signed_by"] = signer_relation(signer, this_installation_key()) if signer else "unsigned"
+        # the live state is known here: "unsigned" or "bad-signature" when it did not verify
+        report["signed_by"] = signer_relation(signer, this_installation_key()) if signer else state
         if state != "verified":
             what = "is not signed" if state == "unsigned" else "signature does not match its content"
             _fail(

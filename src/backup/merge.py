@@ -5449,6 +5449,15 @@ def _capture_alternates(
     # between the two and only the row is common to both.
     kept_for_row = ""
     is_law = ALTERNATE_SPECS.get(table, {}).get("scope") == "law"
+    # Row 345: a batch with no verified key is stored "unsigned" (before row 345, also for a signature
+    # that did not match) or "bad-signature" (since). For the "already recorded" checks the two are one
+    # origin, so re-importing a backup merged before row 345 does not capture its differences again.
+    # They are never grouped with a real key: the match below is on these two literals only.
+    def _same_origin(alias: str) -> str:
+        if origin in ("unsigned", "bad-signature"):
+            return f"{alias}.origin IN ('unsigned', 'bad-signature')"
+        return f"{alias}.origin = :origin"
+
     try:
         if is_law:
             # The kept ones are copied once to an indexed temp table, so a restore does not scan every kept alternate per incoming row.
@@ -5463,7 +5472,7 @@ def _capture_alternates(
             kept_for_row = (
                 " AND NOT EXISTS (SELECT 1 FROM temp.alt_kept k"  # nosec B608 # as above
                 f"  WHERE k.local_row_id = (SELECT MIN(t.rowid) FROM main.{tbl} t WHERE {key})"
-                f"  AND k.origin = :origin AND k.fields = json_object({fields}))"
+                f"  AND {_same_origin('k')} AND k.fields = json_object({fields}))"
             )
         # GROUP BY the recorded identity: two incoming rows can collapse onto one local item
         # (map_articles), and NOT EXISTS below cannot see rows this same statement inserts.
@@ -5475,7 +5484,7 @@ def _capture_alternates(
             " :origin, 'pending', :now"
             f"{where}"
             " AND NOT EXISTS (SELECT 1 FROM metadata_alternates x"
-            "  WHERE x.table_name = :table AND x.origin = :origin"
+            f"  WHERE x.table_name = :table AND {_same_origin('x')}"
             f"  AND x.identity = json_object({ident}) AND x.fields = json_object({fields}))"
             f"{kept_for_row}"
             f" GROUP BY json_object({ident}), json_object({fields})",
@@ -8085,12 +8094,32 @@ def _verify_chain_rows(rows: Iterable[tuple]) -> tuple[bool, list[str], int]:
 
 
 def _signed_by(staged: StagedArtifact) -> str:
-    """R800: the signer stated the one way the app can state it (``artifact.SIGNER_RELATIONS``)."""
+    """R800: the signer stated the one way the app can state it (``artifact.SIGNER_RELATIONS``).
+    Here the live state is known, so an unverified artifact is ``unsigned`` or ``bad-signature``."""
     from src.backup.artifact import signer_relation, this_installation_key
 
     if staged.signature_state != "verified":
-        return "unsigned"
+        return "bad-signature" if staged.signature_state == "bad-signature" else "unsigned"
     return signer_relation(staged.origin_fingerprint, this_installation_key())
+
+
+def _stored_signer(staged: StagedArtifact) -> str:
+    """What ``merge_batches.origin_fingerprint`` records: the verified key, ``bad-signature`` for a
+    signature that did not match (row 345), else the artifact's own value ("unsigned")."""
+    if getattr(staged, "signature_state", None) == "bad-signature":
+        return "bad-signature"
+    return staged.origin_fingerprint
+
+
+def _custody_chain_id(origin_fingerprint: str) -> str:
+    """The chain id an imported custody chain is filed under: the verified signing key, else
+    ``unknown-origin``. The two stored states that are not a key -- "unsigned", and "bad-signature"
+    (row 345) -- file under ``unknown-origin``, so a failed signature is never a chain of its own beside genuine
+    signers and never shares one with them."""
+    # A key is kept exactly as written: an earlier import of the same chain filed it under it.
+    if not origin_fingerprint or origin_fingerprint in ("unsigned", "bad-signature"):
+        return "unknown-origin"
+    return origin_fingerprint
 
 
 def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
@@ -8122,9 +8151,7 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
         # (chain id, the query that walks it in seq order, its parameters)
         sources: list[tuple[str, str, tuple]] = []
         if "custody_entries" in src_tables:
-            their_chain = (
-                origin_fingerprint if origin_fingerprint != "unsigned" else "unknown-origin"
-            )
+            their_chain = _custody_chain_id(origin_fingerprint)
             sources.append((
                 their_chain,
                 f"SELECT {_CUSTODY_COLS} FROM custody_entries ORDER BY seq ASC",  # noqa: S608  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -9784,7 +9811,9 @@ def run_restore(
 
     meta = {
         "artifact_kind": staged.kind,
-        "origin_fingerprint": staged.origin_fingerprint,
+        # Row 345 (R800): a signature that was present but did not match is recorded as such,
+        # never folded into "unsigned". Earlier rows are not rewritten (R755).
+        "origin_fingerprint": _stored_signer(staged),
         "app_version": (staged.manifest or {}).get("app_version"),
         "alembic_rev": original_rev,
         "manifest": staged.manifest,
@@ -9910,7 +9939,8 @@ def run_restore(
     report: dict = {
         "artifact_kind": staged.kind,
         "signature_state": staged.signature_state,
-        "origin_fingerprint": staged.origin_fingerprint,
+        # what this batch records (row 345: "bad-signature" for a signature that did not match)
+        "origin_fingerprint": _stored_signer(staged),
         # R800: whose key signed, compared with this installation's own key; never "origin".
         "signed_by": _signed_by(staged),
         "artifact_schema_rev": original_rev,
