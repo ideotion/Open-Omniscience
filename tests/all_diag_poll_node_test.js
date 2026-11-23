@@ -72,6 +72,9 @@ function install() {
   global.window = { open: (u) => opened.push(u) };
   global.$ = () => ({ set textContent(v) { statusText = v; statusLog.push(v); }, get textContent() { return statusText; } });
   global._fmtBytes = (n) => n + " B";
+  // ooLive (app-core.js, row 364) draws a render as the node's text; its repaint is tested in oo_live_node_test.js
+  global.ooLive = (el, render) => { if (render) { const v = render(); el.textContent = v == null ? "" : String(v); } };
+  global._partsStatusRender = null;
   readyListings = [];
   global._partsReady = (m) => readyListings.push(m);   // the numbered-files bar, defined elsewhere
   shownFor = []; savedCounts = [];
