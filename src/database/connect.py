@@ -1401,7 +1401,7 @@ def _place(inner: Path, dest_p: Path) -> None:
     os.rename(inner, dest_p)  # Windows refuses an existing name
 
 
-def _shown(name: str, *, in_data: bool = True) -> str:
+def _masked_place(name: str, *, in_data: bool = True) -> str:
     """A private folder's place for the log (R736): its folder as a role (the data folder, or ``...`` elsewhere), its own name
     masked. No user name or home folder is written."""
     from src.database.address_mask import masked_path
@@ -1446,11 +1446,11 @@ def sweep_snapshot_leftovers(folder: Path | str) -> int:
                     why = "changed recently (a copy may still be running)"
             if why is None and _empty_and_remove(path, (st.st_dev, st.st_ino)):
                 removed += 1
-                _LOG.info("removed a snapshot folder a stopped copy left: %s", _shown(name))
+                _LOG.info("removed a snapshot folder a stopped copy left: %s", _masked_place(name))
                 continue
-            _LOG.warning("a snapshot folder was left as it is (%s): %s", why or "it could not be removed", _shown(name))
+            _LOG.warning("a snapshot folder was left as it is (%s): %s", why or "it could not be removed", _masked_place(name))
         except Exception:  # noqa: BLE001 - one entry never stops the others
-            _LOG.warning("a snapshot folder was left as it is (it could not be read): %s", _shown(name))
+            _LOG.warning("a snapshot folder was left as it is (it could not be read): %s", _masked_place(name))
     return removed
 
 
@@ -1504,7 +1504,7 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
             _LOG.error(
                 "a plaintext copy failed (%s) and its unfinished file could not be removed: %s",
                 type(failed).__name__,
-                _shown(left.name, in_data=False),
+                _masked_place(left.name, in_data=False),
             )
             if not isinstance(failed, Exception):
                 # an interrupt, an exit: passed on as it is, carrying the path, so no caller removes that name again by itself
@@ -1514,7 +1514,7 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
         else:
             if ident is not None and not _empty_and_remove(work, ident, held):
                 # the copy is whole under its name; the empty (or second-name) folder goes at the next sweep
-                _LOG.warning("a finished snapshot's private folder could not be removed yet: %s", _shown(work.name, in_data=False))
+                _LOG.warning("a finished snapshot's private folder could not be removed yet: %s", _masked_place(work.name, in_data=False))
             return dest_p
     finally:
         with _active_lock:
