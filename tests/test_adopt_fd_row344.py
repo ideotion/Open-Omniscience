@@ -128,7 +128,7 @@ def test_read_manifest_json_closes_once_when_the_buffer_fails(files, monkeypatch
 
     _, b = files
     m = tmp_path / "m.json"
-    m.write_text('{"a": 1}')
+    m.write_text('{"a": 1}', encoding="utf-8")
     held: list = []
 
     def boom(raw, *a, **kw):
