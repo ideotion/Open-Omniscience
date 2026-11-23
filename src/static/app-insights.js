@@ -1145,17 +1145,20 @@
     // Row 352 fix: #es-status (index.html marks it data-i18n-dyn) is drawn from a render function kept
     // with the last result, so a language switch repaints it from the oo:langchange listener
     // (esStatusRepaint) in the new language. Never fetches.
-    let _esStatusRender = null;
+    // The hover title (the method, built with t()) is kept as a render function too: the host is
+    // data-i18n-dyn, so the walker no longer translates its attributes either. A state that passes no
+    // title leaves the last one in place, exactly as before.
+    let _esStatusRender = null, _esStatusTitle = null;
     function _esStatus(render, title) {
       _esStatusRender = render;
-      const st = $("es-status");
-      if (!st) return;
-      st.textContent = render();
-      if (title !== undefined) st.title = title;
+      if (title) _esStatusTitle = title;
+      esStatusRepaint();
     }
     function esStatusRepaint() {
       const st = $("es-status");
-      if (st && _esStatusRender) st.textContent = _esStatusRender();
+      if (!st || !_esStatusRender) return;
+      st.textContent = _esStatusRender();
+      if (_esStatusTitle) st.title = _esStatusTitle();
     }
     async function entitySpineResolve() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -1168,15 +1171,13 @@
         if (job.state === "error") { _esStatus(() => t("Could not resolve places:") + " " + (job.error || "")); return; }
         if (_jobStillRunning(job)) { _esStatus(() => t("Still running in the background — check the task manager for the result.")); return; }
         const r = job.result || {};
-        {
-          const osm = r.osm_notable || null;
-          // S05-04 S5 (Q817): the same job makes the notable places of the OpenStreetMap
-          // countries read into Places; said beside the mentions, and a failure is named.
-          const osmLine = () => !osm ? "" : (osm.error ? " · " + t("The OpenStreetMap part could not be read.")
-            : (osm.countries || []).length ? " · " + tf("{n} notable places from OpenStreetMap", {n: osm.places || 0}) : "");
-          _esStatus(() => tf("{places} places from {resolved} of {n} mentioned places", {places: r.places || 0, resolved: r.resolved || 0, n: r.distinct_mentions || 0}) + osmLine(),
-            ooSaidText(r, "method"));
-        }
+        const osm = r.osm_notable || null;
+        // S05-04 S5 (Q817): the same job makes the notable places of the OpenStreetMap
+        // countries read into Places; said beside the mentions, and a failure is named.
+        const osmLine = () => !osm ? "" : (osm.error ? " · " + t("The OpenStreetMap part could not be read.")
+          : (osm.countries || []).length ? " · " + tf("{n} notable places from OpenStreetMap", {n: osm.places || 0}) : "");
+        _esStatus(() => tf("{places} places from {resolved} of {n} mentioned places", {places: r.places || 0, resolved: r.resolved || 0, n: r.distinct_mentions || 0}) + osmLine(),
+          () => ooSaidText(r, "method"));
         loadEntitySpine();
       } catch (e) { _esStatus(() => t("Could not resolve places:") + " " + e.message); }
     }
@@ -1211,12 +1212,10 @@
         }
         if (_jobStillRunning(job)) { _esStatus(() => t("Still running in the background — check the task manager for the result.")); return; }
         const r = job.result || {};
-        {
-          _esStatus(() => tf("{fetched} fetched · {missing} no longer on Wikidata · {refused} refused · {pending} left", {
-            fetched: r.fetched || 0, missing: r.missing_on_wikidata || 0, refused: r.refused || 0, pending: r.pending || 0})
-            + (r.stopped_by_airplane_mode ? " · " + t("stopped: airplane mode was turned on") : (r.stopped ? " · " + t("stopped early") : "")),
-            ooSaidText(r, "method"));
-        }
+        _esStatus(() => tf("{fetched} fetched · {missing} no longer on Wikidata · {refused} refused · {pending} left", {
+          fetched: r.fetched || 0, missing: r.missing_on_wikidata || 0, refused: r.refused || 0, pending: r.pending || 0})
+          + (r.stopped_by_airplane_mode ? " · " + t("stopped: airplane mode was turned on") : (r.stopped ? " · " + t("stopped early") : "")),
+          () => ooSaidText(r, "method"));
         loadEntitySpine();
       } catch (e) {
         // A 409 is the kill switch, and it is NAMED as such (invariant #14e's corollary).

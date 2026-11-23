@@ -48,3 +48,11 @@ def test_the_job_error_text_the_node_test_uses_is_what_a_real_job_carries():
     assert real in node, (
         "update REAL_JOB_ERROR in wikidata_refusal_node_test.js to the text a job really carries"
     )
+
+
+def test_the_language_listener_names_a_repaint_that_exists():
+    """The oo:langchange listener calls esStatusRepaint behind a typeof guard, so a rename would stop
+    the redraw silently; this pins that the name it calls is the function the module defines."""
+    static = _ROOT / "src" / "static"
+    assert "esStatusRepaint()" in (static / "app-boot.js").read_text(encoding="utf-8")
+    assert "function esStatusRepaint(" in (static / "app-insights.js").read_text(encoding="utf-8")

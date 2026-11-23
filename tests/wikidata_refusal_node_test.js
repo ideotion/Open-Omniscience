@@ -41,7 +41,7 @@ const SENTENCE = FROM_CONSTANT ? process.env.OO_NETWORK_REFUSED : "network refus
 
 async function press(err) {
   const st = { textContent: "" };
-  const src = ["let _esStatusRender = null;", extract("_esStatus"), extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return entitySpineFetch;"].join("\n");
+  const src = ["let _esStatusRender = null, _esStatusTitle = null;", extract("_esStatus"), extract("esStatusRepaint"), extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return entitySpineFetch;"].join("\n");
   const f = new Function("$", "api", "ensureOnline", "pollJobStatus", "loadEntitySpine", "_jobStillRunning", "window", src);
   const run = f(() => st, async () => { throw err; }, async () => true, async () => ({}), () => {}, () => false, {});
   await run();
@@ -51,7 +51,7 @@ async function press(err) {
 // A background job that ENDS in error after the switch engaged (the route answered 200 and the poll reports the job's own error text).
 async function pressJob(job) {
   const st = { textContent: "" };
-  const src = ["let _esStatusRender = null;", extract("_esStatus"), extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return entitySpineFetch;"].join("\n");
+  const src = ["let _esStatusRender = null, _esStatusTitle = null;", extract("_esStatus"), extract("esStatusRepaint"), extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return entitySpineFetch;"].join("\n");
   const f = new Function("$", "api", "ensureOnline", "pollJobStatus", "loadEntitySpine", "_jobStillRunning", "window", src);
   const run = f(() => st, async () => ({}), async () => true, async () => job, () => {}, () => false, {});
   await run();
@@ -102,7 +102,7 @@ function http(status, message) {
     const st = { textContent: "" };
     const dict = {};
     const win = { OOI18N: { t: (s) => dict[s] || s } };
-    const src = ["let _esStatusRender = null;", extract("_esStatus"), extract("esStatusRepaint"), extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return [entitySpineFetch, esStatusRepaint];"].join("\n");
+    const src = ["let _esStatusRender = null, _esStatusTitle = null;", extract("_esStatus"), extract("esStatusRepaint"), extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return [entitySpineFetch, esStatusRepaint];"].join("\n");
     let calls = 0;
     const f = new Function("$", "api", "ensureOnline", "pollJobStatus", "loadEntitySpine", "_jobStillRunning", "window", "OOI18N", src);
     const [run, repaint] = f(() => st, async () => { calls++; throw http(409, SENTENCE); }, async () => true, async () => ({}), () => {}, () => false, win, win.OOI18N);
@@ -112,6 +112,39 @@ function http(status, message) {
     repaint();
     assert.strictEqual(st.textContent, "Refusé : le mode avion est activé.", "the refusal follows a language switch");
     assert.strictEqual(calls, 1, "a repaint never fetches");
+  }
+  // The resolve and the fetch DONE lines, and their method hover, redraw in the new language (the host is
+  // data-i18n-dyn, so the walker translates neither the text nor the title).
+  {
+    const st = { textContent: "", title: "" };
+    const dict = {};
+    const OOI18N = { t: (s) => dict[s] || s, tf: (s, v) => (dict[s] || s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)) };
+    const src = ["let _esStatusRender = null, _esStatusTitle = null;", extract("_esStatus"), extract("esStatusRepaint"),
+      extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineResolve"), extract("entitySpineFetch"),
+      "return [entitySpineResolve, entitySpineFetch, esStatusRepaint];"].join("\n");
+    let calls = 0;
+    const said = (r, k) => OOI18N.t("Method") + ": " + r[k];
+    const f = new Function("$", "api", "ensureOnline", "pollJobStatus", "loadEntitySpine", "_jobStillRunning", "ooSaidText", "window", "OOI18N", src);
+    let job = { state: "done", result: { places: 3, resolved: 2, distinct_mentions: 5, method: "m1", osm_notable: { countries: ["fr"], places: 7 } } };
+    const [resolve, fetchItems, repaint] = f(() => st, async () => { calls++; return {}; }, async () => true, async () => job, () => {}, () => false, said, { OOI18N }, OOI18N);
+    await resolve();
+    assert.strictEqual(st.textContent, "3 places from 2 of 5 mentioned places · 7 notable places from OpenStreetMap");
+    assert.strictEqual(st.title, "Method: m1");
+    dict["{places} places from {resolved} of {n} mentioned places"] = "{places} lieux sur {resolved}/{n}";
+    dict["{n} notable places from OpenStreetMap"] = "{n} lieux OSM";
+    dict["Method"] = "Méthode";
+    repaint();
+    assert.strictEqual(st.textContent, "3 lieux sur 2/5 · 7 lieux OSM");
+    assert.strictEqual(st.title, "Méthode: m1", "the hover follows the language too");
+    job = { state: "done", result: { fetched: 4, missing_on_wikidata: 1, refused: 0, pending: 2, stopped: true, method: "m2" } };
+    await fetchItems();
+    dict["stopped early"] = "arrêté tôt";
+    repaint();
+    assert.ok(st.textContent.endsWith(" · arrêté tôt"), st.textContent);
+    assert.strictEqual(st.title, "Méthode: m2");
+    const before = calls;
+    repaint();
+    assert.strictEqual(calls, before, "a repaint never fetches");
   }
   console.log("wikidata_refusal_node_test.js: OK (sentence from " + (FROM_CONSTANT ? "the constant" : "this file's own copy") + ")");
 })().catch((e) => { console.error(e); process.exit(1); });
