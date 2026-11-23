@@ -8,7 +8,7 @@ midnight, exactly as before, so nothing is invented.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -46,6 +46,18 @@ def test_an_article_published_earlier_today_keeps_its_time():
     assert doc is not None and doc.published_at == early.replace(tzinfo=None)
 
 
+@pytest.mark.parametrize("hours_ahead", [5, 14])
+def test_a_moment_stated_in_a_zone_ahead_of_the_machine_keeps_its_time(hours_ahead):
+    # The upper bound is the machine's local end of today (htmldate's clock). A moment a second old,
+    # written in a zone far ahead (at +14:00 its own date is often already tomorrow), is past, and kept.
+    now = datetime.now(UTC).replace(microsecond=0)
+    early = now - timedelta(seconds=1)
+    stated = early.astimezone(timezone(timedelta(hours=hours_ahead)))
+    head = f'<meta property="article:published_time" content="{stated.isoformat()}">'
+    doc = ex.extract_article(_page(head), url="https://example.com/news/ahead")
+    assert doc is not None and doc.published_at == early.replace(tzinfo=None), stated.isoformat()
+
+
 def test_the_two_parse_path_keeps_the_time_too(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("metadata fault")
@@ -73,7 +85,10 @@ def test_the_extensive_search_flag_still_reaches_htmldate(monkeypatch):
     monkeypatch.delenv("OO_EXTENSIVE_DATE_SEARCH")
     params = ex._date_params()
     assert params["extensive_search"] is False and params["outputformat"] == "%Y-%m-%dT%H:%M:%S%z"
-    assert "max_date" not in params  # htmldate's default: the END of today, so today's times survive
+    # The END of today, stated rather than left out: trafilatura 2.4.0 merges our dict over its own
+    # defaults, so a missing key comes back as today's date (00:00) and today's times are lost.
+    end = params["max_date"]
+    assert (end.hour, end.minute, end.second) == (23, 59, 59) and end.date() == datetime.now().date()
 
 
 def test_an_end_day_bound_keeps_that_days_timed_articles():
