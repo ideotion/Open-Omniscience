@@ -133,8 +133,7 @@ def test_an_unsigned_list_could_not_be_checked(tmp_path, own_key):  # noqa: F811
 
 def test_the_panel_knows_r795s_four_reasons_and_says_the_same_sentence():
     src = JS.read_text(encoding="utf-8")
-    blk = src[src.index("const BACKUP_PASS_REASONS = [") :]
-    blk = blk[: blk.index("];")]
+    blk = re.search(r"BACKUP_PASS_REASONS = \[(.*?)\n\s*\];", src, re.S).group(1)
     assert tuple(re.findall(r'^\s*"(.*)",$', blk, re.M)) == tuple(UNCHECKED_REASONS)
     frame = re.search(r'"passphrase-unchecked": "(.*)",$', src, re.M).group(1)
     server = UNCHECKED_VERIFY_PASSPHRASE
