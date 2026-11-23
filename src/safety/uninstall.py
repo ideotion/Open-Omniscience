@@ -255,7 +255,52 @@ def ours(nm):
     for c in dict.fromkeys((nm, re.sub(only["strip"], "", nm))):
         if c and (c in only["names"] or c.startswith(tuple(only["prefixes"])) or c.endswith(tuple(only["suffixes"]))): return True
     return False
+# R806 (2): in a folder of the app's own, ``keys`` is the app's by its CONTENT (the plan's ``keys_spec``, from
+# src/safety/data_scope.py): a real folder holding only the names the app writes there. Anything else (an entry the app does not
+# write, a link) makes it foreign: only the app's key files in it go, the rest stays, and so does the data folder, said as KEPT.
+ks = plan.get("keys_spec") or {}
+def lkind(p):
+    try: st = os.lstat(p)
+    except FileNotFoundError: return "absent"
+    except OSError: return "unlisted"
+    if stat.S_ISLNK(st.st_mode): return "link"
+    if stat.S_ISDIR(st.st_mode):
+        try: return "link" if os.path.isjunction(p) else "dir"
+        except (OSError, AttributeError): return "link"
+    return "file" if stat.S_ISREG(st.st_mode) else "other"
+def keys_state(kd):
+    k = lkind(kd)
+    if k in ("absent", "unlisted"): return k
+    if k != "dir": return "foreign"
+    try: names = os.listdir(kd)
+    except FileNotFoundError: return "absent"
+    except OSError: return "unlisted"
+    for nm in names:
+        if nm == ks.get("pending"):
+            if lkind(os.path.join(kd, nm)) != "dir": return "foreign"
+            try: inner = os.listdir(os.path.join(kd, nm))
+            except OSError: return "unlisted"
+            for n in inner:
+                if not re.fullmatch(ks.get("pending_re", "(?!)"), n) or lkind(os.path.join(kd, nm, n)) != "file": return "foreign"
+        elif nm not in ks.get("names", ()) or lkind(os.path.join(kd, nm)) != "file": return "foreign"
+    return "app"
+kstate = keys_state(os.path.join(wd, "keys")) if (wd and not only and ks) else "absent"
+keys_foreign = kstate in ("foreign", "unlisted")
 def roots():
+    if not only and keys_foreign:
+        kd = os.path.join(wd, "keys")
+        try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if nm != "keys"]
+        except FileNotFoundError: tops = []
+        except OSError as e: unlisted(e); tops = []
+        mine = []
+        if lkind(kd) == "dir":   # a link or a junction is never entered
+            mine = [os.path.join(kd, n) for n in ks.get("names", ()) if lkind(os.path.join(kd, n)) == "file"]
+            pd = os.path.join(kd, ks.get("pending", ".pending"))
+            if lkind(pd) == "dir":
+                try: mine += [os.path.join(pd, n) for n in sorted(os.listdir(pd))
+                              if re.fullmatch(ks.get("pending_re", "(?!)"), n) and lkind(os.path.join(pd, n)) == "file"]
+                except OSError as e: unlisted(e)
+        return mine + tops   # the app's key material first
     if not only: return [wd]
     try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if ours(nm)]
     except FileNotFoundError: tops = []
@@ -268,6 +313,8 @@ def roots():
     return tops + [p for p in dict.fromkeys(keys) if there(p)]
 if wd and not os.path.isdir(wd) and there(wd):
     rec("could not check the data folder %s: THE ERASE MAY BE INCOMPLETE" % tok(wd))   # there, but not a folder it can look at
+if kstate == "unlisted":
+    unlisted(OSError(13, "could not list the keys folder", os.path.join(wd, "keys")))
 if wd and os.path.isdir(wd):
     seen = wiped = not_overwritten = 0
     for top in roots():
@@ -343,6 +390,21 @@ if wd and os.path.isdir(wd):
         except OSError: left = -1
         rec("wiped the app's own files in %s, a folder it does not own (%s), and left the folder and %d other entries"
             % (tok(wd), only.get("reason"), left))
+    elif keys_foreign:
+        kd = os.path.join(wd, "keys")
+        for d in (os.path.join(kd, ks.get("pending", ".pending")), kd):
+            if lkind(d) == "dir":
+                try: os.rmdir(d)              # only when empty: what is left in it is not the app's
+                except OSError: pass
+        if lkind(kd) == "absent":
+            shutil.rmtree(wd, ignore_errors=True)   # nothing of the operator's was left after all
+        else:
+            if lkind(kd) != "dir": left = 1
+            else:
+                try: left = sum(1 for n in os.listdir(kd))
+                except OSError: left = 1
+            rec("kept the data folder %s because it holds %d item(s) the app did not create (in its keys folder); "
+                "the app's own files in it were wiped" % (tok(wd), left))
     else:
         shutil.rmtree(wd, ignore_errors=True)
     removed_now = not only and not there(wd)   # R802: measured right after the wipe's own removal
@@ -353,7 +415,7 @@ if wd and os.path.isdir(wd):
         rec("the app had not stopped after two minutes, so the wipe went ahead while it may still have been writing")
     # R802 (5): measured after the wipe's last write, and said truthfully: a data folder removed whole that is there again was written to after.
     back = removed_now and there(wd)
-    kept = not only and not removed_now
+    kept = not only and not removed_now and not (keys_foreign and there(wd))   # R806: kept on purpose is never "could not be removed"
     if back:
         rec("THE ERASE MAY BE INCOMPLETE: the data folder %s existed again after the wipe had removed it, so something recreated "
             "it afterwards. Restart the computer, then remove that folder." % tok(wd))
@@ -546,6 +608,13 @@ def _app_only(scope: dict | None) -> dict | None:
     return {**owned_spec(shared=True), "key_paths": keys, "key_suffixes": list(KEY_FORM_SUFFIXES), "reason": scope.get("reason")}
 
 
+def _keys_spec() -> dict:
+    """R806 (2): what the watcher needs to tell the app's ``keys`` folder by its content (src/safety/data_scope.py)."""
+    from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING, KEYS_PENDING_RE
+
+    return {"names": sorted(APP_KEY_NAMES), "pending": KEYS_PENDING, "pending_re": KEYS_PENDING_RE}
+
+
 def _default_spawn(plan: dict, server_pid: int) -> None:
     """Launch the detached watcher that removes the planned paths after the server exits."""
     payload = {
@@ -557,6 +626,7 @@ def _default_spawn(plan: dict, server_pid: int) -> None:
         "passes": plan.get("passes"),  # optional defence-in-depth free-space scrub (1/3/8)
         "enc_names": _lane_names(),  # row 30: the lane databases, header-only like the corpus
         "app_only": _app_only(plan.get("data_scope")),  # R711: a broad data folder is wiped by the app's own names only
+        "keys_spec": _keys_spec(),  # R806 (2): keys is the app's by its content, read by the watcher when it wipes
         "audit_log": plan.get("audit_log"),
     }
     if "__PID_PROBE__" in _WATCHER_SRC:

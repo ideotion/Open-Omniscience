@@ -124,8 +124,8 @@ def settle_removed(report: dict) -> bool:
     that is there again makes ``removed`` False, sets ``folder_back`` and puts the "may be incomplete" sentence first in ``limit``.
     Logs nothing (a log line after the measure is what this measure is for). Returns ``removed``. Never raises."""
     try:
-        if report.get("scope") != "data-folder" or not report.get("data_dir"):
-            return bool(report.get("removed"))
+        if report.get("scope") != "data-folder" or not report.get("data_dir") or report.get("folder_kept_foreign"):
+            return bool(report.get("removed"))  # R806: a folder kept on purpose is said as kept, never as "could not be removed"
         removed_before = bool(report.get("removed")) or bool(report.get("removed_at_rmtree"))
         removed = not _present(Path(report["data_dir"]))
         report["removed"] = removed
@@ -625,6 +625,65 @@ def _destroy_keys_folder(
     return seen, wiped
 
 
+def _destroy_app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, unreached=None) -> tuple[int, int]:
+    """R806 (2): step 2 for a ``keys`` folder that is not the app's by its content (it holds something the app did not write). Only
+    the app's own key files go, by their exact names (``data_scope.APP_KEY_NAMES``), and the private copies in a real ``.pending``
+    folder, by their one name shape; everything else is left byte for byte, and neither folder is removed unless that left it
+    empty. A ``keys`` that is a link, a junction or not a folder is never entered: nothing in it is the app's to reach."""
+    from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING, KEYS_PENDING_RE
+
+    seen = wiped = 0
+    if _kind(keys_dir, unreached) != "dir":
+        return seen, wiped
+    for name in (*_KEY_FILES, *sorted(APP_KEY_NAMES - set(_KEY_FILES))):  # the corpus signer's pair first, as in the app's own folder
+        p = keys_dir / name
+        if _kind(p, unreached) != "file":
+            continue  # a link or a folder under one of the app's names was not written by the app: left, never followed
+        s, overwritten, w = track(p)
+        seen += s
+        wiped += w
+        if s and overwritten and name in _KEY_FILES:
+            keys_destroyed.append(name)
+    pending = keys_dir / KEYS_PENDING
+    if _kind(pending, unreached) == "dir":
+        for e in _listing(pending, unlisted):
+            p = Path(e.path)
+            if re.fullmatch(KEYS_PENDING_RE, e.name) and _kind(p, unreached) == "file":
+                s, _overwritten, w = track(p)
+                seen += s
+                wiped += w
+        with contextlib.suppress(OSError):
+            pending.rmdir()  # only when empty
+    with contextlib.suppress(OSError):
+        keys_dir.rmdir()  # only when empty: what is left in it is not the app's to remove
+    return seen, wiped
+
+
+def _kept_in_keys(keys_dir: Path) -> int:
+    """How many entries a foreign ``keys`` folder still holds that the app did not write (1 for a ``keys`` that is a link or not a
+    folder: that entry itself). A count only: names are never read out (R806 (4))."""
+    from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING
+
+    kind = _kind(keys_dir)
+    if kind == "absent":
+        return 0
+    if kind != "dir":
+        return 1
+    try:
+        entries = list(os.scandir(keys_dir))
+    except OSError:
+        return 1  # could not be listed (R798): the keys folder itself is the one item left, its contents uncounted
+    n = 0
+    for e in entries:
+        if e.name == KEYS_PENDING:
+            n += len(_listing(Path(e.path))) if _kind(Path(e.path)) == "dir" else 1
+        elif e.name not in APP_KEY_NAMES:
+            n += 1
+        elif _kind(Path(e.path)) != "file":
+            n += 1
+    return n
+
+
 def _shred(path: Path, *, head_bytes: int | None = None, zeros: bool = False, unreached=None) -> tuple[bool, bool, bool]:
     """Overwrite then unlink ``path``. Returns ``(seen, overwritten, unlinked)``:
     ``seen`` is whether the file existed, ``overwritten`` whether the destructive
@@ -671,8 +730,7 @@ def _resolve(data_dir: Path | None) -> dict:
     """Resolve every wipe target. For the default store (``data_dir is None``) the
     real resolvers are used so nothing is hardcoded; an explicit dir (tests/tools)
     derives the same layout from that base."""
-    from src.paths import DataFolderErased, data_dir_path
-    from src.paths import data_dir as _default_dir
+    from src.paths import data_dir_path
 
     if data_dir is not None:
         base = Path(data_dir)
@@ -687,24 +745,15 @@ def _resolve(data_dir: Path | None) -> dict:
         }
     from src.api.unlock import main_db_path
 
-    try:
-        base = _default_dir()
-        latched = False
-    except DataFolderErased:
-        # R802: a second erase in this process, of a folder the first one latched: never made again to be erased again. The
-        # same overrides as the first erase (DATABASE_URL, OO_COLUMNAR_DIR) are kept, and the keys folder is named, never made.
-        base = data_dir_path()
-        latched = True
-    if latched:
-        override = os.getenv("OO_COLUMNAR_DIR")
-        store_dir = Path(override) if override else base
-        keys_dir = base / "keys"
-    else:
-        from src.analytics.columnar import _store_dir
-        from src.custody.signing import _keys_dir
-
-        store_dir = _store_dir()
-        keys_dir = _keys_dir()
+    # R806 (1): the erase never makes anything in the folder it erases, so every target is NAMED here, never made: the data folder
+    # where src.paths.data_dir would answer (data_dir_path: no mkdir, the same precedence), the keys folder inside it (src.custody.
+    # signing._keys_dir makes it; a missing one is nothing to erase) and the columnar store where src.analytics.columnar._store_dir
+    # puts it (its OO_COLUMNAR_DIR override, else the data folder). A second erase in this process, of a folder the first one
+    # latched (R802), resolves the same way.
+    base = data_dir_path()
+    override = os.getenv("OO_COLUMNAR_DIR")
+    store_dir = Path(override) if override else base
+    keys_dir = base / "keys"
     return {
         "base": base,
         "main_db": main_db_path(),  # honors DATABASE_URL; None on a non-SQLite backend
@@ -821,6 +870,8 @@ def _files_under(roots: list[Path], base: Path, onerror, skip: Path | None = Non
         for top, dirs, names in os.walk(root, onerror=onerror):
             dirs[:] = [d for d in dirs if Path(top, d) != skip and _kind(Path(top, d), unreached) == "dir"]
             for name in names:
+                if skip is not None and Path(top, name) == skip:
+                    continue  # R806: a foreign keys entry that is a link to a file, or a file, is left too
                 yield Path(top, name)
 
 
@@ -970,6 +1021,19 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         log_failure(_LOG, "could not read the data folder's scope; erasing the app's own files only", exc, level=logging.WARNING)
         scope = {"broad": True, "reason": "unknown"}
     app_only = bool(scope["broad"])
+    # R806 (2): in a folder of the app's own, ``keys`` is the app's by its CONTENT, never by its name: a real folder holding only the
+    # names the app writes there (data_scope.keys_folder_state). One that holds anything else, or is a link, is "foreign": only the
+    # app's key files in it go, the rest is left, and so is the data folder. One that cannot be listed is "could not check" (R798) and
+    # is left the same way. (In a folder the app does not own, keys is a common name and already handled that way.) Read-only.
+    keys_state = "absent"
+    if not app_only:
+        try:
+            from src.safety.data_scope import keys_folder_state
+
+            keys_state = keys_folder_state(paths["keys_dir"])
+        except Exception:  # noqa: BLE001 - not knowing is "could not check", never "the app's"
+            keys_state = "unlisted"
+    keys_foreign = keys_state in ("foreign", "unlisted")
     seen = wiped = 0
     headers: list[str] = []
     keys_destroyed: list[str] = []
@@ -1095,8 +1159,13 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # put the destroyed key back under its name after this step. Held for the keys folder only, never for the
     # rest of step 6, which rewrites everything left (a wiki dump can take hours) while a signing request waits.
     keys_dir: Path = paths["keys_dir"]
+    if keys_state == "unlisted":
+        _unlisted(OSError(errno.EACCES, "could not list the keys folder", str(keys_dir)))
     with _key_files_lock():
-        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, shared=app_only, unreached=_unreached)
+        if keys_foreign:
+            _s, _w = _destroy_app_keys_in_foreign(keys_dir, _track, keys_destroyed, _unlisted, _unreached)
+        else:
+            _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, shared=app_only, unreached=_unreached)
     seen += _s
     wiped += _w
 
@@ -1217,7 +1286,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         if chosen is not None and chosen.resolve() == base.resolve():
             forget_volume_id()
     roots = _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)  # listed again: a file the app wrote since 5b is the app's too
-    for p in _files_under(roots, base, _unlisted, unreached=_unreached):  # never follows a symlinked folder or a junction
+    # R806: a foreign keys folder is left out of the walk (its app key files went in step 2), never followed when it is a link.
+    for p in _files_under(roots, base, _unlisted, skip=keys_dir if keys_foreign else None, unreached=_unreached):  # never follows a symlinked folder or a junction
         kind = _kind(p, _unreached)
         if kind in ("absent", "unreached"):
             continue  # gone already, or named as not overwritten (R798)
@@ -1241,9 +1311,15 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         wiped += _w
     left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}
     removed_at_rmtree = False
+    kept_items = 0
     if app_only:
         _remove_app_folders(roots)
         left = _left_entries(base)
+        kept_items = len(left["others"])
+    elif keys_foreign and _kind(keys_dir) != "absent":
+        # R806 (2): the data folder is kept because it holds items the app did not create (in keys); every other entry of it goes.
+        _remove_app_folders([Path(e.path) for e in _listing(base, _unlisted) if Path(e.path) != keys_dir])
+        kept_items = _kept_in_keys(keys_dir)
     else:
         with contextlib.suppress(OSError):
             shutil.rmtree(base, ignore_errors=True)
@@ -1297,6 +1373,11 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "not_removed": left["not_removed"],
         "removed": not _present(base),
         "removed_at_rmtree": removed_at_rmtree,
+        # R806 (4): the folder was kept ON PURPOSE because it holds items the app did not create (a count, never their names), so
+        # the report says "folder kept because it holds items the app did not create", never "could not be removed" or "destroyed".
+        "keys_folder": keys_state,
+        "folder_kept_foreign": bool(kept_items) and _present(base),
+        "kept_items": kept_items,
         # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
         "unlisted_folders": len(unlisted_folders),
         # R805 (a): this process's own connections on the store still open when the erase ran (None: could not tell).

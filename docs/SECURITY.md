@@ -840,6 +840,14 @@ imply a protection we cannot deliver.
   it is a real folder of this user with the app's prefix. Not covered: a store or cache engine writing from C into a file it
   already held open, a write already past its open when the latch lands, a child process, and another process (R792 reports
   it); within this process, a kept folder (app-only scope) refuses every write of the app's under it until a restart.
+  R806 (row 362): the erase makes nothing in the folder it erases (its targets are named, never made: no data folder, no
+  `keys`), and in a folder of the app's own `keys` is the app's by its CONTENT, never its name: a real folder holding only the
+  names the app writes there (`data_scope.APP_KEY_NAMES`, each with where it is written, and `.pending` with its private
+  copies). A `keys` holding anything else, or that is a link, is foreign: only the app's key files in it are destroyed (a link
+  is never followed), everything else is left byte for byte, every other entry of the data folder goes, and the folder is
+  kept and said as "kept because it holds N items the app did not create" (a count, never the names), never "could not be
+  removed" and never "destroyed"; one that cannot be listed is "could not check" (R798). The secure-uninstall watcher applies
+  the same rule. The other folder names the app owns are still owned by name (a proposed follow-up row).
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or

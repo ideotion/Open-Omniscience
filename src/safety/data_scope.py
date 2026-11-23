@@ -76,6 +76,73 @@ APP_DIRS: frozenset[str] = frozenset({
 #: the operator's files but loses every key of the app's (crypto_erase.py).
 COMMON_NAMES: frozenset[str] = frozenset({"cache", "keys", "leases", "models", "runtime"})
 
+#: R806 (2): the exact names the app writes INSIDE its ``keys`` folder, and nothing else. ``keys`` is the app's by its CONTENT, never by
+#: its name: a real folder (not a link) holding only these. Each is listed where the app writes it:
+#: the custody signer, src/custody/signing.py:432-433; the annotation signer, src/annotations/bundle.py:125-126; the evidence key,
+#: src/reporting/evidence.py:47; the three pairs as one set, src/backup/merge.py:7387 (_APP_KEY_FILES, the names a restore places);
+#: the restore marker beside the evidence key, src/reporting/evidence.py:259 and :265; the private-copy folder, src/custody/keyfile.py:108.
+APP_KEY_NAMES: frozenset[str] = frozenset({
+    *(f"{who}{form}" for who in ("custody", "evidence", "annotations") for form in ("_ed25519.pem", "_ml_dsa_65.key")),
+    "evidence_ed25519.pem.restored-from-backup",
+})
+#: The private-copy folder inside ``keys`` (src/custody/keyfile.py:108), and the one name shape the app gives a file in it:
+#: ``<key file>.<pid>.<thread>.<token>.<kind>`` (src/custody/keyfile.py:111-128, private_name).
+KEYS_PENDING = ".pending"
+KEYS_PENDING_RE = r"[A-Za-z0-9_.-]+\.\d+\.\d+\.[0-9a-f]{12}\.[a-z]+"
+
+
+def keys_folder_state(keys_dir: Path) -> str:
+    """R806 (2): ``absent``, ``app`` (a real folder holding only :data:`APP_KEY_NAMES` and a real ``.pending`` folder holding
+    only private copies), ``foreign`` (anything else: a link, a junction, a file, an entry the app does not write) or
+    ``unlisted`` (it, or its ``.pending``, could not be listed: R798, "could not check"). Never follows a link; never raises."""
+    import stat as _stat
+
+    def kind(p: Path) -> str:
+        try:
+            st = os.lstat(p)
+        except FileNotFoundError:
+            return "absent"
+        except OSError:
+            return "unlisted"
+        if _stat.S_ISLNK(st.st_mode):
+            return "link"
+        if _stat.S_ISDIR(st.st_mode):
+            try:
+                return "link" if os.path.isjunction(p) else "dir"
+            except (OSError, AttributeError):
+                return "link"
+        return "file" if _stat.S_ISREG(st.st_mode) else "other"
+
+    try:
+        k = kind(keys_dir)
+        if k in ("absent", "unlisted"):
+            return k
+        if k != "dir":
+            return "foreign"
+        try:
+            names = os.listdir(keys_dir)
+        except FileNotFoundError:
+            return "absent"
+        except OSError:
+            return "unlisted"
+        for name in names:
+            if name == KEYS_PENDING:
+                if kind(keys_dir / name) != "dir":
+                    return "foreign"
+                try:
+                    inner = os.listdir(keys_dir / name)
+                except OSError:
+                    return "unlisted"
+                for n in inner:
+                    if not re.fullmatch(KEYS_PENDING_RE, n) or kind(keys_dir / name / n) != "file":
+                        return "foreign"
+            elif name not in APP_KEY_NAMES or kind(keys_dir / name) != "file":
+                return "foreign"
+        return "app"
+    except Exception:  # noqa: BLE001 - a question that fails is answered "could not check", never "the app's"
+        return "unlisted"
+
+
 #: Endings the app adds to one of its names: an atomic write's temp (``<name>.tmp`` and ``file_lock.temp_name``'s
 #: ``<name>.tmp.<pid>.<thread>``), a lock sidecar (``file_lock._SIDECAR``), a damaged or partial copy. Stripped before the
 #: name is looked up, so ``app_settings.json.tmp`` is the app's because ``app_settings.json`` is.
