@@ -165,8 +165,6 @@ app-home.js loadHomeTrends
 app-home.js openLinkPreview
 app-home.js renderLeadsCarousel
 app-insights.js createWatch
-app-insights.js entitySpineFetch
-app-insights.js entitySpineResolve
 app-insights.js evaluateWatches
 app-insights.js kxHide
 app-insights.js kxRenderTags
