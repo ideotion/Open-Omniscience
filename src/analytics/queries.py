@@ -271,7 +271,7 @@ def resolve_keyword(session, term: str, *, exact: bool = False) -> Keyword | Non
       It did not merely label a chart: it ran a significance test on the
       mis-resolved keyword and published the result to Home as a Lead.
     * ``src/api/link_analysis.py``'s ``/api/links/shared`` -- FIXED to ``exact=True``.
-      Its ``term`` is ``_corpusTerm``, a keyword the app itself chose, never typed.
+      Its ``term`` was ``_corpusTerm`` (the corpus window, deleted in #2317), never typed.
     * ``producers.py``'s five OTHER call sites resolve ``term["term"]`` straight out
       of ``q.trending()`` -- already a stored keyword, so the exact match always hits
       and the fallback is unreachable. Left as-is deliberately.

@@ -6,7 +6,7 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 THE PAIN (maintainer, field test): re-indexing the whole corpus was driven by a
-CLIENT loop (`_reindexAllLoop` in app.js → /api/insights/reindex-all) with NO
+CLIENT loop (`_reindexAllLoop`, deleted in #2317 → /api/insights/reindex-all) with NO
 persisted cursor — closing the browser tab stopped it, and a re-open restarted
 from article 0. On a large corpus that is the "keep the tab open for hours / lose
 all progress" trap.
