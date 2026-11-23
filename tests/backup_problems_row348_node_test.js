@@ -33,4 +33,8 @@ assert.ok(!R.backupProblemHtml("r", {code: "bad-volumes", params: {other: "<x>"}
 // a param value that itself looks like a marker or a placeholder stays inert data
 const sneaky = R.backupProblemHtml("r", {code: "member-checksum-mismatch", params: {member: "\u0001member\u0002{member}"}}, tf);
 assert.strictEqual((sneaky.match(/<bdi/g) || []).length, 1, sneaky);
+// an inherited property name is not a code: the English line, never a thrown panel
+for (const c of ["constructor", "toString", "__proto__"]) {
+  assert.strictEqual(R.backupProblemHtml("raw <l>", {code: c, params: {}}, tf), "raw &lt;l&gt;", c);
+}
 console.log("backup problems row 348: all checks passed");

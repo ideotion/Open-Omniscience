@@ -1427,8 +1427,9 @@
       "envelope-mismatch": "The signed inner envelope does not match the volume index.",
     };
     function backupProblemHtml(raw, coded, tf) {
-      const frame = coded && typeof coded === "object" ? BACKUP_PROBLEM_FRAMES[coded.code] : undefined;
-      if (!frame) return esc(String(raw == null ? "" : raw));
+      const frame = coded && typeof coded === "object"
+        && Object.prototype.hasOwnProperty.call(BACKUP_PROBLEM_FRAMES, coded.code) ? BACKUP_PROBLEM_FRAMES[coded.code] : undefined;
+      if (typeof frame !== "string") return esc(String(raw == null ? "" : raw));
       const params = (coded.params && typeof coded.params === "object") ? coded.params : {};
       const marks = {};
       for (const k of Object.keys(params)) marks[k] = "\u0001" + k + "\u0002";
