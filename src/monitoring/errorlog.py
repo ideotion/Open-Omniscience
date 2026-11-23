@@ -153,7 +153,10 @@ def _to_stderr(entry: dict) -> None:
     goes there (a message can carry what the scrub did not recognise, a traceback a path): only when it was, its level and logger, and
     an HTTP record's status and method, each a value the app chose. The text was meant for the journal, and the journal is gone."""
     try:
-        short = {k: entry[k] for k in ("at", "level", "logger", "status", "method", "kind") if k in entry}
+        # Each field by its own name (never a loop over the record's keys): the message and the traceback are never read here.
+        fields = (("at", entry.get("at")), ("level", entry.get("level")), ("logger", entry.get("logger")),
+                  ("status", entry.get("status")), ("method", entry.get("method")), ("kind", entry.get("kind")))
+        short = {name: str(value)[:120] for name, value in fields if value is not None}
         sys.stderr.write("app error journal (no data folder; the record's text is not kept): " + json.dumps(short, ensure_ascii=False)
                          + "\n")
         sys.stderr.flush()
