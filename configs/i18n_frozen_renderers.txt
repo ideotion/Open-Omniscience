@@ -106,13 +106,11 @@ app-diagnostics.js _paintPerceptionLangToggles
 app-diagnostics.js _renderAiCheck
 app-diagnostics.js _rrRenderReport
 app-diagnostics.js cancelP0Validation
-app-diagnostics.js cleanupKeywords
 app-diagnostics.js discoverSources
 app-diagnostics.js discoverWorld
 app-diagnostics.js downloadDiagnosticsVolumes
 app-diagnostics.js enrichSourceTypes
 app-diagnostics.js enrichSources
-app-diagnostics.js foldKeywords
 app-diagnostics.js goldBuilderLoad
 app-diagnostics.js goldBuilderSave
 app-diagnostics.js loadAiActivity
