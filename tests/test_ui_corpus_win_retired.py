@@ -7,17 +7,18 @@ The app converged on ONE in-SPA analysis window (#an). The legacy #corpus-win ke
 modal is DEAD: openCorpus() routes to openAnalysisFor() (which spawns an #an tab), and
 NOTHING opens the dialog (no live .showModal()/.show()). This is the ABSORPTION gate
 (the Desk lesson — nothing is lost): the #an window is a strict SUPERSET of every subtab
-the modal had, so retiring the modal removes no capability. The markup + the
-corpusTab/renderCorpus* JS are left UNREACHABLE (they null-guard on #corpus-* nodes)
-pending a browser-verified deletion pass. Pure string-assertion guard.
+the modal had, so retiring the modal removes no capability. Row 357 then DELETED the
+unreachable markup, its corpus-subtabs nav and the corpusTab/renderCorpus* JS; the
+negative checks below keep every piece of it from coming back. Pure string-assertion
+guard; the facet-by-facet content audit is tests/test_corpus_win_absorption_content.py.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from tests.js_source_helper import app_js, assert_absent
 from tests.test_repo_invariants import _ui_source
-from tests.js_source_helper import app_js
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
@@ -44,6 +45,22 @@ def test_modal_is_never_opened():
 
 def test_modal_is_marked_dead():
     assert "RETIRED (wave 4 I" in _HTML, "the #corpus-win dialog must carry the retirement marker"
+
+
+def test_the_deleted_modal_and_its_code_stay_deleted():
+    """Row 357: the dead markup and the JS reachable only through it are gone."""
+    for markup in ('id="corpus-win"', 'id="corpus-subtabs"', 'id="corpus-body"'):
+        assert markup not in _HTML, f"the deleted #corpus-win markup came back: {markup}"
+    for decl in (
+        "function corpusTab(",
+        "function renderCorpusSources(",
+        "function renderCorpusKeywords(",
+        "function renderCorpusCompetitive(",
+        "function _mmKitHome(",
+        "_corpusSubtabs",
+        "_corpusTerm",
+    ):
+        assert_absent(_JS, decl, why="row 357 deleted the retired modal's code")
 
 
 def test_an_window_absorbs_every_modal_subtab():

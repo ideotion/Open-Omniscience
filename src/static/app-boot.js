@@ -806,14 +806,10 @@
 
 
     // Wire the universal subtab grammar on every multi-section surface (one
-    // component, three surfaces). No opts.initial: each surface keeps its
+    // component, many surfaces). No opts.initial: each surface keeps its
     // HTML-default panel; the component just adopts ARIA + keyboard + click.
     _insSubtabs = ooSubtabs($("ins-subtabs"), showInsightCat);
     _setSubtabs = ooSubtabs($("set-subtabs"), showSetCat);
-    _corpusSubtabs = ooSubtabs($("corpus-subtabs"), corpusTab);
-    // Closing the corpus window returns the shared mind-map kit to Insights
-    // (so the Insights Explore mind-map is never left empty after a relocation).
-    $("corpus-win").addEventListener("close", _mmKitHome);
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
     _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window subtabs
     // A click (never a programmatic select) also brings the analysis into view: it sits under

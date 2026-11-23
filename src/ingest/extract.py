@@ -307,8 +307,15 @@ def _date_params() -> dict:
     params["outputformat"] = _DATE_OUTPUT_FORMAT
     # trafilatura passes today's DATE as the latest allowed, which htmldate reads as today at 00:00: with
     # the time kept, every article published later today would be "in the future" and fall back to
-    # midnight. htmldate's own default is the end of the current day.
-    params.pop("max_date", None)
+    # midnight. So the latest allowed moment is stated as the END of the current day, htmldate's own
+    # default (``htmldate.validators.get_max_date``). The clock is the MACHINE'S LOCAL wall clock, as
+    # htmldate's is -- naive, never UTC -- and the bound is never widened past it. A stated offset ahead of
+    # the machine is still kept: a moment a second old, written at +05:00 or +14:00 (its own date already
+    # tomorrow), came back exactly with the machine at UTC-11, UTC-8, UTC, UTC+9 and UTC+14 (measured
+    # 2026-11-23; pinned in tests/test_publish_time_row66.py). It is SET, never
+    # popped: trafilatura 2.4.0 merges a supplied ``date_config`` over its own defaults, so a removed key
+    # comes back as today's date and every time stated later than midnight is lost again.
+    params["max_date"] = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
     return params
 
 

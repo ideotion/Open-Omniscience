@@ -84,7 +84,12 @@ def test_the_two_sites_go_through_their_maps():
     assert words, "the closed verdict set must stay a named constant"
     assert tuple(re.findall(r'"([a-z-]+)"', words.group(1))) == _VERDICTS
     corpus = (_STATIC / "app-corpus.js").read_text(encoding="utf-8")
-    assert "esc(kwKindLabel(p.kind))" in corpus and "esc(p.kind)" not in corpus
+    # Row 357 deleted the retired corpus-window keyword table (renderCorpusKeywords), whose
+    # esc(kwKindLabel(p.kind)) this pinned. The live keyword-kind prints are the Explore term
+    # header and the term lists; both go through the map, and no raw kind print is left.
+    for live in ("esc(kwKindLabel(r.kind))", "esc(kwKindLabel(t.kind))"):
+        assert live in corpus, live
+    assert not re.search(r"esc\(\w+\.kind\)", corpus), "a keyword kind printed raw"
 
 
 def test_every_word_the_maps_use_has_a_translation_in_all_twelve_locales():

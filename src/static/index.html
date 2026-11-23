@@ -1468,10 +1468,8 @@
       <h2 style="margin:14px 0 6px;font-size:13px">Associated keywords (mind-map)</h2>
       <!-- Layered zoom (maintainer-ruled): keyword + relatives-of-relatives →
            families → super-groups. Buttons switch; zooming far out goes up a level.
-           The control-bar + host are wrapped in #mm-kit so the corpus-window
-           Mindmap sub-tab can RELOCATE the exact same component (no fork, no
-           duplicate IDs) and return it here on leave (#mm-kit-home anchor). -->
-      <div id="mm-kit-home"></div>
+           The control-bar + host are wrapped in #mm-kit (the retired corpus-window
+           Mindmap sub-tab used to RELOCATE it; that code was deleted in row 357). -->
       <div id="mm-kit">
       <div class="row" style="gap:8px;align-items:end;margin-bottom:6px">
         <div class="seg-toggle" id="mm-levels">
@@ -3938,15 +3936,13 @@
   <div id="lang-menu" role="menu" hidden
        style="position:fixed;z-index:380;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:70vh;overflow:auto"></div>
 
-  <!-- RETIRED (wave 4 I, absorption-test-gated): the legacy #corpus-win keyword modal is
-       DEAD — openCorpus() routes to openAnalysisFor(), which spawns an #an analysis tab,
-       and NOTHING opens this dialog (no live .showModal()/.show()). Every subtab it had
-       (Trend · Articles · Keywords · Mindmap · Links · Sentiment · Sources · Competitive)
-       is covered by the ONE #an window (a strict superset that also adds Overview · WWW ·
-       Related · Price · Advanced), so nothing is lost. The markup + the corpusTab/
-       renderCorpus* JS are left in place UNREACHABLE (they null-guard on #corpus-* nodes),
-       pending a browser-verified deletion pass (the Desk-lesson "made unreachable" bar).
-       Enforced by tests/test_ui_corpus_win_retired.py. -->
+  <!-- RETIRED (wave 4 I, absorption-test-gated), then DELETED (row 357): the legacy
+       #corpus-win keyword modal, its corpus-subtabs nav and the corpusTab/renderCorpus*
+       JS are gone. openCorpus() routes to openAnalysisFor(), which spawns an #an
+       analysis tab; every subtab the modal had (Trend · Articles · Keywords · Mindmap ·
+       Links · Sentiment · Sources · Competitive) lives in the ONE #an window
+       (#an-subtabs). Enforced by tests/test_ui_corpus_win_retired.py and audited facet
+       by facet in tests/test_corpus_win_absorption_content.py. -->
   <!-- Unified Export / Import dialogs. They live at TOP LEVEL, not inside
        #set-data: a set-view is display:none when its subtab is inactive, and a
        dialog element inside a display:none ancestor does not render even via
@@ -4056,32 +4052,6 @@
       </div>
     </dialog>
 
-  <dialog id="corpus-win" style="width:min(760px,94vw);padding:0">
-    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
-      <b id="corpus-title" style="font-size:15px"></b>
-      <span id="corpus-n" class="muted" style="font-size:12px"></span>
-      <span style="margin-inline-start:auto"></span>
-      <button class="icon-btn" data-on-click="ooCloseDialog('corpus-win')" aria-label="Close" title="Close">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-    </div>
-    <nav class="tabs" id="corpus-subtabs" style="padding:8px 16px;border-bottom:1px solid var(--line)">
-      <button class="active" data-tab="trend">Trend</button>
-      <button data-tab="articles">Articles</button>
-      <button data-tab="keywords"
-        title="The keywords that define this corpus as a ranked TABLE — distinct-article spread, total mentions, and PMI association strength to the corpus term. Real counts per keyword, no composite score; PMI on small samples is noisy. Click a row to open that keyword as its own corpus.">Keywords</button>
-      <button data-tab="mindmap"
-        title="Associated keywords for this corpus as a radial mind-map (centre → arms → outward). Font size = shared-article volume; PMI-ranked relatives, never causation.">Mindmap</button>
-      <button data-tab="links"
-        title="Which member articles share outbound links — shared origins made visible: citation counts are never independent confirmation when the paths share an origin.">Links</button>
-      <button data-tab="sentiment"
-        title="How outlets covering this corpus split in tone — VADER compound per outlet, with article counts. VADER is an ENGLISH-lexicon method, so tone for non-English coverage is unreliable or absent. No composite score; read the linked articles and attribute for yourself.">Sentiment</button>
-      <button data-tab="sources"
-        title="Which sources feed this corpus — the distinct outlets behind the member articles, with their per-corpus article count and the catalog metadata they assert (domain, country, region, language, tags). Counts are exact; the country/region/language/tags are stated by the source catalog (not deduced from text). No score, no ranking — descriptive provenance, not credibility.">Sources</button>
-      <button data-tab="competitive"
-        title="How each source APPROACHES this concept, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span), and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare.">Competitive</button>
-    </nav>
-    <div id="corpus-body" style="padding:12px 16px;max-height:64vh;overflow:auto"></div>
-  </dialog>
 
   <!-- Reusable interactive-chart enlarge dialog (Item 1, Group E). Opens an
        ooChart (invariant #16: full-resolution, wheel-zoom / drag-pan /
