@@ -35,3 +35,12 @@ def test_the_listener_repaints_and_the_helper_is_declared_once():
     for name in ("ooLive", "ooLiveHtml", "ooLiveRepaint", "_ooLiveTake", "_ooLiveDraw", "_ooLiveDrop", "_ooLiveMark", "_ooLiveForeign", "_ooLiveWatch"):
         found = re.findall(rf"(?<![\w$.])function\s+{name}\s*\(", every)
         assert len(found) == 1, f"{name} declared {len(found)} times: a later one silently overrides"
+
+
+def test_a_root_walk_keeps_the_records_the_walker_has_not_seen():
+    """``apply(root)`` disconnects the walker's observer, which drops its queued records; a root walk from
+    ooLiveHtml letting a host go must not lose a change made elsewhere in the same task, so they are taken first."""
+    src = (_STATIC / "i18n.js").read_text(encoding="utf-8")
+    body = src[src.index("function apply(root)"):src.index("function schedule()")]
+    assert "observer.takeRecords().length) schedule();" in body
+    assert body.index("takeRecords") < body.index("observer.disconnect()")
