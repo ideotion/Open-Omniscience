@@ -72,9 +72,6 @@ app-corpus.js conjContrast
 app-corpus.js loadTrendWindows
 app-corpus.js renderTrendMultiples
 app-corpus.js renderTrendSlope
-app-diagnostics.js downloadFieldData
-app-diagnostics.js unattendedLog
-app-diagnostics.js unattendedStart
 app-dossier.js dossierSearchHint
 app-evidence.js custodyCheckFile
 app-evidence.js evidenceSave
