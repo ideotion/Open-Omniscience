@@ -405,3 +405,15 @@ def test_the_size_line_repaints_on_a_language_switch_without_fetching():
     assert "_dumpEstimatePaint()" in strip_comments(boot)
     paint = strip_comments(function_body(app_js(), "_dumpEstimatePaint"))
     assert "api(" not in paint and "ensureOnline" not in paint
+
+
+def test_the_size_line_states_redraw_in_node():
+    """The states run as real code (dump_estimate_node_test.js): done, error and pick redraw in the
+    language now current; a declined consent leaves the line and state alone; a repaint never fetches."""
+    import subprocess
+    from pathlib import Path
+
+    js = Path(__file__).resolve().parent / "dump_estimate_node_test.js"
+    proc = subprocess.run(["node", str(js)], capture_output=True, text=True, check=False, timeout=120)  # noqa: S607
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "dump_estimate_node_test.js: OK" in proc.stdout
