@@ -338,10 +338,15 @@ def encrypt_db(body: EncryptBody) -> dict:
     """One-way encryption of an EXISTING plaintext store (snapshot first,
     explicit consent, never silent). Covers corpus + custody log (D6)."""
     from src.database import at_rest_state
-    from src.database.connect import get_passphrase, set_passphrase
+    from src.database.connect import SnapshotLeftOnDisk, get_passphrase, set_passphrase
 
     # R742's fixed 409 words come in here, never at module level: importing the app must not import the store.
-    from src.database.encrypt_tool import EncryptNoRoom, EncryptPartial, EncryptToolError, encrypt_all
+    from src.database.encrypt_tool import (
+        EncryptNoRoom,
+        EncryptPartial,
+        EncryptToolError,
+        encrypt_all,
+    )
     from src.database.session import dispose_engine
 
     state = app_lock_state()
@@ -392,6 +397,10 @@ def encrypt_db(body: EncryptBody) -> dict:
             # R793: the library refused for room before any file was made, so every store is as it was. Fixed words that name the
             # needed and the free space (or which was not read), never a path or a key: 507, as the other space refusals.
             raise HTTPException(status_code=507, detail=http_detail(refused, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
+        except SnapshotLeftOnDisk as left:
+            # R794: the library's plaintext copy failed and its unfinished file could not be removed, before the library was touched.
+            # Its fixed words name that path (no key, no driver text: it is raised with neither), so the operator can delete it.
+            raise HTTPException(status_code=500, detail=http_detail(left, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         except EncryptToolError as exc:
             raise HTTPException(status_code=400, detail=http_detail(exc, "", body.passphrase, withheld=UNREADABLE_TEXT)) from None
         set_passphrase(body.passphrase)

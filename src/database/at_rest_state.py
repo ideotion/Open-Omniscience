@@ -421,8 +421,11 @@ def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[...,
                     # an automatic retry that fails before touching the store drops the snapshot it made (no copy per start)
                     run(name, paths[name], key, main=main, keep_snapshot_on_failure=False)
                 except Exception as exc:  # noqa: BLE001 - one store's failure never blocks the others or the app
+                    # R794: an unfinished plaintext copy that could not be removed is an error that names its path, never a warning.
+                    left = isinstance(exc, encrypt_tool.SnapshotLeftOnDisk)
                     log_failure(
-                        _LOG, f"the {name} store could not be encrypted yet; it stays pending", exc, key, level=logging.WARNING
+                        _LOG, f"the {name} store could not be encrypted yet; it stays pending", exc, key,
+                        level=logging.ERROR if left else logging.WARNING,
                     )
                     failed.append(name)
                 else:

@@ -362,7 +362,10 @@ def test_the_refresh_refuses_an_empty_selection_instead_of_defaulting_to_english
 
     body = strip_comments(function_body(app_js(), "refreshDumpSizes"))
     assert '|| "en"' not in body
-    assert "Select one or more editions first." in body
+    # Row 352 fix: the line is drawn from the last state so a language switch repaints it.
+    assert '_dumpEstimateSet({kind: "pick"})' in body
+    paint = strip_comments(function_body(app_js(), "_dumpEstimatePaint"))
+    assert "Select one or more editions first." in paint
 
 
 def test_an_exact_reading_is_marked_differently_from_the_bundled_estimate():
@@ -385,3 +388,32 @@ def test_every_refusal_reason_the_backend_can_publish_has_its_own_sentence():
     body = strip_comments(function_body(app_js(), "_dumpSizeReason"))
     for reason in ("airplane", "unreachable", "no-content-length", "invalid-edition"):
         assert f'"{reason}"' in body, f"{reason} has no sentence in the UI"
+
+
+def test_the_size_line_repaints_on_a_language_switch_without_fetching():
+    """Row 352 fix: the host opts out of the i18n walker, so the oo:langchange listener redraws it
+    from the last state; the paint function itself never calls the API or the consent gate."""
+    import re
+    from pathlib import Path
+
+    from tests.js_source_helper import app_js, function_body, strip_comments
+
+    static = Path(__file__).resolve().parent.parent / "src" / "static"
+    html = (static / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'<div id="dump-estimate"[^>]*\bdata-i18n-dyn\b', html)
+    boot = (static / "app-boot.js").read_text(encoding="utf-8")
+    assert "_dumpEstimatePaint()" in strip_comments(boot)
+    paint = strip_comments(function_body(app_js(), "_dumpEstimatePaint"))
+    assert "api(" not in paint and "ensureOnline" not in paint
+
+
+def test_the_size_line_states_redraw_in_node():
+    """The states run as real code (dump_estimate_node_test.js): done, error and pick redraw in the
+    language now current; a declined consent leaves the line and state alone; a repaint never fetches."""
+    import subprocess
+    from pathlib import Path
+
+    js = Path(__file__).resolve().parent / "dump_estimate_node_test.js"
+    proc = subprocess.run(["node", str(js)], capture_output=True, text=True, check=False, timeout=120)  # noqa: S607
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "dump_estimate_node_test.js: OK" in proc.stdout

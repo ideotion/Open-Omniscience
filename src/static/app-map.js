@@ -162,7 +162,7 @@
     }
     function resetMap() { MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; applyVB(); }
 
-    function buildMapSvg(cities) {
+    function buildMapSvg(cities, citiesSkipped) {
       const placed = cities.filter(c => c.lat != null && c.lon != null);
       // graticule every 30 degrees, through the ONE seam (curved meridians)
       const grid = _mapGraticule(30, "0.3");
@@ -177,7 +177,12 @@
           <text x="${x}" y="${(y-Number(r)-1).toFixed(1)}" fill="var(--fg)" font-size="4" text-anchor="middle">${esc(c.name)}</text></g>`;
       }).join("");
       if (!placed.length)
-        return `<div class="muted">No placed cities yet. Index the corpus (sources need a city), or generate the full gazetteer (scripts/build_city_gazetteer.py).</div>`;
+        // Row 347: plain whole-node English, so the i18n walker translates it and
+        // re-translates it on a live language switch. A city list the server SKIPPED
+        // (partial) is not an empty one, and says so.
+        return citiesSkipped
+          ? `<div class="muted">The city list was not computed this time, so no city is drawn: that is not the same as no city being mentioned.</div>`
+          : `<div class="muted">No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.</div>`;
       return `<svg id="oo-map" viewBox="0 0 ${MAP_W} ${MAP_H.toFixed(2)}" width="100%" style="max-width:${MAP_W}px;border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${MAP_ASPECT.toFixed(4)}">
         ${_mapSphere()}${grid}${dots}</svg>`;
     }
@@ -2939,7 +2944,7 @@
       try {
         const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
         _insMapLast = d;
-        $("map-svg").innerHTML = buildMapSvg(d.cities || []);
+        $("map-svg").innerHTML = buildMapSvg(d.cities || [], !!(d.partial && (d.skipped || []).includes("cities")));
         MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; wireMapDrag();
         _insMapTables(d);
       } catch (e) {
@@ -2961,7 +2966,7 @@
             `<tr><td><strong>${a.code ? ooCountryCell(a.code) : esc(a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
             a.top.map(t => `<span class="pill" style="cursor:pointer" translate="no" data-on-click='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
             `</td></tr>`).join("")
-        : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
+        : `<tr><td class="muted">No data yet: no mention in this window comes from a source with a country or city. Rows appear on their own as such articles are indexed.</td></tr>`;
       $("map-countries").innerHTML = rowsFor(d.countries || [], "Country");
       // A city list the server did not compute (`partial`, `skipped` names it) is NOT an empty one: say why, not "No data".
       $("map-cities").innerHTML = (d.partial && (d.skipped || []).includes("cities"))
@@ -3143,42 +3148,60 @@
       return t("No size could be read.");
     }
 
+    // Row 352 fix: the estimate line is drawn from the LAST state (index.html marks #dump-estimate
+    // data-i18n-dyn), so a language switch repaints it from the oo:langchange listener without a
+    // second request to the dump host. Never fetches.
+    let _dumpEstState = null;
+    function _dumpEstimatePaint() {
+      const out = $("dump-estimate");
+      const st = _dumpEstState;
+      if (!out || !st) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (st.kind === "pick") { out.textContent = t("Select one or more editions first."); return; }
+      if (st.kind === "reading") { out.textContent = t("Reading exact sizes…"); return; }
+      if (st.kind === "error") { out.textContent = ooLabelText(t("Could not read the sizes"), st.message); return; }
+      const ok = [], bad = [];
+      st.rows.forEach(r => {
+        if (r.size_bytes != null) ok.push(`${r.wiki} ${_fmtBytes(r.size_bytes)}`);
+        else bad.push(`${r.wiki} — ${_dumpSizeReason(t, r.reason)}`);
+      });
+      // label:value, never an interpolated sentence — a sentence with a count
+      // in it cannot conjugate, and every locale is correct by construction
+      // when the label carries the meaning and the data sits beside it.
+      const parts = [];
+      if (ok.length) parts.push(ooLabelText(t("Read from the dump host"), ok.join(" · ")));
+      if (bad.length) parts.push(ooLabelText(t("Could not be read"), bad.join(" · ")));
+      if (st.over.length) parts.push(ooLabelText(t("Not attempted (batch limit)"), st.over.join(", ")));
+      out.textContent = parts.join(" — ") || t("No size could be read.");
+    }
+    function _dumpEstimateSet(st) { _dumpEstState = st; _dumpEstimatePaint(); }
+
     async function refreshDumpSizes() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const out = $("dump-estimate");
       const picked = dumpSelected();
       if (!picked.length) {
         // Never silently probe a default edition the operator did not choose.
-        if (out) out.textContent = t("Select one or more editions first.");
+        _dumpEstimateSet({kind: "pick"});
         return;
       }
       // The ONE network-consent popup (invariant #14): this reads live sizes
       // from dumps.wikimedia.org, so it is an offline->online transition like
       // any other and must never slip past the gate.
       if (!await ensureOnline(t("Read the exact current size of the selected Wikipedia dumps"))) return;
-      if (out) out.textContent = t("Reading exact sizes…");
+      _dumpEstimateSet({kind: "reading"});
       try {
         const d = await api(`/api/wiki/dumps/sizes?wikis=${encodeURIComponent(picked.join(","))}`, {method: "POST"});
         const rows = d.sizes || [];
-        const ok = [], bad = [];
         rows.forEach(r => {
-          if (r.size_bytes != null) { _dumpExactSizes[r.wiki] = r.size_bytes; ok.push(`${r.wiki} ${_fmtBytes(r.size_bytes)}`); }
-          else { delete _dumpExactSizes[r.wiki]; bad.push(`${r.wiki} — ${_dumpSizeReason(t, r.reason)}`); }
+          if (r.size_bytes != null) _dumpExactSizes[r.wiki] = r.size_bytes;
+          else delete _dumpExactSizes[r.wiki];
         });
         // The cap bounds which editions were READ; it never bounds what is
         // reported, so the un-probed remainder is named rather than dropped.
-        const over = (d.not_probed || []);
-        // label:value, never an interpolated sentence — a sentence with a count
-        // in it cannot conjugate, and every locale is correct by construction
-        // when the label carries the meaning and the data sits beside it.
-        const parts = [];
-        if (ok.length) parts.push(ooLabelText(t("Read from the dump host"), ok.join(" · ")));
-        if (bad.length) parts.push(ooLabelText(t("Could not be read"), bad.join(" · ")));
-        if (over.length) parts.push(ooLabelText(t("Not attempted (batch limit)"), over.join(", ")));
-        if (out) out.textContent = parts.join(" — ") || t("No size could be read.");
+        _dumpEstimateSet({kind: "done", rows, over: (d.not_probed || [])});
         renderWikiLanguages();   // repaint the picker with the exact figures
       } catch (e) {
-        if (out) out.textContent = ooLabelText(t("Could not read the sizes"), e.message);
+        _dumpEstimateSet({kind: "error", message: e.message});
       }
     }
 

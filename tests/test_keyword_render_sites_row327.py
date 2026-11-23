@@ -123,4 +123,5 @@ def test_the_custody_table_words_its_actions_and_names_its_signature():
     assert table, "the custody action map is gone"
     keys = set(re.findall(r"(?:^|[{,])\s*([a-z_]+):", table.group(1)))
     assert keys == {a.value for a in CustodyAction}, keys
-    assert "<th>Signature</th>" in js and "<th>Sig</th>" not in js
+    # Row 351: the header is keyed and drawn in the active language (custodyEntriesPaint).
+    assert "<th>${esc(tr(\"Signature\"))}</th>" in js and "<th>Sig</th>" not in js

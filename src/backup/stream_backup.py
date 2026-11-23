@@ -2104,6 +2104,11 @@ def verify_stream_backup(
         "kind": m.get("kind"),
         "ok": True,
         "problems": [],
+        # Row 348: one {code, params} per entry of `problems`, in the same order, so a
+        # reader can say each problem in its own language. `problems` stays as it was
+        # (English, for API callers and the P0 check); params are data (member and
+        # volume names, an exception's scrubbed words), never translated.
+        "problem_codes": [],
         "bad_volumes": [],
         "missing_volumes": [],
         "volumes": len(m.get("volumes") or []),
@@ -2118,9 +2123,10 @@ def verify_stream_backup(
         ),
     }
 
-    def _fail(problem: str) -> None:
+    def _fail(problem: str, code: str, **params: str) -> None:
         report["ok"] = False
         report["problems"].append(problem)
+        report["problem_codes"].append({"code": code, "params": params})
 
     if m.get("kind") == STREAM_KIND:
         state = _manifest_signature_state(m)
@@ -2133,12 +2139,14 @@ def verify_stream_backup(
         sig = m.get("signature")
         signer = str(sig.get("public_key") or "") if state == "verified" and isinstance(sig, dict) else ""
         report["signer_key"] = signer or None
-        report["signed_by"] = signer_relation(signer, this_installation_key()) if signer else "unsigned"
+        # the live state is known here: "unsigned" or "bad-signature" when it did not verify
+        report["signed_by"] = signer_relation(signer, this_installation_key()) if signer else state
         if state != "verified":
             what = "is not signed" if state == "unsigned" else "signature does not match its content"
             _fail(
                 f"the volume manifest {what}, so the set's index cannot be relied on "
-                "(an interrupted finalize, or a change after it was written); re-run the backup"
+                "(an interrupted finalize, or a change after it was written); re-run the backup",
+                "manifest-unsigned" if state == "unsigned" else "manifest-bad-signature",
             )
     else:
         report["signature"] = "not-applicable (oo-volumes-1 sets are unsigned)"
@@ -2149,7 +2157,8 @@ def verify_stream_backup(
     report["bad_volumes"] = status["bad"]
     report["missing_volumes"] = status["missing"]
     if status["bad"]:
-        _fail("corrupt or missing data volumes: " + ", ".join(sorted(status["bad"])))
+        bad_list = ", ".join(sorted(status["bad"]))
+        _fail("corrupt or missing data volumes: " + bad_list, "bad-volumes", volumes=bad_list)
 
     par = m.get("parity")
     bad_parity: list[str] = []
@@ -2168,10 +2177,12 @@ def verify_stream_backup(
             "tolerance_remaining": max(0, usable),
         }
         if bad_parity:
+            par_list = ", ".join(sorted(bad_parity))
             _fail(
                 "corrupt parity volumes (data may be intact but protection is "
-                "reduced — re-run the backup to regenerate parity): "
-                + ", ".join(sorted(bad_parity))
+                "reduced — re-run the backup to regenerate parity): " + par_list,
+                "bad-parity",
+                volumes=par_list,
             )
         report["recoverable"] = bool(status["bad"]) and len(status["bad"]) <= max(0, usable)
     else:
@@ -2182,7 +2193,12 @@ def verify_stream_backup(
         for mm in m.get("members") or []:
             for vname in mm.get("volumes") or []:
                 if vname not in vol_by_name:
-                    _fail(f"member {mm['name']} references a volume missing from the index: {vname}")
+                    _fail(
+                        f"member {mm['name']} references a volume missing from the index: {vname}",
+                        "member-volume-unindexed",
+                        member=str(mm["name"]),
+                        volume=str(vname),
+                    )
         known = set(vol_by_name) | {pv["name"] for pv in (par or {}).get("volumes") or []}
         orphans = sorted(
             p.name
@@ -2194,7 +2210,15 @@ def verify_stream_backup(
 
     if passphrase and m.get("kind") == STREAM_KIND and not status["bad"]:
         if not _key_check_ok(m.get("key_check"), passphrase):
-            _fail("the passphrase does not match this volume set")
+            # R803 (row 349): the passphrase check is a token stored IN the volume list, so its failing proves a wrong
+            # passphrase only when that list is exactly what this installation signed -- anyone who changes the set can
+            # write a token of their own and re-sign the list with their own key. The ONE shared R795 helper decides;
+            # every other case says the two causes could not be told apart, and the set is never reported intact.
+            why = _why_the_volume_list_is_not_ours(m)
+            if why is None:
+                _fail("the passphrase does not match this volume set", "passphrase-mismatch")
+            else:
+                _fail(UNCHECKED_VERIFY_PASSPHRASE.format(reason=why), "passphrase-unchecked", reason=why)
         else:
             report["decrypted"] = True
             envelope_bytes: bytearray | None = None
@@ -2226,10 +2250,19 @@ def verify_stream_backup(
                     from src.monitoring.secret_scrub import exception_text
 
                     reason = exception_text(exc, passphrase, typed=False)
-                    _fail(f"member {mm['name']} failed to decrypt: {reason}")
+                    _fail(
+                        f"member {mm['name']} failed to decrypt: {reason}",
+                        "member-decrypt-failed",
+                        member=str(mm["name"]),
+                        reason=str(reason),
+                    )
                     continue
                 if h.hexdigest() != mm.get("plaintext_sha256"):
-                    _fail(f"member {mm['name']} failed its whole-plaintext checksum")
+                    _fail(
+                        f"member {mm['name']} failed its whole-plaintext checksum",
+                        "member-checksum-mismatch",
+                        member=str(mm["name"]),
+                    )
                 if collect is not None:
                     envelope_bytes = collect
             if envelope_bytes is not None:
@@ -2237,7 +2270,7 @@ def verify_stream_backup(
                 if report.get("envelope_signature") == "bad-signature" or report.get(
                     "envelope_mismatches"
                 ):
-                    _fail("the signed inner envelope does not match the volume index")
+                    _fail("the signed inner envelope does not match the volume index", "envelope-mismatch")
     return report
 
 
@@ -2294,6 +2327,13 @@ UNCHECKED_BACKUP_PASSPHRASE = (
     "could not check the passphrase for this backup: its first volume does not open with the passphrase given, and the "
     "backup's list of volumes could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a "
     "changed backup. Nothing was read past that volume and nothing was changed on this computer."
+)
+# R803: the verify screen's form of the same refusal. Its check is the token stored in the list of volumes, not the
+# first volume, so it says so; the reasons are R795's own four.
+UNCHECKED_VERIFY_PASSPHRASE = (
+    "could not check the passphrase for this backup: the passphrase check stored in its list of volumes does not open "
+    "with the passphrase given, and that list could not be authenticated ({reason}), so a wrong passphrase cannot be "
+    "told apart from a changed backup"
 )
 REASON_UNSIGNED = "this backup has no signature"
 REASON_BAD_SIGNATURE = "its signature does not match its list of volumes"

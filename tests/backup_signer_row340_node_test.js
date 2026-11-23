@@ -23,9 +23,12 @@ assert.strictEqual(R.backupSignerWords("this-installation", K, t, tf), "T[Signed
 assert.strictEqual(R.backupSignerWords("another-installation", K, t, tf), "T[Signed by another installation, key " + FP + "]");
 assert.strictEqual(R.backupSignerWords("not-compared", K, t, tf), "T[Signed by key " + FP + "]");
 assert.strictEqual(R.backupSignerWords(undefined, K, t, tf), "T[Signed by key " + FP + "]");
+// row 345: a stored record that cannot tell unsigned from a failed signature never says "Not signed"
 for (const stored of ["unsigned", "unknown-origin", "local", "", null]) {
-  assert.strictEqual(R.backupSignerWords("another-installation", stored, t, tf), "T[Not signed]", String(stored));
+  assert.strictEqual(R.backupSignerWords("unverified", stored, t, tf), "T[No verified signature]", String(stored));
 }
+assert.strictEqual(R.backupSignerWords("unsigned", "unsigned", t, tf), "T[Not signed]");
+assert.strictEqual(R.backupSignerWords("bad-signature", "bad-signature", t, tf), "T[Signature does not match its content]");
 assert.strictEqual(R.backupSignatureWords("verified", "this-installation", K, t, tf),
   "T[Content unchanged since it was signed] · T[Signed by this installation, key " + FP + "]");
 assert.strictEqual(R.backupSignatureWords("bad-signature", "unsigned", null, t, tf), "T[Signature does not match its content]");
