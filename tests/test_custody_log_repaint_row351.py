@@ -38,6 +38,7 @@ def test_the_table_owns_its_words_and_keeps_its_entries():
     assert "custodyEntriesPaint(" in view
     assert "<th>Action</th>" not in view
     assert "_ooCustEntries = null" in view
+    assert "Array.isArray(d.entries) ?" not in view
 
 
 def test_the_headers_are_keyed_in_all_twelve():

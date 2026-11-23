@@ -51,4 +51,7 @@ assert.ok(!h.includes("xx["), h);
 host._ooCustEntries = null; host.innerHTML = "";
 R.custodyEntriesRepaint();
 assert.strictEqual(host.innerHTML, "");
+// a reply without its entries list throws in the paint (viewChain's catch then clears and toasts),
+// never draws an empty chain
+assert.throws(() => R.custodyEntriesPaint(host, undefined));
 console.log("custody log repaint row 351: all checks passed");

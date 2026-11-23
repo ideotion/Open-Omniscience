@@ -2748,7 +2748,8 @@
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       try {
         const d = await api("/api/custody/" + encodeURIComponent(id));
-        custodyEntriesPaint($("cust-entries"), Array.isArray(d.entries) ? d.entries : []);
+        // A reply without its entries list fails loudly in the paint (as before row 351), never as an empty chain.
+        custodyEntriesPaint($("cust-entries"), d.entries);
         $("cust-result").textContent = trf("Custody entries: {n}", { n: d.entry_count });
       } catch (e) {
         const host = $("cust-entries"); host._ooCustEntries = null; host.innerHTML = "";
