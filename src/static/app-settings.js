@@ -1723,7 +1723,9 @@
       const n = (x) => fmtNum(x || 0, 0);
       const diverged = r.mismatched || 0, noHash = r.missing_hash || 0;
       sum.innerHTML =
-        `<b>${esc(tf("{n} checked", {n: n(r.checked)}))}</b> · ` +
+        // "checked" counts only rows that HAD a hash to compare: the backend's `checked` also holds the
+        // not-checkable rows, which beside "{n} not checkable" would contradict itself.
+        `<b>${esc(tf("{n} checked", {n: n(Math.max(0, (r.checked || 0) - noHash))}))}</b> · ` +
         `<span class="pill ok">${esc(tf("{n} intact", {n: n(r.ok)}))}</span>` +
         (diverged ? ` · <span class="pill err">${esc(tf("{n} diverged", {n: n(diverged)}))}</span>` : "") +
         (noHash ? ` · <span class="pill warn">${esc(tf("{n} not checkable (no stored hash)", {n: n(noHash)}))}</span>` : "");
@@ -1734,9 +1736,13 @@
       const missingRows = all.filter(_fixityNoHash).slice(0, 200).map(m =>
         `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span></div>`).join("");
       let html = "";
-      if (diverged) html += `<div class="note err">${esc(tf("{n} articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.", {n: n(diverged)}))}</div>` + rows;
-      if (noHash) html += `<div class="note warn">${esc(tf("{n} articles have no capture-time hash, so they could not be checked. Nothing was changed.", {n: n(noHash)}))}</div>` + missingRows;
-      if (!diverged && !noHash) html = `<div class="note ok">${esc(t("All articles match their capture-time hash."))}</div>`;
+      // Each note follows its count, each list its own rows: a row the counts and the lists classify
+      // differently is still shown, and the clean verdict needs both counts AND both lists empty.
+      if (diverged) html += `<div class="note err">${esc(tf("{n} articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.", {n: n(diverged)}))}</div>`;
+      html += rows;
+      if (noHash) html += `<div class="note warn">${esc(tf("{n} articles have no capture-time hash, so they could not be checked. Nothing was changed.", {n: n(noHash)}))}</div>`;
+      html += missingRows;
+      if (!diverged && !noHash && !rows && !missingRows) html = `<div class="note ok">${esc(t("All articles match their capture-time hash."))}</div>`;
       res.innerHTML = html;
     }
     function fixityRepaint() { _fixityPaint(); }
@@ -1745,9 +1751,13 @@
       _fixityState = {kind: "checking"}; _fixityPaint();
       try {
         const r = await api("/api/integrity/fixity");
+        if (!r || typeof r !== "object") throw new Error(String(r));
         _fixityState = {kind: "done", report: r};
       } catch (e) { _fixityState = {kind: "error", message: e.message}; }
-      finally { _fixityPaint(); btn.disabled = false; }
+      finally {
+        btn.disabled = false;   // first: a paint that throws must never leave the button dead
+        _fixityPaint();
+      }
     }
 
     // ---- Local .eml newsletter import (zero network; anonymised at ingest) ---- //

@@ -43,9 +43,11 @@ function harness(reports) {
   let calls = 0;
   const src = ["let _fixityState = null;", extract("_fixityNoHash"), extract("_fixityPaint"), extract("fixityRepaint"), extract("runFixity"),
     "return { runFixity, fixityRepaint };"].join("\n");
-  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  // The shipped grouping (thin space every three digits), so plural choice sees what the panel passes.
+  const fmtNum = (x) => String(Math.round(x)).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
   const f = new Function("$", "api", "esc", "fmtNum", "ooSaidText", "window", "OOI18N", src);
-  const fns = f((id) => nodes[id], async () => reports[calls++], esc, (x) => String(x), (m, k) => m[k] || "", { OOI18N }, OOI18N);
+  const fns = f((id) => nodes[id], async () => { const r = reports[calls++]; if (r instanceof Error) throw r; return r; }, esc, fmtNum, (m, k) => m[k] || "", { OOI18N }, OOI18N);
   return {
     fns, nodes, calls: () => calls,
     switchTo(l) { lang = l; for (const k of Object.keys(map)) delete map[k]; Object.assign(map, locale(l)); },
@@ -60,7 +62,7 @@ const NOW_HASH = "c0ffee00c0ffee00c0ffee00";
       mismatches: [{ id: 7, title: "A", stored_hash: null, computed_hash: NOW_HASH }, { id: 8, title: "B", stored_hash: null, computed_hash: NOW_HASH }] }]);
     await h.fns.runFixity({ disabled: false });
     const sum = h.nodes["fixity-summary"].innerHTML, res = h.nodes["fixity-result"].innerHTML;
-    assert.ok(sum.includes("5 checked") && sum.includes("3 intact") && sum.includes("2 not checkable (no stored hash)"), sum);
+    assert.ok(sum.includes("3 checked") && sum.includes("3 intact") && sum.includes("2 not checkable (no stored hash)"), sum);
     assert.ok(!sum.includes("diverged"), "a missing hash is not a divergence: " + sum);
     assert.ok(res.includes("2 articles have no capture-time hash, so they could not be checked."), res);
     assert.ok(!res.includes("All articles match"), "never a clean verdict while rows were not checkable: " + res);
@@ -108,6 +110,33 @@ const NOW_HASH = "c0ffee00c0ffee00c0ffee00";
     h.fns.fixityRepaint();
     assert.ok(!h.nodes["fixity-result"].innerHTML.includes("All articles match"), "the verdict follows a language switch");
     assert.ok(h.nodes["fixity-summary"].innerHTML.includes("2 vérifiés"), h.nodes["fixity-summary"].innerHTML);
+  }
+  // "checked" never counts the rows the same panel calls not checkable (5 examined, 2 without a hash).
+  {
+    const h = harness([{ checked: 5, ok: 3, mismatched: 0, missing_hash: 2, mismatches: [{ id: 7, stored_hash: null }, { id: 8, stored_hash: null }] }]);
+    await h.fns.runFixity({ disabled: false });
+    assert.ok(!h.nodes["fixity-summary"].innerHTML.includes("5 checked"), h.nodes["fixity-summary"].innerHTML);
+  }
+  // Both at once: two notes, each list under its own, each count from its own field.
+  {
+    const h = harness([{ checked: 1204, ok: 1200, mismatched: 1, missing_hash: 3,
+      mismatches: [{ id: 9, title: "C", stored_hash: "aaaaaaaaaaaaaaaa", computed_hash: "bbbbbbbbbbbbbbbb" },
+                   { id: 1, title: "D", stored_hash: null, computed_hash: NOW_HASH }, { id: 2, stored_hash: "" }, { id: 3, stored_hash: null }] }]);
+    await h.fns.runFixity({ disabled: false });
+    const sum = h.nodes["fixity-summary"].innerHTML, res = h.nodes["fixity-result"].innerHTML;
+    assert.ok(sum.includes("1\u202f201 checked") && sum.includes("1 diverged") && sum.includes("3 not checkable"), sum);
+    assert.ok(res.includes("1 article diverges") && res.includes("3 articles have no capture-time hash"), res);
+    assert.ok(res.indexOf("aaaaaaaaaaaa ≠") < res.indexOf("3 articles have no"), "the mismatch row sits under the tampering note");
+    assert.ok(!res.includes(NOW_HASH.slice(0, 12)) && !res.includes("All articles match"), res);
+  }
+  // A failure, and a reply that is not a report: an error, never a verdict, and the button comes back.
+  for (const bad of [new Error("boom"), null]) {
+    const h = harness([bad]);
+    const btn = { disabled: false };
+    await h.fns.runFixity(btn);
+    assert.strictEqual(btn.disabled, false, "the button is usable again");
+    assert.ok(h.nodes["fixity-summary"].innerHTML.includes('class="note err"'), h.nodes["fixity-summary"].innerHTML);
+    assert.strictEqual(h.nodes["fixity-result"].innerHTML, "", "no verdict beside an error");
   }
   console.log("fixity_result_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });
