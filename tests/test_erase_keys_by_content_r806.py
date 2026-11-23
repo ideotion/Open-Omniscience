@@ -432,6 +432,9 @@ def test_a_surviving_key_in_shared_scope_says_why(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto_erase, "_shred", shred)
     out = _erase()
     assert out["scope"] == "app-only" and out["keys_left"] == 1, out
+    assert out["keys_left_names"] == ["custody_ed25519.pem"], "the app's own exact names, never thesis.odt or another entry"
+    src = Path("src/static/app-backup.js").read_text(encoding="utf-8")
+    assert re.search(r'<bdi translate="no" dir="ltr">\$\{esc\(r\.keys_left_names\.join', src)
     assert out["limit"].startswith(crypto_erase._KEYS_LEFT_SENTENCE)
 
 

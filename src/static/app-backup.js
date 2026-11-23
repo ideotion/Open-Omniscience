@@ -4367,7 +4367,9 @@
           (keptForeign
             ? (keptCount ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds items the app did not create (count: {n}).", { n: fmtNum(keptCount, 0) }))}</div>` : "")
             : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
-          (keysLeft ? `<div class="card-caveat">${esc(tfw("Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}</div>` : "") +
+          (keysLeft ? `<div class="card-caveat">${esc(tfw("Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}` +
+            // the app's own exact file names only (never another entry of the folder), so the operator knows which to remove
+            ((r.keys_left_names || []).length ? ` <bdi translate="no" dir="ltr">${esc(r.keys_left_names.join(", "))}</bdi>` : "") + `</div>` : "") +
           (keysLink ? `<div class="card-caveat">${esc(tfw("The {folder} folder in the data folder is a link, which the erase never follows: the app’s signing keys may be where it points, and they were not destroyed. Remove them there by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}</div>` : "") +
           (notRemoved ? `<div class="card-caveat">${esc(t("The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."))}</div>` : "") +
           (back ? `<div class="card-caveat">${esc(t("The data folder existed again when the erase ended, although the erase had removed it: something recreated it afterwards, so the erase may be incomplete. Restart the app, run the wipe again, then run the full free-space overwrite below."))}</div>` : "") +

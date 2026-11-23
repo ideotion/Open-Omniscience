@@ -141,6 +141,7 @@ def settle_removed(report: dict) -> bool:
                 report["folder_kept_foreign"] = False  # its keys folder is gone since: not kept for it any more
                 report["kept_items"] = 0
                 report["keys_left"] = 0
+                report["keys_left_names"] = []
             failed: list[OSError] = []
             rest = sorted(e.name for e in _listing(base, failed.append) if e.name != "keys")
             if failed:
@@ -1423,6 +1424,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "kept_items": kept_items,
         "keys_link": keys_link,
         "keys_left": len(keys_left),
+        # Plan on the keys_left string: which of the APP's files were left, by the app's own exact names (relative to keys), so a
+        # shared keys folder never leaves the operator guessing; never any other entry of it.
+        "keys_left_names": [n.removeprefix("keys/") for n in keys_left],
         # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
         "unlisted_folders": len(unlisted_folders),
         # R805 (a): this process's own connections on the store still open when the erase ran (None: could not tell).
