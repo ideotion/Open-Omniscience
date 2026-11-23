@@ -1410,6 +1410,33 @@
       return String(state);
     }
 
+    // Row 348: each verify problem said in the reader's language. The server sends a
+    // stable code + params beside its English line (`problem_codes`, same order as
+    // `problems`); the frame is keyed x12, the params (member/volume names, an
+    // exception's own words) are data and render translate="no". An unknown code, or a
+    // report from an older server with no codes, falls back to the English line.
+    const BACKUP_PROBLEM_FRAMES = {
+      "manifest-unsigned": "The volume index is not signed, so it cannot be relied on (a backup made by an older version, an interrupted finish, or a change after it was written). Re-run the backup.",
+      "manifest-bad-signature": "The volume index's signature does not match its content, so it cannot be relied on (an interrupted finish, or a change after it was written). Re-run the backup.",
+      "bad-volumes": "Corrupt or missing data volumes: {volumes}",
+      "bad-parity": "Corrupt parity volumes: {volumes}. The data may be intact, but protection is reduced: re-run the backup to regenerate parity.",
+      "member-volume-unindexed": "Member {member} refers to a volume missing from the index: {volume}",
+      "passphrase-mismatch": "The passphrase does not match this volume set.",
+      "member-decrypt-failed": "Member {member} could not be decrypted: {reason}",
+      "member-checksum-mismatch": "Member {member} failed its whole-content checksum.",
+      "envelope-mismatch": "The signed inner envelope does not match the volume index.",
+    };
+    function backupProblemHtml(raw, coded, tf) {
+      const frame = coded && typeof coded === "object"
+        && Object.prototype.hasOwnProperty.call(BACKUP_PROBLEM_FRAMES, coded.code) ? BACKUP_PROBLEM_FRAMES[coded.code] : undefined;
+      if (typeof frame !== "string") return esc(String(raw == null ? "" : raw));
+      const params = (coded.params && typeof coded.params === "object") ? coded.params : {};
+      const marks = {};
+      for (const k of Object.keys(params)) marks[k] = "\u0001" + k + "\u0002";
+      return esc(String(tf(frame, marks))).replace(/\u0001(\w+)\u0002/g, (m, k) =>
+        Object.prototype.hasOwnProperty.call(params, k) ? `<bdi translate="no">${esc(String(params[k]))}</bdi>` : m);
+    }
+
     function _uxRenderVerify(host, rep, t) {
       if (!rep || typeof rep !== "object" || rep.ok === undefined) {
         host.innerHTML = `<span class="muted">${esc(t("No verification report was returned."))}</span>`;
@@ -1433,8 +1460,12 @@
         lines.push(`<div class="muted">${esc(nVol)} · <bdi>${esc(backupSignatureWords(rep.signature, rep.signed_by, rep.signer_key, t, tfv))}</bdi>${rep.decrypted ? " · " + esc(t("decrypted & checked")) : ""}</div>`);
       }
       const probs = Array.isArray(rep.problems) ? rep.problems : [];
+      const codes = Array.isArray(rep.problem_codes) && rep.problem_codes.length === probs.length ? rep.problem_codes : [];
+      const tfp = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       // padding-inline-START (I-4's class): in RTL the bullets sit on the right.
-      if (probs.length) lines.push(`<ul style="margin:4px 0 0;padding-inline-start:18px">${probs.map(p => `<li>${esc(p)}</li>`).join("")}</ul>`);
+      if (probs.length) lines.push(`<ul style="margin:4px 0 0;padding-inline-start:18px" data-i18n-dyn>${probs.map((p, i) => `<li>${backupProblemHtml(p, codes[i], tfp)}</li>`).join("")}</ul>`);
       if (rep.bad_volumes && rep.bad_volumes.length || (rep.missing_volumes && rep.missing_volumes.length)) {
         const bad = (rep.bad_volumes || []).concat(rep.missing_volumes || []);
         const rec = rep.recoverable ? esc(t("recoverable from parity")) : esc(t("NOT recoverable — the backup is incomplete"));
