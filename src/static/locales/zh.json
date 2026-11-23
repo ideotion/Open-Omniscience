@@ -241,6 +241,7 @@
   "A place close to a regional border can be counted in the neighbouring region, or in none, because the outlines are simplified. Places in no region and places with no point are counted, not placed.": "由于轮廓经过简化，靠近地区边界的地点可能计入相邻地区，或不计入任何地区。不在任何地区的地点和没有坐标点的地点已计数，未定位。",
   "A place name extracted from article text, placed at a gazetteer coordinate.": "从文章文本中提取的地名，按地名词典坐标定位。",
   "A place they mention": "文章提及的地点",
+  "A plaintext copy of the store did not finish, and its private folder was moved during the copy, so the unfinished file could not be removed: an incomplete plaintext copy may still be on disk, in the folder that was at “{path}”. It is not a usable snapshot; find that folder, check it and delete it yourself.": "存储的一份明文副本未完成，且其私有文件夹在复制过程中被移动，因此无法删除这个未完成的文件：一份不完整的明文副本可能仍在磁盘上，位于原先在“{path}”的文件夹中。它不是可用的快照；请找到该文件夹，检查并自行删除。",
   "A plaintext copy of the store did not finish, and the unfinished file could not be removed: an incomplete plaintext copy may still be on disk at “{path}”. It is not a usable snapshot; check that file and delete it yourself.": "存储的一份明文副本未完成，且无法删除这个未完成的文件：一份不完整的明文副本可能仍在磁盘上，位于“{path}”。它不是可用的快照；请检查该文件并自行删除。",
   "A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.": "保留一份明文快照作为后路 — 成功解锁后请删除它。",
   "A preprint: not peer reviewed. PubMed lists it, which is not an endorsement.": "预印本：未经同行评审。被 PubMed 收录并不代表认可。",

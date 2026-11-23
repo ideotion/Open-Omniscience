@@ -1254,6 +1254,23 @@ class SnapshotLeftOnDisk(OSError):
         self.path = path
 
 
+#: R799: said where no handle on the private folder can be held (Windows) and the folder was moved during the copy, so its files
+#: could not be reached to remove them. Translated x12 through ``ooServerText``.
+SNAPSHOT_FOLDER_MOVED = (
+    "A plaintext copy of the store did not finish, and its private folder was moved during the copy, so the unfinished file could "
+    'not be removed: an incomplete plaintext copy may still be on disk, in the folder that was at "{path}". It is not a usable '
+    "snapshot; find that folder, check it and delete it yourself."
+)
+
+
+class SnapshotFolderMoved(SnapshotLeftOnDisk):
+    """R799: :class:`SnapshotLeftOnDisk` for a private folder moved during the copy where no handle on it could be held."""
+
+    def __init__(self, path: Path) -> None:
+        OSError.__init__(self, SNAPSHOT_FOLDER_MOVED.format(path=path))
+        self.path = path
+
+
 def _make_new(dest_p: Path) -> tuple[int, int]:
     """Create ``dest_p`` as a new, empty regular file (never through a link, never over a file already there) and return its
     device and inode: the identity :func:`_remove_made` removes by, so a failure removes the file this call made and nothing
@@ -1294,10 +1311,46 @@ def _dir_identity(path: Path) -> tuple[int, int] | None:
     return (st.st_dev, st.st_ino) if stat.S_ISDIR(st.st_mode) else None
 
 
-def _empty_and_remove(work: Path, ident: tuple[int, int]) -> bool:
+def _open_dir(work: Path, ident: tuple[int, int] | None) -> int | None:
+    """A descriptor of the private folder ``work`` just made, held for the whole copy so its files are removed through it wherever
+    the folder has been moved to; ``None`` where the platform cannot hold one (Windows) or the folder is not the one made."""
+    if ident is None or os.unlink not in os.supports_dir_fd or not hasattr(os, "O_DIRECTORY"):
+        return None
+    try:
+        fd = os.open(work, os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+    except OSError:
+        return None
+    st = os.fstat(fd)
+    if (st.st_dev, st.st_ino) != ident:
+        os.close(fd)
+        return None
+    return fd
+
+
+def _empty_held(work: Path, ident: tuple[int, int], fd: int) -> bool:
+    """Empty the private folder through the descriptor held since it was made (R799, the coordinator's R794 condition): its files go
+    wherever the folder now sits, even renamed away mid-copy. The emptied folder is then removed by name only while the name still
+    holds it; an empty folder left elsewhere holds no copy. Returns whether no file of the copy is left. Never raises."""
+    try:
+        for name in os.listdir(fd):
+            os.unlink(name, dir_fd=fd)  # never follows; a sub-folder (never made here) fails, and the copy is said to be left
+        if os.listdir(fd):
+            return False
+    except OSError:
+        return False
+    if _dir_identity(work) == ident:
+        with contextlib.suppress(OSError):
+            os.rmdir(work)
+    return True
+
+
+def _empty_and_remove(work: Path, ident: tuple[int, int], fd: int | None = None) -> bool:
     """Remove ``work`` and the files in it while it is still the folder ``ident`` names, never through a link: each entry is
     unlinked by name (an unlink never follows a link) and a sub-folder is never entered. Relative to a descriptor of the folder
-    where the platform allows it, so a folder swapped for a link mid-way is not walked. Returns whether it is gone. Never raises."""
+    where the platform allows it, so a folder swapped for a link mid-way is not walked. With ``fd`` (the descriptor held since the
+    folder was made) the files go through it wherever the folder now sits. Returns whether no file of it is left. Never raises."""
+    if fd is not None:
+        return _empty_held(work, ident, fd)
     try:
         if _dir_identity(work) != ident:
             return False
@@ -1422,6 +1475,7 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
     with _active_lock:
         _active_work.add(os.path.realpath(work))  # the sweep compares real paths: a data folder reached through a link still matches
     ident = _dir_identity(work)
+    held = _open_dir(work, ident)  # POSIX: the folder's files are removed through this, wherever it is moved to
     inner = work / dest_p.name
     made: tuple[int, int] | None = None
     placed = False
@@ -1443,7 +1497,7 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
             if not placed:
                 raise OSError("the snapshot's name no longer holds the file this copy made")
         except BaseException as failed:
-            left = _undo(work, ident, dest_p if placed else None, made)
+            left, moved = _undo(work, ident, dest_p if placed else None, made, held)
             if left is None:
                 raise
             # the error itself names the whole path for the operator (R794); the log line keeps it masked (R736)
@@ -1458,35 +1512,42 @@ def snapshot_to_plaintext(src: Path | str, dest: Path | str) -> Path:
                     failed.oo_snapshot_left = left  # type: ignore[attr-defined]
                 raise
         else:
-            if ident is not None and not _empty_and_remove(work, ident):
+            if ident is not None and not _empty_and_remove(work, ident, held):
                 # the copy is whole under its name; the empty (or second-name) folder goes at the next sweep
                 _LOG.warning("a finished snapshot's private folder could not be removed yet: %s", _shown(work.name, in_data=False))
             return dest_p
     finally:
         with _active_lock:
             _active_work.discard(os.path.realpath(work))
-    raise SnapshotLeftOnDisk(left)  # outside the handler: no cause, no context, no driver text
+        if held is not None:
+            with contextlib.suppress(OSError):
+                os.close(held)
+    # outside the handler: no cause, no context, no driver text
+    raise SnapshotFolderMoved(left) if moved else SnapshotLeftOnDisk(left)
 
 
-def _undo(work: Path, ident: tuple[int, int] | None, placed: Path | None, made: tuple[int, int] | None) -> Path | None:
+def _undo(
+    work: Path, ident: tuple[int, int] | None, placed: Path | None, made: tuple[int, int] | None, held: int | None
+) -> tuple[Path | None, bool]:
     """After a failure: the name given to the copy (only while it still holds that file, never through a link) and the whole private
-    folder go. Returns a path that may still hold an incomplete plaintext copy, or ``None``. Never raises."""
+    folder go, through the held descriptor where there is one. Returns a path that may still hold an incomplete plaintext copy (or
+    ``None``) and whether that is because the folder was moved where no descriptor could be held. Never raises."""
     if placed is not None and made is not None:
         try:
             st = os.lstat(placed)
             if stat.S_ISREG(st.st_mode) and (st.st_dev, st.st_ino) == made:
                 os.unlink(placed)
             else:
-                return placed
+                return placed, False
         except FileNotFoundError:
             pass
         except OSError:
-            return placed
+            return placed, False
     if ident is None:
-        return work if os.path.lexists(work) else None
-    if _empty_and_remove(work, ident):
-        return None
-    return work
+        return (work if os.path.lexists(work) else None), False
+    if _empty_and_remove(work, ident, held):
+        return None, False
+    return work, held is None and _dir_identity(work) != ident
 
 
 def _snapshot_into(src_p: Path, dest_p: Path) -> None:

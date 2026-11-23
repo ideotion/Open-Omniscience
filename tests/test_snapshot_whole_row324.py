@@ -247,11 +247,60 @@ def test_the_private_folder_swapped_for_a_link_mid_copy_is_never_walked_or_retur
         os.symlink(victim, work, target_is_directory=True)
 
     _fail_mid_copy(monkeypatch, src, dest, encrypted=False, during=swap)
-    with pytest.raises(SnapshotLeftOnDisk) as left:
+    if connect_mod._open_dir(tmp_path, connect_mod._dir_identity(tmp_path)) is None:  # pragma: no cover - Windows
+        pytest.skip("no folder handle on this platform: test_a_folder_moved_without_a_handle_says_so covers it")
+    with pytest.raises(OSError) as failed:
         snapshot_to_plaintext(src, dest)
+    # POSIX: the partial is removed through the handle held since the folder was made, wherever the folder now sits
+    assert not isinstance(failed.value, SnapshotLeftOnDisk), "nothing is left, so nothing is said to be left"
+    assert list(moved.iterdir()) == [], "the partial in the moved-away folder was removed through the held handle"
     (work,) = _work_dirs(tmp_path)
-    assert work.is_symlink() and str(work) in str(left.value), "not the folder this call made: left, and said"
+    assert work.is_symlink(), "the link is not the folder this call made: left as it is"
     assert sorted(p.name for p in victim.iterdir()) == ["keep.txt"], "nothing removed or written through the link"
+    assert not dest.exists()
+
+
+@pytest.mark.parametrize("encrypted", [False, True], ids=["plaintext", "sqlcipher"])
+def test_a_private_folder_renamed_mid_copy_has_its_partial_removed_where_it_went(tmp_path, monkeypatch, encrypted):
+    # the coordinator's R794 condition on R799: a partial never stays behind silently in a moved-away folder
+    if connect_mod._open_dir(tmp_path, connect_mod._dir_identity(tmp_path)) is None:  # pragma: no cover - Windows
+        pytest.skip("no folder handle on this platform: test_a_folder_moved_without_a_handle_says_so covers it")
+    src = tmp_path / "store.db"
+    (_encrypted_store if encrypted else _plain_store)(src)
+    dest = tmp_path / "snap.db"
+    moved = tmp_path / "moved-away"
+    seen: list[str] = []
+
+    def rename(inner: Path) -> None:
+        os.replace(inner.parent, moved)
+        seen.extend(p.name for p in moved.iterdir())
+
+    _fail_mid_copy(monkeypatch, src, dest, encrypted=encrypted, during=rename)
+    with pytest.raises(Exception) as failed:
+        snapshot_to_plaintext(src, dest)
+    assert seen, "the folder was moved while the partial was in it"
+    assert not isinstance(failed.value, SnapshotLeftOnDisk)
+    assert list(moved.iterdir()) == [], "no partial plaintext left in the moved-away folder"
+    assert not dest.exists() and _work_dirs(tmp_path) == []
+
+
+def test_a_folder_moved_without_a_handle_says_so(tmp_path, monkeypatch):
+    # Windows (no handle on a folder): the files cannot be reached once it moved, so the error says the partial may still be on disk
+    # and that the folder was moved, and never implies it was removed
+    src = tmp_path / "store.db"
+    _plain_store(src)
+    dest = tmp_path / "snap.db"
+    moved = tmp_path / "moved-away"
+    monkeypatch.setattr(connect_mod, "_open_dir", lambda work, ident: None)
+    _fail_mid_copy(monkeypatch, src, dest, encrypted=False, during=lambda inner: os.replace(inner.parent, moved))
+    with pytest.raises(connect_mod.SnapshotFolderMoved) as left:
+        snapshot_to_plaintext(src, dest)
+    text = str(left.value)
+    assert "may still be on disk" in text and "was moved during the copy" in text and "removed" not in text.replace(
+        "could not be removed", ""
+    )
+    assert isinstance(left.value, SnapshotLeftOnDisk) and left.value.path.name.startswith(connect_mod.SNAPSHOT_WORK_PREFIX)
+    assert any(moved.iterdir()), "the partial really is still there, as said"
     assert not dest.exists()
 
 
@@ -499,20 +548,23 @@ def test_the_route_answers_with_the_words_when_the_library_copy_is_left(monkeypa
 
 # --- the page -----------------------------------------------------------------------------------------------------------------
 
-_FRAME = SNAPSHOT_LEFT_ON_DISK.replace('"{path}"', "“{path}”")
+_SENTENCES = pytest.mark.parametrize("sentence", [SNAPSHOT_LEFT_ON_DISK, connect_mod.SNAPSHOT_FOLDER_MOVED], ids=["left", "moved"])
 
 
 def _locale(lang: str) -> dict:
     return json.loads((ROOT / "src" / "static" / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
 
 
-def test_the_sentence_is_keyed_in_every_locale():
+@_SENTENCES
+def test_the_sentence_is_keyed_in_every_locale(sentence):
+    frame = sentence.replace('"{path}"', "“{path}”")
     for lang in ("en", "fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id"):
-        said = _locale(lang).get(_FRAME)
+        said = _locale(lang).get(frame)
         assert said and said.count("{path}") == 1, lang
 
 
-def test_the_page_reads_the_sentence_back_with_the_path_as_written():
+@_SENTENCES
+def test_the_page_reads_the_sentence_back_with_the_path_as_written(sentence):
     if shutil.which("node") is None:
         pytest.skip("node is not installed")
     core = (ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
@@ -528,12 +580,12 @@ def test_the_page_reads_the_sentence_back_with_the_path_as_written():
         "const _OO_SPACE_WHAT = {}; const _OO_SPACE_RES = [];\n"
         "const _OO_SIZE_RE = " + size_re.group(1) + ";\n"
         + function_source(core, "ooServerText")
-        + "\nconsole.log(JSON.stringify(ooServerText(" + json.dumps(SNAPSHOT_LEFT_ON_DISK.format(path=path)) + ")));\n"
+        + "\nconsole.log(JSON.stringify(ooServerText(" + json.dumps(sentence.format(path=path)) + ")));\n"
     )
     run = subprocess.run(["node", "-"], input=script, capture_output=True, text=True, timeout=60, check=False)
     assert run.returncode == 0, run.stderr[-2000:]
     said = json.loads(run.stdout)
-    assert said == fr[_FRAME].replace("{path}", "⁨" + path + "⁩"), said
+    assert said == fr[sentence.replace('"{path}"', "“{path}”")].replace("{path}", "⁨" + path + "⁩"), said
 
 
 def test_a_failure_right_after_the_name_was_given_removes_that_name_too(tmp_path, monkeypatch):
