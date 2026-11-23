@@ -1416,7 +1416,7 @@
     // exception's own words) are data and render translate="no". An unknown code, or a
     // report from an older server with no codes, falls back to the English line.
     const BACKUP_PROBLEM_FRAMES = {
-      "manifest-unsigned": "The volume index is not signed, so it cannot be relied on (an interrupted finish, or a change after it was written). Re-run the backup.",
+      "manifest-unsigned": "The volume index is not signed, so it cannot be relied on (a backup made by an older version, an interrupted finish, or a change after it was written). Re-run the backup.",
       "manifest-bad-signature": "The volume index's signature does not match its content, so it cannot be relied on (an interrupted finish, or a change after it was written). Re-run the backup.",
       "bad-volumes": "Corrupt or missing data volumes: {volumes}",
       "bad-parity": "Corrupt parity volumes: {volumes}. The data may be intact, but protection is reduced: re-run the backup to regenerate parity.",

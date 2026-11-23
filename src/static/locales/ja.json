@@ -6095,7 +6095,7 @@
   "The version of this app that produced the edition.": "この版を作成したアプリのバージョン。",
   "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal:": "仮想環境とデスクトップのランチャーは常に削除されます。アプリのフォルダーとあなたのデータも削除されるかはモードによります。ターミナルで実行することもできます:",
   "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "仮想環境とデスクトップのランチャーは常に削除されます。アプリのフォルダーとあなたのデータも削除されるかはモードによります。ターミナルで実行することもできます：./install.sh --uninstall",
-  "The volume index is not signed, so it cannot be relied on (an interrupted finish, or a change after it was written). Re-run the backup.": "ボリュームの索引が署名されていないため、信頼できません（完了処理の中断、または書き込み後の変更）。バックアップをもう一度実行してください。",
+  "The volume index is not signed, so it cannot be relied on (a backup made by an older version, an interrupted finish, or a change after it was written). Re-run the backup.": "ボリュームの索引が署名されていないため、信頼できません（古いバージョンで作られたバックアップ、完了処理の中断、または書き込み後の変更）。バックアップをもう一度実行してください。",
   "The volume index's signature does not match its content, so it cannot be relied on (an interrupted finish, or a change after it was written). Re-run the backup.": "ボリュームの索引の署名が内容と一致しないため、信頼できません（完了処理の中断、または書き込み後の変更）。バックアップをもう一度実行してください。",
   "The walk finished this edition and found no page for this item.": "ウォークはこの版を完了しましたが、この項目のページは見つかりませんでした。",
   "The walk has not finished this edition ({seen} of {total} pages), so the item may be there.": "ウォークはこの版をまだ完了していません（{total}ページ中{seen}ページ）。項目はそこにあるかもしれません。",
