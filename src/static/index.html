@@ -2271,7 +2271,7 @@
         </div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" data-on-click="refreshDumpSizes()" title="Read the exact size the dump host publishes right now for every edition you have selected — one consented request for the whole selection, spaced politely across the one host. Editions marked = carry that exact figure; ~ is the bundled dated estimate. An edition that could not be read says why, and is never shown as zero.">Refresh exact sizes</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="danger" data-on-click="startDump()">Download</button></div>
-        <div id="dump-estimate" class="hint" style="align-self:center"></div>
+        <div id="dump-estimate" class="hint" style="align-self:center" data-i18n-dyn></div>
       </div>
       <div class="hint">The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and, inline, a bundled dated estimate marked ~; Refresh exact sizes replaces that with the host's current figure, marked =, for the editions you selected. You can also type any edition code that isn't listed.</div>
       <div id="dump-size-note" class="hint" hidden><span>Inline sizes are estimates — the exact size is read on download.</span>
@@ -3327,7 +3327,7 @@
           title="Reads the gazetteer and the OpenStreetMap data on this machine. No request leaves it.">Resolve places</button></div>
         <div style="flex:0 0 auto"><button type="button" id="es-fetch"
           title="Sends one request every 10 seconds to www.wikidata.org, up to 50 items each. Refused while airplane mode is on.">Fetch from Wikidata</button></div>
-        <span id="es-status" class="hint" aria-live="polite"></span>
+        <span id="es-status" class="hint" aria-live="polite" data-i18n-dyn></span>
       </div>
       <div id="es-pending" class="hint" style="margin-top:10px"><div class="muted">Loading…</div></div>
     </section>
@@ -3716,9 +3716,9 @@
       <p class="muted" style="margin-top:0"><span>Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.</span></p>
       <div class="row">
         <div style="flex:0 0 auto"><button class="secondary" id="fixity-btn" data-on-click="runFixity(this)">Check corpus integrity</button></div>
-        <div id="fixity-summary" class="hint" style="flex:1;align-self:center"></div>
+        <div id="fixity-summary" class="hint" style="flex:1;align-self:center" data-i18n-dyn></div>
       </div>
-      <div id="fixity-result" style="margin-top:8px"></div>
+      <div id="fixity-result" style="margin-top:8px" data-i18n-dyn></div>
 
       <hr>
       <h3 style="margin-bottom:6px">Network fetch mode</h3>

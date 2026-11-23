@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-23,i18n,the Wikipedia dump size line follows a language change,shipped,PR #2313; row 352,src/static/app-map.js;src/static/app-boot.js;src/static/index.html;configs/i18n_frozen_renderers.txt,"refreshDumpSizes keeps its last state (pick, reading, done with the per-edition readings, error) and draws #dump-estimate from it; the host is data-i18n-dyn and the oo:langchange listener repaints it with no second request to the dump host. Deletes its line from the frozen-renderer list (298)."
