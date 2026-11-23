@@ -266,7 +266,6 @@ app-settings.js rebuildNow
 app-settings.js rebuildStoreNow
 app-settings.js removeImportedNewsletters
 app-settings.js renderCardCatalog
-app-settings.js runFixity
 app-settings.js runLangDetect
 app-settings.js runOllamaInstall
 app-settings.js saveCardSettings
