@@ -16,7 +16,10 @@ const cAt = APP.indexOf("const BACKUP_PROBLEM_FRAMES = {");
 assert.ok(cAt >= 0, "frames");
 const frames = APP.slice(cAt, APP.indexOf("};", cAt) + 2);
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const R = new Function("esc", frames + "\n" + fn("backupProblemHtml") + "\nreturn {backupProblemHtml, BACKUP_PROBLEM_FRAMES};")(esc);
+const rAt = APP.indexOf("const BACKUP_PASS_REASONS = [");
+assert.ok(rAt >= 0, "reasons");
+const reasons = APP.slice(rAt, APP.indexOf("];", rAt) + 2);
+const R = new Function("esc", frames + "\n" + reasons + "\n" + fn("backupProblemHtml") + "\nreturn {backupProblemHtml, BACKUP_PROBLEM_FRAMES};")(esc);
 const tf = (s, v) => "T[" + String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m) + "]";
 
 const out = R.backupProblemHtml("member x failed to decrypt: boom",
@@ -37,4 +40,10 @@ assert.strictEqual((sneaky.match(/<bdi/g) || []).length, 1, sneaky);
 for (const c of ["constructor", "toString", "__proto__"]) {
   assert.strictEqual(R.backupProblemHtml("raw <l>", {code: c, params: {}}, tf), "raw &lt;l&gt;", c);
 }
+// R803: a known R795 reason is ours and translated; anything else in the reason slot stays data
+const un = R.backupProblemHtml("r", {code: "passphrase-unchecked", params: {reason: "this backup has no signature"}}, tf);
+assert.ok(un.includes("(T[this backup has no signature])"), un);
+assert.ok(!un.includes("<bdi"), un);
+const odd = R.backupProblemHtml("r", {code: "passphrase-unchecked", params: {reason: "<odd>"}}, tf);
+assert.ok(odd.includes('<bdi translate="no">&lt;odd&gt;</bdi>'), odd);
 console.log("backup problems row 348: all checks passed");

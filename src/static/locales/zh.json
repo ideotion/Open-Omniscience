@@ -1344,6 +1344,7 @@
   "Could not change the collection speed: {error}": "无法更改采集速度：{error}",
   "Could not check revision anomalies: {error}": "无法检查修订异常：{error}",
   "Could not check the passphrase for this backup: its first volume does not open with the passphrase given, and the backup's list of volumes could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a changed backup. Nothing was read past that volume and nothing was changed on this computer.": "无法检查此备份的密码短语：它的第一个卷无法用所给的密码短语打开，且备份的卷列表无法认证（{reason}），因此无法区分密码短语错误和备份被改动。没有读取该卷之后的任何内容，本机上也没有任何更改。",
+  "Could not check the passphrase for this backup: the passphrase check stored in its list of volumes does not open with the passphrase given, and that list could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a changed backup.": "无法检查此备份的密码短语：存放在其卷列表中的密码短语校验无法用所给的密码短语打开，且该列表无法认证（{reason}），因此无法区分密码短语错误和备份被改动。",
   "Could not check the passphrase for {name}: its first volume does not open with the passphrase given, and the backup's list of volumes could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a changed backup. Nothing was started and nothing was changed on this computer.": "无法检查 {name} 的密码短语：它的第一个卷无法用所给的密码短语打开，且备份的卷列表无法认证（{reason}），因此无法区分密码短语错误和备份被改动。没有启动任何操作，本机上也没有任何更改。",
   "Could not check this machine: {error}": "无法检查本机：{error}",
   "Could not check which models are on this machine — benching what is already here.": "无法确认本机已有哪些模型 — 将只评测已有的模型。",

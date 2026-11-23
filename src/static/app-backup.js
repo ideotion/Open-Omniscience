@@ -1422,10 +1422,20 @@
       "bad-parity": "Corrupt parity volumes: {volumes}. The data may be intact, but protection is reduced: re-run the backup to regenerate parity.",
       "member-volume-unindexed": "Member {member} refers to a volume missing from the index: {volume}",
       "passphrase-mismatch": "The passphrase does not match this volume set.",
+      "passphrase-unchecked": "Could not check the passphrase for this backup: the passphrase check stored in its list of volumes does not open with the passphrase given, and that list could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a changed backup.",
       "member-decrypt-failed": "Member {member} could not be decrypted: {reason}",
       "member-checksum-mismatch": "Member {member} failed its whole-content checksum.",
       "envelope-mismatch": "The signed inner envelope does not match the volume index.",
     };
+    // R803: the four R795 reasons a passphrase could not be checked. They are fixed sentences, said in the reader's
+    // language (R795's own keys); any other reason text stays the server's words. Pinned to the Python constants by
+    // tests/test_backup_passphrase_verify_r803.py.
+    const BACKUP_PASS_REASONS = [
+      "this backup has no signature",
+      "its signature does not match its list of volumes",
+      "this backup was signed by another installation (for example another computer), so this one cannot confirm its list",
+      "this installation's own signing key could not be read",
+    ];
     function backupProblemHtml(raw, coded, tf) {
       const frame = coded && typeof coded === "object"
         && Object.prototype.hasOwnProperty.call(BACKUP_PROBLEM_FRAMES, coded.code) ? BACKUP_PROBLEM_FRAMES[coded.code] : undefined;
@@ -1433,8 +1443,13 @@
       const params = (coded.params && typeof coded.params === "object") ? coded.params : {};
       const marks = {};
       for (const k of Object.keys(params)) marks[k] = "\u0001" + k + "\u0002";
-      return esc(String(tf(frame, marks))).replace(/\u0001(\w+)\u0002/g, (m, k) =>
-        Object.prototype.hasOwnProperty.call(params, k) ? `<bdi translate="no">${esc(String(params[k]))}</bdi>` : m);
+      return esc(String(tf(frame, marks))).replace(/\u0001(\w+)\u0002/g, (m, k) => {
+        if (!Object.prototype.hasOwnProperty.call(params, k)) return m;
+        const v = String(params[k]);
+        // a known R795 reason is a sentence of ours, translated; everything else is data
+        if (k === "reason" && coded.code === "passphrase-unchecked" && BACKUP_PASS_REASONS.includes(v)) return esc(String(tf(v)));
+        return `<bdi translate="no">${esc(v)}</bdi>`;
+      });
     }
 
     function _uxRenderVerify(host, rep, t) {
