@@ -29,8 +29,12 @@ anywhere, including at module load.
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import os
+import sys
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 APP_DIRNAME = "open-omniscience"
@@ -87,14 +91,141 @@ def _memo_key() -> tuple[str | None, ...]:
     )
 
 
+#: What a request that met the latch is answered (keyed in every locale): a 503 with these words, never the catch-all's 500.
+ERASED_WORDS = "This app's data was erased while it was running: nothing is read or saved again until the app is restarted. Restart the app."
+
+
+class DataFolderErased(OSError):
+    """The folder asked for is one an erase in this process has started on (R802).
+
+    From the moment an erase starts and for the rest of the process, nothing in the app writes into the folder being erased or
+    makes it again: :func:`data_dir` raises this instead of answering it, and an audit hook (:func:`_erase_audit`) raises it for
+    every Python open for writing, folder creation, rename, link or symlink that lands in it, so a writer that kept the path from
+    before the erase, or a library, is stopped too. Reading is let through. A restart clears it."""
+
+    def __init__(self) -> None:
+        super().__init__(errno.EACCES, "the data folder was erased in this process; nothing is written into it or makes it again "
+                         "until the app restarts")
+
+
+#: The folders an erase in this process has started on (R802), each in two spellings: as given and with its links resolved,
+#: both taken when the erase starts, while the folder still exists. Never cleared but by a restart (the test suite's own reset aside).
+_ERASED: tuple[str, ...] = ()
+_ERASED_LOCK = threading.Lock()
+_ERASE_OWN = threading.local()
+_HOOKED = False
+#: The flags that make an open a write (``O_CREAT`` makes a file; the others change one).
+_WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
+
+
+def _spellings(path: str | bytes | os.PathLike) -> tuple[str, str]:
+    raw = os.path.abspath(os.fsdecode(path))
+    return os.path.normcase(raw), os.path.normcase(os.path.realpath(raw))
+
+
+def erased_folder_of(path: str | bytes | os.PathLike) -> bool:
+    """True when ``path`` is a folder an erase in this process started on, or lies under one (R802). Cheap while none is."""
+    if not _ERASED:
+        return False
+    try:
+        forms = _spellings(path)
+    except (OSError, ValueError, TypeError):
+        return True  # a path that cannot even be spelled is not let through while a folder is latched
+    return any(f == e or f.startswith(e.rstrip(os.sep) + os.sep) for f in forms for e in _ERASED)
+
+
+def refuse_if_erased(path: str | bytes | os.PathLike) -> None:
+    """Raise :class:`DataFolderErased` when ``path`` is in a folder an erase in this process started on (R802); the erase's own
+    work (:func:`erase_owned`) excepted."""
+    if _ERASED and not getattr(_ERASE_OWN, "on", False) and erased_folder_of(path):
+        raise DataFolderErased()
+
+
+def _erase_audit(event: str, args: tuple) -> None:
+    """R802 (2): the interpreter's audit events for a file opened to write, a folder made, a rename, a link or a symlink, refused
+    when the target is in a latched folder. A path relative to a folder handle (``dir_fd``) is the erase's own kind of walk and is
+    let through, as is a descriptor; reading is never refused."""
+    if not _ERASED:
+        return
+    if event == "open":
+        target, mode, flags = (tuple(args) + (None, None, None))[:3]
+        writes = (isinstance(flags, int) and flags & _WRITE_FLAGS) or (isinstance(mode, str) and any(c in mode for c in "wax+"))
+        if not writes:
+            return
+    elif event == "os.mkdir":
+        target = args[0]
+        if len(args) > 2 and args[2] not in (None, -1, -100):
+            return
+    elif event in ("os.rename", "os.link"):
+        target = args[1]
+        if len(args) > 3 and args[3] not in (None, -1, -100):
+            return
+    elif event == "os.symlink":
+        target = args[1]
+        if len(args) > 2 and args[2] not in (None, -1, -100):
+            return
+    else:
+        return
+    if isinstance(target, (str, bytes, os.PathLike)):
+        refuse_if_erased(target)
+
+
+def latch_erased(folder: str | os.PathLike) -> None:
+    """Mark ``folder`` as being erased, for the rest of the process (R802). Called by the erase before it touches a byte."""
+    global _ERASED, _memo, _HOOKED
+    with _ERASED_LOCK:
+        add = [s for s in _spellings(folder) if s not in _ERASED]
+        _ERASED = _ERASED + tuple(dict.fromkeys(add))
+        _memo = None  # the memo would answer a folder that is still there without asking
+        if not _HOOKED:
+            sys.addaudithook(_erase_audit)  # once per process; free while nothing is latched
+            _HOOKED = True
+
+
+@contextlib.contextmanager
+def erase_owned() -> Iterator[None]:
+    """For the erase's own work in a folder it latched (its overwrites, and the free-space scrub's private files, removed before it
+    returns): this thread only, never a writer of the app's."""
+    before = getattr(_ERASE_OWN, "on", False)
+    _ERASE_OWN.on = True
+    try:
+        yield
+    finally:
+        _ERASE_OWN.on = before
+
+
+def _reset_erased_for_tests() -> None:
+    """The test suite's reset between tests: a real process keeps the latch until it ends."""
+    global _ERASED, _memo
+    with _ERASED_LOCK:
+        _ERASED = ()
+        _memo = None
+
+
+def data_dir_path() -> Path:
+    """Where :func:`data_dir` would answer, WITHOUT making it or checking it (R802): for a reader, and for the error journal,
+    which never makes a missing data folder. Not for a writer."""
+    override = os.getenv("OO_DATA_DIR")
+    if override:
+        return Path(override).expanduser()
+    if _is_source_checkout():
+        return _REPO_ROOT / "data"
+    xdg = os.getenv("XDG_DATA_HOME")
+    base = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "share"
+    return base / APP_DIRNAME
+
+
 def data_dir() -> Path:
     """Return the writable data directory, creating it if necessary.
 
     See the module docstring for the precedence rules. Repeat calls are cheap: the result
     is memoised per resolved environment and revalidated with a single ``stat`` (a data
-    folder that vanished is created again, exactly as before).
+    folder that vanished is created again, exactly as before) -- except a folder an erase in this
+    process has started on, which is never answered or made again (R802: :class:`DataFolderErased`).
     """
     global _memo
+    if _ERASED and erased_folder_of(data_dir_path()):
+        raise DataFolderErased()  # whatever thread asks: the erase's own work never goes through here
     override = os.getenv("OO_DATA_DIR")
     if override and os.getenv("OO_DATA_VOLUME_ID"):
         # A folder the first-launch step marked: never recreated when it is missing, and

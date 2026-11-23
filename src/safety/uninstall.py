@@ -63,6 +63,7 @@ __PID_PROBE__
 for _ in range(240):                        # wait <=120s for the server to exit, then go
     if not pid_alive(pid): break
     time.sleep(0.5)
+server_gone = not pid_alive(pid)            # R802: one still running may write into the data folder after the wipe
 log = []
 def rec(m): log.append(datetime.datetime.now().isoformat(timespec="seconds") + "  " + m)
 # R734/R736 (row 334): no line of this log names a path or a process id. A path is written as its role: the data folder as <data>,
@@ -328,7 +329,14 @@ if wd and os.path.isdir(wd):
     gone = list(dict.fromkeys(unlisted_dirs))
     if gone:
         rec("could not check %d folder(s) it could not list: %s" % (len(gone), ", ".join(tok(d) for d in gone)))
-    if gone or not_overwritten:
+    if not server_gone:
+        rec("the app had not stopped after two minutes, so the wipe went ahead while it may still have been writing")
+    # R802 (5): measured after the wipe's last write, and said truthfully: a data folder removed whole that is there again was written to after.
+    back = not only and there(wd)
+    if back:
+        rec("THE ERASE MAY BE INCOMPLETE: the data folder %s was there again after the wipe removed it, so something wrote into it "
+            "after the wipe. Restart the computer, then remove that folder." % tok(wd))
+    if gone or not_overwritten or back:
         rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
             % (tok(wd), wiped, seen, not_overwritten, scrubbed))
     else:
@@ -570,6 +578,12 @@ def request_uninstall(*, confirm: bool, remove_folder: bool = False, wipe_data: 
                 "note": "Nothing to remove (no virtualenv or launchers found). "
                         "Delete the app folder manually if needed."}
     _spawn(plan, os.getpid())
+    if plan.get("wipe_data_dir"):
+        # R802 (4): the erase is under way from here (the watcher wipes once this process has gone): for the rest of this process nothing
+        # in it writes into the data folder or makes it again, the shutdown's own writes included.
+        from src.safety.crypto_erase import _latch
+
+        _latch(Path(plan["wipe_data_dir"]))
     _arm_shutdown()
     _LOG.warning("uninstall scheduled: mode=%s venv=%s launchers=%d folder=%s data=%s",
                  plan["mode"], bool(plan["venv"]), len(plan["launchers"]),   # R734/R736: no path in the app's log

@@ -817,6 +817,17 @@ imply a protection we cannot deliver.
   already handled or one that is not there; it is named as not overwritten and its folder as one it could not check, in both
   copies, and it never stops the erase. The log's path masking is told the erase's data folder, so it never makes again the
   folder the erase has just removed.
+  From the moment an erase starts, and for the rest of the process, nothing in the app writes into the folder being erased or
+  makes it again (R802, row 343): the erase latches it (`src/paths.py`, while the error journal's lock is held, so a record being
+  written lets its file and lock file go first); `data_dir()` then refuses it on every thread, an interpreter audit hook refuses
+  every Python open for writing, folder creation, rename and link into it (a writer that kept a path from before the erase
+  included), and the store opener, the file lock and the atomic replace refuse it first. Reading is never refused. The error
+  journal never makes a missing data folder: with the folder gone, records go to stderr only. `removed` is measured after the
+  erase's last log line; a folder removed whole that is there again then reads "may be incomplete" (`folder_back`, a visible
+  caveat ×12). A secure uninstall latches the folder as soon as its watcher is started, and the watcher says "may be incomplete"
+  when the folder is there again after its wipe. After a wipe, requests that need the data folder are answered 503 ("restart
+  the app"), and the optional free-space scrub writes into a private folder above the erased one, never making it again. Not
+  covered: a store or cache engine writing from C into a file it already held open, and another process (R792 reports it).
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or

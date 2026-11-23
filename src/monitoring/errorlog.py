@@ -20,6 +20,7 @@ import contextlib
 import json
 import logging
 import re
+import sys
 import threading
 import time
 import traceback
@@ -42,7 +43,7 @@ from src.monitoring.secret_scrub import (
     record_traceback,
     scrubbed,
 )
-from src.paths import data_dir
+from src.paths import data_dir_path, erased_folder_of
 from src.safety.file_lock import atomic_replace, file_lock, locked_append
 
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
@@ -124,7 +125,34 @@ class _ThirdPartyCacheNoiseFilter(logging.Filter):
 
 
 def _log_path() -> Path:
-    return data_dir() / "app_errors.jsonl"
+    # R802 (1): never ``data_dir()``, which makes a missing folder again. The journal writes into the data folder only while it is there.
+    return data_dir_path() / "app_errors.jsonl"
+
+
+def latch_for_erase(folder: Path) -> None:
+    """R802 (2): latch ``folder`` (``src.paths.latch_erased``) while holding the journal's lock, so a record being written when the erase
+    starts finishes and lets its file and its lock file go first, and every later one goes to stderr. Waits at most two seconds for that
+    record (one stuck behind another server's lock); the latch is set either way, and nothing after it can make the folder again."""
+    from src.paths import latch_erased
+
+    got = False
+    if not getattr(_IN_APPEND, "busy", False):  # never wait on this thread's own record
+        got = _LOCK.acquire(timeout=2.0)
+    try:
+        latch_erased(folder)
+    finally:
+        if got:
+            _LOCK.release()
+
+
+def _to_stderr(line: str) -> None:
+    """R802 (1): where a record goes when the data folder is not there (removed, or erased in this process): stderr only, never a file
+    that would make the folder again. The line is the record as the journal would have kept it (its text already scrubbed)."""
+    try:
+        sys.stderr.write("app error journal (no data folder): " + line + "\n")
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001, S110 - the log must never break the app
+        pass
 
 
 def _trim(path: Path) -> None:
@@ -133,7 +161,7 @@ def _trim(path: Path) -> None:
 
     An in-place ``write_text`` empties the file first, so a crash inside it (the thing this journal exists to survive) left no journal. The temp is named for
     the process and the thread, so two writers never share one; one a killed process left behind is swept when its process no longer runs."""
-    with file_lock(path):
+    with file_lock(path, create_folder=False):
         lines = path.read_text(encoding="utf-8").splitlines()[-_CAP:]
         atomic_replace(path, "\n".join(lines) + "\n", newline="\n")  # LF on every OS: the kept lines are the bytes they were (row 109)
 
@@ -156,8 +184,15 @@ def _append(entry: dict) -> None:
         line = json.dumps(entry, ensure_ascii=False)
         with _LOCK:
             path = _log_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            locked_append(path, line + "\n", newline="\n")  # one JSONL shape on every OS, so a trim keeps the bytes
+            # R802: never into a folder an erase in this process has started on, and never making a missing one (nor its lock file).
+            if erased_folder_of(path) or not path.parent.is_dir():
+                _to_stderr(line)
+                return
+            try:
+                locked_append(path, line + "\n", newline="\n", create_folder=False)  # one JSONL shape on every OS, so a trim keeps the bytes
+            except OSError:
+                _to_stderr(line)  # the folder went between the look and the write, or an erase latched it
+                return
             # Bounded by construction: trim once the file doubles the cap.
             if path.stat().st_size > 512 * 1024:
                 _trim(path)

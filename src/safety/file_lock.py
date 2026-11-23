@@ -230,7 +230,7 @@ def stats() -> dict[str, dict[str, float]]:
 
 
 @contextlib.contextmanager
-def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
+def file_lock(path: Path, *, shared: bool = False, create_folder: bool = True) -> Iterator[Held]:
     """Hold ``<path>.lock`` for the body: exclusive by default, shared with ``shared=True`` (appends). Not re-entrant: taking it again in the same thread raises
     ``RuntimeError`` rather than deadlocking.
 
@@ -238,7 +238,13 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
     through the Condition (R144). MEASURED with real SIGALRM interrupts, one per call, CPython 3.13.14, 20 s each (``scripts/signal_leak_probe.py gate_file_lock``
     and ``gate_file_lock_contended``): 0 of 65,901 interrupts left the lock owned with the file free and 0 of 66,074 with another thread holding it, with no
     ``RuntimeError`` taking an interrupt's place; the ``with <Condition>`` form this replaced left 18 of 66,290 and 5 of 65,998 owned, and 7 of the second became a
-    ``RuntimeError`` (audit 0.5.0 A-005). The probe is the claim: re-run it on any new interpreter."""
+    ``RuntimeError`` (audit 0.5.0 A-005). The probe is the claim: re-run it on any new interpreter.
+
+    R802: a file in a folder an erase in this process has started on is refused (``DataFolderErased``) before anything is taken or made, and
+    ``create_folder=False`` (the error journal's) never makes a missing folder for the sidecar: the lock is then not taken and the caller's own open fails."""
+    from src.paths import refuse_if_erased
+
+    refuse_if_erased(path)
     path = Path(path)
     me = threading.get_ident()
     loc: _Local | None = None
@@ -266,7 +272,8 @@ def file_lock(path: Path, *, shared: bool = False) -> Iterator[Held]:
             else:
                 loc.writer = me
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            if create_folder:
+                path.parent.mkdir(parents=True, exist_ok=True)
             fd = os.open(sidecar, os.O_RDWR | os.O_CREAT, 0o600)  # not inheritable (PEP 446)
         except OSError as fault:
             held = Held(locked=False, reason=f"the lock file could not be opened ({type(fault).__name__})")
@@ -376,6 +383,9 @@ def atomic_replace(
     with the new file already in place (see :func:`_flush_directory`). ``fsync=False`` is for a state file rewritten every few seconds that is rebuilt after a
     power cut anyway: neither the file nor its folder is flushed. ``sweep_every_s`` limits the dead-temp sweep to once per that many seconds per file (0: after
     every replace)."""
+    from src.paths import refuse_if_erased
+
+    refuse_if_erased(path)  # R802: never a temp, or a file, in a folder an erase in this process has started on
     path = Path(path)
     tmp = temp_name(path)
     began = time.perf_counter()
@@ -404,10 +414,11 @@ def atomic_replace(
         sweep_dead_temps(path)
 
 
-def locked_append(path: Path, text: str, *, encoding: str = "utf-8", newline: str | None = None) -> None:
-    """Append ``text`` under a SHARED lock (a trim holds it exclusive, so no append lands between the trim's read and its swap)."""
+def locked_append(path: Path, text: str, *, encoding: str = "utf-8", newline: str | None = None, create_folder: bool = True) -> None:
+    """Append ``text`` under a SHARED lock (a trim holds it exclusive, so no append lands between the trim's read and its swap). ``create_folder`` as
+    :func:`file_lock`'s."""
     path = Path(path)
-    with file_lock(path, shared=True), path.open("a", encoding=encoding, newline=newline) as f:
+    with file_lock(path, shared=True, create_folder=create_folder), path.open("a", encoding=encoding, newline=newline) as f:
         f.write(text)
 
 

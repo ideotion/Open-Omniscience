@@ -4327,7 +4327,9 @@
         const holder = r.other_holder || "unknown";
         // R798: a folder the erase could not list holds files it never checked, so that result is never clean either.
         const unlisted = Number(r.unlisted_folders) || 0;
-        const clean = holder === "none" && unlisted === 0;
+        // R802: a data folder the erase removed whole that is there again when it ends was written into after it, so that result is never clean.
+        const back = r.folder_back === true || (r.scope === "data-folder" && r.removed === false);
+        const clean = holder === "none" && unlisted === 0 && !back;
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
         // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
         const rec = plaintext
@@ -4350,6 +4352,7 @@
           (clean ? `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` : "") +
           `<span class="muted">${esc(r.limit)}</span>` +
           (holder === "none" ? "" : `<div class="card-caveat">${esc(holderNote)}</div>`) +
+          (back ? `<div class="card-caveat">${esc(t("The data folder was there again when the erase ended, after the erase had removed it: something wrote into it after the erase, so the erase may be incomplete. Restart the app, then run the wipe again and a full overwrite of free disk space below."))}</div>` : "") +
           (unlisted ? `<div class="card-caveat">${esc(tfw("The erase could not list {n} of the folders it was to erase, so it could not check the files in them: the erase may be incomplete. Make those folders readable (the app log names them), then run the wipe again and a full overwrite of free disk space below.", { n: fmtNum(unlisted, 0) }))}</div>` : "") +
           // R711: in a folder the app does not own, only its files went; the folder and the rest stayed, and the names are in the report.
           (r.scope === "app-only"

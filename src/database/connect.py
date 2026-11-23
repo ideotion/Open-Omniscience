@@ -1097,7 +1097,14 @@ def connect(
     copy is written through exactly this factory.
 
     ``read_only=True`` opens an existing file ``mode=ro`` and writes nothing, its leftover log included:
-    see :func:`_connect` for why ``PRAGMA query_only`` is not that."""
+    see :func:`_connect` for why ``PRAGMA query_only`` is not that.
+
+    R802: a store in a folder an erase in this process has started on is never opened (``DataFolderErased``): an open of a missing file
+    would make a fresh store in the folder being erased, and one that is there is the erase's to destroy."""
+    if str(path) != ":memory:" and not str(path).startswith("file:"):
+        from src.paths import refuse_if_erased
+
+        refuse_if_erased(path)
     with sqlite_opening():  # R789: no Python read closes a descriptor while this open may be taking a lock
         conn = _connect(
             path,

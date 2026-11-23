@@ -44,6 +44,7 @@ import shutil
 import stat
 import struct
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -102,6 +103,52 @@ _LIMIT_NOTE_UNLISTED = (
     _UNLISTED_SENTENCE + " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
     "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
 )
+
+
+# R802 (5): the note when the data folder the erase removed is there again when the erase ends -- something wrote into it after.
+_FOLDER_BACK_SENTENCE = (
+    "The data folder was there again when the erase ended, after the erase had removed it: something wrote into it after the erase, "
+    "so the erase may be incomplete."
+)
+_DEFENCE_TAIL = (
+    " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
+    "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
+)
+
+
+def settle_removed(report: dict) -> bool:
+    """R802 (5): measure ``removed`` again, AFTER the erase's last log line, and say so truthfully. A data folder the erase removed whole
+    that is there again makes ``removed`` False, sets ``folder_back`` and puts the "may be incomplete" sentence first in ``limit``.
+    Logs nothing (a log line after the measure is what this measure is for). Returns ``removed``. Never raises."""
+    try:
+        if report.get("scope") != "data-folder" or not report.get("data_dir"):
+            return bool(report.get("removed"))
+        removed = not _present(Path(report["data_dir"]))
+        report["removed"] = removed
+        if not removed:
+            report["folder_back"] = True
+            limit = report.get("limit")
+            if not isinstance(limit, str) or limit == _LIMIT_NOTE:
+                report["limit"] = _FOLDER_BACK_SENTENCE + _DEFENCE_TAIL
+            elif not limit.startswith(_FOLDER_BACK_SENTENCE):
+                report["limit"] = _FOLDER_BACK_SENTENCE + " " + limit
+        return removed
+    except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
+        report["removed"] = False
+        return False
+
+
+def _latch(base: Path) -> None:
+    """R802 (2): from here to the end of the process nothing in the app writes into ``base`` or makes it again (``src.paths.latch_erased``),
+    set while the error journal's lock is held so a record being written lets its file and lock file go first."""
+    try:
+        from src.monitoring.errorlog import latch_for_erase
+
+        latch_for_erase(base)
+    except Exception:  # noqa: BLE001 - the latch is set whatever the journal could do
+        from src.paths import latch_erased
+
+        latch_erased(base)
 
 
 #: The data folder of the erase running in this context, so the log lines of the helpers it calls are masked against it too.
@@ -593,8 +640,16 @@ def _resolve(data_dir: Path | None) -> dict:
     """Resolve every wipe target. For the default store (``data_dir is None``) the
     real resolvers are used so nothing is hardcoded; an explicit dir (tests/tools)
     derives the same layout from that base."""
+    from src.paths import DataFolderErased, data_dir_path
     from src.paths import data_dir as _default_dir
 
+    if data_dir is None:
+        try:
+            _default_dir()
+        except DataFolderErased:
+            # R802: a second erase in this process, of a folder the first one latched: never made again to be erased again;
+            # its own layout, the way an explicit folder's is derived (the overrides were the first erase's to reach).
+            data_dir = data_dir_path()
     if data_dir is not None:
         base = Path(data_dir)
         return {
@@ -788,11 +843,17 @@ def quick_crypto_erase(
     generation = new_hold_generation() if own else hold_generation
     missed: list[str] = []
     root_token = _ERASE_ROOT.set(None)  # the erase sets its data folder; put back as it was when it ends
+    from src.paths import erase_owned
+
     try:
-        report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed)
-        report["files_not_kept"] = len(missed)  # a count: the names are never reported
+        # R802: the erase latches its folder before it touches a byte; its own overwrites, on this thread, are the writes let through.
+        with erase_owned():
+            report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed)
+            report["files_not_kept"] = len(missed)  # a count: the names are never reported
+            if settle or own:
+                finish_holder_check(report, generation)
         if settle or own:
-            finish_holder_check(report, generation)
+            settle_removed(report)  # R802 (5): after the last log line of this erase
         return report
     finally:
         _ERASE_ROOT.reset(root_token)
@@ -827,6 +888,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
 
     paths = _resolve(data_dir)
     base: Path = paths["base"]
+    _latch(base)  # R802: before a byte is touched; for the rest of the process
     _ERASE_ROOT.set(base)  # every log line of this erase is masked against its own data folder, never src.paths.data_dir
     # R711. Is the data folder the app's own? One the app did not choose that also holds other files (the operator's home folder, a
     # drive root, a mount point, a projects folder) is never walked whole or removed: steps 5b and 6 reach only the entries the app
@@ -1207,30 +1269,48 @@ def full_secure_erase(
     if passes not in _ALLOWED_PASSES:
         raise ValueError(f"passes must be one of {_ALLOWED_PASSES}, got {passes!r}")
 
+    from src.paths import data_dir_path, erase_owned, erased_folder_of
+
     if base_dir is not None:
         base = Path(base_dir)
     else:
         from src.paths import data_dir
 
-        base = data_dir()  # recreated empty by the resolver if the quick pass removed it
-    base.mkdir(parents=True, exist_ok=True)
-    scrub_dir = base / ".oo_scrub"
-    scrub_dir.mkdir(parents=True, exist_ok=True)
-
+        # R802: the folder the panic erase latched is never made again, so it is named, not asked for.
+        base = data_dir_path() if erased_folder_of(data_dir_path()) else data_dir()
+    latched = erased_folder_of(base)
+    if not latched:
+        base.mkdir(parents=True, exist_ok=True)
+    # Where the fill files go (R802): in the data folder while it is there (a folder the erase kept: the app's files went, the operator's
+    # stayed), else in the nearest folder above it that is there, which is on the same volume but for a mount point in between. A private
+    # folder of its own, never one of a fixed name an operator's could share, removed before this returns; the erased folder is never made
+    # again for it.
+    where = base
+    while not where.is_dir() and where.parent != where:
+        where = where.parent
     total = 0
-    for i in range(passes):
-        fill = scrub_dir / f"scrub_{i}.bin"
-        total += _fill_free_space(fill, _cap_bytes)
-        with contextlib.suppress(OSError):
-            fill.unlink()
-    with contextlib.suppress(OSError):
-        shutil.rmtree(scrub_dir, ignore_errors=True)
+    scrub_dir: Path | None = None
+    with erase_owned() if latched else contextlib.nullcontext():  # the scrub's own private files, on this thread, removed below
+        try:
+            scrub_dir = Path(tempfile.mkdtemp(prefix=".oo_scrub_", dir=where))
+        except OSError:
+            scrub_dir = None
+        if scrub_dir is not None:
+            for i in range(passes):
+                fill = scrub_dir / f"scrub_{i}.bin"
+                total += _fill_free_space(fill, _cap_bytes)
+                with contextlib.suppress(OSError):
+                    fill.unlink()
+            with contextlib.suppress(OSError):
+                shutil.rmtree(scrub_dir, ignore_errors=True)
 
-    _LOG.warning("SECURE-ERASE scrub on %s (%d passes, %d bytes total)", _masked([str(base)])[0], passes, total)
+    _LOG.warning("SECURE-ERASE scrub on %s (%d passes, %d bytes total)", _masked([str(base)], base)[0], passes, total)
     return {
         "phase": "free-space-scrub",
         "data_dir": str(base),
         "passes": passes,
         "bytes_written": total,
+        # R802: "data-folder", "above-data-folder" (the erased folder is not made again for the scrub) or "none" (no folder there could be written).
+        "scrub_location": "none" if scrub_dir is None else ("data-folder" if where == base else "above-data-folder"),
         "limit": _LIMIT_NOTE,
     }

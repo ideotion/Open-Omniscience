@@ -52,7 +52,7 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     # being erased and a value read from the old file never lands in a fresh one. The wipe waits at most _PANIC_HOLD_S for a save
     # already in flight; when the hold cannot be taken (that save, another holder) it goes ahead without it, and the epoch bumps
     # before the erase and in the tidying still refuse the saves made with ``expect_swap``. A save made AFTER the wipe has ended is
-    # a first run's, and creates a fresh store like any first run.
+    # refused too (R802): the erase latched the data folder, and nothing in this process writes into it or makes it again until a restart.
     with _hold_settings_writes():
         try:
             # The store's swap epoch moves BEFORE the erase too: a save made from state read in the old file is refused from here.
@@ -72,9 +72,15 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
                 _dispose_after_erase(generation)  # whatever the tidying above did: the late-commit rewrite must still run
     # R792: only now, with the app offline and this process's own pool closed (its close would undo the lock this takes), look
     # for ANOTHER process still holding the store and rewrite while it does, within the bound; the report says what was found.
-    finish_holder_check(report, generation)
+    from src.paths import erase_owned
+
+    with erase_owned():  # the wipe's own rewrite through the descriptors it kept
+        finish_holder_check(report, generation)
     if failed:
         report["after_erase_failures"] = failed
+    from src.safety.crypto_erase import settle_removed
+
+    settle_removed(report)  # R802 (5): measured after the wipe's last log line, and said truthfully
     return report
 
 
@@ -146,7 +152,7 @@ def _close_database_now() -> None:
     step that fails never stops the wipe.
 
     NOT covered, stated: the import queue, the re-index managers, the backup threads and the request threads keep running and can
-    still check out a connection; with the data folder removed by the erase, a new store has nowhere to go but is not refused here.
+    still check out a connection; from the erase on, the store and the data folder are refused to every opener (R802, the erase's latch).
     A transaction already under way when the erase runs (a custody append, one of those threads) can still commit into the unlinked
     files; :func:`_dispose_after_erase` rewrites them again through descriptors the erase kept, and a commit later than its last pass
     is the window left. The pool is disposed AFTER the erase, never before: closing the last connection on a live file runs SQLite's
