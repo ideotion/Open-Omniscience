@@ -3148,42 +3148,60 @@
       return t("No size could be read.");
     }
 
+    // Row 352 fix: the estimate line is drawn from the LAST state (index.html marks #dump-estimate
+    // data-i18n-dyn), so a language switch repaints it from the oo:langchange listener without a
+    // second request to the dump host. Never fetches.
+    let _dumpEstState = null;
+    function _dumpEstimatePaint() {
+      const out = $("dump-estimate");
+      const st = _dumpEstState;
+      if (!out || !st) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (st.kind === "pick") { out.textContent = t("Select one or more editions first."); return; }
+      if (st.kind === "reading") { out.textContent = t("Reading exact sizes…"); return; }
+      if (st.kind === "error") { out.textContent = ooLabelText(t("Could not read the sizes"), st.message); return; }
+      const ok = [], bad = [];
+      st.rows.forEach(r => {
+        if (r.size_bytes != null) ok.push(`${r.wiki} ${_fmtBytes(r.size_bytes)}`);
+        else bad.push(`${r.wiki} — ${_dumpSizeReason(t, r.reason)}`);
+      });
+      // label:value, never an interpolated sentence — a sentence with a count
+      // in it cannot conjugate, and every locale is correct by construction
+      // when the label carries the meaning and the data sits beside it.
+      const parts = [];
+      if (ok.length) parts.push(ooLabelText(t("Read from the dump host"), ok.join(" · ")));
+      if (bad.length) parts.push(ooLabelText(t("Could not be read"), bad.join(" · ")));
+      if (st.over.length) parts.push(ooLabelText(t("Not attempted (batch limit)"), st.over.join(", ")));
+      out.textContent = parts.join(" — ") || t("No size could be read.");
+    }
+    function _dumpEstimateSet(st) { _dumpEstState = st; _dumpEstimatePaint(); }
+
     async function refreshDumpSizes() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const out = $("dump-estimate");
       const picked = dumpSelected();
       if (!picked.length) {
         // Never silently probe a default edition the operator did not choose.
-        if (out) out.textContent = t("Select one or more editions first.");
+        _dumpEstimateSet({kind: "pick"});
         return;
       }
       // The ONE network-consent popup (invariant #14): this reads live sizes
       // from dumps.wikimedia.org, so it is an offline->online transition like
       // any other and must never slip past the gate.
       if (!await ensureOnline(t("Read the exact current size of the selected Wikipedia dumps"))) return;
-      if (out) out.textContent = t("Reading exact sizes…");
+      _dumpEstimateSet({kind: "reading"});
       try {
         const d = await api(`/api/wiki/dumps/sizes?wikis=${encodeURIComponent(picked.join(","))}`, {method: "POST"});
         const rows = d.sizes || [];
-        const ok = [], bad = [];
         rows.forEach(r => {
-          if (r.size_bytes != null) { _dumpExactSizes[r.wiki] = r.size_bytes; ok.push(`${r.wiki} ${_fmtBytes(r.size_bytes)}`); }
-          else { delete _dumpExactSizes[r.wiki]; bad.push(`${r.wiki} — ${_dumpSizeReason(t, r.reason)}`); }
+          if (r.size_bytes != null) _dumpExactSizes[r.wiki] = r.size_bytes;
+          else delete _dumpExactSizes[r.wiki];
         });
         // The cap bounds which editions were READ; it never bounds what is
         // reported, so the un-probed remainder is named rather than dropped.
-        const over = (d.not_probed || []);
-        // label:value, never an interpolated sentence — a sentence with a count
-        // in it cannot conjugate, and every locale is correct by construction
-        // when the label carries the meaning and the data sits beside it.
-        const parts = [];
-        if (ok.length) parts.push(ooLabelText(t("Read from the dump host"), ok.join(" · ")));
-        if (bad.length) parts.push(ooLabelText(t("Could not be read"), bad.join(" · ")));
-        if (over.length) parts.push(ooLabelText(t("Not attempted (batch limit)"), over.join(", ")));
-        if (out) out.textContent = parts.join(" — ") || t("No size could be read.");
+        _dumpEstimateSet({kind: "done", rows, over: (d.not_probed || [])});
         renderWikiLanguages();   // repaint the picker with the exact figures
       } catch (e) {
-        if (out) out.textContent = ooLabelText(t("Could not read the sizes"), e.message);
+        _dumpEstimateSet({kind: "error", message: e.message});
       }
     }
 

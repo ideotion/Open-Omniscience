@@ -62,6 +62,8 @@
       try { if (typeof _uxVerifyRepaint === "function") _uxVerifyRepaint(); } catch (_e) {}
       // Row 351: the custody log table draws its headers and cells in the active language, so it repaints here.
       try { if (typeof custodyEntriesRepaint === "function") custodyEntriesRepaint(); } catch (_e) {}
+      // Row 352 fix: the Wikipedia dump size line (Living sources) redraws from its last state; never fetches.
+      try { if (typeof _dumpEstimatePaint === "function") _dumpEstimatePaint(); } catch (_e) {}
       // The rest of the Home at-a-glance strip -- its counts and their labels, the "as
       // of" stamp and the automatic-collection line -- is built with t() inside the same
       // [data-i18n-dyn] subtree, so it is the same frozen-locale class: measured staying
