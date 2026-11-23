@@ -56,8 +56,8 @@ def test_only_article_time_charts_opt_in():
     assert set(sites) == {"ins-trend-oo"}, (
         f"unexpected brushable charts: {sorted(set(sites))} -- a chart whose x-axis is "
         f"not article time must not offer a selection, and a chart no reader can reach "
-        f"must not either (corpusTab has no callers, so #corpus-chart is excluded on "
-        f"purpose: a capability on dead code is a guard that passes while proving nothing)"
+        f"must not either (the dead corpusTab and its #corpus-chart were deleted in row "
+        f"357: a capability on dead code is a guard that passes while proving nothing)"
     )
 
 

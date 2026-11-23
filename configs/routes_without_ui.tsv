@@ -118,10 +118,12 @@ POST	/api/geo/downloads/resume	superseded			the task manager resumes a paused re
 POST	/api/hazards	feature	2	Map or Climate (L/H)	live USGS + GDACS disaster feed: a network relay with no button and no consent; GDACS alerts are new (USGS quakes are already a Climate dataset)
 POST	/api/insights/keyword-fold-job/{action}	superseded			the task manager pauses, resumes and cancels the fold through /api/jobs/{job_id}/... (job 'keyword-fold')
 GET	/api/insights/leads-view	feature	2	Home (N)	the Leads with evidence chips (n, independent sources, freshness); browser-gated design, never wired
+POST	/api/insights/prune-keywords	superseded			row 357: its only UI caller (_pruneCore) had no caller and was deleted; Clean up keywords prunes through the background job (POST /api/insights/reindex-job?prune_after=true, which calls prune_orphan_keywords itself)
 GET	/api/insights/reading-diet-by-type	feature	2	Insights (O)	share of the corpus per content channel (news, wiki, law...)
 POST	/api/insights/reconcile-article-language	internal		maintenance	backfill job; belongs with the maintenance actions if ever surfaced
 POST	/api/insights/reconcile-keyword-language	internal		maintenance	backfill job; belongs with the maintenance actions if ever surfaced
 POST	/api/insights/reindex	superseded			the browser-driven Insights drain; R600 PR2 (#1938) moved it to a server job the UI starts through /api/insights/backlog
+POST	/api/insights/reindex-all	superseded			row 357: its only UI caller (_reindexAllLoop, the old client loop) had no caller and was deleted; the whole-corpus re-index is the background job POST /api/insights/reindex-job, which drives the same reindex_all_batch
 POST	/api/insights/reindex-job/{action}	superseded			the task manager pauses and resumes the re-index through /api/jobs/{job_id}/... (job 'reindex')
 GET	/api/insights/ring-stats	feature	3	Insights (O)	statistics for one cross-language group
 GET	/api/insights/supergroups/redundant-members	feature	3	Insights (O)	clean-up proposals for group members

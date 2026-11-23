@@ -151,8 +151,11 @@ _SURFACES: tuple[tuple[str, str, str], ...] = (
         "the minerals supply table's area (WLD disclosed as an aggregate)",
     ),
     # --- The corpus window -------------------------------------------------- #
-    ("app-corpus.js", "ooCountryCell(meta.country)", "a source's country fact"),
-    ("app-corpus.js", "ooLangCell(meta.language)", "a source's language fact"),
+    # Row 357 deleted the retired #corpus-win Sources renderer, which carried the
+    # meta.country / meta.language rows. A source's country and language facts are
+    # pinned on the live surfaces instead: the source profile's transparency card (its
+    # country row is above; its language row is the next line) and the sources table.
+    ("app-home.js", "tr.language?ooLangCell(tr.language)", "the source profile's language fact"),
     ("app-corpus.js", "ooCountryCell(m.country)", "a matched article's country"),
     # --- The analysis window ------------------------------------------------ #
     ("app-analysis.js", "ooLangCell(a.language)", "the article table language column"),

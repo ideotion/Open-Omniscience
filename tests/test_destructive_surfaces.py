@@ -278,7 +278,6 @@ _REQUEST_EXEMPT = {
     "_leadDismissWith": "records the reason a lead was dismissed; additive, nothing is removed",
     "_stopServerRun": "the bulk/extractor Cancel's helper: the task manager's own Stop of a detached AI run (job control; finished "
     "articles stay stored, the run is started again from the same panel)",
-    "_pruneCore": "garbage-collects keywords with ZERO mentions: derived rows nothing references, rebuilt by the next index",
     "dismissRetiredMode": "clears one informational 'retired mode' notice flag in the scheduler config",
     "dismissSettingsRepair": "clears one informational 'settings were repaired' notice in the scheduler config (row 94)",
     "ooKeywordUndoButton": "the UNDO of a hidden keyword (R685): it shows the keyword again (/api/insights/include); Hide hides it again",
@@ -345,6 +344,37 @@ def test_every_function_that_makes_a_destructive_request_confirms_or_is_accounte
     bare = sorted(n for n, (_, confirms, _) in sites.items() if not confirms and n not in gated and n not in _REQUEST_EXEMPT)
     assert not bare, "functions that make a destructive request and neither confirm, nor are on tests/trusted_click_table.py, nor are listed: " + ", ".join(
         f"{n} ({sites[n][0]}: {sites[n][2]})" for n in bare
+    )
+
+
+def test_the_keyword_prune_runs_only_behind_the_clean_up_confirm() -> None:
+    """Row 357 re-anchor of the deleted ``_pruneCore`` exemption.
+
+    ``_pruneCore`` posted ``/api/insights/prune-keywords`` without a confirm, exempt because it only collects keywords
+    with ZERO mentions. It had no caller and was deleted. The live prune is the re-index job's ``prune_after``, whose
+    URL the request finder cannot see (``/api/insights/reindex-job`` names no verb; the flag is in the query), so this
+    pins it directly: no UI file posts to the prune route any more, and the one function that starts the job WITH
+    prune_after is ``cleanupKeywords``, which confirms on every path before it does."""
+    starts: dict[str, str] = {}
+    for path in _js_files():
+        js = path.read_text(encoding="utf-8")
+        assert "/api/insights/prune-keywords" not in js, (
+            f"{path.name} calls the prune route directly again"
+        )
+        for m in re.finditer(r"(?:async\s+)?function\s+([\w$]+)\s*\(", js):
+            try:
+                _, body_at, body_end = _function_span(js, m.group(1))
+            except AssertionError:
+                continue
+            if "_startReindexJob(true" in js[body_at:body_end]:
+                starts[m.group(1)] = js[body_at:body_end]
+    assert set(starts) == {"cleanupKeywords"}, (
+        f"the prune-after job is started from: {sorted(starts)}"
+    )
+    body = starts["cleanupKeywords"]
+    assert _confirms(body), "cleanupKeywords must confirm before it starts the prune-after job"
+    assert body.index("confirm(") < body.index("_startReindexJob(true"), (
+        "the confirm must come before the start"
     )
 
 
