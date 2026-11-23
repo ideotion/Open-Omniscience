@@ -41,7 +41,7 @@ const SENTENCE = FROM_CONSTANT ? process.env.OO_NETWORK_REFUSED : "network refus
 
 async function press(err) {
   const st = { textContent: "" };
-  const src = [extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return entitySpineFetch;"].join("\n");
+  const src = ["let _esStatusRender = null;", extract("_esStatus"), extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return entitySpineFetch;"].join("\n");
   const f = new Function("$", "api", "ensureOnline", "pollJobStatus", "loadEntitySpine", "_jobStillRunning", "window", src);
   const run = f(() => st, async () => { throw err; }, async () => true, async () => ({}), () => {}, () => false, {});
   await run();
@@ -51,7 +51,7 @@ async function press(err) {
 // A background job that ENDS in error after the switch engaged (the route answered 200 and the poll reports the job's own error text).
 async function pressJob(job) {
   const st = { textContent: "" };
-  const src = [extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return entitySpineFetch;"].join("\n");
+  const src = ["let _esStatusRender = null;", extract("_esStatus"), extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return entitySpineFetch;"].join("\n");
   const f = new Function("$", "api", "ensureOnline", "pollJobStatus", "loadEntitySpine", "_jobStillRunning", "window", src);
   const run = f(() => st, async () => ({}), async () => true, async () => job, () => {}, () => false, {});
   await run();
@@ -96,5 +96,22 @@ function http(status, message) {
     assert.strictEqual(await pressJob({ state: "error", error: msg }), "Wikidata fetch failed: " + msg, "another class in front is that failure: " + msg);
   }
   assert.strictEqual(await pressJob({ state: "error" }), "Wikidata fetch failed: ", "a job error with no text keeps the old empty tail");
+  // Row 352 fix: #es-status keeps a render function, so a language switch redraws the refusal in the
+  // new language from the oo:langchange listener (esStatusRepaint), with no second request.
+  {
+    const st = { textContent: "" };
+    const dict = {};
+    const win = { OOI18N: { t: (s) => dict[s] || s } };
+    const src = ["let _esStatusRender = null;", extract("_esStatus"), extract("esStatusRepaint"), extract("_wikidataRefusedByAirplaneMode"), extract("entitySpineFetch"), "return [entitySpineFetch, esStatusRepaint];"].join("\n");
+    let calls = 0;
+    const f = new Function("$", "api", "ensureOnline", "pollJobStatus", "loadEntitySpine", "_jobStillRunning", "window", "OOI18N", src);
+    const [run, repaint] = f(() => st, async () => { calls++; throw http(409, SENTENCE); }, async () => true, async () => ({}), () => {}, () => false, win, win.OOI18N);
+    await run();
+    assert.strictEqual(st.textContent, REFUSED);
+    dict[REFUSED] = "Refusé : le mode avion est activé.";
+    repaint();
+    assert.strictEqual(st.textContent, "Refusé : le mode avion est activé.", "the refusal follows a language switch");
+    assert.strictEqual(calls, 1, "a repaint never fetches");
+  }
   console.log("wikidata_refusal_node_test.js: OK (sentence from " + (FROM_CONSTANT ? "the constant" : "this file's own copy") + ")");
 })().catch((e) => { console.error(e); process.exit(1); });

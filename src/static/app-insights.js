@@ -1142,29 +1142,43 @@
       }
     }
 
+    // Row 352 fix: #es-status (index.html marks it data-i18n-dyn) is drawn from a render function kept
+    // with the last result, so a language switch repaints it from the oo:langchange listener
+    // (esStatusRepaint) in the new language. Never fetches.
+    let _esStatusRender = null;
+    function _esStatus(render, title) {
+      _esStatusRender = render;
+      const st = $("es-status");
+      if (!st) return;
+      st.textContent = render();
+      if (title !== undefined) st.title = title;
+    }
+    function esStatusRepaint() {
+      const st = $("es-status");
+      if (st && _esStatusRender) st.textContent = _esStatusRender();
+    }
     async function entitySpineResolve() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
-      const st = $("es-status");
-      if (st) st.textContent = t("Resolving places…");
+      _esStatus(() => t("Resolving places…"));
       try {
         await api("/api/entities/places/resolve-mentioned", {method: "POST"});
         const job = await pollJobStatus("/api/entities/places/resolve-mentioned/status");
-        if (job.state === "error") { if (st) st.textContent = t("Could not resolve places:") + " " + (job.error || ""); return; }
-        if (_jobStillRunning(job)) { if (st) st.textContent = t("Still running in the background — check the task manager for the result."); return; }
+        if (job.state === "error") { _esStatus(() => t("Could not resolve places:") + " " + (job.error || "")); return; }
+        if (_jobStillRunning(job)) { _esStatus(() => t("Still running in the background — check the task manager for the result.")); return; }
         const r = job.result || {};
-        if (st) {
+        {
           const osm = r.osm_notable || null;
           // S05-04 S5 (Q817): the same job makes the notable places of the OpenStreetMap
           // countries read into Places; said beside the mentions, and a failure is named.
-          const osmLine = !osm ? "" : (osm.error ? " · " + t("The OpenStreetMap part could not be read.")
+          const osmLine = () => !osm ? "" : (osm.error ? " · " + t("The OpenStreetMap part could not be read.")
             : (osm.countries || []).length ? " · " + tf("{n} notable places from OpenStreetMap", {n: osm.places || 0}) : "");
-          st.textContent = tf("{places} places from {resolved} of {n} mentioned places", {places: r.places || 0, resolved: r.resolved || 0, n: r.distinct_mentions || 0}) + osmLine;
-          st.title = ooSaidText(r, "method");
+          _esStatus(() => tf("{places} places from {resolved} of {n} mentioned places", {places: r.places || 0, resolved: r.resolved || 0, n: r.distinct_mentions || 0}) + osmLine(),
+            ooSaidText(r, "method"));
         }
         loadEntitySpine();
-      } catch (e) { if (st) st.textContent = t("Could not resolve places:") + " " + e.message; }
+      } catch (e) { _esStatus(() => t("Could not resolve places:") + " " + e.message); }
     }
 
     // Is this error the kill switch's refusal of the Wikidata fetch? A 409 from that route IS (it answers 409 and nothing else), and so is a
@@ -1180,12 +1194,11 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
-      const st = $("es-status");
-      const refusedText = t("Refused: airplane mode is on. Turn the network on to fetch Wikidata items.");
+      const refusedText = () => t("Refused: airplane mode is on. Turn the network on to fetch Wikidata items.");
       // The ONE consent (invariant #14); its answer is USED.
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Fetch Wikidata items for the places and people in your corpus (one request every 10 seconds, over your transport)"))) return;
-      if (st) st.textContent = t("Fetching in the background…");
+      _esStatus(() => t("Fetching in the background…"));
       try {
         await api("/api/entities/items/fetch", {method: "POST", body: JSON.stringify({consent: true})});
         const job = await pollJobStatus("/api/entities/items/status");
@@ -1193,24 +1206,23 @@
         if (job.state === "error") {
           // The job's error is ``record_text(exc, typed=True)``, so it STARTS with the exception class (``AirplaneRefusal: <the pre-check sentence> (...)``, the sentence being NETWORK_REFUSED in src/ingest/fetch_verdict.py): only those two refusal classes are taken off the front, so the reader's anchor still rejects a phrase quoted inside another failure. THIS SET IS CLOSED (R320, R298): two class names of OUR refusals in front of an unchanged anchored reader; never widen it to any class (`\\w+:`), or a remote page's words behind an ordinary exception become a refusal. (`AirplaneModeError` cannot reach this job today, the batch loop swallows it; it stays because that text is a refusal wherever it appears.)
           const refusal = String(job.error == null ? "" : job.error).replace(/^\s*(?:AirplaneRefusal|AirplaneModeError):\s*/, "");
-          if (st) st.textContent = _wikidataRefusedByAirplaneMode({message: refusal}) ? refusedText : t("Wikidata fetch failed:") + " " + (job.error || "");
+          _esStatus(_wikidataRefusedByAirplaneMode({message: refusal}) ? refusedText : () => t("Wikidata fetch failed:") + " " + (job.error || ""));
           return;
         }
-        if (_jobStillRunning(job)) { if (st) st.textContent = t("Still running in the background — check the task manager for the result."); return; }
+        if (_jobStillRunning(job)) { _esStatus(() => t("Still running in the background — check the task manager for the result.")); return; }
         const r = job.result || {};
-        if (st) {
-          st.textContent = tf("{fetched} fetched · {missing} no longer on Wikidata · {refused} refused · {pending} left", {
+        {
+          _esStatus(() => tf("{fetched} fetched · {missing} no longer on Wikidata · {refused} refused · {pending} left", {
             fetched: r.fetched || 0, missing: r.missing_on_wikidata || 0, refused: r.refused || 0, pending: r.pending || 0})
-            + (r.stopped_by_airplane_mode ? " · " + t("stopped: airplane mode was turned on") : (r.stopped ? " · " + t("stopped early") : ""));
-          st.title = ooSaidText(r, "method");
+            + (r.stopped_by_airplane_mode ? " · " + t("stopped: airplane mode was turned on") : (r.stopped ? " · " + t("stopped early") : "")),
+            ooSaidText(r, "method"));
         }
         loadEntitySpine();
       } catch (e) {
         // A 409 is the kill switch, and it is NAMED as such (invariant #14e's corollary).
-        const msg = _wikidataRefusedByAirplaneMode(e)
+        _esStatus(_wikidataRefusedByAirplaneMode(e)
           ? refusedText
-          : t("Wikidata fetch failed:") + " " + e.message;
-        if (st) st.textContent = msg;
+          : () => t("Wikidata fetch failed:") + " " + e.message);
       }
     }
 
