@@ -326,17 +326,21 @@ if wd and os.path.isdir(wd):
             % (tok(wd), only.get("reason"), left))
     else:
         shutil.rmtree(wd, ignore_errors=True)
+    removed_now = not only and not there(wd)   # R802: measured right after the wipe's own removal
     gone = list(dict.fromkeys(unlisted_dirs))
     if gone:
         rec("could not check %d folder(s) it could not list: %s" % (len(gone), ", ".join(tok(d) for d in gone)))
     if not server_gone:
         rec("the app had not stopped after two minutes, so the wipe went ahead while it may still have been writing")
     # R802 (5): measured after the wipe's last write, and said truthfully: a data folder removed whole that is there again was written to after.
-    back = not only and there(wd)
+    back = removed_now and there(wd)
+    kept = not only and not removed_now
     if back:
-        rec("THE ERASE MAY BE INCOMPLETE: the data folder %s was there again after the wipe removed it, so something wrote into it "
-            "after the wipe. Restart the computer, then remove that folder." % tok(wd))
-    if gone or not_overwritten or back:
+        rec("THE ERASE MAY BE INCOMPLETE: the data folder %s existed again after the wipe had removed it, so something recreated "
+            "it afterwards. Restart the computer, then remove that folder." % tok(wd))
+    elif kept:
+        rec("the data folder %s itself could not be removed, so something may be left in it: check it and remove it by hand" % tok(wd))
+    if gone or not_overwritten or back or kept:
         rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
             % (tok(wd), wiped, seen, not_overwritten, scrubbed))
     else:
@@ -430,8 +434,12 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
     venv = root / ".venv"
     launchers = [p for p in _launcher_paths() if p.exists()]
     try:
+        from src.paths import DataFolderErased, data_dir_path
         from src.paths import data_dir as _data_dir
-        data = str(_data_dir())
+        try:
+            data = str(_data_dir())
+        except DataFolderErased:
+            data = str(data_dir_path())  # R802: after a wipe in this process, the folder is named, never made again; wiped if it is there
         data_exists = Path(data).is_dir()
     except Exception:  # pragma: no cover - paths always importable in practice
         data, data_exists = None, False

@@ -112,6 +112,8 @@ class DataFolderErased(OSError):
 #: both taken when the erase starts, while the folder still exists. Never cleared but by a restart (the test suite's own reset aside).
 _ERASED: tuple[str, ...] = ()
 _ERASED_LOCK = threading.Lock()
+#: R805 (c)1: the device each latched folder was on, read at the latch (None: could not be read), keyed by its spellings.
+_ERASED_DEV: dict[str, int | None] = {}
 _ERASE_OWN = threading.local()
 _HOOKED = False
 #: The flags that make an open a write (``O_CREAT`` makes a file; the others change one).
@@ -141,10 +143,49 @@ def refuse_if_erased(path: str | bytes | os.PathLike) -> None:
         raise DataFolderErased()
 
 
+def _at(target: object, dir_fd: object) -> object:
+    """``target`` as the path a call relative to the folder handle ``dir_fd`` reaches, read from the handle's own name
+    (``/proc/self/fd``). A handle whose folder cannot be named answers None, which is refused: while a folder is latched, a call
+    this hook cannot place is not let through."""
+    if dir_fd in (None, -1, -100) or not isinstance(target, (str, bytes)):
+        return target
+    name = os.fsdecode(target)
+    if os.path.isabs(name):
+        return name
+    try:
+        folder = os.readlink(f"/proc/self/fd/{int(dir_fd)}")  # type: ignore[call-overload]
+    except (OSError, ValueError, TypeError):
+        return None
+    if not os.path.isabs(folder):
+        return None  # "anon_inode:..." and the like: not a folder
+    return os.path.join(folder, name)
+
+
+def sqlite_target(name: str) -> str | None:
+    """The file a SQLite open of ``name`` reaches (a plain path, or a ``file:`` URI read the way SQLite reads it: its query
+    dropped, an empty or ``localhost`` authority dropped, %-escapes decoded); None for an in-memory store."""
+    from urllib.parse import unquote
+
+    if name in ("", ":memory:"):
+        return None
+    if not name.startswith("file:"):
+        return name
+    rest = name[5:].split("?", 1)[0].split("#", 1)[0]
+    if "mode=memory" in name or rest in ("", ":memory:"):
+        return None
+    if rest.startswith("//"):
+        authority, _, tail = rest[2:].partition("/")
+        rest = "/" + tail if authority in ("", "localhost") else rest
+    return unquote(rest)
+
+
 def _erase_audit(event: str, args: tuple) -> None:
-    """R802 (2): the interpreter's audit events for a file opened to write, a folder made, a rename, a link or a symlink, refused
-    when the target is in a latched folder. A path relative to a folder handle (``dir_fd``) is the erase's own kind of walk and is
-    let through, as is a descriptor; reading is never refused."""
+    """R802 (2): the interpreter's audit events for a file opened to write, a folder made, a rename, a link, a symlink or a stdlib
+    SQLite connect, refused when the target is in a latched folder. A ``mkdir``/``rename``/``link``/``symlink`` relative to a folder
+    handle (``dir_fd``) is placed through the handle's name, and refused when it cannot be placed. An ``open`` event does not carry
+    its ``dir_fd``, so a relative path there is read against the working folder; a call on a descriptor already open is let through.
+    Python fires no audit event for ``mkfifo`` or ``mknod``. Reading is never refused. NOT covered: writes from C code into files it
+    already holds open, and child processes (see docs/SECURITY.md)."""
     if not _ERASED:
         return
     if event == "open":
@@ -153,18 +194,25 @@ def _erase_audit(event: str, args: tuple) -> None:
         if not writes:
             return
     elif event == "os.mkdir":
-        target = args[0]
-        if len(args) > 2 and args[2] not in (None, -1, -100):
-            return
+        target = _at(args[0], args[2] if len(args) > 2 else None)
     elif event in ("os.rename", "os.link"):
-        target = args[1]
-        if len(args) > 3 and args[3] not in (None, -1, -100):
-            return
+        target = _at(args[1], args[3] if len(args) > 3 else None)
     elif event == "os.symlink":
-        target = args[1]
-        if len(args) > 2 and args[2] not in (None, -1, -100):
-            return
+        target = _at(args[1], args[2] if len(args) > 2 else None)
+    elif event == "sqlite3.connect":
+        # SQLite's own C code fires no "open": a stdlib connect that would make a fresh store in the folder is refused here.
+        target = args[0] if args else None
+        if isinstance(target, str):
+            if target == ":memory:" or target == "":
+                return
+            target = sqlite_target(target)
+            if target is None:
+                return
     else:
+        return
+    if target is None:
+        if not getattr(_ERASE_OWN, "on", False):
+            raise DataFolderErased()
         return
     if isinstance(target, (str, bytes, os.PathLike)):
         refuse_if_erased(target)
@@ -173,13 +221,31 @@ def _erase_audit(event: str, args: tuple) -> None:
 def latch_erased(folder: str | os.PathLike) -> None:
     """Mark ``folder`` as being erased, for the rest of the process (R802). Called by the erase before it touches a byte."""
     global _ERASED, _memo, _HOOKED
+    try:
+        dev: int | None = os.stat(folder).st_dev
+    except OSError:
+        dev = None
     with _ERASED_LOCK:
+        for spelling in _spellings(folder):
+            _ERASED_DEV.setdefault(spelling, dev)
         add = [s for s in _spellings(folder) if s not in _ERASED]
         _ERASED = _ERASED + tuple(dict.fromkeys(add))
         _memo = None  # the memo would answer a folder that is still there without asking
         if not _HOOKED:
             sys.addaudithook(_erase_audit)  # once per process; free while nothing is latched
             _HOOKED = True
+
+
+def erased_device(folder: str | bytes | os.PathLike) -> int | None:
+    """The device ``folder`` was on when an erase latched it (R805 (c)1), None when it is not latched or that could not be read."""
+    try:
+        forms = _spellings(folder)
+    except (OSError, ValueError, TypeError):
+        return None
+    for f in forms:
+        if _ERASED_DEV.get(f) is not None:
+            return _ERASED_DEV[f]
+    return None
 
 
 @contextlib.contextmanager
@@ -199,6 +265,7 @@ def _reset_erased_for_tests() -> None:
     global _ERASED, _memo
     with _ERASED_LOCK:
         _ERASED = ()
+        _ERASED_DEV.clear()
         _memo = None
 
 

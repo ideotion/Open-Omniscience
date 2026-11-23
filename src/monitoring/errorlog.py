@@ -48,6 +48,8 @@ from src.safety.file_lock import atomic_replace, file_lock, locked_append
 
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
 _LOCK = threading.Lock()
+#: How long a record waits for the journal's lock before it goes to stderr instead (R802 read: never an unbounded wait).
+_LOCK_WAIT_S = 5.0
 _installed = False
 
 # An HTTP error RESPONSE (status >= 400) returned to the client — the "not found",
@@ -182,7 +184,14 @@ def _append(entry: dict) -> None:
     _IN_APPEND.busy, _IN_APPEND.pending = True, []
     try:
         line = json.dumps(entry, ensure_ascii=False)
-        with _LOCK:
+        if erased_folder_of(_log_path()):
+            _to_stderr(line)  # R802: latched; nothing to wait on the lock for (a stuck journal write never holds a record back)
+            return
+        if not _LOCK.acquire(timeout=_LOCK_WAIT_S):
+            _to_stderr(line)  # a record is never lost, nor a thread held, behind a journal write that does not end
+            return
+        with contextlib.ExitStack() as _held:
+            _held.callback(_LOCK.release)
             path = _log_path()
             # R802: never into a folder an erase in this process has started on, and never making a missing one (nor its lock file).
             if erased_folder_of(path) or not path.parent.is_dir():

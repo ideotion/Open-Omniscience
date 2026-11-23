@@ -42,8 +42,15 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     operator racing a seizure was told the wipe failed when the key was already gone."""
     if not confirm:
         raise PermissionError("panic_wipe requires confirm=True (this is irreversible)")
-    from src.safety.crypto_erase import finish_holder_check, new_hold_generation, quick_crypto_erase
+    from src.paths import data_dir_path
+    from src.safety.crypto_erase import (
+        _latch,
+        finish_holder_check,
+        new_hold_generation,
+        quick_crypto_erase,
+    )
 
+    _latch(Path(data_dir) if data_dir is not None else data_dir_path())  # R802: from the wipe's first step, not from the erase's
     _close_database_now()
     generation = new_hold_generation()  # this wipe's own kept descriptors, closed by its own late pass (row 36)
     failed: list[str] = []
