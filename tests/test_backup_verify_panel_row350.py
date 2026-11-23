@@ -64,3 +64,11 @@ def test_the_panel_node_suite():
         timeout=60,
     )
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_verify_forgets_the_import_summary_it_replaces():
+    # The import half's oo:langchange listener redraws its last summary into the shared host whenever
+    # it holds one; a verify that took the host over must drop it, or a switch paints the old import
+    # summary over the verify result.
+    body = function_body(read_static("app-backup.js"), "_uxImVerify")
+    assert 'summary.innerHTML = ""; _uxImSummaryArgs = null;' in body

@@ -1359,7 +1359,9 @@
         toast(t("An import is running — verify the backup once it has finished."), "err");
         return;
       }
-      summary.innerHTML = ""; st.textContent = t("Verifying…"); btn.disabled = true;
+      // Row 350: the summary now belongs to this verify, so the import half must not redraw its old summary over it on a
+      // language switch (its oo:langchange listener runs before the verify panel's).
+      summary.innerHTML = ""; _uxImSummaryArgs = null; st.textContent = t("Verifying…"); btn.disabled = true;
       try {
         // ONE chain (Q206 = a): the start is still guarded by the same
         // job-state-as-truth check _uxStartThenPoll applies -- a lost START response
