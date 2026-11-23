@@ -3490,7 +3490,7 @@
   "No changes recorded for the documents the law tracker follows yet.": "No changes recorded for the documents the law tracker follows yet.",
   "No changes recorded for the pages the stream follows yet.": "No changes recorded for the pages the stream follows yet.",
   "No changes yet. Add pages and press “Track now”.": "No changes yet. Add pages and press “Track now”.",
-  "No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.": "No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.",
+  "No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.": "No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.",
   "No climate series stored for this country on this machine.": "No climate series stored for this country on this machine.",
   "No collection scheduled or running right now — when collection is on, the schedule appears here.": "No collection scheduled or running right now — when collection is on, the schedule appears here.",
   "No commodity and topic were both covered by enough distinct sources to compare.": "No commodity and topic were both covered by enough distinct sources to compare.",

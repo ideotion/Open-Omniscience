@@ -3490,7 +3490,7 @@
   "No changes recorded for the documents the law tracker follows yet.": "Belum ada perubahan tercatat untuk dokumen yang diikuti pelacak hukum.",
   "No changes recorded for the pages the stream follows yet.": "Belum ada perubahan tercatat untuk halaman yang diikuti aliran.",
   "No changes yet. Add pages and press “Track now”.": "Belum ada perubahan. Tambahkan halaman dan tekan “Lacak sekarang”.",
-  "No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.": "Belum ada kota yang ditempatkan: tidak ada penyebutan dalam rentang ini yang berasal dari sumber dengan kota yang dapat ditemukan peta. Kota muncul dengan sendirinya saat artikel semacam itu diindeks.",
+  "No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.": "Belum ada kota yang ditempatkan: tidak ada penyebutan dalam rentang ini yang berasal dari sumber yang kotanya ada di daftar kota peta.",
   "No climate series stored for this country on this machine.": "Tidak ada seri iklim tersimpan untuk negara ini di mesin ini.",
   "No collection scheduled or running right now — when collection is on, the schedule appears here.": "Tidak ada pengumpulan yang dijadwalkan atau berjalan saat ini — saat pengumpulan aktif, jadwal muncul di sini.",
   "No commodity and topic were both covered by enough distinct sources to compare.": "Tidak ada komoditas dan topik yang sama-sama diliput oleh cukup banyak sumber berbeda untuk dibandingkan.",

@@ -3490,7 +3490,7 @@
   "No changes recorded for the documents the law tracker follows yet.": "法律トラッカーがフォローしている文書について、記録された変更はまだありません。",
   "No changes recorded for the pages the stream follows yet.": "ストリームがフォローしているページについて、記録された変更はまだありません。",
   "No changes yet. Add pages and press “Track now”.": "変更はまだありません。ページを追加して「追跡を開始」を押してください。",
-  "No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.": "配置された都市はまだありません。この期間の言及に、地図が位置を特定できる都市を持つソースからのものがありません。そうした記事がインデックスされると、都市は自動で表示されます。",
+  "No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.": "配置された都市はまだありません。この期間の言及に、都市が地図の都市リストにあるソースからのものがありません。",
   "No climate series stored for this country on this machine.": "このマシンにはこの国の気候系列が保存されていません。",
   "No collection scheduled or running right now — when collection is on, the schedule appears here.": "現在、予定または実行中の収集はありません — 収集が有効になると、ここにスケジュールが表示されます。",
   "No commodity and topic were both covered by enough distinct sources to compare.": "比較できるほど多くの異なる情報源が、商品とトピックの両方を報じた組み合わせはありません。",

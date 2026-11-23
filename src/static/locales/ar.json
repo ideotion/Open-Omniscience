@@ -3490,7 +3490,7 @@
   "No changes recorded for the documents the law tracker follows yet.": "لم تُسجَّل بعد أي تغييرات للمستندات التي يتابعها متتبِّع القانون.",
   "No changes recorded for the pages the stream follows yet.": "لم تُسجَّل بعد أي تغييرات للصفحات التي يتابعها التدفق.",
   "No changes yet. Add pages and press “Track now”.": "لا تغييرات بعد. أضف صفحات واضغط «تتبّع الآن».",
-  "No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.": "لا مدن مُوضَعة بعد: لا تأتي أي إشارة في هذه الفترة من مصدر له مدينة تستطيع الخريطة تحديد موقعها. تظهر المدن تلقائيًا كلما فُهرست مثل هذه المقالات.",
+  "No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.": "لا مدن مُوضَعة بعد: لا تأتي أي إشارة في هذه الفترة من مصدر توجد مدينته في قائمة مدن الخريطة.",
   "No climate series stored for this country on this machine.": "لا توجد سلسلة مناخية محفوظة لهذا البلد على هذا الجهاز.",
   "No collection scheduled or running right now — when collection is on, the schedule appears here.": "لا يوجد جمع مجدول أو قيد التشغيل الآن — عند تشغيل الجمع، يظهر الجدول هنا.",
   "No commodity and topic were both covered by enough distinct sources to compare.": "لم تُغطَّ أي سلعة وموضوع معًا من مصادر متمايزة كافية لمقارنتهما.",

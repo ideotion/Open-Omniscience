@@ -29,8 +29,8 @@ NEW_KEYS = [
     "No entity families yet. Articles are indexed on their own as they arrive.",
     "The city list was not computed this time, so no city is drawn: that is not the "
     "same as no city being mentioned.",
-    "No cities placed yet: no mention in this window comes from a source with a city the "
-    "map can locate. Cities appear on their own as such articles are indexed.",
+    "No cities placed yet: no mention in this window comes from a source whose city is in "
+    "the map's city list.",
     "No data yet: no mention in this window comes from a source with a country or city. "
     "Rows appear on their own as such articles are indexed.",
 ]

@@ -3490,7 +3490,7 @@
   "No changes recorded for the documents the law tracker follows yet.": "法律跟踪器关注的文档尚无记录的变更。",
   "No changes recorded for the pages the stream follows yet.": "流关注的页面尚无记录的变更。",
   "No changes yet. Add pages and press “Track now”.": "尚无更改。添加页面并点击“立即追踪”。",
-  "No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.": "尚无已放置的城市：此时间段内没有任何提及来自带有地图可定位城市的来源。此类文章被索引后，城市会自动出现。",
+  "No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.": "尚无已放置的城市：此时间段内没有任何提及来自其城市在地图城市列表中的来源。",
   "No climate series stored for this country on this machine.": "本机没有为该国家保存任何气候序列。",
   "No collection scheduled or running right now — when collection is on, the schedule appears here.": "当前没有计划或正在运行的采集 — 采集开启后，计划将显示在此处。",
   "No commodity and topic were both covered by enough distinct sources to compare.": "没有商品与话题同时被足够多的不同来源报道以供比较。",

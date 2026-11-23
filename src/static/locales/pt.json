@@ -3490,7 +3490,7 @@
   "No changes recorded for the documents the law tracker follows yet.": "Ainda não há alterações registradas para os documentos que o rastreador jurídico acompanha.",
   "No changes recorded for the pages the stream follows yet.": "Ainda não há alterações registradas para as páginas que o fluxo acompanha.",
   "No changes yet. Add pages and press “Track now”.": "Ainda sem alterações. Adicione páginas e pressione “Acompanhar agora”.",
-  "No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.": "Ainda sem cidades posicionadas: nenhuma menção deste período vem de uma fonte com uma cidade que o mapa consiga localizar. As cidades aparecem sozinhas à medida que esses artigos são indexados.",
+  "No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.": "Ainda sem cidades posicionadas: nenhuma menção deste período vem de uma fonte cuja cidade esteja na lista de cidades do mapa.",
   "No climate series stored for this country on this machine.": "Nenhuma série climática guardada para este país nesta máquina.",
   "No collection scheduled or running right now — when collection is on, the schedule appears here.": "Nenhuma coleta agendada ou em execução agora — quando a coleta estiver ativa, o agendamento aparece aqui.",
   "No commodity and topic were both covered by enough distinct sources to compare.": "Nenhuma matéria-prima e tema foram ambos cobertos por fontes distintas suficientes para serem comparados.",

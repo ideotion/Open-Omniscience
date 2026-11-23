@@ -3490,7 +3490,7 @@
   "No changes recorded for the documents the law tracker follows yet.": "Для документов, за которыми следит правовой трекер, изменений пока не записано.",
   "No changes recorded for the pages the stream follows yet.": "Для страниц, за которыми следит поток, изменений пока не записано.",
   "No changes yet. Add pages and press “Track now”.": "Изменений пока нет. Добавьте страницы и нажмите «Отслеживать».",
-  "No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.": "Пока нет размещённых городов: ни одно упоминание за этот период не взято из источника с городом, который карта может найти. Города появятся сами по мере индексации таких статей.",
+  "No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.": "Пока нет размещённых городов: ни одно упоминание за этот период не взято из источника, чей город есть в списке городов карты.",
   "No climate series stored for this country on this machine.": "Для этой страны на этом компьютере не сохранено ни одного климатического ряда.",
   "No collection scheduled or running right now — when collection is on, the schedule appears here.": "Сейчас сбор не запланирован и не выполняется — когда сбор включён, расписание появится здесь.",
   "No commodity and topic were both covered by enough distinct sources to compare.": "Ни один товар и ни одна тема не освещались одновременно достаточным числом разных источников для сравнения.",

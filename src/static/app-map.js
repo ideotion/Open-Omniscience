@@ -182,7 +182,7 @@
         // (partial) is not an empty one, and says so.
         return citiesSkipped
           ? `<div class="muted">The city list was not computed this time, so no city is drawn: that is not the same as no city being mentioned.</div>`
-          : `<div class="muted">No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.</div>`;
+          : `<div class="muted">No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.</div>`;
       return `<svg id="oo-map" viewBox="0 0 ${MAP_W} ${MAP_H.toFixed(2)}" width="100%" style="max-width:${MAP_W}px;border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${MAP_ASPECT.toFixed(4)}">
         ${_mapSphere()}${grid}${dots}</svg>`;
     }

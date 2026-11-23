@@ -3490,7 +3490,7 @@
   "No changes recorded for the documents the law tracker follows yet.": "कानून ट्रैकर जिन दस्तावेज़ों को फ़ॉलो करता है, उनके लिए अभी तक कोई परिवर्तन दर्ज नहीं हुआ।",
   "No changes recorded for the pages the stream follows yet.": "स्ट्रीम जिन पृष्ठों को फ़ॉलो करती है, उनके लिए अभी तक कोई परिवर्तन दर्ज नहीं हुआ।",
   "No changes yet. Add pages and press “Track now”.": "अभी तक कोई परिवर्तन नहीं। पृष्ठ जोड़ें और “अभी ट्रैक करें” दबाएँ।",
-  "No cities placed yet: no mention in this window comes from a source with a city the map can locate. Cities appear on their own as such articles are indexed.": "अभी कोई शहर नहीं रखा गया: इस अवधि का कोई उल्लेख ऐसे स्रोत से नहीं है जिसका शहर नक्शा ढूँढ सके। ऐसे लेख अनुक्रमित होते ही शहर अपने-आप दिखते हैं।",
+  "No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.": "अभी कोई शहर नहीं रखा गया: इस अवधि का कोई उल्लेख ऐसे स्रोत से नहीं है जिसका शहर नक्शे की शहर-सूची में हो।",
   "No climate series stored for this country on this machine.": "इस मशीन पर इस देश के लिए कोई जलवायु शृंखला सहेजी नहीं गई है।",
   "No collection scheduled or running right now — when collection is on, the schedule appears here.": "अभी कोई संग्रह निर्धारित या चालू नहीं है — संग्रह चालू होने पर अनुसूची यहाँ दिखाई देगी।",
   "No commodity and topic were both covered by enough distinct sources to compare.": "कोई कमोडिटी और विषय दोनों तुलना के लिए पर्याप्त अलग-अलग स्रोतों द्वारा कवर नहीं हुए।",
