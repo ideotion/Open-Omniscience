@@ -2209,7 +2209,15 @@ def verify_stream_backup(
 
     if passphrase and m.get("kind") == STREAM_KIND and not status["bad"]:
         if not _key_check_ok(m.get("key_check"), passphrase):
-            _fail("the passphrase does not match this volume set", "passphrase-mismatch")
+            # R803 (row 349): the passphrase check is a token stored IN the volume list, so its failing proves a wrong
+            # passphrase only when that list is exactly what this installation signed -- anyone who changes the set can
+            # write a token of their own and re-sign the list with their own key. The ONE shared R795 helper decides;
+            # every other case says the two causes could not be told apart, and the set is never reported intact.
+            why = _why_the_volume_list_is_not_ours(m)
+            if why is None:
+                _fail("the passphrase does not match this volume set", "passphrase-mismatch")
+            else:
+                _fail(UNCHECKED_VERIFY_PASSPHRASE.format(reason=why), "passphrase-unchecked", reason=why)
         else:
             report["decrypted"] = True
             envelope_bytes: bytearray | None = None
@@ -2318,6 +2326,13 @@ UNCHECKED_BACKUP_PASSPHRASE = (
     "could not check the passphrase for this backup: its first volume does not open with the passphrase given, and the "
     "backup's list of volumes could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a "
     "changed backup. Nothing was read past that volume and nothing was changed on this computer."
+)
+# R803: the verify screen's form of the same refusal. Its check is the token stored in the list of volumes, not the
+# first volume, so it says so; the reasons are R795's own four.
+UNCHECKED_VERIFY_PASSPHRASE = (
+    "could not check the passphrase for this backup: the passphrase check stored in its list of volumes does not open "
+    "with the passphrase given, and that list could not be authenticated ({reason}), so a wrong passphrase cannot be "
+    "told apart from a changed backup"
 )
 REASON_UNSIGNED = "this backup has no signature"
 REASON_BAD_SIGNATURE = "its signature does not match its list of volumes"
