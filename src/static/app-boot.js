@@ -57,6 +57,9 @@
       // The Agenda's Elections coverage view: t()/tf() frames welded to the report's
       // counts inside a data-i18n-dyn host. Redraws from the payload it holds; never fetches.
       try { if (typeof _agCovRepaint === "function") _agCovRepaint(); } catch (_e) {}
+      // Row 350: the backup verify panel -- t()/tf() frames and the server's problem codes inside a
+      // data-i18n-dyn host. Redraws from the report it holds; never fetches.
+      try { if (typeof _uxVerifyRepaint === "function") _uxVerifyRepaint(); } catch (_e) {}
       // The rest of the Home at-a-glance strip -- its counts and their labels, the "as
       // of" stamp and the automatic-collection line -- is built with t() inside the same
       // [data-i18n-dyn] subtree, so it is the same frozen-locale class: measured staying

@@ -1359,7 +1359,9 @@
         toast(t("An import is running — verify the backup once it has finished."), "err");
         return;
       }
-      summary.innerHTML = ""; st.textContent = t("Verifying…"); btn.disabled = true;
+      // Row 350: the summary now belongs to this verify, so the import half must not redraw its old summary over it on a
+      // language switch (its oo:langchange listener runs before the verify panel's).
+      summary.innerHTML = ""; _uxImSummaryArgs = null; st.textContent = t("Verifying…"); btn.disabled = true;
       try {
         // ONE chain (Q206 = a): the start is still guarded by the same
         // job-state-as-truth check _uxStartThenPoll applies -- a lost START response
@@ -1481,16 +1483,52 @@
         : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       // padding-inline-START (I-4's class): in RTL the bullets sit on the right.
       if (probs.length) lines.push(`<ul style="margin:4px 0 0;padding-inline-start:18px" data-i18n-dyn>${probs.map((p, i) => `<li>${backupProblemHtml(p, codes[i], tfp)}</li>`).join("")}</ul>`);
+      // Row 350: whole keyed frames, not "label + raw value" fragments -- the names are data,
+      // isolated (<bdi translate="no">) so a right-to-left name cannot reorder the line, and the
+      // counts go through fmtNum and the plural forms.
       if (rep.bad_volumes && rep.bad_volumes.length || (rep.missing_volumes && rep.missing_volumes.length)) {
         const bad = (rep.bad_volumes || []).concat(rep.missing_volumes || []);
         const rec = rep.recoverable ? esc(t("recoverable from parity")) : esc(t("NOT recoverable — the backup is incomplete"));
-        lines.push(`<div style="color:var(--err)">${esc(t("Corrupt/missing:"))} ${esc(bad.join(", "))} — ${rec}</div>`);
+        const names = bad.map((b) => `<bdi translate="no">${esc(String(b))}</bdi>`).join(", ");
+        lines.push(`<div style="color:var(--err)">${_uxVerifyFrameHtml(tfp, "Corrupt or missing volumes: {names}", { names })} — ${rec}</div>`);
       }
       if (rep.parity && typeof rep.parity === "object") {
-        lines.push(`<div class="muted">${esc(t("Parity:"))} ${rep.parity.volumes} · ${esc(t("can still lose"))} ${rep.parity.tolerance_remaining}</div>`);
+        // A count the report did not carry is left out, never drawn as a dash inside a recoverability claim.
+        const nPar = Number(rep.parity.volumes), nLeft = Number(rep.parity.tolerance_remaining);
+        const parts = [];
+        if (Number.isFinite(nPar)) parts.push(esc(tfp("Parity volumes: {n}", { n: fmtNum(nPar, 0) })));
+        if (Number.isFinite(nLeft)) parts.push(esc(nLeft === 0
+          ? tfp("No more volumes can be lost: any further loss cannot be rebuilt from parity.")
+          : tfp("Up to {n} more volumes can be lost and rebuilt from parity.", { n: fmtNum(nLeft, 0) })));
+        if (parts.length) lines.push(`<div class="muted">${parts.join(" · ")}</div>`);
       }
       if (rep.method) lines.push(`<div class="hint" style="margin-top:4px">${esc(t("Method:"))} ${ooSaidHtml(rep, "method")}</div>`);
-      host.innerHTML = lines.join("");
+      // Row 350: every word in this panel is rendered here, in the active language, so the walker
+      // keeps out (it would cache the translated text as "the English" and freeze it), and the
+      // report is kept so a language switch repaints it from memory -- never a fetch. Both live on a
+      // panel of its own inside the host, never on the host: the host is shared (import summary,
+      // "Verification failed", every clear), and whatever else is written there replaces the panel
+      // and its report with it, so a switch can never bring an old verdict back over newer text.
+      host.innerHTML = `<div data-oo-verify="" data-i18n-dyn="">${lines.join("")}</div>`;
+      const panel = host.firstElementChild;
+      if (panel) panel._ooVerifyRep = rep;
+    }
+    // One tf() frame with some values already HTML (isolated names): the frame is escaped whole and
+    // each marked slot is filled after, in one pass, so a value is never re-scanned.
+    function _uxVerifyFrameHtml(tf, frame, htmlVars) {
+      const marks = {};
+      for (const k of Object.keys(htmlVars)) marks[k] = "\u0001" + k + "\u0002";
+      return esc(String(tf(frame, marks))).replace(/\u0001(\w+)\u0002/g, (m, k) =>
+        Object.prototype.hasOwnProperty.call(htmlVars, k) ? htmlVars[k] : m);
+    }
+    // Row 350: the oo:langchange repaint (app-boot.js). Redraws each verify panel still on the page
+    // from the report it holds, in its own host; a panel something else replaced is gone with its report.
+    function _uxVerifyRepaint() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      document.querySelectorAll("[data-oo-verify]").forEach((panel) => {
+        const host = panel.parentNode;
+        if (panel._ooVerifyRep && host) _uxRenderVerify(host, panel._ooVerifyRep, t);
+      });
     }
 
     // THE Q701-NOTE TRUST TOGGLE, import half. Seeded from the operator's stored
