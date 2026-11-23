@@ -299,6 +299,9 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # R789 (row 310): only the errno is read, to tell a descriptor closed since the listing (EBADF, skipped) from one that cannot
         # be read (any other, which keeps every parked descriptor); nothing of the error is kept, served or logged
         ('_foreign_fd_keys', 'if exc.errno == errno.EBADF:'): 1,
+        # R794: an interrupt whose unfinished copy could not be removed carries that PATH on itself (a Path, never words), so no
+        # caller removes the name again
+        ('snapshot_to_plaintext', 'failed.oo_snapshot_left = left  # type: ignore[attr-defined]'): 1,
         # Row 335: a recorded number no longer ours is placed by its errno alone (EBADF: nothing there now); no text is read.
         ('_validate_ours_locked', 'if exc.errno != errno.EBADF:'): 1,
     },
@@ -402,6 +405,9 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
         # Row 323 / R793: a store refused for room is said after the partial words; ``EncryptNoRoom`` holds only room_refusal's fixed
         # sentence (a store label, two human_bytes sizes or a fixed reason; never a path, a key or the OS's text).
         ('_encrypt_the_rest', 'reasons.append(str(refused))'): 1,
+        ('_encrypt_the_rest', 'reasons.append(str(left))'): 1,  # R794: the fixed sentence and the path, raised with no chain
+        # R794: only whether the interrupt carries a leftover's path is read, to leave that name alone; nothing is kept or said
+        ('encrypt_database', 'and getattr(failed, "oo_snapshot_left", None) is None  # an interrupt that left one: never removed by name here'): 1,
     },
     'src/database/repair.py': {
         ('_swap', 'if not _file_is_locked(refused):'): 1,
@@ -1482,7 +1488,7 @@ def test_the_fixed_unreadable_text_sentence_is_kept_at_exactly_the_sites_that_ha
             ("src/api/unlock.py", "_close_after_checkpoint"): 1,
             ("src/api/unlock.py", "_file_opens_with"): 1,
             ("src/api/unlock.py", "_unlock_locked"): 1,
-            ("src/api/unlock.py", "encrypt_db"): 3,  # the 400, and row 323 (R793): the 409 with a room refusal and the 507
+            ("src/api/unlock.py", "encrypt_db"): 4,  # the 400, row 323 (R793): the 409 with a room refusal and the 507, row 324 (R794): the 500
         }
     )
     lacking = Counter((rel, fn.split(":")[0]) for (rel, fn), has in calls.items() if not has)
