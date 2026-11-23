@@ -17,11 +17,14 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
 import sqlite3
+import stat
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -30,7 +33,12 @@ from fastapi import HTTPException
 import src.api.unlock as unlock_mod
 from src.database import connect as connect_mod
 from src.database import encrypt_tool
-from src.database.connect import SNAPSHOT_LEFT_ON_DISK, SnapshotLeftOnDisk, snapshot_to_plaintext
+from src.database.connect import (
+    SNAPSHOT_LEFT_ON_DISK,
+    SNAPSHOT_WORK_PREFIX,
+    SnapshotLeftOnDisk,
+    snapshot_to_plaintext,
+)
 from src.database.writer import write_gate
 from src.monitoring.secret_scrub import http_detail
 from tests.js_source_helper import function_source
@@ -72,6 +80,20 @@ def _encrypted_store(path: Path) -> None:
     connect_mod.set_passphrase(_KEY)  # the snapshot opens the source with the key the process holds
 
 
+def _inner(dest: Path) -> Path | None:
+    """The copy's file while it is written: ``dest``'s name inside its private folder (R799)."""
+    return next(iter(dest.parent.glob(f"{SNAPSHOT_WORK_PREFIX}*/{dest.name}")), None)
+
+
+def _work_dirs(folder: Path) -> list[Path]:
+    return sorted(folder.glob(f"{SNAPSHOT_WORK_PREFIX}*"))
+
+
+def _is_inner(path, dest: Path) -> bool:
+    p = Path(path)
+    return p.name == dest.name and p.parent.name.startswith(SNAPSHOT_WORK_PREFIX)
+
+
 class _SrcProxy:
     """The source connection of the plaintext branch: its backup runs one page per step, and fails after some pages have
     landed in the destination (a full disk part-way through)."""
@@ -82,7 +104,7 @@ class _SrcProxy:
     def backup(self, target, **_kw):
         def progress(_status, remaining, total):
             if total - remaining >= total // 2:
-                self._during(self._dest)
+                self._during(_inner(self._dest))
                 raise OSError(28, "No space left on device")
 
         self._real.backup(target, pages=1, progress=progress)
@@ -92,7 +114,7 @@ class _SrcProxy:
 
 
 def _fail_mid_copy(monkeypatch, src: Path, dest: Path, *, encrypted: bool, during=lambda _d: None) -> None:
-    """Make the next ``snapshot_to_plaintext(src, dest)`` fail once part of the copy is written."""
+    """Make the next ``snapshot_to_plaintext(src, dest)`` fail once part of the copy is written; ``during`` gets the copy's file."""
     if encrypted:
         real_connect = connect_mod.connect
 
@@ -103,8 +125,9 @@ def _fail_mid_copy(monkeypatch, src: Path, dest: Path, *, encrypted: bool, durin
 
                 def handler():
                     calls[0] += 1
-                    if dest.exists() and dest.stat().st_size > 0 and calls[0] > 50:
-                        during(dest)
+                    inner = _inner(dest)
+                    if inner is not None and inner.exists() and inner.stat().st_size > 0 and calls[0] > 50:
+                        during(inner)
                         return 1  # interrupts sqlcipher_export: "interrupted"
                     return 0
 
@@ -122,11 +145,20 @@ def _fail_mid_copy(monkeypatch, src: Path, dest: Path, *, encrypted: bool, durin
 
         def connect(self, path, *a, **kw):
             conn = real_sqlite.connect(path, *a, **kw)
-            if Path(path) == dest:
+            if _is_inner(path, dest):
                 conn.execute("PRAGMA cache_size = 1")  # pages spill to the file as they are copied: a real partial on disk
             return _SrcProxy(conn, dest, during) if Path(path) == src else conn
 
     monkeypatch.setattr(connect_mod, "sqlite3", _Sqlite())
+
+
+def _refuse_unlinks(monkeypatch) -> None:
+    """Every removal of the snapshot's own files fails (by name or relative to its folder)."""
+
+    def refuse(_p, *_a, **_k):
+        raise PermissionError(13, "Permission denied")
+
+    scope_os(monkeypatch, connect_mod, unlink=refuse)
 
 
 # --- the snapshot itself -----------------------------------------------------------------------------------------------------
@@ -141,29 +173,45 @@ def test_a_copy_cut_short_mid_way_is_removed_and_nothing_else_in_the_folder(tmp_
     dest = tmp_path / "snap.db"
     stale_index = Path(str(dest) + "-shm")
     stale_index.write_bytes(b"x" * 64)  # already there before the copy: not made by it, so never removed by it
-    sizes: list[int] = []
-    _fail_mid_copy(monkeypatch, src, dest, encrypted=encrypted, during=lambda d: sizes.append(d.stat().st_size))
+    seen: list[tuple[int, int]] = []
+    _fail_mid_copy(
+        monkeypatch, src, dest, encrypted=encrypted,
+        during=lambda d: seen.append((d.stat().st_size, stat.S_IMODE(d.parent.stat().st_mode))),
+    )
     with pytest.raises(Exception) as failed:
         snapshot_to_plaintext(src, dest)
     assert not isinstance(failed.value, SnapshotLeftOnDisk)
-    assert sizes and sizes[0] > 0, "the failure came after part of the copy was written"
-    assert not dest.exists() and not Path(str(dest) + "-journal").exists()
+    assert seen and seen[0][0] > 0, "the failure came after part of the copy was written"
+    if os.name != "nt":
+        assert seen[0][1] == 0o700, "the copy is written inside an owner-only private folder (R799)"
+    assert not dest.exists() and _work_dirs(tmp_path) == [], "the whole private folder is gone"
     assert stale_index.read_bytes() == b"x" * 64
     assert neighbour.read_bytes() == b"SQLite format 3\x00 an older partial"
-    assert {p.name for p in tmp_path.iterdir()} >= {"store.db", neighbour.name, stale_index.name}
-    assert "snap.db" not in {p.name for p in tmp_path.iterdir()}
 
 
 @pytest.mark.parametrize("encrypted", [False, True], ids=["plaintext", "sqlcipher"])
-def test_a_whole_copy_is_still_returned(tmp_path, encrypted):
+def test_a_whole_copy_is_still_returned_and_its_private_folder_is_gone(tmp_path, encrypted):
     src = tmp_path / "store.db"
     (_encrypted_store if encrypted else _plain_store)(src)
     out = snapshot_to_plaintext(src, tmp_path / "snap.db")
+    assert out == tmp_path / "snap.db" and not out.is_symlink() and _work_dirs(tmp_path) == []
     c = sqlite3.connect(str(out))
     try:
         assert c.execute("SELECT COUNT(*) FROM t").fetchone()[0] == (_ROWS_ENCRYPTED if encrypted else _ROWS)
     finally:
         c.close()
+
+
+def test_without_hard_links_the_finished_copy_is_renamed_into_place(tmp_path, monkeypatch):
+    src = tmp_path / "store.db"
+    _plain_store(src)
+
+    def no_links(*_a, **_k):
+        raise PermissionError(1, "Operation not permitted")  # a removable drive's file system
+
+    scope_os(monkeypatch, connect_mod, link=no_links)
+    out = snapshot_to_plaintext(src, tmp_path / "snap.db")
+    assert out.is_file() and not out.is_symlink() and _work_dirs(tmp_path) == []
 
 
 @pytest.mark.parametrize("encrypted", [False, True], ids=["plaintext", "sqlcipher"])
@@ -172,59 +220,43 @@ def test_a_removal_that_fails_is_loud_and_names_the_path(tmp_path, monkeypatch, 
     (_encrypted_store if encrypted else _plain_store)(src)
     dest = tmp_path / "snap.db"
     _fail_mid_copy(monkeypatch, src, dest, encrypted=encrypted)
-
-    def refuse(path, *a, **kw):
-        if Path(path) == dest:
-            raise PermissionError(13, "Permission denied")
-        return os.unlink(path, *a, **kw)
-
-    scope_os(monkeypatch, connect_mod, unlink=refuse)
+    _refuse_unlinks(monkeypatch)
     with pytest.raises(SnapshotLeftOnDisk) as left:
         snapshot_to_plaintext(src, dest)
+    (work,) = _work_dirs(tmp_path)
     said = str(left.value)
-    assert said == SNAPSHOT_LEFT_ON_DISK.format(path=dest)
-    assert str(dest) in said and "incomplete plaintext copy may still be on disk" in said
+    assert said == SNAPSHOT_LEFT_ON_DISK.format(path=work)
+    assert "incomplete plaintext copy may still be on disk" in said
     assert left.value.__cause__ is None and left.value.__context__ is None, "no driver text travels with the words"
     assert http_detail(left.value, "", _KEY) == said, "the words reach the page whole"
-    assert dest.exists(), "the file it could not remove is still there, as the words say"
+    assert (work / dest.name).exists() and not dest.exists(), "the unfinished copy never had the snapshot's name"
 
 
-def test_a_name_that_became_a_link_is_not_removed_through_it(tmp_path, monkeypatch):
+def test_the_private_folder_swapped_for_a_link_mid_copy_is_never_walked_or_returned(tmp_path, monkeypatch):
     src = tmp_path / "store.db"
     _plain_store(src)
     dest = tmp_path / "snap.db"
-    victim = tmp_path / "victim.txt"
-    victim.write_text("keep me", encoding="utf-8")
-    moved = tmp_path / "moved-away.db"
+    victim = tmp_path / "victim-folder"
+    victim.mkdir()
+    (victim / "keep.txt").write_text("keep me", encoding="utf-8")
+    moved = tmp_path / "moved-away"
 
-    def swap(d: Path) -> None:
-        os.replace(d, moved)
-        os.symlink(victim, d)
+    def swap(inner: Path) -> None:
+        work = inner.parent
+        os.replace(work, moved)
+        os.symlink(victim, work, target_is_directory=True)
 
     _fail_mid_copy(monkeypatch, src, dest, encrypted=False, during=swap)
     with pytest.raises(SnapshotLeftOnDisk) as left:
         snapshot_to_plaintext(src, dest)
-    assert str(dest) in str(left.value), "the copy is not accounted for at its name: said, never assumed gone"
-    assert victim.read_text(encoding="utf-8") == "keep me"
-    assert dest.is_symlink(), "the link is not the file this call made: left where it is"
-
-
-def test_an_interrupt_mid_copy_is_passed_on_and_the_copy_removed(tmp_path, monkeypatch):
-    src = tmp_path / "store.db"
-    _plain_store(src)
-    dest = tmp_path / "snap.db"
-
-    def stop(_d):
-        raise KeyboardInterrupt
-
-    _fail_mid_copy(monkeypatch, src, dest, encrypted=False, during=stop)
-    with pytest.raises(KeyboardInterrupt):
-        snapshot_to_plaintext(src, dest)
+    (work,) = _work_dirs(tmp_path)
+    assert work.is_symlink() and str(work) in str(left.value), "not the folder this call made: left, and said"
+    assert sorted(p.name for p in victim.iterdir()) == ["keep.txt"], "nothing removed or written through the link"
     assert not dest.exists()
 
 
 @pytest.mark.parametrize("encrypted", [False, True], ids=["plaintext", "sqlcipher"])
-def test_a_name_swapped_for_a_link_before_sqlite_opens_it_is_never_returned(tmp_path, monkeypatch, encrypted):
+def test_the_copy_swapped_for_a_link_before_sqlite_opens_it_is_never_given_the_name(tmp_path, monkeypatch, encrypted):
     src = tmp_path / "store.db"
     (_encrypted_store if encrypted else _plain_store)(src)
     dest = tmp_path / "snap.db"
@@ -239,11 +271,64 @@ def test_a_name_swapped_for_a_link_before_sqlite_opens_it_is_never_returned(tmp_
         return made
 
     monkeypatch.setattr(connect_mod, "_make_new", make_then_swap)
-    with pytest.raises(SnapshotLeftOnDisk) as left:
+    with pytest.raises(OSError) as failed:
         snapshot_to_plaintext(src, dest)
-    # SQLite opens by name and follows the link (its ``nofollow`` URI flag did not refuse one here, measured): the identity check
-    # after the copy is what keeps the name from being returned as a snapshot, and the error names it.
-    assert str(dest) in str(left.value) and dest.is_symlink()
+    # SQLite opens by name and follows the link: the identity checks after the copy keep it from ever getting the snapshot's
+    # name. R799 narrows where plaintext can land; it does not claim a same-user program cannot redirect it.
+    assert not isinstance(failed.value, SnapshotLeftOnDisk)
+    assert not dest.exists() and _work_dirs(tmp_path) == []
+
+
+def test_a_final_name_taken_by_a_link_is_never_replaced_or_written_through(tmp_path, monkeypatch):
+    src = tmp_path / "store.db"
+    _plain_store(src)
+    dest = tmp_path / "snap.db"
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me", encoding="utf-8")
+    real_place = connect_mod._place
+
+    def plant_then_place(inner, d):
+        os.symlink(victim, d)
+        return real_place(inner, d)
+
+    monkeypatch.setattr(connect_mod, "_place", plant_then_place)
+    with pytest.raises(FileExistsError):
+        snapshot_to_plaintext(src, dest)
+    assert dest.is_symlink() and victim.read_text(encoding="utf-8") == "keep me"
+    assert _work_dirs(tmp_path) == []
+
+
+def test_a_final_name_taken_between_the_check_and_the_link_is_still_refused(tmp_path, monkeypatch):
+    src = tmp_path / "store.db"
+    _plain_store(src)
+    dest = tmp_path / "snap.db"
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me", encoding="utf-8")
+    real_link = os.link
+
+    def race(a, b, *args, **kw):
+        os.symlink(victim, b)  # after the name was checked, before the link
+        return real_link(a, b, *args, **kw)
+
+    scope_os(monkeypatch, connect_mod, link=race)
+    with pytest.raises(FileExistsError):
+        snapshot_to_plaintext(src, dest)
+    assert dest.is_symlink() and victim.read_text(encoding="utf-8") == "keep me"
+    assert _work_dirs(tmp_path) == []
+
+
+def test_an_interrupt_mid_copy_is_passed_on_and_the_copy_removed(tmp_path, monkeypatch):
+    src = tmp_path / "store.db"
+    _plain_store(src)
+    dest = tmp_path / "snap.db"
+
+    def stop(_d):
+        raise KeyboardInterrupt
+
+    _fail_mid_copy(monkeypatch, src, dest, encrypted=False, during=stop)
+    with pytest.raises(KeyboardInterrupt):
+        snapshot_to_plaintext(src, dest)
+    assert not dest.exists() and _work_dirs(tmp_path) == []
 
 
 def test_an_interrupt_whose_copy_could_not_be_removed_is_never_removed_by_name_later(tmp_path, monkeypatch):
@@ -254,19 +339,17 @@ def test_an_interrupt_whose_copy_could_not_be_removed_is_never_removed_by_name_l
     def stop(_d):
         raise KeyboardInterrupt
 
-    def refuse(_p, *_a, **_k):
-        raise PermissionError(13, "Permission denied")
-
     def cut(src, dest):
         _fail_mid_copy(monkeypatch, Path(src), Path(dest), encrypted=False, during=stop)
-        scope_os(monkeypatch, connect_mod, unlink=refuse)
+        _refuse_unlinks(monkeypatch)
         return real(src, dest)
 
     monkeypatch.setattr(encrypt_tool, "snapshot_to_plaintext", cut)
     with pytest.raises(KeyboardInterrupt) as stopped:
         encrypt_tool.encrypt_database(store, _KEY, keep_snapshot_on_failure=False)
-    left = sorted(tmp_path.glob("pre-encrypt-*"))
-    assert len(left) == 1 and stopped.value.oo_snapshot_left == left[0]
+    (work,) = _work_dirs(tmp_path)
+    assert stopped.value.oo_snapshot_left == work and work.is_dir()
+    assert sorted(tmp_path.glob("pre-encrypt-*")) == []
 
 
 # --- the encrypt tool ---------------------------------------------------------------------------------------------------------
@@ -285,7 +368,7 @@ def test_the_encrypt_tool_never_keeps_a_cut_short_snapshot(tmp_path, monkeypatch
     monkeypatch.setattr(encrypt_tool, "snapshot_to_plaintext", cut)
     with pytest.raises(OSError):
         encrypt_tool.encrypt_database(store, _KEY, keep_snapshot_on_failure=keep)
-    assert sorted(tmp_path.glob("pre-encrypt-*")) == []
+    assert sorted(tmp_path.glob("pre-encrypt-*")) == [] and _work_dirs(tmp_path) == []
     assert connect_mod.is_encrypted_file(store) is False
 
 
@@ -294,20 +377,94 @@ def test_the_encrypt_tool_leaves_a_snapshot_it_could_not_remove_alone_and_says_s
     _plain_store(store)
     real = connect_mod.snapshot_to_plaintext
 
-    def refuse(_p, *_a, **_k):
-        raise PermissionError(13, "Permission denied")
-
     def cut(src, dest):
         _fail_mid_copy(monkeypatch, Path(src), Path(dest), encrypted=False)
-        scope_os(monkeypatch, connect_mod, unlink=refuse)  # only the snapshot's own removal fails
+        _refuse_unlinks(monkeypatch)  # only the snapshot's own removal fails
         return real(src, dest)
 
     monkeypatch.setattr(encrypt_tool, "snapshot_to_plaintext", cut)
     with pytest.raises(SnapshotLeftOnDisk) as said:
         encrypt_tool.encrypt_database(store, _KEY, keep_snapshot_on_failure=False)
-    left = sorted(tmp_path.glob("pre-encrypt-*"))
-    # The retry's own clean-up (``Path.unlink``, not refused here) would have removed it: it is never touched again by name.
-    assert len(left) == 1 and str(left[0]) in str(said.value)
+    (work,) = _work_dirs(tmp_path)
+    assert work.is_dir() and str(work) in str(said.value)
+
+
+# --- crash leftovers (R799) ---------------------------------------------------------------------------------------------------
+
+
+def _leftover(folder: Path, name: str, *, age_s: float = 3600.0) -> Path:
+    work = folder / (SNAPSHOT_WORK_PREFIX + name)
+    work.mkdir()
+    inner = work / "snap.db"
+    inner.write_bytes(b"SQLite format 3\x00 plaintext left by a crash")
+    old = time.time() - age_s
+    os.utime(inner, (old, old))
+    os.utime(work, (old, old))
+    return work
+
+
+@pytest.fixture()
+def data(tmp_path, monkeypatch):
+    folder = tmp_path / "data"
+    folder.mkdir()
+    monkeypatch.setattr("src.paths.data_dir", lambda: folder)
+    return folder
+
+
+def test_a_crash_leftover_in_the_data_folder_is_removed_and_logged_masked(data, caplog):
+    work = _leftover(data, "crash1")
+    caplog.set_level(logging.INFO, logger="database.connect")
+    assert connect_mod.sweep_snapshot_leftovers(data) == 1
+    assert not work.exists()
+    assert "<data>/" in caplog.text and str(data) not in caplog.text
+
+
+def test_only_its_own_kind_of_leftover_is_removed(data, tmp_path, monkeypatch, caplog):
+    recent = _leftover(data, "recent", age_s=10)  # may be a copy still running in another process
+    target = tmp_path / "not-ours"
+    target.mkdir()
+    (target / "keep.txt").write_text("keep me", encoding="utf-8")
+    link = data / (SNAPSHOT_WORK_PREFIX + "link")
+    os.symlink(target, link, target_is_directory=True)
+    plain_file = data / (SNAPSHOT_WORK_PREFIX + "file")
+    plain_file.write_bytes(b"x")
+    other = data / "unrelated-folder"
+    other.mkdir()
+    caplog.set_level(logging.INFO, logger="database.connect")
+    assert connect_mod.sweep_snapshot_leftovers(data) == 0
+    assert recent.is_dir() and link.is_symlink() and plain_file.is_file() and other.is_dir()
+    assert (target / "keep.txt").read_text(encoding="utf-8") == "keep me"
+    assert caplog.text.count("left as it is") == 3 and str(tmp_path) not in caplog.text
+
+
+def test_a_leftover_owned_by_another_user_is_left(data, monkeypatch):
+    work = _leftover(data, "theirs")
+    if not hasattr(os, "getuid"):
+        pytest.skip("no owner on this system: nothing is removed, which the sweep's own rule already says")
+    scope_os(monkeypatch, connect_mod, getuid=lambda: os.getuid() + 1)
+    assert connect_mod.sweep_snapshot_leftovers(data) == 0 and work.is_dir()
+
+
+def test_a_leftover_outside_the_data_folder_is_never_swept(data, tmp_path):
+    elsewhere = tmp_path / "usb-stick"
+    elsewhere.mkdir()
+    work = _leftover(elsewhere, "away")
+    assert connect_mod.sweep_snapshot_leftovers(elsewhere) == 0 and work.is_dir()
+
+
+def test_the_next_snapshot_in_the_data_folder_sweeps_and_never_takes_its_own_folder(data):
+    old = _leftover(data, "crash2")
+    src = data / "store.db"
+    _plain_store(src)
+    out = snapshot_to_plaintext(src, data / "pre-encrypt-x-store.db")
+    assert out.is_file() and not old.exists() and _work_dirs(data) == []
+
+
+def test_the_start_sweeps_the_data_folder():
+    from tests.js_source_helper import python_function_source
+
+    body = python_function_source((ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8"), "_run_startup_upkeep")
+    assert "sweep_snapshot_leftovers(" in body
 
 
 def test_a_later_store_left_on_disk_is_said_beside_the_pending_stores(tmp_path, monkeypatch):
@@ -377,3 +534,47 @@ def test_the_page_reads_the_sentence_back_with_the_path_as_written():
     assert run.returncode == 0, run.stderr[-2000:]
     said = json.loads(run.stdout)
     assert said == fr[_FRAME].replace("{path}", "⁨" + path + "⁩"), said
+
+
+def test_a_failure_right_after_the_name_was_given_removes_that_name_too(tmp_path, monkeypatch):
+    src = tmp_path / "store.db"
+    _plain_store(src)
+    dest = tmp_path / "snap.db"
+    real_place = connect_mod._place
+
+    def place_then_stop(inner, d):
+        real_place(inner, d)
+        raise KeyboardInterrupt  # after the link, before the call could say so
+
+    monkeypatch.setattr(connect_mod, "_place", place_then_stop)
+    with pytest.raises(KeyboardInterrupt):
+        snapshot_to_plaintext(src, dest)
+    assert not dest.exists() and _work_dirs(tmp_path) == [], "no plaintext copy is left at a name the call never returned"
+
+
+def test_a_running_copy_in_a_data_folder_reached_through_a_link_is_never_swept(tmp_path, monkeypatch):
+    real = tmp_path / "real-data"
+    real.mkdir()
+    linked = tmp_path / "linked-data"
+    os.symlink(real, linked, target_is_directory=True)
+    monkeypatch.setattr("src.paths.data_dir", lambda: linked)
+    monkeypatch.setattr(connect_mod, "_LEFTOVER_QUIET_S", 0)  # only the running-copy guard can keep it
+    src = real / "store.db"
+    _plain_store(src)
+    swept: list[int] = []
+
+    def sweep_during(_inner: Path) -> None:
+        swept.append(connect_mod.sweep_snapshot_leftovers(real))
+        assert _inner.exists(), "the sweep took the running copy's folder"
+
+    _fail_mid_copy(monkeypatch, src, linked / "snap.db", encrypted=False, during=sweep_during)
+    with pytest.raises(OSError):
+        snapshot_to_plaintext(src, linked / "snap.db")
+    assert swept == [0]
+
+
+def test_the_off_peak_maintenance_sweeps_snapshot_leftovers_again():
+    from tests.js_source_helper import python_function_source
+
+    body = python_function_source((ROOT / "src" / "scheduler" / "maintenance.py").read_text(encoding="utf-8"), "run_idle_maintenance")
+    assert "sweep_snapshot_leftovers(data_dir())" in body

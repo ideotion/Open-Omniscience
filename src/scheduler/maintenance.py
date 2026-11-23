@@ -243,6 +243,16 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
     except Exception as exc:  # noqa: BLE001 - a background safety net must never break
         log_failure(_LOG, "off-peak pre-restore snapshot sweep failed", exc, level=logging.WARNING)
         out["pre_restore_snapshot_sweep"] = {"skipped": "error"}
+    # R799 (row 338): a plaintext snapshot's private folder a crash left in the data folder. The boot sweep leaves one changed in
+    # the last minutes (a copy may still be running in another process), so a restart soon after the crash is caught here.
+    try:
+        from src.database.connect import sweep_snapshot_leftovers
+        from src.paths import data_dir
+
+        out["snapshot_leftover_sweep"] = {"removed": sweep_snapshot_leftovers(data_dir())}
+    except Exception as exc:  # noqa: BLE001 - a background safety net must never break
+        log_failure(_LOG, "off-peak snapshot leftover sweep failed", exc, level=logging.WARNING)
+        out["snapshot_leftover_sweep"] = {"skipped": "error"}
     # ...and the ORPHANED STAGING dirs beside them, for the same reason. The janitor
     # (cleanup_stale_staging) runs at BOOT only, so on a long-lived instance -- which is
     # the explicit goal, K4 asks for a 14-day continuous run -- a .restore-*/.bak-build-*
