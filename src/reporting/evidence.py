@@ -214,9 +214,14 @@ def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
         raw, seen = keyfile.read_settled(path)
     except FileNotFoundError:
         key = Ed25519PrivateKey.generate()
+        sealed = _seal(key, passphrase)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            keyfile.create_new(path, _seal(key, passphrase))
+            # R801: the key is made and the marker dropped under the key-file lock, the one a restore looks for a key
+            # and writes its marker under, so a marker never lands on a key this installation just made
+            with keyfile.KEY_FILES_LOCK:
+                keyfile.create_new(path, sealed)
+                _drop_restored_marker(path)  # this installation made its own key, so no restore placed this one
         except FileExistsError:
             # another caller created it between our look and our create: ONE key, theirs, judged like
             # any file found there (a caller with no passphrase may have made it plaintext)
@@ -248,6 +253,91 @@ def existing_public_key_hex(path: Path | None = None) -> str | None:
     except Exception:  # noqa: BLE001 - missing, unreadable, foreign or unopenable all read as "no key"
         return None
     return public_key_hex(key)
+
+
+#: R801: the file beside the evidence key that says a restore placed it (``evidence_ed25519.pem.restored-from-backup``).
+RESTORED_KEY_MARKER_SUFFIX = ".restored-from-backup"
+
+
+def restored_key_marker(path: Path | None = None) -> Path:
+    """The marker beside the evidence key ``path`` (R801): while it exists, that key counts as ANOTHER installation's."""
+    path = path or _default_key_path()
+    return path.with_name(path.name + RESTORED_KEY_MARKER_SUFFIX)
+
+
+def _marker_present(marker: Path) -> bool:
+    """True unless the marker is plainly absent: a link, a folder, an unreadable or odd file all count as present, and
+    so does a check that fails (R801 (3)). Only its presence is read, never its content."""
+    try:
+        os.lstat(marker)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def mark_key_as_restored(path: Path | None = None, *, backup_key: object = None) -> Path | None:
+    """Write the R801 marker for the evidence key at ``path``; returns it when THIS call created it, else None.
+
+    Called by a restore BEFORE it places the key, so there is never a restored key without its marker. Never replaces
+    a marker that is there (any one, whatever it holds). ``OSError`` other than "already there" leaves, so the restore
+    fails before it places a key it could not mark."""
+    marker = restored_key_marker(path)
+    body = {"placed_by": "a restore", "backup_signing_key": str(backup_key) if backup_key else None}
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        keyfile.create_new(marker, (json.dumps(body) + "\n").encode("utf-8"))
+    except FileExistsError:
+        return None
+    return marker
+
+
+def _drop_restored_marker(path: Path) -> None:
+    """Remove the R801 marker: only :func:`load_or_create_signing_key` calls this, right after it made a NEW key, the one
+    moment a marker is known to describe a key that is gone. Whatever is at that name goes (a link is removed, never
+    followed); a marker that cannot be removed stays and keeps counting, which only costs a click."""
+    marker = restored_key_marker(path)
+    with keyfile.KEY_FILES_LOCK:
+        try:
+            if os.path.isdir(marker) and not os.path.islink(marker):
+                os.rmdir(marker)
+            else:
+                os.unlink(marker)
+        except FileNotFoundError:
+            return
+        except OSError:
+            return
+        keyfile.flush_key_folder(marker.parent, marker.name)
+
+
+def is_this_installations_key(public_key: object, path: Path | None = None, *, own: str | None = None) -> bool | None:
+    """True when ``public_key`` (hex, any case or spacing) is the public half of THIS installation's signing key.
+
+    False when it is another key (or not a key at all); None when this installation's own key could not be read, so the
+    question has no answer. Like :func:`existing_public_key_hex` it never creates or rewrites a key. A signature checked
+    against the key an artifact carries proves only that the artifact is unchanged since it was signed (R800); this is
+    the question that says WHO signed it. R801: a key a restore placed counts as ANOTHER installation's while its
+    marker exists (:func:`restored_key_marker`); every caller asks here and none compares keys itself."""
+    path = path or _default_key_path()
+    if own is None:  # ``own``: this installation's public key the caller already read (a list compares many keys)
+        if not path.exists():
+            return False  # no key yet: nothing this installation signed can exist
+        own = existing_public_key_hex(path)
+        if own is None:
+            return None
+    try:
+        same = bytes.fromhex(str(public_key)) == bytes.fromhex(own)
+    except ValueError:
+        return False
+    # R801: a key a restore placed is another installation's until this one makes its own, whoever made the backup (an
+    # import-only install has no key, so a crafted backup could otherwise plant the key its next backup is signed with).
+    # A key a restore placed BEFORE this build wrote no marker and cannot be told apart: import reports travel in
+    # backups, so one found in the data folder may describe another machine's restore (or be planted to demote this
+    # installation's own key). Such a key keeps counting as this installation's own; the release note says so.
+    if _marker_present(restored_key_marker(path)):
+        return False
+    return same
 
 
 def signing_key_state(path: Path | None = None) -> tuple[str, str | None]:

@@ -49,7 +49,7 @@ from pathlib import Path, PurePosixPath
 from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.backup.manifest_file import read_manifest_json
-from src.backup.regular_file import NotARegularFile, create_new, open_regular
+from src.backup.regular_file import NotARegularFile, adopt_fd, create_new, open_regular
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.shared_text import said
 
@@ -1718,12 +1718,7 @@ def _sha256_file(path: Path) -> str:
 def _hash_fd(fd: int) -> str:
     """The SHA-256 of an open file, read to its end (the handle is closed)."""
     h = hashlib.sha256()
-    try:
-        f = os.fdopen(fd, "rb")
-    except BaseException:
-        os.close(fd)
-        raise
-    with f:
+    with adopt_fd(fd, "rb") as f:  # row 344: closed exactly once, whatever is raised on the way
         for chunk in iter(lambda: f.read(_COPY_BUF), b""):
             h.update(chunk)
     return h.hexdigest()
