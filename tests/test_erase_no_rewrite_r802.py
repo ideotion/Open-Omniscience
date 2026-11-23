@@ -737,8 +737,8 @@ def test_a_record_on_stderr_carries_none_of_its_text(tmp_path, monkeypatch, caps
     data = tmp_path / "gone"
     monkeypatch.setenv("OO_DATA_DIR", str(data))
     monkeypatch.setattr(paths, "_memo", None)
-    secret_place = "/srv/private/case-files/witness.txt"
-    errorlog._append({"level": "ERROR", "logger": "oo.test.text", "message": f"could not read {secret_place}",
+    private_place = "/srv/private/case-files/witness.txt"
+    errorlog._append({"level": "ERROR", "logger": "oo.test.text", "message": f"could not read {private_place}",
                       "traceback": "Traceback: frame in /srv/x.py"})
     err = capsys.readouterr().err
     assert "oo.test.text" in err and "could not read" not in err and "/srv" not in err and "Traceback" not in err, err
