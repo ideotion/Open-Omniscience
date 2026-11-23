@@ -401,7 +401,7 @@
     function pickTerm(t) { $("ins-term").value = t; (_insSubtabs || {select: showInsightCat}).select("explore"); exploreTerm(); }
 
     function trendSvg(points) {
-      if (!points.length) return '<div class="muted">No mentions over time yet — index the corpus first.</div>';
+      if (!points.length) return '<div class="muted">No mentions over time yet. Articles are indexed on their own as they arrive.</div>';
       const w = 680, h = 140, pad = 30, ys = points.map(p => p.count), maxY = Math.max(...ys, 1);
       const X = i => pad + (w - 2*pad) * (points.length < 2 ? 0.5 : i/(points.length-1));
       const Y = v => h - pad - (h - 2*pad) * (v / maxY);
@@ -798,7 +798,16 @@
           api("/api/insights/associations?term=" + encodeURIComponent(term)),
           api("/api/insights/context?term=" + encodeURIComponent(term)),
         ]);
-        if (!tr.resolved) { $("ins-trend").innerHTML = `<div class="note err">No indexed mentions of “<span translate="no">${esc(term)}</span>”. Index the corpus, or try another term.</div>`; return; }
+        if (!tr.resolved) {
+          // Row 347: one keyed sentence (it was English-only, split across nodes so the
+          // walker never matched it, and sent the reader to an "Index" button invariant
+          // #21 removed). The term is spliced in as data, never translated.
+          const tfE = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
+            : String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
+          const parts = String(tfE("No indexed mentions of “{term}” yet. Articles are indexed on their own as they arrive: try another term, or look again after the next collection.", {term: "\u0000"})).split("\u0000");
+          $("ins-trend").innerHTML = `<div class="note err" data-i18n-dyn>${parts.map(esc).join(`<span translate="no">${esc(term)}</span>`)}</div>`;
+          return;
+        }
         const r = tr.resolved;
         const t8 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const tf8 = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
@@ -1742,7 +1751,7 @@
     }
     function termListHtml(terms, extra) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
+      if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet. Articles are indexed on their own as they arrive.")) + "</div>";
       return terms.map(t => `<div class="kw-row" style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="${esc(T("exclude this keyword"))}" style="margin:0;padding:0 6px"
           data-on-click='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
@@ -1783,7 +1792,7 @@
         const extra = kwHasTag(row) ? kwHoverText(row) : kwLangBreakdownText(row);
         return extra ? ` data-oo-tip-extra="${esc(extra)}"` : "";
       };
-      if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
+      if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet. Articles are indexed on their own as they arrive.")) + "</div>";
       const scaled = terms.map(t => valueOf(t)).map(v => (v == null ? null : Number(v)))
         .map(v => (v != null && Number.isFinite(v)) ? v : null);
       const max = Math.max(1, ...scaled.filter(v => v != null));
