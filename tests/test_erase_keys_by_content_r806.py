@@ -248,6 +248,7 @@ def test_the_panic_says_folder_kept_never_removed_by_hand(app_data):
         "string 6 is gated off for a folder kept on purpose, and shown again when something else was left too")
     assert "The data folder was kept because it holds items the app did not create (count: {n})." in src
     assert "keysLink" in src and re.search(r"clean\s*=[^;]*!keysLink", src)
+    assert '`<bdi translate="no">keys</bdi>`' in src, "the folder's name is a name: never translated, isolated in every locale"
     assert "The data folder was removed." in src
 
 
