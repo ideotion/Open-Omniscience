@@ -5160,6 +5160,7 @@
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Affichage des {n} premières sources correspondantes. Affinez les filtres pour atteindre le reste du catalogue.",
   "Showing the first {n} mentions.": "Affichage des {n} premières mentions.",
   "Showing the first {n}.": "Affichage des {n} premiers.",
+  "Showing the first {shown} of {total}.": "Affichage des {shown} premiers sur {total}.",
   "Showing {n} of {m} changes, newest first.": "Affichage de {n} changements sur {m}, les plus récents d'abord.",
   "Showing {n} of {total}": "{n} affichées sur {total}",
   "Showing {n} of {total} tracked revisions": "Affichage de {n} révisions suivies sur {total}",

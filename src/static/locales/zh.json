@@ -5160,6 +5160,7 @@
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "正在显示前 {n} 个匹配的来源。请细化筛选条件以查看目录的其余部分。",
   "Showing the first {n} mentions.": "显示前 {n} 条提及。",
   "Showing the first {n}.": "显示前 {n} 项。",
+  "Showing the first {shown} of {total}.": "显示 {total} 条中的前 {shown} 条。",
   "Showing {n} of {m} changes, newest first.": "显示 {m} 项变更中的 {n} 项，最新的在前。",
   "Showing {n} of {total}": "显示 {total} 项中的 {n} 项",
   "Showing {n} of {total} tracked revisions": "显示 {total} 个跟踪修订中的 {n} 个",

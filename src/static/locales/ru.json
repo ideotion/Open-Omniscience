@@ -5160,6 +5160,7 @@
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "[one]Показан первый {n} подходящий источник. Уточните фильтры, чтобы охватить остальной каталог.[few]Показаны первые {n} подходящих источника. Уточните фильтры, чтобы охватить остальной каталог.[many]Показаны первые {n} подходящих источников. Уточните фильтры, чтобы охватить остальной каталог.[other]Показаны первые {n} подходящего источника. Уточните фильтры, чтобы охватить остальной каталог.",
   "Showing the first {n} mentions.": "Показаны первые {n} упоминаний.",
   "Showing the first {n}.": "Показаны первые {n}.",
+  "Showing the first {shown} of {total}.": "Показаны первые {shown} из {total}.",
   "Showing {n} of {m} changes, newest first.": "Показано {n} из {m} изменений, сначала новые.",
   "Showing {n} of {total}": "Показано {n} из {total}",
   "Showing {n} of {total} tracked revisions": "Показано {n} из {total} отслеживаемых правок",

@@ -5160,6 +5160,7 @@
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "一致するソースのうち最初の {n} 件を表示しています。カタログの残りを見るには条件を絞り込んでください。",
   "Showing the first {n} mentions.": "最初の {n} 件の言及を表示しています。",
   "Showing the first {n}.": "最初の{n}件を表示しています。",
+  "Showing the first {shown} of {total}.": "{total} 件中、最初の {shown} 件を表示しています。",
   "Showing {n} of {m} changes, newest first.": "{m} 件中 {n} 件の変更を新しい順に表示しています。",
   "Showing {n} of {total}": "{total} 件中 {n} 件を表示",
   "Showing {n} of {total} tracked revisions": "追跡中の改訂 {total} 件中 {n} 件を表示",

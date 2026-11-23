@@ -5160,6 +5160,7 @@
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "মিলে যাওয়া প্রথম {n}টি উৎস দেখানো হচ্ছে। ক্যাটালগের বাকি অংশে পৌঁছাতে ফিল্টার পরিমার্জন করুন।",
   "Showing the first {n} mentions.": "প্রথম {n}টি উল্লেখ দেখানো হচ্ছে।",
   "Showing the first {n}.": "প্রথম {n}টি দেখানো হচ্ছে।",
+  "Showing the first {shown} of {total}.": "{total}টির মধ্যে প্রথম {shown}টি দেখানো হচ্ছে।",
   "Showing {n} of {m} changes, newest first.": "{m}টির মধ্যে {n}টি পরিবর্তন দেখানো হচ্ছে, নতুনতম আগে।",
   "Showing {n} of {total}": "{total}-এর মধ্যে {n}টি দেখানো হচ্ছে",
   "Showing {n} of {total} tracked revisions": "{total}টির মধ্যে {n}টি ট্র্যাক করা সংশোধন দেখানো হচ্ছে",

@@ -5160,6 +5160,7 @@
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.",
   "Showing the first {n} mentions.": "Showing the first {n} mentions.",
   "Showing the first {n}.": "Showing the first {n}.",
+  "Showing the first {shown} of {total}.": "Showing the first {shown} of {total}.",
   "Showing {n} of {m} changes, newest first.": "Showing {n} of {m} changes, newest first.",
   "Showing {n} of {total}": "Showing {n} of {total}",
   "Showing {n} of {total} tracked revisions": "Showing {n} of {total} tracked revisions",

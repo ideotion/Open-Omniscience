@@ -5160,6 +5160,7 @@
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "Menampilkan {n} sumber pertama yang cocok. Persempit filter untuk menjangkau sisa katalog.",
   "Showing the first {n} mentions.": "Menampilkan {n} penyebutan pertama.",
   "Showing the first {n}.": "Menampilkan {n} pertama.",
+  "Showing the first {shown} of {total}.": "Menampilkan {shown} pertama dari {total}.",
   "Showing {n} of {m} changes, newest first.": "Menampilkan {n} dari {m} perubahan, terbaru dahulu.",
   "Showing {n} of {total}": "Menampilkan {n} dari {total}",
   "Showing {n} of {total} tracked revisions": "Menampilkan {n} dari {total} revisi yang dilacak",

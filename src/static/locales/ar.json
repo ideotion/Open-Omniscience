@@ -5160,6 +5160,7 @@
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "[zero]يتم عرض أول {n} مصدر مطابق. حسّن المرشّحات للوصول إلى بقية الفهرس.[one]يتم عرض أول {n} مصدر مطابق. حسّن المرشّحات للوصول إلى بقية الفهرس.[two]يتم عرض أول {n} مصدرين مطابقين. حسّن المرشّحات للوصول إلى بقية الفهرس.[few]يتم عرض أول {n} مصادر مطابقة. حسّن المرشّحات للوصول إلى بقية الفهرس.[many]يتم عرض أول {n} مصدرًا مطابقًا. حسّن المرشّحات للوصول إلى بقية الفهرس.[other]يتم عرض أول {n} مصدر مطابق. حسّن المرشّحات للوصول إلى بقية الفهرس.",
   "Showing the first {n} mentions.": "عرض أول {n} إشارة.",
   "Showing the first {n}.": "عرض أول {n}.",
+  "Showing the first {shown} of {total}.": "تُعرض أول {shown} من أصل {total}.",
   "Showing {n} of {m} changes, newest first.": "عرض {n} من أصل {m} من التغييرات، الأحدث أولاً.",
   "Showing {n} of {total}": "عرض {n} من {total}",
   "Showing {n} of {total} tracked revisions": "عرض {n} من أصل {total} من المراجعات المتتبَّعة",

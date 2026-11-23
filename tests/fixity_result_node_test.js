@@ -35,13 +35,18 @@ function extract(name) {
 }
 const locale = (l) => JSON.parse(fs.readFileSync(path.join(__dirname, "..", "src", "static", "locales", l + ".json"), "utf-8"));
 
+// The cap is read from the shipped source, so the test follows it if it ever moves.
+const CAP_DECL = (APP.match(/const _FIXITY_LIST_CAP = \d+;/) || [])[0];
+assert.ok(CAP_DECL, "_FIXITY_LIST_CAP not found -- was it renamed?");
+const CAP = Number(CAP_DECL.match(/\d+/)[0]);
+
 function harness(reports) {
   const map = Object.assign({}, locale("en"));
   let lang = "en";
   const OOI18N = engine(map, () => lang);
   const nodes = { "fixity-summary": { textContent: "", innerHTML: "" }, "fixity-result": { textContent: "", innerHTML: "" } };
   let calls = 0;
-  const src = ["let _fixityState = null;", extract("_fixityNoHash"), extract("_fixityPaint"), extract("fixityRepaint"), extract("runFixity"),
+  const src = ["let _fixityState = null; " + CAP_DECL, extract("_fixityNoHash"), extract("_fixityPaint"), extract("fixityRepaint"), extract("runFixity"),
     "return { runFixity, fixityRepaint };"].join("\n");
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   // The shipped grouping (thin space every three digits), so plural choice sees what the panel passes.
@@ -137,6 +142,39 @@ const NOW_HASH = "c0ffee00c0ffee00c0ffee00";
     assert.strictEqual(btn.disabled, false, "the button is usable again");
     assert.ok(h.nodes["fixity-summary"].innerHTML.includes('class="note err"'), h.nodes["fixity-summary"].innerHTML);
     assert.strictEqual(h.nodes["fixity-result"].innerHTML, "", "no verdict beside an error");
+  }
+  // Row 356: a list past the cap says how many it shows of how many; one at the cap says nothing.
+  {
+    const many = (k, noHash) => Array.from({ length: k }, (_, i) => noHash ? { id: i, stored_hash: null } : { id: i, stored_hash: "aaaaaaaaaaaaaaaa", computed_hash: "bbbbbbbbbbbbbbbb" });
+    const g = (x) => String(x).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+    const D = CAP + 1034, M = CAP + 266;
+    const h = harness([{ checked: D + M, ok: 0, mismatched: D, missing_hash: M, mismatches: many(D, false).concat(many(M, true)) },
+      { checked: 2 * CAP, ok: 0, mismatched: CAP, missing_hash: CAP, mismatches: many(CAP, false).concat(many(CAP, true)) },
+      { checked: CAP + 1, ok: 0, mismatched: 0, missing_hash: CAP + 1, mismatches: many(CAP + 1, true) },
+      { checked: CAP + 1, ok: 0, mismatched: CAP + 1, missing_hash: 0, mismatches: many(CAP + 1, false) }]);
+    await h.fns.runFixity({ disabled: false });
+    const res = h.nodes["fixity-result"].innerHTML;
+    const dLine = "Showing the first " + CAP + " of " + g(D) + ".", mLine = "Showing the first " + CAP + " of " + g(M) + ".";
+    assert.ok(res.includes(dLine) && res.includes(mLine), res);
+    // Each line sits under the list it counts: diverged rows, their line, the no-hash note, its rows, its line.
+    const lastNe = res.lastIndexOf(" ≠ "), dAt = res.indexOf(dLine), noteAt = res.indexOf("note warn", dAt), mAt = res.indexOf(mLine);
+    assert.ok(lastNe < dAt && dAt < noteAt && noteAt < mAt, "each line follows its own list");
+    assert.strictEqual((res.match(/ ≠ /g) || []).length, CAP, "the diverged list is capped");
+    assert.strictEqual((res.slice(noteAt).match(/#\d+/g) || []).length, CAP, "the no-hash list is capped");
+    h.switchTo("fr");
+    h.fns.fixityRepaint();
+    assert.ok(h.nodes["fixity-result"].innerHTML.includes("Affichage des " + CAP + " premiers sur " + g(M) + "."), "the line follows a language switch");
+    h.switchTo("en");
+    await h.fns.runFixity({ disabled: false });
+    assert.ok(!h.nodes["fixity-result"].innerHTML.includes("Showing the first"), "a list at the cap is whole, so no line");
+    // One past the cap, one list at a time: exactly one line, under that list.
+    for (const which of ["no-hash", "diverged"]) {
+      await h.fns.runFixity({ disabled: false });
+      const r = h.nodes["fixity-result"].innerHTML;
+      assert.strictEqual((r.match(/Showing the first/g) || []).length, 1, which + ": " + r.slice(-300));
+      assert.ok(r.includes("Showing the first " + CAP + " of " + (CAP + 1) + "."), which);
+      assert.ok(r.trimEnd().endsWith("of " + (CAP + 1) + ".</div>"), which + ": the line closes its list");
+    }
   }
   console.log("fixity_result_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });
