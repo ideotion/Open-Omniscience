@@ -191,9 +191,9 @@ def test_the_journal_never_makes_a_missing_data_folder(tmp_path, monkeypatch, ca
     data = tmp_path / "gone"
     monkeypatch.setenv("OO_DATA_DIR", str(data))
     monkeypatch.setattr(paths, "_memo", None)
-    errorlog._append({"level": "WARNING", "message": "with no folder"})
+    errorlog._append({"level": "WARNING", "logger": "oo.test.nofolder", "message": "with no folder"})
     assert not data.exists()
-    assert "with no folder" in capsys.readouterr().err
+    assert "oo.test.nofolder" in capsys.readouterr().err
 
 
 def test_the_journal_lock_is_never_made_without_its_folder(tmp_path):
@@ -579,11 +579,11 @@ def test_a_record_never_waits_on_the_journal_once_the_folder_is_latched(tmp_path
     errorlog._LOCK.acquire()  # a journal write that never ends
     try:
         t0 = time.monotonic()
-        errorlog._append({"level": "WARNING", "message": "after the erase"})
+        errorlog._append({"level": "WARNING", "logger": "oo.test.after", "message": "after the erase"})
         assert time.monotonic() - t0 < 1.0
     finally:
         errorlog._LOCK.release()
-    assert "after the erase" in capsys.readouterr().err
+    assert "oo.test.after" in capsys.readouterr().err
     assert not data.joinpath("app_errors.jsonl").exists()
 
 
@@ -597,10 +597,10 @@ def test_a_record_waits_on_a_stuck_journal_only_so_long(tmp_path, monkeypatch, c
     monkeypatch.setattr(errorlog, "_LOCK_WAIT_S", 0.05)
     errorlog._LOCK.acquire()
     try:
-        errorlog._append({"level": "WARNING", "message": "behind a stuck write"})
+        errorlog._append({"level": "WARNING", "logger": "oo.test.stuck", "message": "behind a stuck write"})
     finally:
         errorlog._LOCK.release()
-    assert "behind a stuck write" in capsys.readouterr().err
+    assert "oo.test.stuck" in capsys.readouterr().err
 
 
 def test_an_uninstall_planned_after_a_panic_still_wipes_a_folder_that_is_there(tmp_path, monkeypatch):
@@ -731,13 +731,14 @@ def test_the_watcher_scrub_keeps_the_reserve_and_writes_in_a_private_folder(tmp_
     assert not data.exists() and not list((tmp_path / "home").glob(".oo_scrub*")), text
 
 
-def test_a_record_on_stderr_carries_no_traceback_and_no_whole_path(tmp_path, monkeypatch, capsys):
+def test_a_record_on_stderr_carries_none_of_its_text(tmp_path, monkeypatch, capsys):
     from src.monitoring import errorlog
 
     data = tmp_path / "gone"
     monkeypatch.setenv("OO_DATA_DIR", str(data))
     monkeypatch.setattr(paths, "_memo", None)
     secret_place = "/srv/private/case-files/witness.txt"
-    errorlog._append({"level": "ERROR", "message": f"could not read {secret_place}", "traceback": "Traceback: frame in /srv/x.py"})
+    errorlog._append({"level": "ERROR", "logger": "oo.test.text", "message": f"could not read {secret_place}",
+                      "traceback": "Traceback: frame in /srv/x.py"})
     err = capsys.readouterr().err
-    assert "could not read" in err and secret_place not in err and "Traceback" not in err, err
+    assert "oo.test.text" in err and "could not read" not in err and "/srv" not in err and "Traceback" not in err, err

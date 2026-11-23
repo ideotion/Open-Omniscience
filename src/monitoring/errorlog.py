@@ -149,18 +149,13 @@ def latch_for_erase(folder: Path) -> None:
 
 def _to_stderr(entry: dict) -> None:
     """R802 (1): where a record goes when the data folder is not there (removed, or erased in this process): stderr only, never a file
-    that would make the folder again. Stderr may be kept by a launcher outside the erased folder, so only the record's level, logger,
-    time and message go there, the message's paths written as their roles (``path_tokens``) and no traceback; a message whose paths
-    cannot be masked is withheld."""
+    that would make the folder again. Stderr may be kept by a launcher in a file outside the erased folder, so the record's TEXT never
+    goes there (a message can carry what the scrub did not recognise, a traceback a path): only when it was, its level and logger, and
+    an HTTP record's status and method, each a value the app chose. The text was meant for the journal, and the journal is gone."""
     try:
         short = {k: entry[k] for k in ("at", "level", "logger", "status", "method", "kind") if k in entry}
-        try:
-            from src.monitoring.path_tokens import tokenise_paths
-
-            short["message"] = tokenise_paths(str(entry.get("message", "")), data_root=str(data_dir_path()))
-        except Exception:  # noqa: BLE001 - withheld, never written as given
-            short["message"] = "(withheld: its paths could not be masked)"
-        sys.stderr.write("app error journal (no data folder): " + json.dumps(short, ensure_ascii=False) + "\n")
+        sys.stderr.write("app error journal (no data folder; the record's text is not kept): " + json.dumps(short, ensure_ascii=False)
+                         + "\n")
         sys.stderr.flush()
     except Exception:  # noqa: BLE001, S110 - the log must never break the app
         pass
