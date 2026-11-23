@@ -219,7 +219,6 @@ app-map.js loadWikiDumps
 app-map.js loadWikiTC
 app-map.js osmHistoryDownload
 app-map.js osmHistoryReadSize
-app-map.js refreshDumpSizes
 app-map.js resumeOsm
 app-map.js runSeriesCorpus
 app-map.js startOsmDownload
