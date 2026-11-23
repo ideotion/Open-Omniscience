@@ -42,8 +42,8 @@ def _fail_calls() -> list[ast.Call]:
 
 def _js_frames() -> dict[str, str]:
     src = JS.read_text(encoding="utf-8")
-    blk = src[src.index("const BACKUP_PROBLEM_FRAMES = {") :]
-    blk = blk[: blk.index("};")]
+    # a data literal, read with one regex (the frames object is flat: no nested braces)
+    blk = re.search(r"BACKUP_PROBLEM_FRAMES = \{(.*?)\n\s*\};", src, re.S).group(1)
     return dict(re.findall(r'^\s*"([\w-]+)": "(.*)",$', blk, re.M))
 
 
