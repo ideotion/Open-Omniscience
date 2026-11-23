@@ -27,6 +27,7 @@ from src.annotations.bundle import (
 )
 from src.monitoring.secret_scrub import log_failure
 from src.safety.file_lock import atomic_replace, file_lock
+from src.utils.interrupts import kept_items
 
 _LOG = logging.getLogger(__name__)
 STORE_VERSION = "oo-annotations-store-1"
@@ -140,7 +141,14 @@ def import_bundle(bundle: dict, *, trusted: bool = True) -> dict:
 _SAFE_AUTHOR_ID = re.compile(r"^[0-9A-Za-z_-]{1,128}$")
 
 
-def adopt_imported_record(record: dict, *, allow_trusted: bool = False) -> dict:
+# R800 / row 339: a trust decision that arrived in a backup signed by ANOTHER installation is withheld, and the record
+# carries this marker naming the signer's key until the user applies or declines it (one click, default no). Only this
+# module writes it: an incoming record's own copy of the field is always dropped unless the backup is this installation's.
+TRUST_WITHHELD = "trust_withheld"
+_SIGNER_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def adopt_imported_record(record: dict, *, allow_trusted: bool = False, withheld_signer: str | None = None) -> dict:
     """Adopt an already-verified imported-author RECORD directly (no re-verification).
 
     An imported record is written by :func:`import_bundle` AFTER a signed bundle has
@@ -162,6 +170,12 @@ def adopt_imported_record(record: dict, *, allow_trusted: bool = False) -> dict:
 
     Local always wins: if a record for this author already exists locally it is kept
     and nothing is overwritten (idempotent — re-running converges).
+
+    R800 / row 339: when the record says ``trusted`` and ``allow_trusted`` is False, the
+    trust decision is WITHHELD and the result says so (``trust_withheld``). With a
+    ``withheld_signer`` (the 64-hex key of a validly signed backup from another
+    installation), the stored record also carries :data:`TRUST_WITHHELD` naming that key,
+    so one later click can apply the decisions without reading the backup again.
     """
     if not isinstance(record, dict):
         raise ValueError("imported record is not an object")
@@ -182,7 +196,10 @@ def adopt_imported_record(record: dict, *, allow_trusted: bool = False) -> dict:
     if path.resolve().parent != imported_dir.resolve():
         raise ValueError("imported record path escapes the annotations directory")
 
-    trusted = bool(record.get("trusted")) and allow_trusted
+    incoming_trusted = record.get("trusted") is True
+    trusted = incoming_trusted and allow_trusted
+    withheld = incoming_trusted and not allow_trusted
+    signer = str(withheld_signer or "").lower()
     with file_lock(path):  # the exists check and the write are one section (R176)
         if path.exists():
             # The existing local identity/trust decision ALWAYS wins over an incoming copy.
@@ -191,18 +208,24 @@ def adopt_imported_record(record: dict, *, allow_trusted: bool = False) -> dict:
                 "author_name": record.get("author_name"),
                 "annotations": len(record["annotations"]),
                 "trusted": trusted,
+                "trust_withheld": False,  # the local record's own decision stands; nothing is withheld from it
                 "adopted": False,
                 "reason": "an imported record for this author already exists locally",
             }
         # Write the record with the trust flag the CALLER's verification context allows —
         # never the incoming flag verbatim (an unverified artifact must not auto-trust).
-        stored = {**record, "trusted": trusted}
+        # a frame of its own: a filtered comprehension under the lock's ``with`` (src/utils/interrupts.py)
+        stored = kept_items(record, lambda k, _v: allow_trusted or k != TRUST_WITHHELD)
+        stored["trusted"] = trusted
+        if withheld and _SIGNER_HEX.match(signer):
+            stored[TRUST_WITHHELD] = {"signer": signer}
         atomic_replace(path, json.dumps(stored, ensure_ascii=False, indent=2), encoding="utf-8")
     return {
         "author_id": aid,
         "author_name": record.get("author_name"),
         "annotations": len(record["annotations"]),
         "trusted": trusted,
+        "trust_withheld": withheld,
         "adopted": True,
     }
 
@@ -226,9 +249,74 @@ def list_authors() -> list[dict]:
             "annotations": len(r.get("annotations", [])),
             "trusted": bool(r.get("trusted")),
             "imported_at": r.get("imported_at"),
+            "trust_withheld_by": _withheld_signer(r),
         }
         for r in _imported_records()
     ]
+
+
+def _withheld_signer(record: dict) -> str | None:
+    marker = record.get(TRUST_WITHHELD)
+    signer = marker.get("signer") if isinstance(marker, dict) else None
+    return signer if isinstance(signer, str) and _SIGNER_HEX.match(signer) else None
+
+
+def withheld_trust() -> list[dict]:
+    """The trust decisions withheld from backups signed by other installations, one group per signer's key."""
+    groups: dict[str, list[dict]] = {}
+    for r in _imported_records():
+        signer = _withheld_signer(r)
+        if signer and isinstance(r.get("author_id"), str):
+            groups.setdefault(signer, []).append({"author_id": r["author_id"], "author_name": r.get("author_name")})
+    return [{"signer": k, "count": len(v), "authors": v} for k, v in sorted(groups.items())]
+
+
+def settle_withheld_trust(
+    signer: str, *, apply: bool, expected_count: int, expected_authors: list[str] | None = None
+) -> int:
+    """Apply (trust) or decline (leave untrusted) every decision withheld from ``signer``'s backups; returns how many.
+
+    ``expected_count`` is the number the person was shown: when it no longer matches (another backup from that key
+    landed since), nothing changes and ValueError says so, so a click never applies more than it named. With
+    ``expected_authors`` (the author ids the person was shown) the SET must match too, so a record removed and another
+    from the same key added between the look and the click (the count unchanged) changes nothing either. Each record
+    is re-read under its own lock and changed only while it still carries the marker for this signer."""
+    signer = str(signer or "").lower()
+    if not _SIGNER_HEX.match(signer):
+        raise ValueError("not a signing key")
+    paths = []
+    for p in sorted(_imported_dir().glob("*.json")):
+        try:
+            r = json.loads(p.read_text("utf-8"))
+        except Exception:  # noqa: BLE001 - a corrupt record is skipped, as everywhere here
+            continue
+        if _withheld_signer(r) == signer:
+            paths.append((p, str(r.get("author_id"))))
+    if expected_authors is not None and sorted({a for _p, a in paths}) != sorted(set(map(str, expected_authors))):
+        raise ValueError(
+            "the withheld trust decisions from this key are no longer the ones shown; nothing was changed, look again "
+            "before deciding"
+        )
+    if len(paths) != expected_count:
+        raise ValueError(
+            f"the number of withheld trust decisions from this key is now {len(paths)}, not {expected_count}; "
+            "nothing was changed, look again before deciding"
+        )
+    done = 0
+    for p, _author in paths:
+        with file_lock(p):
+            try:
+                r = json.loads(p.read_text("utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            if _withheld_signer(r) != signer:
+                continue
+            r.pop(TRUST_WITHHELD, None)
+            if apply:
+                r["trusted"] = True
+            atomic_replace(p, json.dumps(r, ensure_ascii=False, indent=2), encoding="utf-8")
+            done += 1
+    return done
 
 
 def set_trusted(author_id_value: str, trusted: bool) -> bool:
@@ -245,6 +333,7 @@ def set_trusted(author_id_value: str, trusted: bool) -> bool:
                 except Exception:  # noqa: BLE001
                     return False
                 r["trusted"] = trusted
+                r.pop(TRUST_WITHHELD, None)  # the person decided for this author: nothing is left withheld
                 atomic_replace(p, json.dumps(r, ensure_ascii=False, indent=2), encoding="utf-8")
             return True
     return False
