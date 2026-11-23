@@ -3716,9 +3716,9 @@
       <p class="muted" style="margin-top:0"><span>Re-hash every stored article and compare to the hash recorded when it was captured. A mismatch means the stored content no longer matches its capture-time hash — evidence of tampering or bit-rot. Nothing is changed; the check is local and read-only.</span></p>
       <div class="row">
         <div style="flex:0 0 auto"><button class="secondary" id="fixity-btn" data-on-click="runFixity(this)">Check corpus integrity</button></div>
-        <div id="fixity-summary" class="hint" style="flex:1;align-self:center"></div>
+        <div id="fixity-summary" class="hint" style="flex:1;align-self:center" data-i18n-dyn></div>
       </div>
-      <div id="fixity-result" style="margin-top:8px"></div>
+      <div id="fixity-result" style="margin-top:8px" data-i18n-dyn></div>
 
       <hr>
       <h3 style="margin-bottom:6px">Network fetch mode</h3>
