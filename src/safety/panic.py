@@ -207,10 +207,17 @@ def _dispose_after_erase(generation: int | None = None) -> int | None:
     raises."""
     still_open: int | None = None
     try:
-        from src.database.session import dispose_engine
+        from src.database import session
+        from src.paths import erased_folder_of
 
-        n = dispose_engine().get("checked_out")
-        still_open = n if isinstance(n, int) else None
+        n = session.dispose_engine().get("checked_out")
+        db_file = getattr(session, "DB_FILE", None)
+        # R805 (a): only a pool on the erased store is a holder of it; a pool on a store elsewhere is closed all the same and
+        # counts 0 (the same rule as crypto_erase._close_own_pool), so its count never turns a clean wipe into "unknown".
+        if db_file and not erased_folder_of(db_file):
+            still_open = 0
+        else:
+            still_open = n if isinstance(n, int) else None
     except Exception:  # noqa: BLE001 - the wipe is done; this is tidying  # nosec B110
         pass
     try:

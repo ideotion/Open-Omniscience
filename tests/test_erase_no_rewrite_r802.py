@@ -640,14 +640,22 @@ def test_the_panic_counts_its_own_connections_still_open_as_a_holder(tmp_path, m
 
     data = tmp_path / "OOS data"
     _fill(data)
+    monkeypatch.setattr(session, "DB_FILE", str(data / "oo.db"))  # the pool is on the store being erased
     monkeypatch.setattr(session, "dispose_engine", lambda: {"checked_out": 1})
     report = panic.panic_wipe(data, confirm=True)
     assert report["own_connections_open"] == 1 and report["other_holder"] == "held", report
     monkeypatch.setattr(session, "dispose_engine", lambda: {"checked_out": None})
     data2 = tmp_path / "OOS data 2"
     _fill(data2)
+    monkeypatch.setattr(session, "DB_FILE", str(data2 / "oo.db"))
     report = panic.panic_wipe(data2, confirm=True)
     assert report["other_holder"] in ("held", "unknown"), report
+    # A pool on a store ELSEWHERE is closed too, but holds nothing of this folder: it counts 0, never "unknown".
+    data3 = tmp_path / "OOS data 3"
+    _fill(data3)
+    monkeypatch.setattr(session, "DB_FILE", str(tmp_path / "elsewhere" / "oo.db"))
+    report = panic.panic_wipe(data3, confirm=True)
+    assert report["own_connections_open"] == 0, report
 
 
 def test_the_scrub_never_says_overwritten_when_it_wrote_nothing(tmp_path, monkeypatch):
