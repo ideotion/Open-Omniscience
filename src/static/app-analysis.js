@@ -1230,6 +1230,13 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = hostEl || $("an-mindmap");
       if (!host) return;
+      // Row 361: the map follows a language switch by being FETCHED again in the new language
+      // (`anMindmapRepaint`, from app-corpus.js's ooKwRepaintOnLangChange): its keyword labels
+      // carry translations made for the language they were fetched in, so redrawing the payload
+      // held here would paint the old words, and the walker must not read a keyword as chrome.
+      // So the host is let go of any loading line drawn through ooLiveHtml and marked off the walker.
+      ooLive(host, null);
+      host.setAttribute("data-i18n-dyn", "");
       if (graph) _anMM.graph = graph;
       const g = _anMM.graph || {};
       const all = (g.nodes || []);
@@ -3135,6 +3142,7 @@
     const _SYNTH_MAX = 20;        // mirrors the backend bound (small-CPU-model context)
     let _synthData = null;        // last result, for export/copy
     let _synthCandidates = null;  // {params, total, results} for the selection step
+    let _synthBusy = false;       // a run is in flight: the selection step draws its button busy (row 361)
     const _synthT = () => ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s));
 
     function _synthCandidateParams(arg) {
@@ -3150,9 +3158,11 @@
         || p.get("start_date") || p.get("end_date") || p.get("article_ids");
       if (!hasSel) { toast(t("Run a search first."), "err"); return; }
       const dlg = $("synth-window"); if (!dlg) return;
-      $("synth-win-actions").innerHTML = "";
-      $("synth-win-title").textContent = t("Synthesis");
-      $("synth-win-body").innerHTML = `<p class="muted">${esc(t("Loading articles…"))}</p>`;
+      // Row 361: the window's title and body are drawn through ooLive/ooLiveHtml, so a language
+      // switch redraws them from the render they keep (never a fetch).
+      ooLiveHtml($("synth-win-actions"), () => "");
+      ooLive($("synth-win-title"), () => t("Synthesis"));
+      ooLiveHtml($("synth-win-body"), () => `<p class="muted">${esc(t("Loading articles…"))}</p>`);
       if (!dlg.open) dlg.showModal();
       // Fetch a candidate pool a bit larger than the synthesis bound so the user has a
       // real choice; /api/articles uses `ids` for an explicit set, else the query.
@@ -3162,43 +3172,73 @@
         const data = await api("/api/articles?" + cp.toString());
         _synthCandidates = { total: data.total, results: data.results || [] };
         _synthRenderSelect();
-      } catch (e) { $("synth-win-body").innerHTML = `<p class="card-caveat">${esc(t("Could not load articles."))} ${esc(e.message)}</p>`; }
+      } catch (e) {
+        const msg = e.message;   // the server's words are data, kept as they are
+        ooLiveHtml($("synth-win-body"), () => `<p class="card-caveat">${esc(t("Could not load articles."))} ${esc(msg)}</p>`);
+      }
     }
 
     function _synthRenderSelect() {
-      const TF = (window.OOI18N && OOI18N.tf)
-        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const t = _synthT();
       const c = _synthCandidates; if (!c) return;
+      ooLiveHtml($("synth-win-actions"), () => "");
+      ooLive($("synth-win-title"), () => t("Synthesis"));
+      const body = $("synth-win-body"); if (!body) return;
+      if (!c.results.length) { ooLiveHtml(body, () => `<p class="muted">${esc(t("No matching articles to synthesize."))}</p>`); return; }
+      // Row 361: the step is drawn as a frame of LEAF parts, each through ooLive/ooLiveHtml, so a
+      // language switch redraws each from the render it keeps. No part holds another: a part
+      // whose text changed under it (the count, the busy button) reads as a foreign write and
+      // stops following the switch.
+      _synthSelectFrame(body);
+      ooLiveHtml($("synth-sel-intro"), () => _synthSelectIntroHtml(c));
+      ooLive($("synth-sel-first"), () => _tfn("Select first {n}", { n: _SYNTH_MAX }));
+      ooLive($("synth-sel-clear"), () => t("Clear"));
+      ooLive($("synth-run-btn"), () => (_synthBusy ? t("Synthesizing…") : t("Run synthesis")));
+      ooLiveHtml($("synth-sel-list"), () => _synthSelectListHtml(c));
+      _synthCount();
+    }
+    // The selection step's frame: no words of its own, so it is written plainly once the body's
+    // earlier render (the loading line, or the result step) is let go.
+    function _synthSelectFrame(body) {
+      ooLive(body, null);
+      body.innerHTML = `
+        <div id="synth-sel-intro"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          <span id="synth-count" class="chip"></span>
+          <button class="ghost tiny" id="synth-sel-first" data-on-click="_synthSelectAll(true)"></button>
+          <button class="ghost tiny" id="synth-sel-clear" data-on-click="_synthSelectAll(false)"></button>
+          <span style="margin-inline-start:auto"></span>
+          <button class="primary" id="synth-run-btn" data-on-click="_synthRun()"></button>
+        </div>
+        <div id="synth-sel-list"></div>`;
+    }
+    function _synthSelectIntroHtml(c) {
+      const t = _synthT();
+      const shown = c.results.length;
+      return `
+        <div class="hint" style="margin-bottom:10px">${esc(t("A synthesis reads a bounded set of articles with a local model and writes what they agree on, where they disagree, and what they leave open — citing each source by number. It is reading assistance, never a verdict."))}</div>
+        <div class="card" style="margin-bottom:12px">
+          <div>${ooLabelHtml(esc(t("Matched")), `<b>${c.total}</b>`)}${c.total > shown ? ` <span class="muted">(${esc(_tfn("showing the top {n} by search relevance", {n: shown}))})</span>` : ""}</div>
+          <div class="muted" style="font-size:12px;margin-top:4px">${esc(_tfn("Pick up to {n} articles. The most relevant are pre-selected — refine your search to change the pool. (A small local model can only synthesize a bounded set well.)", {n: _SYNTH_MAX}))}</div>
+        </div>`;
+    }
+    // The candidate list. A switch calls it again: the reader's ticks are read from the boxes on
+    // screen first, so a redraw keeps them; a first draw ticks the most relevant.
+    function _synthSelectListHtml(c) {
+      const t = _synthT();
       const rows = c.results;
-      $("synth-win-actions").innerHTML = "";
-      $("synth-win-title").textContent = t("Synthesis");
-      if (!rows.length) { $("synth-win-body").innerHTML = `<p class="muted">${esc(t("No matching articles to synthesize."))}</p>`; return; }
       const preset = Math.min(_SYNTH_MAX, rows.length);
-      const list = rows.map((a, i) => `
+      const onScreen = Array.from(document.querySelectorAll("#synth-sel-list .synth-cb"));
+      const ticked = onScreen.length ? new Set(onScreen.filter((cb) => cb.checked).map((cb) => String(cb.value))) : null;
+      return rows.map((a, i) => `
         <label style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);align-items:flex-start">
-          <input type="checkbox" class="synth-cb" value="${a.id}" ${i < preset ? "checked" : ""} data-on-change="_synthCount()">
+          <input type="checkbox" class="synth-cb" value="${a.id}" ${(ticked ? ticked.has(String(a.id)) : i < preset) ? "checked" : ""} data-on-change="_synthCount()">
           <span style="flex:1">
-            <span style="font-weight:600">${esc(a.title) || '<span class="muted">(untitled)</span>'}</span>
+            <span style="font-weight:600">${esc(a.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</span>
             <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")}${ooFetchedOffSiteNote(a)} · ${esc(ooIsoDate(a.published_at)) || t("undated")} · ${a.language ? ooLangCell(a.language) : "?"}
               · <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a></span>
           </span>
         </label>`).join("");
-      $("synth-win-body").innerHTML = `
-        <div class="hint" style="margin-bottom:10px">${esc(t("A synthesis reads a bounded set of articles with a local model and writes what they agree on, where they disagree, and what they leave open — citing each source by number. It is reading assistance, never a verdict."))}</div>
-        <div class="card" style="margin-bottom:12px">
-          <div>${ooLabelHtml(esc(t("Matched")), `<b>${c.total}</b>`)}${c.total > rows.length ? ` <span class="muted">(${esc(TF("showing the top {n} by search relevance", {n: rows.length}))})</span>` : ""}</div>
-          <div class="muted" style="font-size:12px;margin-top:4px">${esc(TF("Pick up to {n} articles. The most relevant are pre-selected — refine your search to change the pool. (A small local model can only synthesize a bounded set well.)", {n: _SYNTH_MAX}))}</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-          <span id="synth-count" class="chip"></span>
-          <button class="ghost tiny" data-on-click="_synthSelectAll(true)">${esc(TF("Select first {n}", {n: _SYNTH_MAX}))}</button>
-          <button class="ghost tiny" data-on-click="_synthSelectAll(false)">${esc(t("Clear"))}</button>
-          <span style="margin-inline-start:auto"></span>
-          <button class="primary" id="synth-run-btn" data-on-click="_synthRun()">${esc(t("Run synthesis"))}</button>
-        </div>
-        <div>${list}</div>`;
-      _synthCount();
     }
 
     function _synthSelectAll(on) {
@@ -3210,9 +3250,9 @@
     function _synthCount() {
       const t = _synthT();
       const n = document.querySelectorAll("#synth-win-body .synth-cb:checked").length;
-      const el = $("synth-count"); if (el) el.textContent = ooLabelText(t("Selected"), `${n} / ${_SYNTH_MAX}`);
+      ooLive($("synth-count"), () => ooLabelText(t("Selected"), `${n} / ${_SYNTH_MAX}`));
       const btn = $("synth-run-btn");
-      if (btn) { btn.disabled = (n < 1 || n > _SYNTH_MAX); btn.title = n > _SYNTH_MAX ? t("Too many — uncheck some.") : ""; }
+      if (btn) { btn.disabled = (_synthBusy || n < 1 || n > _SYNTH_MAX); btn.title = n > _SYNTH_MAX ? t("Too many — uncheck some.") : ""; }
     }
 
     async function _synthRun() {
@@ -3221,35 +3261,50 @@
         .map((cb) => Number(cb.value)).filter((n) => n);
       if (!ids.length) { toast(t("Select at least one article."), "err"); return; }
       if (ids.length > _SYNTH_MAX) { toast(t("Too many — uncheck some."), "err"); return; }
-      const btn = $("synth-run-btn"); if (btn) { btn.disabled = true; btn.textContent = t("Synthesizing…"); }
+      _synthBusy = true;
+      const btn = $("synth-run-btn"); if (btn) { btn.disabled = true; ooLive(btn, () => t("Synthesizing…")); }
       const code = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       try {
         const r = await api("/api/llm/synthesize", { method: "POST",
           body: JSON.stringify({ article_ids: ids, output_language: _uiLangName(), ui_lang: code }) });
+        _synthBusy = false;
         _synthData = r;
         _synthRenderResult();
       } catch (e) {
+        _synthBusy = false;
         toast(t("Synthesis failed: ") + e.message, "err");
-        if (btn) { btn.disabled = false; btn.textContent = t("Run synthesis"); }
+        const b = $("synth-run-btn");   // the button on screen now: a switch may have redrawn it
+        if (b) { b.disabled = false; ooLive(b, () => t("Run synthesis")); }
       }
     }
 
     function _synthRenderResult() {
-      const TF = (window.OOI18N && OOI18N.tf)
-        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const t = _synthT();
       const r = _synthData; if (!r) return;
-      $("synth-win-actions").innerHTML = `
+      ooLive($("synth-win-title"), () => t("Synthesis"));
+      ooLiveHtml($("synth-win-actions"), () => _synthResultActionsHtml());
+      ooLiveHtml($("synth-win-body"), () => _synthResultHtml(r));
+    }
+    // The result step's buttons and body. A language switch calls each again (row 361); the
+    // synthesis text, the model name and the server's caveat are data and are never translated.
+    function _synthResultActionsHtml() {
+      const t = _synthT();
+      return `
         <button class="ghost tiny" data-on-click="_synthCopy()" title="${esc(t("Copy the synthesis text"))}">${esc(t("Copy"))}</button>
         <button class="ghost tiny" data-on-click="_synthExport('md')">${esc(t("Export .md"))}</button>
         <button class="ghost tiny" data-on-click="_synthExport('html')">${esc(t("Open as a page ↗"))}</button>`;
+    }
+    function _synthResultHtml(r) {
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
+      const t = _synthT();
       const members = (r.members || []).map((m) => `
         <li style="padding:6px 0;border-bottom:1px solid var(--line)">
-          <span style="font-weight:600">[${m.n}] ${esc(m.title) || '<span class="muted">(untitled)</span>'}</span>
+          <span style="font-weight:600">[${m.n}] ${esc(m.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</span>
           <div class="muted" style="font-size:12px">${esc(m.source || "")} · ${esc(ooIsoDate(m.published_at)) || t("undated")} · ${m.language ? ooLangCell(m.language) : "?"}
             · <a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a>${m.url ? " · " + extLink(m.url, t("source ↗"), "muted") : ""}</div>
         </li>`).join("");
-      $("synth-win-body").innerHTML = `
+      return `
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
           <span class="chip">${esc(t("synthesis"))} · ${esc(r.model || "")}</span>
           <span class="chip">${esc(TF("{n} articles", {n: r.member_count}))}</span>
@@ -3380,25 +3435,36 @@
       const hasSel = p.get("article_ids") || p.get("query") || p.get("source")
         || p.get("language") || p.get("start_date") || p.get("end_date");
       if (!hasSel) { toast(t("Run a search first."), "err"); return; }
+      mount.style.display = "";
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the panel from this render;
+      // the reader's own entries (the target language, the skip box) are read back from the panel
+      // on screen first, so a redraw never undoes them (a fresh open starts from the defaults).
+      let fresh = true;
+      ooLiveHtml(mount, () => { const h = _bulkPanelHtml(op, ctx, fresh); fresh = false; return h; });
+      _bulkRenderQueue();
+      _bulkRefresh();  // the server's queue, also what an earlier tab (or a restart) left in it
+    }
+    function _bulkPanelHtml(op, ctx, fresh) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const isTr = op === "translate";
       const heading = isTr ? t("Translate all matched articles") : t("Summarize all matched articles");
+      const tgtEl = fresh ? null : $("bulk-tgt-" + ctx), skipEl = fresh ? null : $("bulk-skip-" + ctx);
+      const tgtVal = tgtEl ? tgtEl.value : _uiLangName();
+      const skipOn = skipEl ? skipEl.checked : true;
       const tgt = isTr
         ? `<label class="muted" style="margin-inline-end:4px" for="bulk-tgt-${ctx}">${esc(t("Into"))}</label>`
-          + `<input id="bulk-tgt-${ctx}" value="${esc(_uiLangName())}" style="max-width:150px">`
+          + `<input id="bulk-tgt-${ctx}" value="${esc(tgtVal)}" style="max-width:150px">`
         : "";
-      mount.style.display = "";
-      mount.innerHTML = `<div class="card">
+      return `<div class="card">
         <div style="font-weight:600;margin-bottom:4px">${esc(heading)}</div>
         <div class="hint" style="margin-bottom:8px">${esc(t("Runs a local model over each article — this can take a while. Each result is stored with its model and date; nothing leaves your machine, and keyword analysis is never affected. You can queue several runs; they process one at a time."))}</div>
         <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
           ${tgt}
-          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="bulk-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="bulk-skip-${ctx}"${skipOn ? " checked" : ""}> ${esc(t("Skip articles already done"))}</label>
           <button class="primary" id="bulk-start-${ctx}" data-on-click="bulkLlmRun('${op}','${ctx}')">${esc(t("Add to queue"))}</button>
           <button class="ghost tiny" data-on-click="bulkPanelHide('${ctx}')">${esc(t("Hide"))}</button>
         </div>
       </div>`;
-      _bulkRenderQueue();
-      _bulkRefresh();  // the server's queue, also what an earlier tab (or a restart) left in it
     }
     // Hides the CONFIG panel only — queued/running jobs persist (the maintainer keeps
     // searching while a translation runs). Never cancels work.
@@ -3499,22 +3565,24 @@
         <span style="font-weight:600">${esc(_bulkSelLabel(job.op, job.body || {}))}</span> ${state} ${cancel}</div>`;
     }
     function _bulkRenderQueue() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const conts = document.querySelectorAll(".bulk-queue");
       if (!conts.length) return;
-      let html = "";
-      if (_bulkQueue.length) {
-        const anyDone = _bulkQueue.some((j) => j.state === "done" || j.state === "cancelled" || j.state === "error");
-        const paused = _bulkPaused && _bulkQueue.some((j) => j.state === "queued" || j.state === "paused");
-        html = `<div class="card"><div style="font-weight:600;margin-bottom:4px">${esc(t("Translation & summary queue"))}</div>`
-          + `<div class="hint" style="margin-bottom:6px">${esc(t("The queue runs on the server: you can close this tab or the browser and it goes on. Stop a run here or in the task manager."))}</div>`
-          + (paused ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><span class="note">${esc(t("Paused. Resume carries on where it stopped, without redoing an article."))}</span>`
-              + `<button class="tiny" data-on-click="bulkQueueResume()">${esc(t("Resume"))}</button></div>` : "")
-          + _bulkQueue.map(_bulkJobLine).join("")
-          + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" data-on-click="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")
-          + `</div>`;
-      }
-      conts.forEach((c) => { c.innerHTML = html; });
+      // Row 361: each copy is drawn through ooLiveHtml from the queue as last read, so a language
+      // switch redraws it in the new language without asking the server again.
+      conts.forEach((c) => ooLiveHtml(c, _bulkQueueHtml));
+    }
+    function _bulkQueueHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!_bulkQueue.length) return "";
+      const anyDone = _bulkQueue.some((j) => j.state === "done" || j.state === "cancelled" || j.state === "error");
+      const paused = _bulkPaused && _bulkQueue.some((j) => j.state === "queued" || j.state === "paused");
+      return `<div class="card"><div style="font-weight:600;margin-bottom:4px">${esc(t("Translation & summary queue"))}</div>`
+        + `<div class="hint" style="margin-bottom:6px">${esc(t("The queue runs on the server: you can close this tab or the browser and it goes on. Stop a run here or in the task manager."))}</div>`
+        + (paused ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><span class="note">${esc(t("Paused. Resume carries on where it stopped, without redoing an article."))}</span>`
+            + `<button class="tiny" data-on-click="bulkQueueResume()">${esc(t("Resume"))}</button></div>` : "")
+        + _bulkQueue.map(_bulkJobLine).join("")
+        + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" data-on-click="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")
+        + `</div>`;
     }
 
     // --- Run a user-defined custom extractor over the analysis OR search selection (the
@@ -3541,25 +3609,60 @@
       // at all — the custom-prompt path absorbs the MECHANISM but not this prompt.
       // Listing it here gives it a caller rather than retiring a capability nothing
       // else provides.
-      const opts = `<option value="builtin">${esc(t("Built-in: AI keywords"))} · ai-keyword</option>`
-        + usable.map((x) =>
-          `<option value="${x.id}">${esc(x.label)} · ${esc(x.output_kind)}</option>`).join("");
+      // Row 361: the panel is a frame of LEAF parts, each drawn through ooLive/ooLiveHtml, so a
+      // language switch redraws each from the render it keeps. The progress line is one of them and
+      // keeps its render per panel, so it survives a switch (and a reopened panel shows a run still
+      // in flight). The reader's pick is read back from the list on screen before a redraw.
+      _aiRunFrame(mount, ctx);
+      ooLiveHtml($("ai-run-head-" + ctx), () =>
+        `<div style="font-weight:600;margin-bottom:4px">${esc(t("Run a custom extractor"))}</div>`
+        + `<div class="hint" style="margin-bottom:8px">${esc(t("Runs your prompt with the local model over each matched article. Results are stored as AI-derived metadata of that type, labelled unreliable — the trusted keyword index is never affected; nothing leaves your machine."))}</div>`);
+      ooLiveHtml($("ai-run-pick-" + ctx), () => _aiRunOptionsHtml(ctx, usable));
+      ooLive($("ai-run-skiplbl-" + ctx), () => t("Skip articles already done"));
+      ooLive($("ai-run-start-" + ctx), () => t("Start"));
+      ooLive($("ai-run-cancel-" + ctx), () => t("Cancel"));
+      if (!_aiRuns[ctx]) delete _aiProg[ctx];
+      ooLiveHtml($("ai-run-prog-" + ctx), _aiProg[ctx] || (() => ""));
+    }
+    // The extractor panel's frame: no words of its own, so it is written plainly once the mount's
+    // earlier render (the bulk panel) is let go.
+    function _aiRunFrame(mount, ctx) {
+      ooLive(mount, null);
       mount.innerHTML = `<div class="card">
-        <div style="font-weight:600;margin-bottom:4px">${esc(t("Run a custom extractor"))}</div>
-        <div class="hint" style="margin-bottom:8px">${esc(t("Runs your prompt with the local model over each matched article. Results are stored as AI-derived metadata of that type, labelled unreliable — the trusted keyword index is never affected; nothing leaves your machine."))}</div>
+        <div id="ai-run-head-${ctx}"></div>
         <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
-          <select id="ai-run-pick-${ctx}">${opts}</select>
-          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="ai-run-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
-          <button class="primary" id="ai-run-start-${ctx}" data-on-click="aiRunPromptStart('${ctx}')">${esc(t("Start"))}</button>
-          <button class="ghost tiny" data-on-click="bulkLlmStop('${ctx}')">${esc(t("Cancel"))}</button>
+          <select id="ai-run-pick-${ctx}"></select>
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="ai-run-skip-${ctx}" checked> <span id="ai-run-skiplbl-${ctx}"></span></label>
+          <button class="primary" id="ai-run-start-${ctx}" data-on-click="aiRunPromptStart('${ctx}')"></button>
+          <button class="ghost tiny" id="ai-run-cancel-${ctx}" data-on-click="bulkLlmStop('${ctx}')"></button>
         </div>
         <div id="ai-run-prog-${ctx}" class="hint" style="margin-top:8px"></div>
       </div>`;
     }
+    // E-S5 (2026-08-01): the BUILT-IN AI-keyword extractor had an endpoint and no
+    // caller anywhere in the UI, so a user with no custom prompt could not reach it
+    // at all — the custom-prompt path absorbs the MECHANISM but not this prompt.
+    // Listing it here gives it a caller rather than retiring a capability nothing
+    // else provides.
+    function _aiRunOptionsHtml(ctx, usable) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const cur = $("ai-run-pick-" + ctx);
+      const was = cur && cur.options && cur.options.length ? String(cur.value) : "builtin";
+      const sel = (v) => (String(v) === was ? " selected" : "");
+      return `<option value="builtin"${sel("builtin")}>${esc(t("Built-in: AI keywords"))} · ai-keyword</option>`
+        + usable.map((x) =>
+          `<option value="${x.id}"${sel(x.id)}>${esc(x.label)} · ${esc(x.output_kind)}</option>`).join("");
+    }
+    // The extractor's progress line, per panel: kept so a switch (or a reopened panel) draws it again.
+    const _aiProg = {};
+    function _aiProgSet(ctx, render) {
+      _aiProg[ctx] = render;
+      ooLiveHtml($("ai-run-prog-" + ctx), render);
+    }
     async function aiRunPromptStart(ctx) {
       ctx = ctx || "an";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const pick = $("ai-run-pick-" + ctx), prog = $("ai-run-prog-" + ctx), startBtn = $("ai-run-start-" + ctx);
+      const pick = $("ai-run-pick-" + ctx), startBtn = $("ai-run-start-" + ctx);
       const id = pick && pick.value;
       if (!id) return;
       const p = _bulkParams(ctx);
@@ -3576,11 +3679,11 @@
       }
       // One run per panel: a Cancel ends a run only once the server has finished the article in flight, and a reopened
       // panel's fresh Start must not launch a second model run beside it.
-      if (_aiRuns[ctx]) { if (prog) prog.textContent = t(_aiRuns[ctx].stopping ? "Stopping…" : "Running"); return; }
+      if (_aiRuns[ctx]) { const busy = _aiRuns[ctx].stopping; _aiProgSet(ctx, () => esc(t(busy ? "Stopping…" : "Running"))); return; }
       const run = { task: null, stopping: false };
       _aiRuns[ctx] = run;
       if (startBtn) startBtn.disabled = true;
-      if (prog) prog.textContent = t("Starting…");
+      _aiProgSet(ctx, () => esc(t("Starting…")));
       let done = 0, total = 0;
       try {
         const url = (id === "builtin")
@@ -3592,7 +3695,7 @@
         if (!resp.ok || !resp.body) {
           let detail = "HTTP " + resp.status;
           try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (e) { /* keep status */ }
-          if (prog) prog.innerHTML = `<span class="note err">${esc(detail)}</span>`;
+          _aiProgSet(ctx, () => `<span class="note err">${esc(detail)}</span>`);
           if (startBtn) startBtn.disabled = false; return;
         }
         run.task = resp.headers.get("X-OO-Task");
@@ -3608,27 +3711,31 @@
             let o; try { o = JSON.parse(line); } catch (e) { continue; }
             if (o.event === "start") {
               total = o.total;
-              if (prog) prog.textContent = t("Processing") + " 0/" + total + "…";
+              const n = total;
+              _aiProgSet(ctx, () => esc(t("Processing") + " 0/" + n + "…"));
             } else if (o.event === "item") {
               done++;
-              if (prog) prog.textContent = t("Processing") + " " + done + "/" + total + "…";
+              const d = done, n = total;
+              _aiProgSet(ctx, () => esc(t("Processing") + " " + d + "/" + n + "…"));
             } else if (o.event === "done") {
               if (o.aborted && run.stopping && o.reason === _STOPPED_REASON) {
-                if (prog) prog.textContent = t("Cancelled.");
+                _aiProgSet(ctx, () => esc(t("Cancelled.")));
               } else if (o.aborted) {
-                if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${ooSaidHtml(o, "reason")}</span>`;
-              } else if (prog) {
-                const tally = `${o.terms || 0} ${t("items")} · ${o.stored || 0} ${t("stored")} · `
-                  + `${o.skipped || 0} ${t("skipped")} · ${o.failed || 0} ${t("failed")}`;
-                prog.innerHTML = `<b>${esc(t("Done."))}</b> ${esc(tally)} `
-                  + `<span class="muted">${esc(t("Open an article to see its AI-derived metadata."))}</span>`;
+                _aiProgSet(ctx, () => `<span class="note err">${esc(t("Stopped:"))} ${ooSaidHtml(o, "reason")}</span>`);
+              } else {
+                _aiProgSet(ctx, () => {
+                  const tally = `${o.terms || 0} ${t("items")} · ${o.stored || 0} ${t("stored")} · `
+                    + `${o.skipped || 0} ${t("skipped")} · ${o.failed || 0} ${t("failed")}`;
+                  return `<b>${esc(t("Done."))}</b> ${esc(tally)} `
+                    + `<span class="muted">${esc(t("Open an article to see its AI-derived metadata."))}</span>`;
+                });
               }
             }
           }
         }
       } catch (e) {
-        if (e && e.name === "AbortError") { if (prog) prog.textContent = t("Cancelled."); }
-        else if (prog) prog.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+        if (e && e.name === "AbortError") _aiProgSet(ctx, () => esc(t("Cancelled.")));
+        else { const msg = e && e.message; _aiProgSet(ctx, () => `<span class="note err">${esc(msg)}</span>`); }
       } finally {
         if (startBtn) startBtn.disabled = false;
         if (_aiRuns[ctx] === run) delete _aiRuns[ctx];
