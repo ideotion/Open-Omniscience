@@ -95,10 +95,10 @@ def test_dropping_the_size_from_the_list_does_not_reopen_the_long_read(tmp_path,
     src.write_bytes(os.urandom(200_000))
     out = tmp_path / "set"
     write_volume_set(src, out, "pw", volume_size=65536)
-    man = json.loads((out / MANIFEST_NAME).read_text())
+    man = json.loads((out / MANIFEST_NAME).read_text(encoding="utf-8"))
     for v in man["volumes"]:
         v.pop("bytes", None)
-    (out / MANIFEST_NAME).write_text(json.dumps(man))
+    (out / MANIFEST_NAME).write_text(json.dumps(man), encoding="utf-8")
     first = sorted(out.glob("*.ooenc"))[0]
     first.unlink()
     _sparse(first, 64 * 1024**3)
