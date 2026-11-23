@@ -2,7 +2,7 @@
 
 ``_uxRenderVerify`` builds every line with t()/tf() at render time. The i18n walker caches the first
 text it sees as "the English" and never re-keys translated output, so after a switch the panel stayed
-in the language it was drawn in. It now marks its host ``data-i18n-dyn``, keeps the report on it, and
+in the language it was drawn in. It now draws a panel of its own, marked ``data-i18n-dyn``, keeps the report on it, and
 the one ``oo:langchange`` listener repaints it from that report (no fetch). Its two fragment lines --
 "Parity: N · can still lose K" and "Corrupt/missing: names" -- are whole keyed frames, with the names
 isolated as data.
@@ -36,8 +36,9 @@ def test_the_langchange_listener_repaints_the_verify_panel():
 
 def test_the_panel_owns_its_words_and_keeps_its_report():
     body = function_body(read_static("app-backup.js"), "_uxRenderVerify")
-    assert 'setAttribute("data-i18n-dyn"' in body
-    assert "_ooVerifyRep = rep" in body
+    assert '<div data-oo-verify="" data-i18n-dyn="">' in body
+    assert "panel._ooVerifyRep = rep" in body
+    assert "host._ooVerifyRep" not in body
     for old in GONE:
         assert f't("{old}")' not in body
 

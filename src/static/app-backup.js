@@ -1491,20 +1491,25 @@
         lines.push(`<div style="color:var(--err)">${_uxVerifyFrameHtml(tfp, "Corrupt or missing volumes: {names}", { names })} — ${rec}</div>`);
       }
       if (rep.parity && typeof rep.parity === "object") {
+        // A count the report did not carry is left out, never drawn as a dash inside a recoverability claim.
         const nPar = Number(rep.parity.volumes), nLeft = Number(rep.parity.tolerance_remaining);
-        lines.push(`<div class="muted">${esc(tfp("Parity volumes: {n}", { n: fmtNum(nPar, 0) }))} · `
-          + `${esc(nLeft === 0
-            ? tfp("No more volumes can be lost: any further loss cannot be rebuilt from parity.")
-            : tfp("Up to {n} more volumes can be lost and rebuilt from parity.", { n: fmtNum(nLeft, 0) }))}</div>`);
+        const parts = [];
+        if (Number.isFinite(nPar)) parts.push(esc(tfp("Parity volumes: {n}", { n: fmtNum(nPar, 0) })));
+        if (Number.isFinite(nLeft)) parts.push(esc(nLeft === 0
+          ? tfp("No more volumes can be lost: any further loss cannot be rebuilt from parity.")
+          : tfp("Up to {n} more volumes can be lost and rebuilt from parity.", { n: fmtNum(nLeft, 0) })));
+        if (parts.length) lines.push(`<div class="muted">${parts.join(" · ")}</div>`);
       }
       if (rep.method) lines.push(`<div class="hint" style="margin-top:4px">${esc(t("Method:"))} ${ooSaidHtml(rep, "method")}</div>`);
       // Row 350: every word in this panel is rendered here, in the active language, so the walker
       // keeps out (it would cache the translated text as "the English" and freeze it), and the
-      // report is kept on the host so a language switch repaints it from memory -- never a fetch.
-      host.setAttribute("data-i18n-dyn", "");
-      host.setAttribute("data-oo-verify", "");
-      host._ooVerifyRep = rep;
-      host.innerHTML = lines.join("");
+      // report is kept so a language switch repaints it from memory -- never a fetch. Both live on a
+      // panel of its own inside the host, never on the host: the host is shared (import summary,
+      // "Verification failed", every clear), and whatever else is written there replaces the panel
+      // and its report with it, so a switch can never bring an old verdict back over newer text.
+      host.innerHTML = `<div data-oo-verify="" data-i18n-dyn="">${lines.join("")}</div>`;
+      const panel = host.firstElementChild;
+      if (panel) panel._ooVerifyRep = rep;
     }
     // One tf() frame with some values already HTML (isolated names): the frame is escaped whole and
     // each marked slot is filled after, in one pass, so a value is never re-scanned.
@@ -1514,12 +1519,13 @@
       return esc(String(tf(frame, marks))).replace(/\u0001(\w+)\u0002/g, (m, k) =>
         Object.prototype.hasOwnProperty.call(htmlVars, k) ? htmlVars[k] : m);
     }
-    // Row 350: the oo:langchange repaint (app-boot.js). Redraws each verify panel from the report it
-    // already holds; a panel never drawn has none and is left alone.
+    // Row 350: the oo:langchange repaint (app-boot.js). Redraws each verify panel still on the page
+    // from the report it holds, in its own host; a panel something else replaced is gone with its report.
     function _uxVerifyRepaint() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      document.querySelectorAll("[data-oo-verify]").forEach((host) => {
-        if (host._ooVerifyRep) _uxRenderVerify(host, host._ooVerifyRep, t);
+      document.querySelectorAll("[data-oo-verify]").forEach((panel) => {
+        const host = panel.parentNode;
+        if (panel._ooVerifyRep && host) _uxRenderVerify(host, panel._ooVerifyRep, t);
       });
     }
 
