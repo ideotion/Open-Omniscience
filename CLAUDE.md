@@ -431,11 +431,11 @@ finding things, or it finds so much that every answer is the same answer).
    roving tabindex), keyboard nav (←/→/↑/↓/Home/End), click, and exposes
    {select,paint} for programmatic switching. NO inline onclick; labels are DOM
    text (auto-translated ×12); titled buttons inherit the #oo-tip convention.
-   Reused on 3 surfaces at ship (Insights, Settings, the corpus window — the
-   divergent data-ins/data-set/data-ctab impls are unified onto data-tab).
-   Enforced in test_ui_invariants (#18). ADOPTERS so far: Insights, Settings,
-   corpus window, Home families (#129), the task-manager window (#130). NEXT:
-   Markets category tabs, the analysis window.
+   Reused on 3 surfaces at ship (Insights, Settings, the corpus window, since
+   deleted in #2317 — the old impls were unified onto data-tab). Enforced in
+   test_ui_invariants (#18). ADOPTERS so far: Insights, Settings, the analysis
+   window (#22), Home families (#129), the task-manager window (#130). NEXT:
+   Markets category tabs.
 19. **HOME is content-first (SHIPPED #128/#129):** compact at-a-glance strip
    pinned at the TOP; no Quick actions; denser cards; card families as VERTICAL
    SUBTABS (ooSubtabs) with an "All cards" default lens + per-family hue accent.

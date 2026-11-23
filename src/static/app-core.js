@@ -2288,9 +2288,11 @@
       const _encNotRead = /The store "(.+?)" was not encrypted: whether its drive has the free space it needs could not be checked \((its size could not be read|the size of its write-ahead log could not be read|the free space on its drive could not be read)\)\. Nothing was changed for this store\. Press "Encrypt corpus & custody log" again once this is fixed\./g;
       // R794: a plaintext copy cut short whose unfinished file could not be removed; the path is said as the server wrote it.
       const _snapLeft = /A plaintext copy of the store did not finish, and the unfinished file could not be removed: an incomplete plaintext copy may still be on disk at "(.+?)"\. It is not a usable snapshot; check that file and delete it yourself\./g;
-      if (_encNoRoom.test(s) || _encNotRead.test(s) || _snapLeft.test(s)) {
-        _encNoRoom.lastIndex = 0; _encNotRead.lastIndex = 0; _snapLeft.lastIndex = 0;
+      const _snapMoved = /A plaintext copy of the store did not finish, and its private folder was moved during the copy, so the unfinished file could not be removed: an incomplete plaintext copy may still be on disk, in the folder that was at "(.+?)"\. It is not a usable snapshot; find that folder, check it and delete it yourself\./g;
+      if (_encNoRoom.test(s) || _encNotRead.test(s) || _snapLeft.test(s) || _snapMoved.test(s)) {
+        _encNoRoom.lastIndex = 0; _encNotRead.lastIndex = 0; _snapLeft.lastIndex = 0; _snapMoved.lastIndex = 0;
         return s
+          .replace(_snapMoved, (_m, path) => tf("A plaintext copy of the store did not finish, and its private folder was moved during the copy, so the unfinished file could not be removed: an incomplete plaintext copy may still be on disk, in the folder that was at “{path}”. It is not a usable snapshot; find that folder, check it and delete it yourself.", { path: iso(path) }))
           .replace(_snapLeft, (_m, path) => tf("A plaintext copy of the store did not finish, and the unfinished file could not be removed: an incomplete plaintext copy may still be on disk at “{path}”. It is not a usable snapshot; check that file and delete it yourself.", { path: iso(path) }))
           .replace(_encNoRoom, (_m, st, n1, u1, n2, u2) => tf("Not enough free space to encrypt the store “{store}”: it needs about {needed} (two copies of the store and its write-ahead log), only {free} free on its drive. Nothing was changed for this store. Free up space and press “{button}” again.", {
             store: _encStore(st), needed: size(n1, u1), free: size(n2, u2), button: t("Encrypt corpus & custody log"),

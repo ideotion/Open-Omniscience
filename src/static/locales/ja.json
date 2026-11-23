@@ -241,6 +241,7 @@
   "A place close to a regional border can be counted in the neighbouring region, or in none, because the outlines are simplified. Places in no region and places with no point are counted, not placed.": "輪郭が簡略化されているため、地域の境界に近い場所は隣の地域で数えられるか、どこにも数えられないことがあります。どの地域にも入らない場所と点のない場所は数えますが、配置しません。",
   "A place name extracted from article text, placed at a gazetteer coordinate.": "記事本文から抽出した地名を、地名辞典の座標に配置したもの。",
   "A place they mention": "記事が言及する場所",
+  "A plaintext copy of the store did not finish, and its private folder was moved during the copy, so the unfinished file could not be removed: an incomplete plaintext copy may still be on disk, in the folder that was at “{path}”. It is not a usable snapshot; find that folder, check it and delete it yourself.": "ストアの平文コピーが完了せず、コピー中にその専用フォルダーが移動されたため、未完了のファイルを削除できませんでした。不完全な平文コピーが、「{path}」にあったフォルダー内に、まだディスク上に残っている可能性があります。これは使えるスナップショットではありません。そのフォルダーを探して確認し、ご自身で削除してください。",
   "A plaintext copy of the store did not finish, and the unfinished file could not be removed: an incomplete plaintext copy may still be on disk at “{path}”. It is not a usable snapshot; check that file and delete it yourself.": "ストアの平文コピーが完了せず、未完了のファイルを削除できませんでした。不完全な平文コピーがまだディスク上の「{path}」にある可能性があります。これは使えるスナップショットではありません。そのファイルを確認し、ご自身で削除してください。",
   "A plaintext snapshot is kept as your escape hatch — delete it once you have unlocked successfully.": "平文スナップショットが非常口として残ります — 解錠に成功したら削除してください。",
   "A preprint: not peer reviewed. PubMed lists it, which is not an endorsement.": "プレプリント：査読を受けていません。PubMed に掲載されていることは推奨を意味しません。",

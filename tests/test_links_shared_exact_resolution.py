@@ -22,8 +22,8 @@ thirty-six articles about an English adverb. The partial fix did not merely leav
 a hole -- it made the hole MORE convincing, because everything around it had
 started telling the truth. (Nd -> "indiqué" 28, Pr -> "proposed" 37.)
 
-`term` here is never human-typed: it is `_corpusTerm` in app-corpus.js, a keyword
-the app itself chose when the window opened. There is no forgiving-search-box
+`term` here was never human-typed: it was `_corpusTerm` in app-corpus.js (window deleted
+in #2317), a keyword the app itself chose. There is no forgiving-search-box
 argument for keeping the fuzzy default on this path.
 """
 
@@ -105,7 +105,7 @@ def test_the_fixture_really_would_have_answered_without_the_guard(client):
 def test_every_subtab_of_one_corpus_window_agrees(client):
     """The property the partial fix broke: a window opened on one term must not
     have one subtab answering from a different keyword than its siblings. Checked
-    across the four endpoints app-corpus.js drives from the same `_corpusTerm`.
+    across the four endpoints the corpus window drove from one `_corpusTerm` (#2317 deleted it).
     """
     answers = {
         "trend": client.get("/api/insights/trend", params={"term": "Dy"}).json().get("resolved"),

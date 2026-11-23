@@ -160,7 +160,8 @@ def _settings_status(*, count_late: bool = True) -> dict:
         signer = HybridSigner(use_pqc=prefs.pqc_enabled, create=False)
     except FileNotFoundError:
         signer = None
-    except SigningError:
+    except (SigningError, OSError):
+        # OSError: a key name holding a FIFO, a device or a file longer than any key (row 341), or one that cannot be opened
         signer, unreadable = None, True
     from src.paths import data_dir
 

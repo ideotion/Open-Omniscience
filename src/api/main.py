@@ -373,6 +373,19 @@ def _run_startup_upkeep() -> None:
             logger.info(f"removed {_n} stale restore staging dir(s)")
     except Exception as exc:  # noqa: BLE001 - the janitor must never block startup
         log_failure(logger, "stale-staging cleanup failed", exc, level=logging.WARNING)
+    # R799 (row 338): a plaintext snapshot's private folder a crash left in the data folder (and beside the library when that sits
+    # inside it) is removed, only under the conditions the sweep lists; anything else with its name start is logged, masked, and
+    # left. One changed in the last minutes is left for the off-peak sweep (src/scheduler/maintenance.py), which runs it again.
+    try:
+        from src.api.unlock import main_db_path as _snap_db_path
+        from src.database.connect import sweep_snapshot_leftovers
+        from src.paths import data_dir as _snap_data_dir
+
+        _live = _snap_db_path()
+        for _folder in {Path(_snap_data_dir()), *([_live.parent] if _live is not None else [])}:
+            sweep_snapshot_leftovers(_folder)
+    except Exception as exc:  # noqa: BLE001 - the janitor must never block startup
+        log_failure(logger, "snapshot leftover sweep failed", exc, level=logging.WARNING)
     # W5 (2026-07-26 hardware diagnostics): the recurring off-peak sweep
     # (src.scheduler.maintenance.run_idle_maintenance) is the primary backstop
     # for aged pre-restore-*.db safety-net snapshots, but an instance that
