@@ -132,7 +132,7 @@
         const d = await api("/api/insights/top?group=true&limit=200" + tgtLangParam());
         _landscapeLoaded = true;
         const fams = d.terms || [];
-        if (!fams.length) { box.innerHTML = '<div class="muted" style="margin-top:8px">No families yet — index the corpus.</div>'; return; }
+        if (!fams.length) { box.innerHTML = '<div class="muted" style="margin-top:8px">No families yet. Articles are indexed on their own as they arrive.</div>'; return; }
         const cols = _KIND_GROUPS.map(g => {
           const items = fams.filter(f => g.match(f.kind)).slice(0, 16);
           if (!items.length) return "";
@@ -182,7 +182,7 @@
               ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" data-on-click="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
               <span class="muted">· ${esc(_kwTf("{n} mentions", {n: fmtNum(f.mentions)}))}</span></div>
               <div class="fam-chips muted">${_famMemberList(f)}</div></div></div>`
-          ).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
+          ).join("") : '<div class="muted">No entity families yet. Articles are indexed on their own as they arrive.</div>';
       } catch (e) { list.innerHTML = `<div class="muted">Could not load families: ${esc(e.message)}</div>`; }
     }
 

@@ -162,7 +162,7 @@
     }
     function resetMap() { MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; applyVB(); }
 
-    function buildMapSvg(cities) {
+    function buildMapSvg(cities, citiesSkipped) {
       const placed = cities.filter(c => c.lat != null && c.lon != null);
       // graticule every 30 degrees, through the ONE seam (curved meridians)
       const grid = _mapGraticule(30, "0.3");
@@ -177,7 +177,12 @@
           <text x="${x}" y="${(y-Number(r)-1).toFixed(1)}" fill="var(--fg)" font-size="4" text-anchor="middle">${esc(c.name)}</text></g>`;
       }).join("");
       if (!placed.length)
-        return `<div class="muted">No placed cities yet. Index the corpus (sources need a city), or generate the full gazetteer (scripts/build_city_gazetteer.py).</div>`;
+        // Row 347: plain whole-node English, so the i18n walker translates it and
+        // re-translates it on a live language switch. A city list the server SKIPPED
+        // (partial) is not an empty one, and says so.
+        return citiesSkipped
+          ? `<div class="muted">The city list was not computed this time, so no city is drawn: that is not the same as no city being mentioned.</div>`
+          : `<div class="muted">No cities placed yet: no mention in this window comes from a source whose city is in the map's city list.</div>`;
       return `<svg id="oo-map" viewBox="0 0 ${MAP_W} ${MAP_H.toFixed(2)}" width="100%" style="max-width:${MAP_W}px;border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${MAP_ASPECT.toFixed(4)}">
         ${_mapSphere()}${grid}${dots}</svg>`;
     }
@@ -2939,7 +2944,7 @@
       try {
         const d = await api(`/api/insights/map?days=${days}&kind=${encodeURIComponent(kind)}`);
         _insMapLast = d;
-        $("map-svg").innerHTML = buildMapSvg(d.cities || []);
+        $("map-svg").innerHTML = buildMapSvg(d.cities || [], !!(d.partial && (d.skipped || []).includes("cities")));
         MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; wireMapDrag();
         _insMapTables(d);
       } catch (e) {
@@ -2961,7 +2966,7 @@
             `<tr><td><strong>${a.code ? ooCountryCell(a.code) : esc(a.name)}</strong>${a.country&&a.name?` <span class="muted">${ooCountryCell(a.country)}</span>`:""}</td><td>` +
             a.top.map(t => `<span class="pill" style="cursor:pointer" translate="no" data-on-click='pickTerm(${esc(JSON.stringify(t.term))})'>${esc(t.term)} ${t.mentions}</span>`).join(" ") +
             `</td></tr>`).join("")
-        : `<tr><td class="muted">No data — index the corpus (sources need a country/city).</td></tr>`;
+        : `<tr><td class="muted">No data yet: no mention in this window comes from a source with a country or city. Rows appear on their own as such articles are indexed.</td></tr>`;
       $("map-countries").innerHTML = rowsFor(d.countries || [], "Country");
       // A city list the server did not compute (`partial`, `skipped` names it) is NOT an empty one: say why, not "No data".
       $("map-cities").innerHTML = (d.partial && (d.skipped || []).includes("cities"))
