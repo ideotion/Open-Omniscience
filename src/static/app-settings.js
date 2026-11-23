@@ -1388,9 +1388,10 @@
         // number it actually kept is what stops the control from claiming a
         // setting the server declined.
         el.value = s.import_checkpoint_k;
-        if (msg) msg.innerHTML = `<span class="note ok">${esc(t("Preferences saved."))}</span>`;
+        // Drawn through ooLiveHtml, so the line follows a language switch (row 367).
+        ooLiveHtml(msg, () => `<span class="note ok">${esc(t("Preferences saved."))}</span>`);
       } catch (e) {
-        if (msg) msg.innerHTML = `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`;
+        ooLiveHtml(msg, () => `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`);
       }
     }
 
@@ -1784,7 +1785,10 @@
         toast(t("Choose one or more .eml files first."), "warn"); return;
       }
       btn.disabled = true;
-      $("nl-result").textContent = t("Importing…");
+      // #nl-result is drawn through ooLive/ooLiveHtml from what the import answered, so every
+      // line in it follows a language switch without a second request (row 367).
+      const out = $("nl-result");
+      ooLive(out, () => t("Importing…"));
       const fd = new FormData();
       for (const f of input.files) fd.append("files", f);
       try {
@@ -1794,22 +1798,20 @@
         if (!r.ok) throw new Error("HTTP " + r.status);
         const d = await r.json(), tl = d.tally || {};
         const n = (x) => fmtNum(x || 0, 0);
-        $("nl-result").innerHTML =
+        ooLiveHtml(out, () =>
           `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
           `${n(tl.empty)} ${esc(t("empty"))}` +
           (tl.skipped_non_eml ? ` · ${n(tl.skipped_non_eml)} ${esc(t("not .eml"))}` : "") +
           (tl.skipped_oversize ? ` · ${n(tl.skipped_oversize)} ${esc(t("too large (use folder import)"))}` : "") +
-          `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`;
+          `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`);
         input.value = "";
         toast(t("Newsletters imported."), "ok");
-        // Q1151: say where the articles WENT, immediately and on this same screen -- but in
-        // the panel rather than in #nl-result, because #nl-result is written once and then
-        // frozen in whatever locale was active, and an announcement nobody can re-read in
-        // their own language is not much of an announcement.
+        // Q1151: say where the articles WENT, immediately and on this same screen, in the
+        // attach panel (which re-renders from _nlLastRun) rather than in the tally line above.
         _nlLastRun = tl;
         loadNewsletterAttach();
       } catch (e) {
-        $("nl-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`);
       } finally { btn.disabled = false; }
     }
 
@@ -1867,22 +1869,27 @@
 
     async function undoNewsletterAttach(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       if (!confirm(t("Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again."))) return;
       btn.disabled = true;
       try {
         // Loopback POST, zero network.
         const d = await api("/api/newsletters/attach/undo", { method: "POST" });
-        const n = (x) => fmtNum(x || 0, 0);
-        toast(`${n(d.restored)} ${t("newsletters moved back to the import bucket.")}`, "ok");
-        $("nl-result").innerHTML =
-          `<b>${n(d.restored)}</b> ${esc(t("newsletters moved back to the import bucket."))}` +
+        const N = fmtNum(d.restored || 0, 0);
+        // ONE keyed sentence with a plural, the count chosen by the engine (row 367: it was
+        // welded, "N" + "newsletters moved back…", so "1 newsletters" in every language).
+        const moved = () => tf("{n} newsletters moved back to the import bucket.", { n: N });
+        toast(moved(), "ok");
+        ooLiveHtml($("nl-result"), () =>
+          // the count in bold: the first occurrence of the number in the chosen form
+          esc(moved()).replace(esc(N), () => `<b>${esc(N)}</b>`) +
           ((d.sources_deleted || []).length
             ? `<div class="muted" style="margin-top:5px">${esc(ooLabelText(t("Removed the now-empty sources this filing had created"), d.sources_deleted.join(", ")))}</div>`
-            : "");
+            : ""));
         _nlLastRun = null;  // the run it described has just been reversed
         await loadNewsletterAttach();
       } catch (e) {
-        $("nl-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Undo failed"), e.message))}</span>`;
+        ooLiveHtml($("nl-result"), () => `<span class="note err">${esc(ooLabelText(t("Undo failed"), e.message))}</span>`);
       } finally { btn.disabled = false; }
     }
 
@@ -1910,7 +1917,8 @@
         toast(t("Choose one or more PDF files first."), "warn"); return;
       }
       btn.disabled = true;
-      $("pdf-result").textContent = t("Importing…");
+      const out = $("pdf-result");   // drawn through ooLive/ooLiveHtml, so it follows a language switch (row 367)
+      ooLive(out, () => t("Importing…"));
       const fd = new FormData();
       for (const f of input.files) fd.append("files", f);
       try {
@@ -1918,12 +1926,12 @@
         // so this works in airplane mode and never needs the network-consent gate.
         const r = await fetch("/api/documents/pdf/upload", { method: "POST", body: fd });
         if (!r.ok) throw new Error("HTTP " + r.status);
-        const d = await r.json();
-        $("pdf-result").innerHTML = _pdfTallyHtml(d.tally || {});
+        const d = await r.json(), tl = d.tally || {};
+        ooLiveHtml(out, () => _pdfTallyHtml(tl));
         input.value = "";
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`);
       } finally { btn.disabled = false; }
     }
     async function importPdfFolder(btn) {
@@ -1931,13 +1939,15 @@
       const folder = ($("pdf-folder").value || "").trim();
       if (!folder) { toast(t("Enter a folder path on this machine."), "warn"); return; }
       btn.disabled = true;
-      $("pdf-folder-result").textContent = t("Importing…");
+      const out = $("pdf-folder-result");   // drawn through ooLive/ooLiveHtml (row 367)
+      ooLive(out, () => t("Importing…"));
       try {
         const d = await api("/api/documents/pdf/import-folder", { method: "POST", body: JSON.stringify({ folder }) });
-        $("pdf-folder-result").innerHTML = _pdfTallyHtml(d.tally || {});
+        const tl = d.tally || {};
+        ooLiveHtml(out, () => _pdfTallyHtml(tl));
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-folder-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`);
       } finally { btn.disabled = false; }
     }
 
@@ -1966,6 +1976,7 @@
     }
     async function _folderImportRefresh() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const prog = $("nl-folder-progress"); if (!prog) return;
       let s;
       try { s = await api("/api/newsletters/import-folder/status"); } catch (e) { return; }
@@ -1981,33 +1992,38 @@
       if ($("nl-folder-pause")) $("nl-folder-pause").style.display = s.state === "running" ? "" : "none";
       if ($("nl-folder-resume")) $("nl-folder-resume").style.display = s.state === "paused" ? "" : "none";
       const tl = s.tally || {};
-      const eta = (s.eta_seconds != null) ? ` · ~${Math.max(1, Math.round(s.eta_seconds / 60))} ${t("min left")}` : "";
+      const stored = tl.stored || 0, duplicate = tl.duplicate || 0;
+      // Each line is ONE keyed sentence drawn through ooLive/ooLiveHtml from this poll's answer, so
+      // it follows a language switch; the "Done." line used to freeze, since the poll stops at done
+      // (row 367). Welded, zh read "完成。 5 已导入，…" with a Latin space after the full-width mark.
       if (active) {
-        prog.innerHTML = `${esc(t("Importing"))}… ${ooLtrIsolate((s.percent || 0) + "%")} (${s.files_done}/${s.files_total}) · ` +
-          `${(tl.stored || 0)} ${esc(t("imported"))}, ${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}` +
-          (s.state === "paused" ? ` (${esc(t("paused"))})` : eta);
+        const mins = (s.eta_seconds != null) ? Math.max(1, Math.round(s.eta_seconds / 60)) : null;
+        ooLiveHtml(prog, () =>
+          esc(tf("Importing… {pct} ({done}/{total}) · imported: {stored} · duplicates skipped: {duplicate}",
+            { pct: ooLtrIsolate((s.percent || 0) + "%"), done: s.files_done, total: s.files_total, stored, duplicate })) +
+          (s.state === "paused" ? ` (${esc(t("paused"))})` : (mins != null ? ` · ~${mins} ${esc(t("min left"))}` : "")));
       } else if (s.state === "done") {
-        prog.innerHTML = `<b>${esc(t("Done."))}</b> ${(tl.stored || 0)} ${esc(t("imported"))}, ` +
-          `${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}.`;
+        ooLive(prog, () => tf("Done. Imported: {stored} · duplicates skipped: {duplicate}.", { stored, duplicate }));
         if (typeof loadNewsletterRemoveCount === "function") loadNewsletterRemoveCount();
       } else if (s.state === "error") {
-        prog.innerHTML = `<span class="note err">${esc(s.error || t("failed"))}</span>`;
-      } else { prog.textContent = ""; }
+        ooLiveHtml(prog, () => `<span class="note err">${esc(s.error || t("failed"))}</span>`);
+      } else { ooLive(prog, () => ""); }
     }
 
     // Restore is additive-only, so excluding newsletters from a backup never purges
     // the live corpus — this action does. The panel shows only when there's something
     // to remove; removal needs an explicit confirm and nudges "back up first".
     async function loadNewsletterRemoveCount() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const panel = $("nl-remove-panel"), lab = $("nl-remove-count");
       if (!panel) return;
       try {
         const d = await api("/api/newsletters/imported-count");
         const n = d.count || 0;
         panel.style.display = n > 0 ? "" : "none";
-        const N = (x) => fmtNum(x || 0, 0);
-        if (lab) lab.textContent = n > 0 ? `${N(n)} ${t("imported newsletters in your corpus")}` : "";
+        const N = fmtNum(n, 0);
+        // ONE keyed sentence with a plural, drawn through ooLive so it follows a language switch (row 367).
+        ooLive(lab, () => n > 0 ? tf("{n} imported newsletters in your corpus", { n: N }) : "");
       } catch (e) { panel.style.display = "none"; }
     }
     function downloadBackupFirst(btn) {
@@ -2026,23 +2042,24 @@
       if (!confirm(t("Remove") + ` ${N(n)} ` +
           t("imported newsletters from your corpus? This cannot be undone except from a backup."))) return;
       btn.disabled = true;
-      $("nl-remove-result").textContent = t("Removing…");
+      const out = $("nl-remove-result");   // drawn through ooLive/ooLiveHtml (row 367)
+      ooLive(out, () => t("Removing…"));
       try {
         const d = await api("/api/newsletters/remove-imported",
           {method: "POST", body: JSON.stringify({confirm: true})});
         // One keyed sentence pair with the count dropped in, so each locale joins its
         // own two sentences: welded, zh read "…简报。 重新导入…" (re-walk O-5).
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
-        $("nl-remove-result").innerHTML =
+        ooLiveHtml(out, () =>
           esc(tf("{n} imported newsletters removed. Re-import the cleaned files to replace them.", {n: "\u0001"}))
-            .replace("\u0001", () => `<b>${N(d.removed_articles)}</b>`);
+            .replace("\u0001", () => `<b>${N(d.removed_articles)}</b>`));
         toast(t("Imported newsletters removed."), "ok");
         // The server's own words when every article is removed but the counts after it could not be refreshed (queue item 58).
         // A toast (it sets text, never markup), not a line in this panel: the count refresh below hides the panel once nothing
         // is left to remove, which is exactly when the note comes.
         if (d.note) toast(d.note, "warn");
       } catch (e) {
-        $("nl-remove-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Removal failed"), e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${esc(ooLabelText(t("Removal failed"), e.message))}</span>`);
         // ... and as a toast: the count refresh below hides this panel when it cannot read the count, and a damaged file can fail
         // the removal and that read together, so the words must not live only in the panel (the fresh read of queue item 58).
         toast(ooLabelText(t("Removal failed"), e.message), "err");
@@ -2060,7 +2077,9 @@
       const host = ($("mbox-host").value || "").trim();
       const user = ($("mbox-user").value || "").trim();
       const password = $("mbox-pass").value || "";
-      if (!host || !user) { if (out) out.textContent = t("Enter at least a host and user."); return; }
+      // Every line in #mbox-result is drawn through ooLive/ooLiveHtml from what this pull holds, so
+      // it follows a language switch without a second request (row 367).
+      if (!host || !user) { ooLive(out, () => t("Enter at least a host and user.")); return; }
       // A network action -> the ONE consent popup (invariant #14).
       if (typeof ensureOnline === "function" && !await ensureOnline(t("Pull newsletters from your mailbox"))) return;
       const body = {
@@ -2070,7 +2089,7 @@
         limit: parseInt($("mbox-limit").value || "50", 10),
       };
       if (btn) btn.disabled = true;
-      if (out) out.textContent = t("Pulling from your mailbox…");
+      ooLive(out, () => t("Pulling from your mailbox…"));
       try {
         // The pull is a BACKGROUND JOB now (it is a network fetch plus a full
         // anonymise-and-store pass -- minutes of work that used to run inside the
@@ -2080,29 +2099,30 @@
         const d = await api("/api/newsletters/mailbox", { method: "POST", body: JSON.stringify(body) });
         $("mbox-pass").value = "";  // never keep the password in the field
         const st = await pollJobStatus("/api/newsletters/mailbox/status", {
-          onProgress: (s) => { if (out && s && s.detail) out.textContent = esc(s.detail); },
+          // The server's own progress words, as TEXT: esc() here showed an "&" as "&amp;".
+          onProgress: (s) => { if (s && s.detail) { const detail = String(s.detail); ooLive(out, () => detail); } },
         });
         if (st && st.state === "error") {
-          if (out) out.innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(st.error || ""))}</span>`;
+          ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(st.error || ""))}</span>`);
           return;
         }
         if (_jobStillRunning(st)) {
           // Stopped WATCHING, not finished. Reading st.result here would report the
           // not-yet-final tallies as zeros -- the honest answer is where to look.
-          if (out) out.textContent = t("Still pulling in the background — the task manager shows it.");
+          ooLive(out, () => t("Still pulling in the background — the task manager shows it."));
           return;
         }
         const res = (st && st.result) || {};
         const tl = res.tally || {}, n = (x) => fmtNum(x || 0, 0);
-        if (out) out.innerHTML = `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))}`
+        ooLiveHtml(out, () => `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))}`
           + `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`
           + (res.disclosure ? `<div class="muted" style="margin-top:4px">${esc(res.disclosure)}</div>` : "")
           // R640: a Stop during the pull ended it; the tally is what came before it, never the mailbox's size.
-          + (res.stopped_by_airplane_mode ? `<div class="note" style="margin-top:4px">${esc(t("Stopped by airplane mode: only the messages fetched before it were imported."))}</div>` : "");
+          + (res.stopped_by_airplane_mode ? `<div class="note" style="margin-top:4px">${esc(t("Stopped by airplane mode: only the messages fetched before it were imported."))}</div>` : ""));
       } catch (e) {
         // 409 = airplane refusal (named as the kill switch), 422 = a network-free
         // validation refusal. Both still answer synchronously, before any socket.
-        if (out) out.innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(e.message))}</span>`);
       } finally { if (btn) btn.disabled = false; }
     }
 
@@ -2313,9 +2333,13 @@
     // tf() frame welded to a measured number, so the DOM walker can repaint none of it:
     // the panel kept the old locale for as long as it stayed open (click-through B14, Z2).
     let _laneStorageLast = null;
-    function _paintLaneStorage(rep) {
+    // True while the last read failed: the table host then holds the error (ooLiveHtml), so a
+    // language switch redraws the reading and disk lines from the last good payload and never
+    // draws that old table back over the error (row 367).
+    let _laneStorageErr = false;
+    function _paintLaneStorage(rep, withTable = true) {
       if ($("storage-reading")) $("storage-reading").innerHTML = _storageReadingHtml(rep);
-      if ($("storage-lanes")) $("storage-lanes").innerHTML = _storageTableHtml(rep);
+      if (withTable && $("storage-lanes")) $("storage-lanes").innerHTML = _storageTableHtml(rep);
       if ($("storage-disk")) $("storage-disk").innerHTML = _storageDiskHtml(rep);
     }
     // Registered in app-boot.js's ONE `oo:langchange` listener. Never fetches, and does
@@ -2327,7 +2351,7 @@
       document.querySelectorAll('#storage-lanes input[id^="storage-budget-"]').forEach((el) => {
         kept[el.id] = el.value;
       });
-      _paintLaneStorage(_laneStorageLast);
+      _paintLaneStorage(_laneStorageLast, !_laneStorageErr);
       Object.keys(kept).forEach((id) => { const el = $(id); if (el) el.value = kept[id]; });
     }
     async function loadLaneStorage() {
@@ -2335,11 +2359,15 @@
       try {
         const rep = await api("/api/storage/lanes");
         _laneStorageLast = rep;
+        _laneStorageErr = false;
+        ooLive($("storage-lanes"), null);   // an error line held there gives the host back to the table
         _paintLaneStorage(rep);
       } catch (e) {
-        if ($("storage-lanes")) {
-          $("storage-lanes").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Storage could not be read")), esc(e.message))}</span>`;
-        }
+        // The error is now the table's state: a language switch (repaintLaneStorageFromCache)
+        // must not draw the last good table back over it (row 367), and it still redraws the
+        // reading and disk lines, which keep showing the last good payload.
+        _laneStorageErr = true;
+        ooLiveHtml($("storage-lanes"), () => `<span class="note err">${ooLabelHtml(esc(t("Storage could not be read")), esc(e.message))}</span>`);
       }
     }
     async function saveLaneBudget(kind, setting, btn) {
@@ -2352,7 +2380,9 @@
         // Refused, never rounded or clamped: the server refuses both too (in English, as
         // a field name), and saying so here, in the operator's language, keeps their
         // number on screen while they fix it. The bounds are the server's, drawn on the input.
-        if (msg) msg.textContent = tf("Enter a whole number of GB from {min} to {max}.", { min: input.min, max: input.max });
+        // Drawn through ooLive (row 367). The line sits inside #storage-lanes, so a redraw of the
+        // table takes it away: it is a transient message, and a gone node is simply dropped.
+        ooLive(msg, () => tf("Enter a whole number of GB from {min} to {max}.", { min: input.min, max: input.max }));
         return;
       }
       if (btn) btn.disabled = true;
@@ -2361,10 +2391,9 @@
         // Re-read, so the row shows what the SERVER now holds (a refused value never
         // lingers on screen as if it had been taken), then confirm on the fresh row.
         await loadLaneStorage();
-        const fresh = $("storage-budget-msg-" + kind);
-        if (fresh) fresh.textContent = t("Saved.");
+        ooLive($("storage-budget-msg-" + kind), () => t("Saved."));
       } catch (e) {
-        if (msg) msg.textContent = ooLabelText(t("Not saved"), e.message);
+        ooLive(msg, () => ooLabelText(t("Not saved"), e.message));
       } finally { if (btn) btn.disabled = false; }
     }
 
