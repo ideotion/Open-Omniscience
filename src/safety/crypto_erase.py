@@ -34,6 +34,8 @@ erasure it cannot deliver — the real guarantee is the destroyed salt.
 from __future__ import annotations
 
 import contextlib
+import contextvars
+import errno
 import itertools
 import logging
 import os
@@ -91,6 +93,35 @@ _LIMIT_NOTE_NOT_CLEAN = (
 )
 
 
+# R798: the note when a walk could not list a folder it was to erase -- the files in it were never checked.
+_UNLISTED_SENTENCE = (
+    "The erase could not list some of the folders it was to erase, so it could not check the files in them: the erase may be "
+    "incomplete."
+)
+_LIMIT_NOTE_UNLISTED = (
+    _UNLISTED_SENTENCE + " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
+    "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
+)
+
+
+#: The data folder of the erase running in this context, so the log lines of the helpers it calls are masked against it too.
+_ERASE_ROOT: contextvars.ContextVar[Path | None] = contextvars.ContextVar("_ERASE_ROOT", default=None)
+
+
+def _masked(paths: list[str], root: Path | None = None) -> list[str]:
+    """``paths`` for a log line (R734/R736): each as its role (``<data>/.../name``, ``<home>/.../name``, ``.../name``), and the
+    whole list withheld when the masking itself fails, never written as given. ``root`` is the data folder of the erase: given,
+    the masking never asks ``src.paths.data_dir``, which would make again the folder the erase has just removed."""
+    try:
+        from src.monitoring.path_tokens import tokenise_paths
+
+        root = root if root is not None else _ERASE_ROOT.get()
+        data_root = None if root is None else str(root)
+        return [tokenise_paths(p, data_root=data_root) for p in paths]
+    except Exception:  # noqa: BLE001 - a log line never carries a raw path
+        return ["(path withheld)"] * len(paths)
+
+
 def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False) -> bool:
     """Overwrite ``path`` in place with random data, then fsync. When ``head_bytes``
     is given only that prefix is overwritten (the crypto-erase salt-page case);
@@ -133,7 +164,7 @@ def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False
             os.fsync(f.fileno())
         return True
     except OSError:
-        _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", path)
+        _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", _masked([str(path)])[0])
         return False
 
 
@@ -156,10 +187,12 @@ _GENERATIONS = itertools.count(1)
 # when one was still there at the end, or when it could not tell.
 #: How long the erase goes on rewriting while another process still holds the store (inline, after every key is destroyed; and
 #: again in the panic wipe's late pass before its descriptors are let go). Measured: a rewrite pass of a few-MiB log and the
-#: probe take milliseconds, so 2 s is ~20 passes; with no other holder the erase pays one probe per kept file (< 1 ms each).
+#: probe take milliseconds, so 2 s is ~20 passes; with no other holder the erase pays two probes per kept file (< 1 ms each) and
+#: one more rewrite through them (R796), itself bounded by it.
 _HOLDER_BOUND_S = 2.0
 _HOLDER_STEP_S = 0.1
-#: The erase result's ``other_holder``: no other process was seen holding the store; one still held it when the bound ended;
+#: The erase result's ``other_holder``: no other process was seen holding the store; one was seen holding it at some point of the
+#: erase (R796: even one that let go before the end);
 #: or whether one did could not be told (Windows, a platform whose lock record is not read here, a probe that failed, a file
 #: that could not be kept). Only "none" is a clean result.
 HOLDER_NONE, HOLDER_HELD, HOLDER_UNKNOWN = "none", "held", "unknown"
@@ -288,27 +321,37 @@ def _holder_state(entries: list[tuple[int, str, int]]) -> str:
 
 def settle_other_holders(generation: int, *, bound_s: float | None = None) -> str:
     """R792 (3): while another process still holds the erased store, rewrite through this wipe's kept descriptors every
-    :data:`_HOLDER_STEP_S`, for at most ``bound_s`` (default :data:`_HOLDER_BOUND_S`); once it is gone, one last rewrite takes
-    what it wrote before it closed. Returns the state at the end (``HOLDER_*``). Never waits when none is seen (one probe per
-    kept file), never signals the other process, never raises."""
+    :data:`_HOLDER_STEP_S`, for at most ``bound_s`` (default :data:`_HOLDER_BOUND_S`). R796 (row 331), the rule the uninstall
+    watcher keeps too (#2292; that detached script cannot import this module, so its copy is pinned to this one by
+    ``tests/test_holder_rule_shared_row331.py``): one more rewrite, under a bound of its own, ALWAYS follows, whatever was
+    found, and a holder seen at any point makes the result ``held`` even when it has let go by the end (a store file that
+    existed but could not be kept already makes it ``unknown``, :func:`finish_holder_check`). Never sleeps when none is seen, never signals the other process, never raises."""
     bound = _HOLDER_BOUND_S if bound_s is None else bound_s
     try:
         entries = list(_HELD.get(generation, ()))
         state = _holder_state(entries)
-        if state != HOLDER_HELD:
-            return state
-        deadline = time.monotonic() + bound
-        while True:
-            rescrub_held(close=False, generation=generation, deadline=deadline)
-            if time.monotonic() >= deadline:
-                break
-            time.sleep(_HOLDER_STEP_S)
-            state = _holder_state(entries)
-            if state != HOLDER_HELD:
-                # What it committed just before it let go, under a bound of its own.
-                rescrub_held(close=False, generation=generation, deadline=time.monotonic() + bound)
-                return state
-        return _holder_state(entries)
+        seen = state == HOLDER_HELD
+        # R796, as the watcher keeps it: a probe that could not tell is never cleared by a later one that saw nothing (the file it
+        # could not ask about may have been held by a program that let go since).
+        ever_unknown = state == HOLDER_UNKNOWN
+        if seen:
+            deadline = time.monotonic() + bound
+            while True:
+                rescrub_held(close=False, generation=generation, deadline=deadline)
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(_HOLDER_STEP_S)
+                state = _holder_state(entries)
+                ever_unknown = ever_unknown or state == HOLDER_UNKNOWN
+                if state != HOLDER_HELD:
+                    break
+        # R796: always, whatever was found -- what a holder committed before it let go, or one no probe could see.
+        rescrub_held(close=False, generation=generation, deadline=time.monotonic() + bound)
+        state = _holder_state(entries)
+        # R796: a holder seen at any point may have written behind the last rewrite before it let go: never "none".
+        if seen or state == HOLDER_HELD:
+            return HOLDER_HELD
+        return HOLDER_UNKNOWN if ever_unknown or state == HOLDER_UNKNOWN else HOLDER_NONE
     except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
         return HOLDER_UNKNOWN
 
@@ -361,7 +404,9 @@ def held_count(generation: int | None = None) -> int:
 
 def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: float | None = None) -> int:
     done = 0
-    for fd, kind, cap in held:
+    # The salt-bearing heads first, as the watcher's rewrite_kept does: a long log must not use the whole bound before a main
+    # file's first page is reached.
+    for fd, kind, cap in sorted(held, key=lambda e: e[1] == "whole"):
         try:
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError  # not rewritten this pass; a closing pass still closes it below
@@ -391,12 +436,47 @@ def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: fl
     return done
 
 
-def _is_link(p: Path) -> bool:
-    """A symlink, or a Windows junction (which ``os.walk(followlinks=False)`` still enters)."""
+def _absent(exc: OSError) -> bool:
+    """Whether a failed look at a path says it is not there (rather than that it could not be looked at). A link that loops
+    holds nothing to overwrite and is no folder the erase could not check (``Path.exists`` said "not there" too)."""
+    return isinstance(exc, (FileNotFoundError, NotADirectoryError)) or exc.errno == errno.ELOOP
+
+
+def _kind(p: Path, unreached=None) -> str:
+    """What ``p`` is, never following a link: ``absent``, ``link`` (a junction too), ``dir``, ``file`` (regular), ``other`` (a FIFO,
+    socket or device) or ``unreached``. R798: an entry that cannot be looked at (its folder can be listed but not searched, mode
+    ``r--``) is ``unreached`` and handed to ``unreached``; it is never taken for a link, a file already handled or one that is not
+    there."""
     try:
-        return p.is_symlink() or bool(getattr(p, "is_junction", lambda: False)())
-    except OSError:
-        return True  # unknown: treated as a link, never entered
+        st = os.lstat(p)
+    except OSError as exc:
+        if _absent(exc):
+            return "absent"
+        if unreached is not None:
+            unreached(p)
+        return "unreached"
+    if stat.S_ISLNK(st.st_mode):
+        return "link"
+    if stat.S_ISDIR(st.st_mode):
+        try:
+            return "link" if os.path.isjunction(p) else "dir"  # a Windows junction, which os.walk would enter
+        except OSError:
+            return "link"
+    return "file" if stat.S_ISREG(st.st_mode) else "other"
+
+
+def _present(p: Path, unreached=None) -> bool:
+    """Whether ``p`` is there, following a link (the store files step 1 reaches). One that cannot be looked at counts as there and
+    is handed to ``unreached`` (R798): it is then reported as not overwritten, never passed over as missing."""
+    try:
+        os.stat(p)
+        return True
+    except OSError as exc:
+        if _absent(exc):
+            return False
+        if unreached is not None:
+            unreached(p)
+        return True
 
 
 def _real(db: Path) -> Path:
@@ -425,7 +505,9 @@ _KEYS_PENDING = ".pending"
 KEY_FORM_SUFFIXES = ("_ed25519.pem", "_ml_dsa_65.key")
 
 
-def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, *, shared: bool = False) -> tuple[int, int]:
+def _destroy_keys_folder(
+    keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, *, shared: bool = False, unreached=None
+) -> tuple[int, int]:
     """Step 2 and 2b of the quick erase, ``(seen, wiped)``: the named key files, then everything else in the keys folder
     (the evidence key, a private copy in ``keys/.pending``), then the folder itself, so nothing can be added to it
     before the caller lets the key-file lock go. In a SHARED data folder (R711) a ``keys`` folder may be the operator's
@@ -440,20 +522,20 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlis
         if s and overwritten:
             keys_destroyed.append(name)
     if shared:
-        others = [e.name for e in _listing(keys_dir) if e.name.endswith(KEY_FORM_SUFFIXES) and e.name not in _KEY_FILES]
+        others = [e.name for e in _listing(keys_dir, unlisted) if e.name.endswith(KEY_FORM_SUFFIXES) and e.name not in _KEY_FILES]
         for name in dict.fromkeys([*_OTHER_KEY_FILES, *others]):
             s, _overwritten, w = track(keys_dir / name)
             seen += s
             wiped += w
         pending = keys_dir / _KEYS_PENDING
-        if _is_link(pending) or not pending.is_dir():
+        if _kind(pending, unreached) != "dir":
             with contextlib.suppress(OSError):
                 keys_dir.rmdir()  # only when empty: what is left in it is not the app's to remove
             return seen, wiped
         keys_dir = pending  # walked and removed below, like the whole folder in the app's own data folder
-    if keys_dir.is_dir():
+    if _kind(keys_dir, unreached) == "dir":
         for root, dirs, names in os.walk(keys_dir, onerror=unlisted):
-            dirs[:] = [d for d in dirs if not _is_link(Path(root, d))]  # a junction too, never entered
+            dirs[:] = [d for d in dirs if _kind(Path(root, d), unreached) == "dir"]  # a link or a junction never entered
             for name in names:
                 s, _overwritten, w = track(Path(root) / name)
                 seen += s
@@ -465,24 +547,22 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlis
     return seen, wiped
 
 
-def _shred(path: Path, *, head_bytes: int | None = None, zeros: bool = False) -> tuple[bool, bool, bool]:
+def _shred(path: Path, *, head_bytes: int | None = None, zeros: bool = False, unreached=None) -> tuple[bool, bool, bool]:
     """Overwrite then unlink ``path``. Returns ``(seen, overwritten, unlinked)``:
     ``seen`` is whether the file existed, ``overwritten`` whether the destructive
     write actually completed, ``unlinked`` whether the directory entry was removed.
     These are reported separately -- a failed overwrite followed by a successful
     unlink is NOT destruction, it's just deletion, and callers must not conflate
-    the two when claiming a salt page or key file was destroyed."""
-    try:
-        if not path.exists():
-            return (False, False, False)
-    except OSError:
+    the two when claiming a salt page or key file was destroyed. A file that cannot be looked at counts as seen and is handed to
+    ``unreached`` (R798): ``(True, False, ...)``, never "not there"."""
+    if not _present(path, unreached):
         return (False, False, False)
     overwritten = _overwrite(path, head_bytes=head_bytes, zeros=zeros)
     try:
         path.unlink()
         return (True, overwritten, True)
     except OSError:
-        _LOG.warning("crypto-erase: could not unlink %s", path)
+        _LOG.warning("crypto-erase: could not unlink %s", _masked([str(path)])[0])
         return (True, overwritten, False)
 
 
@@ -564,21 +644,27 @@ def _copy_patterns(folder: Path, base: Path, dbs: list[Path]) -> list[re.Pattern
     return pats
 
 
-def _listing(folder: Path) -> list[os.DirEntry]:
-    """The top-level entries of ``folder``, or none when it cannot be listed. ``list`` closes the scan as it ends it."""
+def _listing(folder: Path, unlisted=None) -> list[os.DirEntry]:
+    """The top-level entries of ``folder``, or none when it cannot be listed. ``list`` closes the scan as it ends it. A folder that
+    is not there holds nothing; one that is there but cannot be listed is handed to ``unlisted`` (R798), never passed over in
+    silence."""
     try:
         return list(os.scandir(folder))
-    except OSError:
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        if unlisted is not None:
+            unlisted(exc)
         return []
 
 
-def _db_copies(folder: Path, base: Path, dbs: list[Path]) -> list[Path]:
+def _db_copies(folder: Path, base: Path, dbs: list[Path], unlisted=None) -> list[Path]:
     """The app's own copies of a database in ``folder``, by name; regular files only (a link is left to step 6)."""
     pats = _copy_patterns(folder, base, dbs)
     if not pats:
         return []
     out = []
-    for entry in _listing(folder):
+    for entry in _listing(folder, unlisted):
         if not any(p.fullmatch(entry.name) for p in pats):
             continue
         try:
@@ -611,30 +697,35 @@ def _copy_mode(p: Path, *, encrypted_store: bool) -> str:
     return "plain" if head == _SQLITE_MAGIC else "head"
 
 
-def _erase_roots(base: Path, *, app_only: bool) -> list[Path]:
+def _erase_roots(base: Path, *, app_only: bool, unlisted=None, unreached=None) -> list[Path]:
     """What steps 5b and 6 reach: the data folder whole, or, in a folder the app does not own (R711), each top-level entry the app
     owns there, by name."""
-    if not base.exists():
+    if not _present(base, unreached):
         return []
     if not app_only:
         return [base]
     from src.safety.data_scope import is_app_owned, owned_spec
 
     spec = owned_spec(shared=True)  # the app's common names (models, cache, keys...) are left: they may be the operator's
-    return sorted(Path(e.path) for e in _listing(base) if is_app_owned(e.name, spec=spec))
+    return sorted(Path(e.path) for e in _listing(base, unlisted) if is_app_owned(e.name, spec=spec))
 
 
-def _files_under(roots: list[Path], base: Path, onerror, skip: Path | None = None):
+def _files_under(roots: list[Path], base: Path, onerror, skip: Path | None = None, unreached=None):
     """Every file under ``roots``, never following a link or a junction below them. The data folder itself is entered even when it
-    is a link (the operator put it there); a top-level entry that is a link is yielded as itself, so it is removed, never followed."""
+    is a link (the operator put it there); a top-level entry that is a link is yielded as itself, so it is removed, never followed.
+    A folder below that cannot be looked at is handed to ``unreached`` (R798), never dropped as if it were a link."""
     for root in roots:
-        if root != base and (_is_link(root) or not root.is_dir()):
-            yield root
-            continue
+        if root != base:
+            kind = _kind(root, unreached)
+            if kind == "unreached":
+                continue
+            if kind != "dir":
+                yield root
+                continue
         if skip is not None and root == skip:
             continue
         for top, dirs, names in os.walk(root, onerror=onerror):
-            dirs[:] = [d for d in dirs if Path(top, d) != skip and not _is_link(Path(top, d))]
+            dirs[:] = [d for d in dirs if Path(top, d) != skip and _kind(Path(top, d), unreached) == "dir"]
             for name in names:
                 yield Path(top, name)
 
@@ -642,10 +733,11 @@ def _files_under(roots: list[Path], base: Path, onerror, skip: Path | None = Non
 def _remove_app_folders(roots: list[Path]) -> None:
     """The app's own folders, once their files are destroyed; a top-level link of ours is removed, never followed."""
     for root in roots:
-        if _is_link(root):
+        kind = _kind(root)
+        if kind == "link":
             with contextlib.suppress(OSError):
                 root.unlink()
-        elif root.is_dir():
+        elif kind == "dir":
             shutil.rmtree(root, ignore_errors=True)
 
 
@@ -685,7 +777,7 @@ def quick_crypto_erase(
 
     Either way (R792), once every key is destroyed the erase looks for ANOTHER process holding the store, goes on rewriting
     through the kept descriptors while one is seen (at most :data:`_HOLDER_BOUND_S`, never waiting when none is), and reports
-    ``other_holder``: ``"none"``, ``"held"`` (one still had the store open when the bound ended: the erase may be incomplete) or
+    ``other_holder``: ``"none"``, ``"held"`` (one was seen holding the store during the erase, even if it let go before the end: the erase may be incomplete) or
     ``"unknown"`` (it could not tell; always so on Windows, where an open file cannot be found from here). Only "none" is a
     clean erase, and it means none was SEEN (a process holding no lock at that moment, or one on another machine sharing the
     folder over a network file system, is not). ``settle`` False (the panic wipe, which closes its pool and takes the app
@@ -695,6 +787,7 @@ def quick_crypto_erase(
     own = not hold_for_rescrub
     generation = new_hold_generation() if own else hold_generation
     missed: list[str] = []
+    root_token = _ERASE_ROOT.set(None)  # the erase sets its data folder; put back as it was when it ends
     try:
         report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed)
         report["files_not_kept"] = len(missed)  # a count: the names are never reported
@@ -702,6 +795,7 @@ def quick_crypto_erase(
             finish_holder_check(report, generation)
         return report
     finally:
+        _ERASE_ROOT.reset(root_token)
         if own:
             rescrub_held(close=True, generation=generation, settle=False)
 
@@ -719,8 +813,8 @@ def finish_holder_check(report: dict, generation: int) -> str:
         state = HOLDER_UNKNOWN  # a file of the store that could not be kept could not be asked either
     report["other_holder"] = state
     if state != HOLDER_NONE:
-        report["limit"] = _LIMIT_NOTE_NOT_CLEAN
-        _LOG.warning("CRYPTO-ERASE: %s", "another program still had the database open when the erase ended; the erase may be "
+        report["limit"] = _LIMIT_NOTE_NOT_CLEAN + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
+        _LOG.warning("CRYPTO-ERASE: %s", "another program had the database open during the erase; the erase may be "
                      "incomplete" if state == HOLDER_HELD else "could not check whether another program had the database open")
     return state
 
@@ -733,6 +827,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
 
     paths = _resolve(data_dir)
     base: Path = paths["base"]
+    _ERASE_ROOT.set(base)  # every log line of this erase is masked against its own data folder, never src.paths.data_dir
     # R711. Is the data folder the app's own? One the app did not choose that also holds other files (the operator's home folder, a
     # drive root, a mount point, a projects folder) is never walked whole or removed: steps 5b and 6 reach only the entries the app
     # owns there (src/safety/data_scope.py, by name, its common names such as "models" excepted), the keys folder keeps whatever is
@@ -756,11 +851,24 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # "keys_destroyed", which must only ever mean the overwrite actually completed.
     overwrite_failures: list[str] = []
 
+    # R798: every folder a walk could not list, in every walk of this erase (the keys folder, the copies beside each database, the
+    # app's own entries of a shared folder, steps 5b and 6). Any one of them makes the result "may be incomplete": the files in it
+    # were never checked, so nothing here is called destroyed.
+    unlisted_folders: list[str] = []
+
     def _unlisted(failed_listing) -> None:  # a folder a walk cannot list is named (its path only), never skipped in silence
-        overwrite_failures.append(str(getattr(failed_listing, "filename", None) or "an unlistable folder"))
+        if isinstance(failed_listing, FileNotFoundError):
+            return  # gone between the listing of its parent and its own: nothing in it to check
+        name = str(getattr(failed_listing, "filename", None) or "an unlistable folder")
+        overwrite_failures.append(name)
+        unlisted_folders.append(name)
+
+    def _unreached(p: Path) -> None:  # an entry that cannot be looked at: its folder could be listed, not searched (mode r--)
+        overwrite_failures.append(str(p))
+        unlisted_folders.append(str(p.parent))
 
     def _track(p: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
-        s, overwritten, w = _shred(p, head_bytes=head_bytes)
+        s, overwritten, w = _shred(p, head_bytes=head_bytes, unreached=_unreached)
         if s and not overwritten:
             overwrite_failures.append(str(p))
         return s, overwritten, w
@@ -811,14 +919,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # it toward 32 GiB in the security read; a zeroed header reads as "rebuild from the log", which is already noise.
     for db in dbs:
         for p in (db.with_name(db.name + "-shm"), db):
-            if p.exists():
+            if _present(p, _unreached):
                 head_ok[p] = _overwrite(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
     for db in dbs:
         for suffix in ("-wal", "-journal"):
             p = db.with_name(db.name + suffix)
             if _hold(p, whole=True, generation=generation) is False:
                 missed.append(p.name)
-            s, overwritten, w = _shred(p)
+            s, overwritten, w = _shred(p, unreached=_unreached)
             seen += s
             wiped += w
             if s and not overwritten:
@@ -827,7 +935,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         for p in (db, db.with_name(db.name + "-shm")):
             if _hold(p, whole=False, generation=generation, kind="head" if p == db else "shm") is False:
                 missed.append(p.name)
-            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
+            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db, unreached=_unreached)
             overwritten = overwritten and head_ok.get(p, True)
             seen += s
             wiped += w
@@ -860,7 +968,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # rest of step 6, which rewrites everything left (a wiki dump can take hours) while a signing request waits.
     keys_dir: Path = paths["keys_dir"]
     with _key_files_lock():
-        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, shared=app_only)
+        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, shared=app_only, unreached=_unreached)
     seen += _s
     wiped += _w
 
@@ -919,12 +1027,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     copies_destroyed: list[str] = []
     plain_copies: list[Path] = []
     for folder in dict.fromkeys([base, *(db.parent for db in dbs)]):
-        for p in _db_copies(folder, base, dbs):
+        for p in _db_copies(folder, base, dbs, _unlisted):
             mode = _copy_mode(p, encrypted_store=encrypted is True)
             if mode == "plain":
                 plain_copies.append(p)
                 continue
-            s, overwritten, w = _shred(p, head_bytes=None if mode == "whole" else _SQLCIPHER_PAGE1, zeros=mode == "zeros")
+            s, overwritten, w = _shred(
+                p, head_bytes=None if mode == "whole" else _SQLCIPHER_PAGE1, zeros=mode == "zeros", unreached=_unreached
+            )
             seen += s
             wiped += w
             if s and not overwritten:
@@ -943,9 +1053,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    sits past its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a
     #    failure. In a folder the app does not own, only the app's entries are reached.
     heads_elsewhere = 0
-    roots = _erase_roots(base, app_only=app_only)
-    for p in _files_under(roots, base, _unlisted, skip=paths["keys_dir"]):
-        if p.is_symlink() or not p.is_file():
+    roots = _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)
+    for p in _files_under(roots, base, _unlisted, skip=paths["keys_dir"], unreached=_unreached):
+        if _kind(p, _unreached) != "file":
             continue
         name = p.name
         whole = name.endswith(("-wal", "-journal"))
@@ -978,9 +1088,12 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         chosen = configured_folder()
         if chosen is not None and chosen.resolve() == base.resolve():
             forget_volume_id()
-    roots = _erase_roots(base, app_only=app_only)  # listed again: a file the app wrote since 5b is the app's too
-    for p in _files_under(roots, base, _unlisted):  # never follows a symlinked folder (followlinks=False) or a junction
-        if p.is_symlink() or not p.is_file():
+    roots = _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)  # listed again: a file the app wrote since 5b is the app's too
+    for p in _files_under(roots, base, _unlisted, unreached=_unreached):  # never follows a symlinked folder or a junction
+        kind = _kind(p, _unreached)
+        if kind in ("absent", "unreached"):
+            continue  # gone already, or named as not overwritten (R798)
+        if kind != "file":
             # A link is removed, never written through: its target may be anywhere, outside the data dir included.
             # A FIFO, socket or device is removed too: opening one to write would block or reach hardware.
             with contextlib.suppress(OSError):
@@ -1007,16 +1120,24 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             shutil.rmtree(base, ignore_errors=True)
 
     overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
+    unlisted_folders[:] = list(dict.fromkeys(unlisted_folders))  # 5b and 6 walk the same folders
+    # The log names no path whole (R734/R736): each is written as its role, and one that cannot be read as such is withheld.
+    if unlisted_folders:
+        _LOG.error(
+            "CRYPTO-ERASE: could not check %d folder(s) it could not list; the erase may be incomplete: %s",
+            len(unlisted_folders),
+            _masked(unlisted_folders, base),
+        )
     if overwrite_failures:
         _LOG.error(
             "CRYPTO-ERASE: %d file(s) could NOT be overwritten (only unlinked, if that): %s",
             len(overwrite_failures),
-            overwrite_failures,
+            _masked(overwrite_failures, base),
         )
     _LOG.warning(
         "CRYPTO-ERASE executed on %s (encrypted=%s, %d/%d files, %d headers, %d keys, "
         "%d overwrite failures)",
-        base,
+        _masked([str(base)], base)[0],
         encrypted,
         wiped,
         seen,
@@ -1044,8 +1165,10 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "left_untouched": left["others"],
         "left_common_names": left["common"],
         "not_removed": left["not_removed"],
-        "removed": not base.exists(),
-        "limit": _LIMIT_NOTE,
+        "removed": not _present(base),
+        # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
+        "unlisted_folders": len(unlisted_folders),
+        "limit": _LIMIT_NOTE_UNLISTED if unlisted_folders else _LIMIT_NOTE,
     }
 
 
@@ -1103,7 +1226,7 @@ def full_secure_erase(
     with contextlib.suppress(OSError):
         shutil.rmtree(scrub_dir, ignore_errors=True)
 
-    _LOG.warning("SECURE-ERASE scrub on %s (%d passes, %d bytes total)", base, passes, total)
+    _LOG.warning("SECURE-ERASE scrub on %s (%d passes, %d bytes total)", _masked([str(base)])[0], passes, total)
     return {
         "phase": "free-space-scrub",
         "data_dir": str(base),

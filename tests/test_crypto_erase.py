@@ -291,7 +291,7 @@ def test_quick_crypto_erase_overwrites_the_columnar_key_sidecar_where_the_salt_l
     real_overwrite = crypto_erase._overwrite
     seen: dict[str, object] = {}
 
-    def spy(path, *, head_bytes=None, zeros=False):
+    def spy(path, *, head_bytes=None, zeros=False, **kw):
         done = real_overwrite(path, head_bytes=head_bytes, zeros=zeros)
         if path.name == sidecar.name:
             seen.update(done=done, head_bytes=head_bytes, after=path.read_bytes())
@@ -666,10 +666,10 @@ def test_an_encrypted_copy_in_the_data_folder_is_head_shredded_and_never_rewritt
     whole = []
     real_track = crypto_erase._shred
 
-    def spy(path, *, head_bytes=None, zeros=False):
+    def spy(path, *, head_bytes=None, zeros=False, **kw):
         if path.name == snap.name and head_bytes is None:
             whole.append(path)
-        return real_track(path, head_bytes=head_bytes, zeros=zeros)
+        return real_track(path, head_bytes=head_bytes, zeros=zeros, **kw)
 
     monkeypatch.setattr(crypto_erase, "_shred", spy)
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
@@ -785,10 +785,10 @@ def test_the_lane_pools_close_after_the_salt_pages_and_before_the_passphrase(tmp
     order = []
     real = crypto_erase._shred
 
-    def shred(path, *, head_bytes=None, zeros=False):
+    def shred(path, *, head_bytes=None, zeros=False, **kw):
         if path.name == "wiki.db":
             order.append("salt")
-        return real(path, head_bytes=head_bytes, zeros=zeros)
+        return real(path, head_bytes=head_bytes, zeros=zeros, **kw)
 
     monkeypatch.setattr(crypto_erase, "_shred", shred)
     monkeypatch.setattr(store, "dispose_all", lambda: order.append("dispose"))
