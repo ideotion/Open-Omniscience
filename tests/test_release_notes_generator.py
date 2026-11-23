@@ -692,18 +692,67 @@ def test_the_real_ledger_carries_no_placeholder_any_release_would_cite():
     )
 
 
+# --------------------------------------------------------------------------- #
+# Row 360: a history of our own. The tests that need "v0.2.0 then v0.3.0" build it
+# here, with the real tags' committer dates, instead of reading the runner's clone:
+# CI checks out at depth 1, so those tests passed or failed on whether the script's
+# own unshallow reached the network, not on the code.
+# --------------------------------------------------------------------------- #
+_TAG_DATES = (("v0.2.0", "2026-07-18T21:19:04+02:00"), ("v0.3.0", "2026-08-23T14:39:48+02:00"))
+
+
+def _two_release_repo(root: Path) -> Path:
+    """A non-shallow repo whose first-parent history carries v0.2.0 and then v0.3.0."""
+    repo = root / "releases"
+    repo.mkdir()
+    # Identity and dates through the environment only: no git config is written, global, user or local.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(GIT_AUTHOR_NAME="T", GIT_AUTHOR_EMAIL="t@e.com", GIT_COMMITTER_NAME="T", GIT_COMMITTER_EMAIL="t@e.com")
+
+    def git(*args, when=None) -> str:
+        run_env = dict(env)
+        if when:
+            run_env.update(GIT_AUTHOR_DATE=when, GIT_COMMITTER_DATE=when)
+        return subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *args],
+            cwd=repo, check=True, capture_output=True, text=True, env=run_env,
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    for i, (tag, when) in enumerate(_TAG_DATES):
+        (repo / f"f{i}").write_text(tag, encoding="utf-8")
+        git("add", f"f{i}")
+        git("commit", "-qm", tag, when=when)
+        git("tag", tag)
+    # No remote, so a fetch fails loudly rather than reaching the network; not shallow, so the
+    # script's ensure_unshallow is a no-op here by construction (its refusal is tested on its own).
+    assert git("remote") == ""
+    assert git("rev-parse", "--is-shallow-repository") == "false"
+    return repo
+
+
+def _rn_program(repo: Path, call: str) -> str:
+    """Load the shipped script as the workflow would, point its git at ``repo``, run ``call``."""
+    return (
+        "import importlib.util, sys;"
+        f"spec=importlib.util.spec_from_file_location('rn', {str(_SCRIPT)!r});"
+        "m=importlib.util.module_from_spec(spec);sys.modules['rn']=m;"
+        "spec.loader.exec_module(m);"
+        f"m._ROOT=__import__('pathlib').Path({str(repo)!r});"
+        f"{call}"
+    )
+
+
 def test_the_generator_runs_end_to_end_on_the_real_tree(tmp_path):
-    """A subprocess drive of the shipped script, not of an imported copy: it is what the
-    workflow calls, and the CLI is part of the contract."""
+    """A subprocess drive of the shipped script's CLI, not of an imported copy: it is what
+    the workflow calls, and the CLI is part of the contract. The ledger, the consent test
+    and the gate file are the real tree's; the tags come from a history built here (row 360),
+    so the answer never depends on how deep the runner's clone is."""
+    repo = _two_release_repo(tmp_path)
     out = tmp_path / "body.md"
+    argv = ["--tag", "v0.3.0", "--telemetry-check", "skip", "--allow-dirty", "--csv", str(_REAL_CSV), "-o", str(out)]
     proc = subprocess.run(
-        [
-            sys.executable, str(_SCRIPT),
-            "--tag", "v0.3.0",
-            "--telemetry-check", "skip",
-            "--allow-dirty",
-            "-o", str(out),
-        ],
+        [sys.executable, "-c", _rn_program(repo, f"sys.exit(m.main({argv!r}))")],
         cwd=_ROOT, capture_output=True, text=True, encoding="utf-8",
     )
     assert proc.returncode == 0, proc.stderr
@@ -844,7 +893,7 @@ def test_a_timestamp_with_no_offset_is_refused_not_assumed_local():
         rn.utc_day("2026-08-23T12:00:00")
 
 
-def test_commit_day_is_the_SAME_under_two_process_timezones():
+def test_commit_day_is_the_SAME_under_two_process_timezones(tmp_path):
     """The discriminating test, and the one the old code fails.
 
     `git log --date=format-local` renders in the PROCESS's timezone, so the same tag
@@ -855,12 +904,7 @@ def test_commit_day_is_the_SAME_under_two_process_timezones():
     is exactly where it bites. Driven in SUBPROCESSES because the timezone is process
     state that `time.tzset()` cannot un-see for an already-imported module.
     """
-    prog = (
-        "import importlib.util, sys;"
-        f"spec=importlib.util.spec_from_file_location('rn', {str(_SCRIPT)!r});"
-        "m=importlib.util.module_from_spec(spec);sys.modules['rn']=m;"
-        "spec.loader.exec_module(m);print(m.commit_day('v0.3.0'))"
-    )
+    prog = _rn_program(_two_release_repo(tmp_path), "print(m.commit_day('v0.3.0'))")
     out = {}
     for tz in ("UTC0", "Pacific/Auckland", "America/Los_Angeles"):
         proc = subprocess.run(
@@ -1023,9 +1067,11 @@ def test_previous_tag_walks_FIRST_PARENT_only(tmp_path, monkeypatch):
     )
 
 
-def test_previous_tag_still_finds_the_real_previous_release():
+def test_previous_tag_still_finds_the_real_previous_release(tmp_path, monkeypatch):
     """The twin. A walk that finds nothing is not a fix — it is the same defect
-    pointing the other way, and it would make every release claim the whole ledger."""
+    pointing the other way, and it would make every release claim the whole ledger.
+    On the two releases' own first-parent shape, built here (row 360)."""
+    monkeypatch.setattr(rn, "_ROOT", _two_release_repo(tmp_path))
     assert rn.previous_tag("v0.3.0") == "v0.2.0"
 
 
