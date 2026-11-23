@@ -101,6 +101,13 @@ def test_an_unmarked_renderer_is_counted():
     "src",
     [
         'function paint() { const h = $("x"); h.innerHTML = esc(t("Hello")); }',
+        'function paint() { $("x").textContent += trf("{n} more", {n: 1}); }',
+        'function paint() { $("x").outerHTML = `<p>${_t("Hello")}</p>`; }',
+        'function paint() { $("x").textContent = _tf("A {b}", {b: 1}) + _custT("C"); }',
+        'function paint() { $("x").textContent = OOI18N.t("Hello"); }',
+        'const paint = function () { $("x").textContent = t("Hello"); };',
+        'const paint = (h = $("x")) => { h.textContent = t("Hello"); };',
+        'const paint = h => { h.textContent = t("Hello"); };',
         'function paint() { $("x").innerHTML += `<b>${esc(tf("{n} items", {n: 2}))}</b>`; }',
         'async function paint() { $("x").insertAdjacentHTML("beforeend", OOI18N.tf("A {b}", {b: 1})); }',
         'const paint = (host) => { host.innerText = tr("Hello"); };',
@@ -122,6 +129,19 @@ def test_a_renderer_that_marks_its_output_is_exempt(src):
     assert _keys({"a.js": src}) == set()
 
 
+@pytest.mark.parametrize(
+    "src",
+    [
+        # a comparison, then a selector: not a tag in a string
+        'function paint() { for (let i = 0; i<3; i++) {} const h = $("x").closest("[data-i18n-dyn]"); h.textContent = t("Hello"); }',
+        # a read of the marker is not marking
+        'function paint() { const h = $("x"); if (h.dataset.i18nDyn) return; h.textContent = t("Hello"); }',
+    ],
+)
+def test_looking_for_the_marker_is_not_marking(src):
+    assert _keys({"a.js": src}) == {"a.js paint"}
+
+
 def test_a_comment_that_names_the_marker_exempts_nothing():
     src = 'function paint() {\n  // this host is marked data-i18n-dyn elsewhere\n  /* <div data-i18n-dyn> */\n  $("x").textContent = t("Hello");\n}'
     assert _keys({"a.js": src}) == {"a.js paint"}
@@ -132,7 +152,12 @@ def test_an_id_index_html_marks_dyn_is_exempt():
     assert fr.dyn_ids(html) == {"home-stats", "other"}
     src = 'function paint() { $("home-stats").textContent = t("Hello"); }'
     assert _keys({"a.js": src}, html) == set()
+    sel = 'function paint() { document.querySelector("#home-stats .n").textContent = t("Hello"); }'
+    assert _keys({"a.js": sel}, html) == set()
     assert _keys({"a.js": src}, '<div id="home-stats"></div>') == {"a.js paint"}
+    # the same word as an ordinary string key is not a lookup of that element
+    key = 'function paint() { const m = {"home-stats": 1}; $("x").textContent = t("Hello"); }'
+    assert _keys({"a.js": key}, html) == {"a.js paint"}
 
 
 def _chain(n: int) -> str:
@@ -157,6 +182,26 @@ def test_a_repaint_counts_within_three_calls_and_not_beyond(n, counted):
 def test_a_listener_registered_by_reference_repaints():
     src = RENDER + 'document.addEventListener("oo:langchange", paint);\n'
     assert _keys({"a.js": src}) == set()
+
+
+def test_a_repaint_in_one_file_does_not_exempt_a_namesake_in_another():
+    listener = 'document.addEventListener("oo:langchange", () => { paint(); });\nfunction paint() { $("y").textContent = "x"; }\n'
+    assert _keys({"a.js": listener, "b.js": "function wrap() { " + RENDER + " }"}) == {"b.js paint"}
+    # a TOP-LEVEL function of another file is what a bare call reaches
+    assert (
+        _keys(
+            {
+                "a.js": 'document.addEventListener("oo:langchange", () => { paint(); });',
+                "b.js": RENDER,
+            }
+        )
+        == set()
+    )
+
+
+def test_declaring_a_nested_function_is_not_calling_it():
+    src = 'document.addEventListener("oo:langchange", () => { outer(); });\nfunction outer() { function inner() { $("x").textContent = t("Hi"); } }'
+    assert _keys({"a.js": src}) == {"a.js inner"}
 
 
 def test_a_call_written_inside_a_string_is_not_a_repaint():

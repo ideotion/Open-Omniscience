@@ -20,30 +20,41 @@ METHOD (source only; nothing is executed):
   ``data-i18n-dyn`` exempts nothing. String, template and regex TEXT is blanked for the call graph
   and for bracket matching, so ``onclick="showTab(...)"`` inside an HTML string is not a call;
   ``${...}`` inside a template stays code. A regex is told from a division by the token before it.
-* Unit: a named function -- ``function f(``, ``async function f(`` or ``const f = (...) => {``.
-  Its OWN body is its body with nested named units cut out, so each line belongs to one unit.
+* Unit: a named function -- ``function f(``, ``async function f(``, ``const f = function(`` or an
+  arrow with a braced body, ``const f = (...) => {`` / ``const f = x => {``. Its OWN body is its
+  body with nested named units cut out, so each line belongs to one unit.
 * Hit: a unit whose own code has BOTH a sink (``.innerHTML``/``.textContent``/``.innerText``/
   ``.outerHTML`` assigned with ``=`` or ``+=``, or ``.insertAdjacentHTML(``) AND a translator call
   (``t(``, ``tf(``, ``tr(``, ``trf(``, ``_t(``, ``_tf(``, ``_custT(``, ``OOI18N.t(``, ``OOI18N.tf(``).
 * Exempt, any one of:
   1. the unit marks its output: ``setAttribute("data-i18n-dyn"``, ``dataset.i18nDyn``, or
      ``data-i18n-dyn`` inside an HTML tag in a string;
-  2. the unit names, in quotes, an element id that ``index.html`` marks ``data-i18n-dyn``;
+  2. the unit looks up an element that ``index.html`` marks ``data-i18n-dyn`` -- ``$("id")``,
+     ``getElementById("id")`` or a ``"#id..."`` selector;
   3. the unit is REPAINTED: it is called within ``REPAINT_DEPTH`` (3) steps of a
      ``document.addEventListener("oo:langchange", ...)`` listener -- by the listener, by a function
      the listener calls, or one step beyond that. A listener registered by reference
-     (``addEventListener("oo:langchange", paint)``) counts as calling it.
+     (``addEventListener("oo:langchange", paint)``) counts as calling it. Names resolve by scope,
+     approximately: a name declared in the caller's own file means that file's unit(s), otherwise
+     only TOP-LEVEL units of other files -- so a local ``paint()`` repainted in one file exempts
+     nothing called ``paint`` in another.
 
-WHY DEPTH 3 (measured on main ec444f9fa): depths 1-4 leave 362 / 314 / 296 / 287 hits. Depth 3
+WHY DEPTH 3 (measured on main ec444f9fa): depths 1-4 leave 363 / 314 / 299 / 292 hits. Depth 3
 adds real repaint chains (``repaintLawEvolutionFromCache`` -> ``renderLawWeek``, ``renderBriefing``
 -> ``renderCorpusTier``); depth 4 starts crediting paths that repaint nothing (``api()`` ->
 ``_noteReachable`` -> ``_paintHealth``, ``toggleNetwork`` -> ``ensureOnline``); the full closure
-collapses into one cycle of ~390 functions through ``showTab``/``openAnalysis*``.
+collapses into one cycle of ~390 functions through ``showTab``/``openAnalysis*`` (225 hits).
 
 BLIND SPOTS -- absence of a hit is weaker evidence than a hit:
 
-* Anonymous or method-style renderers (``x.render = function``, object and class methods) are
-  not units; their sinks are charged to the enclosing named unit, if any.
+* Anonymous or method-style renderers (``x.render = function``, object and class methods),
+  expression-bodied arrows and top-level code are not units; their sinks are charged to the
+  enclosing named unit, if any, and otherwise not seen.
+* A hit is unit-wide too: a sink and a ``t()`` call anywhere in the same unit count, even when
+  they touch different things (``x.textContent = n; toast(t("Saved"))``) -- a false-positive
+  source, so a listed unit may need reading before it is "fixed".
+* Two same-named units in ONE file share their repaint credit (scope inside a file is not
+  modelled), and a ``setAttribute("data-i18n-dyn")`` on some other element still exempts the unit.
 * Translator aliases other than the ones listed are not seen, nor is output from a helper that
   calls ``t()`` itself (``custodyActionHtml(e.action, tr)``) unless a listed call is also in the unit.
 * Exemption 2 is unit-wide: a unit that names one dyn id and also writes another, unmarked node
@@ -54,8 +65,10 @@ BLIND SPOTS -- absence of a hit is weaker evidence than a hit:
 * Attributes (``title``, ``placeholder``, ``aria-label`` set from ``t()``) are not sinks; attribute
   freezes are a separate class.
 * Sentences welded from fragments (row 347's class) are not detected, only frozen ones.
-* A regex literal that fools the division heuristic could misalign the lexer; ``lex`` reports
-  per-file bracket balance and the test asserts it, so that fails loudly instead of silently.
+* A regex literal that fools the division heuristic (a regex right after ``)``, as in
+  ``if (x) /re/.test(s)``, or a division right after ``++``) could misalign the lexer. That fails
+  loudly -- the test asserts per-file bracket balance, and an unbalanced span raises -- but a
+  misread span that happens to stay balanced would be blanked silently.
 
 Usage:
     python scripts/i18n_frozen_renderers.py      # one "file name" line per hit, sorted
@@ -91,18 +104,22 @@ _REGEX_KEYWORDS = frozenset(
         "await",
     )
 )
+# Three declaration shapes: function f( / const f = function( / const f = (...) => {  (or x => {).
 _DECL = re.compile(
     r"(?<![\w$.])(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\("
-    r"|(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?"
-    r"(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>\s*\{"
+    r"|(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\b[^(]*\("
+    r"|(?<![\w$.])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(\(|[A-Za-z_$][\w$]*\s*=>)"
 )
+_ARROW_BODY = re.compile(r"\s*=>\s*\{")
+_DECL_HEADER = re.compile(r"function\s+[A-Za-z_$][\w$]*\s*\(")
 _SINK = re.compile(
     r"\.(?:innerHTML|textContent|innerText|outerHTML)\s*\+?=(?!=)|\.insertAdjacentHTML\s*\("
 )
 _TRANSLATOR = re.compile(r"(?<![\w$.])(?:t|tf|tr|trf|_t|_tf|_custT)\s*\(|OOI18N\.tf?\s*\(")
-_MARKS_DYN = re.compile(
-    r"setAttribute\(\s*[\"']data-i18n-dyn|dataset\.i18nDyn|<[^<>`]*\bdata-i18n-dyn\b"
-)
+# The tag form must also start inside string text (checked against the skeleton), so a
+# comparison such as i<3 followed by a "[data-i18n-dyn]" selector is not read as a tag.
+_MARKS_DYN = re.compile(r"setAttribute\(\s*[\"']data-i18n-dyn|dataset\.i18nDyn\s*=(?!=)")
+_DYN_TAG = re.compile(r"<[A-Za-z][\w-]*\b[^<>`]*\bdata-i18n-dyn\b")
 _CALL = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(")
 _WORD = re.compile(r"[A-Za-z_$][\w$]*")
 _LISTENER = re.compile(r"addEventListener\(\s*[\"']oo:langchange[\"']")
@@ -248,17 +265,20 @@ def scan_sources(
 ) -> list[Hit]:
     """Every hit in ``sources`` (file name -> JS text), sorted by key."""
     units: list[dict] = []
-    roots: set[str] = set()
-    listener_bodies: list[str] = []
+    roots: set[int] = set()
+    listener_bodies: list[tuple[str, str]] = []
     for fname, js in sources.items():
         code, skel = lex(js)
         for d in _DECL.finditer(skel):
-            name = d.group(1) or d.group(2)
-            body_at = (
-                skel.index("{", _close(skel, skel.index("(", d.end() - 1), "(", ")"))
-                if d.group(1)
-                else d.end() - 1
-            )
+            name = d.group(1) or d.group(2) or d.group(3)
+            if d.group(1) or d.group(2):
+                body_at = skel.index("{", _close(skel, d.end() - 1, "(", ")"))
+            else:  # an arrow: only a braced body makes a unit
+                after = _close(skel, d.start(4), "(", ")") + 1 if d.group(4) == "(" else d.end() - 2
+                body = _ARROW_BODY.match(skel, after)
+                if not body:
+                    continue
+                body_at = body.end() - 1
             units.append(
                 {
                     "file": fname,
@@ -272,7 +292,7 @@ def scan_sources(
             )
         for m in _LISTENER.finditer(code):
             listener_bodies.append(
-                skel[m.end() : _close(skel, code.index("(", m.start()), "(", ")")]
+                (fname, skel[m.end() : _close(skel, code.index("(", m.start()), "(", ")")])
             )
 
     by_file: dict[str, list[dict]] = defaultdict(list)
@@ -295,12 +315,33 @@ def scan_sources(
             own_skel.append(u["skel"][cur : u["e"]])
             u["own_code"], u["own_skel"] = "".join(own_code), "".join(own_skel)
 
-    names = {u["name"] for u in units}
-    calls: dict[str, set[str]] = defaultdict(set)
+    # Names resolve by scope, approximately: a name declared in the caller's own file means that
+    # file's unit(s); otherwise only TOP-LEVEL units of other files (a nested helper is local to
+    # its file and can never be what another file calls). So a local paint() repainted in one
+    # file exempts nothing called paint elsewhere.
+    for i, u in enumerate(units):
+        u["id"] = i
+        u["nested"] = any(
+            v is not u and v["a"] < u["a"] and u["e"] <= v["e"] for v in by_file[u["file"]]
+        )
+    local: dict[tuple[str, str], list[int]] = defaultdict(list)
+    shared: dict[str, list[int]] = defaultdict(list)
     for u in units:
-        calls[u["name"]] |= {c for c in _CALL.findall(u["own_skel"]) if c in names}
-    for body in listener_bodies:  # a call, or a function handed over by reference
-        roots |= {w for w in _WORD.findall(body) if w in names}
+        local[(u["file"], u["name"])].append(u["id"])
+        if not u["nested"]:
+            shared[u["name"]].append(u["id"])
+
+    def resolve(name: str, fname: str) -> list[int]:
+        return local.get((fname, name)) or shared.get(name, [])
+
+    calls: dict[int, set[int]] = defaultdict(set)
+    for u in units:
+        skel_calls = _DECL_HEADER.sub(lambda m: " " * len(m.group(0)), u["own_skel"])
+        for c in set(_CALL.findall(skel_calls)):
+            calls[u["id"]].update(resolve(c, u["file"]))
+    for fname, listener in listener_bodies:  # a call, or a function handed over by reference
+        for w in set(_WORD.findall(listener)):
+            roots.update(resolve(w, fname))
     repainted, frontier = set(roots), set(roots)
     for _ in range(depth - 1):
         frontier = set().union(*(calls[x] for x in frontier)) - repainted if frontier else set()
@@ -312,9 +353,17 @@ def scan_sources(
         own_code, own_skel = u["own_code"], u["own_skel"]
         if not (_SINK.search(own_skel) and _TRANSLATOR.search(own_skel)):
             continue
-        if _MARKS_DYN.search(own_code) or u["name"] in repainted:
+        if u["id"] in repainted or _MARKS_DYN.search(own_code):
             continue
-        if any(f'"{i}"' in own_code or f"'{i}'" in own_code for i in ids):
+        if any(own_skel[m.start()] == " " for m in _DYN_TAG.finditer(own_code)):
+            continue
+        if any(
+            re.search(
+                rf"(?:\$|getElementById)\(\s*[\"']{re.escape(i)}[\"']\s*\)|[\"']#{re.escape(i)}\b",
+                own_code,
+            )
+            for i in ids
+        ):
             continue
         hits.append(Hit(u["file"], u["name"], u["line"]))
     return sorted(hits, key=lambda h: (h.key, h.line))

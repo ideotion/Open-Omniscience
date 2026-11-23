@@ -71,6 +71,7 @@ app-backup.js tick
 app-backup.js uninstallApp
 app-backup.js volBackupStart
 app-backup.js volRestoreStart
+app-boot.js load
 app-claim.js claimExport
 app-claim.js claimRun
 app-claim.js claimVerify
@@ -197,6 +198,7 @@ app-maintenance.js maintPairAct
 app-maintenance.js maintRender
 app-maintenance.js maintStart
 app-map.js _fpNav
+app-map.js _ooOsmLaneLegend
 app-map.js _osmGeogDraw
 app-map.js _renderDumpIndexStatus
 app-map.js _renderDumpPage
@@ -247,6 +249,7 @@ app-settings.js _rbPaint
 app-settings.js _rbPaintLanes
 app-settings.js _updPaintInstall
 app-settings.js cardSetEnabled
+app-settings.js done
 app-settings.js importNewsletters
 app-settings.js importPdfFolder
 app-settings.js importPdfs
