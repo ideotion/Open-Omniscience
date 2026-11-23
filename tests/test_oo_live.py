@@ -12,6 +12,8 @@ import pathlib
 import re
 import subprocess
 
+from tests.js_source_helper import function_body
+
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
 
@@ -32,15 +34,26 @@ def test_the_listener_repaints_and_the_helper_is_declared_once():
     boot = (_STATIC / "app-boot.js").read_text(encoding="utf-8")
     assert 'typeof ooLiveRepaint === "function") ooLiveRepaint();' in boot
     every = "".join(p.read_text(encoding="utf-8") for p in sorted(_STATIC.glob("*.js")))
-    for name in ("ooLive", "ooLiveHtml", "ooLiveRepaint", "_ooLiveTake", "_ooLiveDraw", "_ooLiveDrop", "_ooLiveMark", "_ooLiveForeign", "_ooLiveWatch"):
+    for name in (
+        "ooLive",
+        "ooLiveHtml",
+        "ooLiveRepaint",
+        "_ooLiveTake",
+        "_ooLiveDraw",
+        "_ooLiveDrop",
+        "_ooLiveMark",
+        "_ooLiveForeign",
+        "_ooLiveWatch",
+    ):
         found = re.findall(rf"(?<![\w$.])function\s+{name}\s*\(", every)
-        assert len(found) == 1, f"{name} declared {len(found)} times: a later one silently overrides"
+        assert len(found) == 1, (
+            f"{name} declared {len(found)} times: a later one silently overrides"
+        )
 
 
 def test_a_root_walk_keeps_the_records_the_walker_has_not_seen():
     """``apply(root)`` disconnects the walker's observer, which drops its queued records; a root walk from
     ooLiveHtml letting a host go must not lose a change made elsewhere in the same task, so they are taken first."""
-    src = (_STATIC / "i18n.js").read_text(encoding="utf-8")
-    body = src[src.index("function apply(root)"):src.index("function schedule()")]
+    body = function_body((_STATIC / "i18n.js").read_text(encoding="utf-8"), "apply")
     assert "observer.takeRecords().length) schedule();" in body
     assert body.index("takeRecords") < body.index("observer.disconnect()")
