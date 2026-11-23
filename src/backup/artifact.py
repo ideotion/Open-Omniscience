@@ -1047,6 +1047,52 @@ def read_artifact(
         raise
 
 
+#: The ceiling on a staged ``manifest.json`` (row 369): the volume manifest's own (``src.backup.volumes``), since the
+#: two list the same members and a backup this build wrote never comes near it.
+STAGED_MANIFEST_MAX_BYTES = 256 * 1024 * 1024
+
+
+def _read_staged_manifest(staging: Path) -> dict:
+    """The staged ``manifest.json`` as a JSON object, read the way every other manifest is (row 369): a regular file
+    only (a link, a pipe or a device is never opened for a read, and the open never blocks), at most
+    :data:`STAGED_MANIFEST_MAX_BYTES` long. Anything else is refused as unreadable, never read to its end."""
+    from src.backup.manifest_file import read_manifest_json
+
+    envelope = read_manifest_json(staging / "manifest.json", max_bytes=STAGED_MANIFEST_MAX_BYTES)
+    if not isinstance(envelope, dict):
+        raise ArtifactError(
+            "the backup's manifest could not be read (missing, not a regular file, larger than "
+            f"{STAGED_MANIFEST_MAX_BYTES} bytes, or not a JSON object)"
+        )
+    return envelope
+
+
+def _staged_member_problem(path: Path, entry: dict) -> str | None:
+    """Why the staged member at ``path`` is not the one ``entry`` lists, or None when it is (row 369).
+
+    Read the way the backup checks read a listed file (rows 336, 342): a regular file only, and never more than one
+    byte past the size the manifest lists, so a member that is a link, a pipe or a device is named unreadable without a
+    read, and one larger than listed (or growing while it is read) is a mismatch without being hashed to its end. An
+    entry from a build that listed no whole-number size is still hashed, regular files only."""
+    from src.backup.bounded_hash import LongerThanListed, sha256_read
+    from src.backup.regular_file import NotARegularFile, open_regular
+
+    listed = entry.get("bytes")
+    max_bytes = listed if isinstance(listed, int) and not isinstance(listed, bool) and listed >= 0 else None
+    try:
+        with open_regular(path) as f:
+            digest = sha256_read(f, max_bytes)
+    except NotARegularFile:
+        return "unreadable: not a regular file (a link, a pipe or a device is never read)"
+    except LongerThanListed:
+        return "larger than its listed size (corrupted or altered)"
+    except OSError as exc:
+        return f"unreadable ({type(exc).__name__})"
+    if digest != entry.get("sha256"):
+        return "sha256 mismatch (corrupted or altered)"
+    return None
+
+
 def _finalize_staged(
     staging: Path,
     was_encrypted: bool,
@@ -1062,7 +1108,7 @@ def _finalize_staged(
     member becomes the plaintext copy the merge reads; keeping both would double
     the staging disk at corpus scale) — they are exempt from the missing/hash
     check here, having passed the equivalent check upstream."""
-    envelope = json.loads((staging / "manifest.json").read_text("utf-8"))
+    envelope = _read_staged_manifest(staging)
     manifest = envelope.get("manifest") or {}
     schema = manifest.get("backup_schema")
     if schema not in ACCEPTED_BACKUP_SCHEMAS:
@@ -1098,10 +1144,10 @@ def _finalize_staged(
         p = member_path(staging, m["name"])
         if p is None:
             hash_failures.append(f"{m['name']}: unsafe member name")
-        elif not p.exists():
+        elif not os.path.lexists(p):  # a link is never followed to decide this: a dangling one is "not a regular file"
             hash_failures.append(f"{m['name']}: missing from archive")
-        elif _sha256_file(p) != m.get("sha256"):
-            hash_failures.append(f"{m['name']}: sha256 mismatch (corrupted or altered)")
+        elif (problem := _staged_member_problem(p, m)) is not None:
+            hash_failures.append(f"{m['name']}: {problem}")
 
     custody = staging / _CUSTODY_DB
     return StagedArtifact(
