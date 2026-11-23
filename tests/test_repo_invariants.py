@@ -291,7 +291,9 @@ def test_prune_unused_keywords_action_is_discoverable():
     # the SAME prune_orphan_keywords GC once the pass completes.
     start = _js_function_source(app, "_startReindexJob")
     _assert_js_present(start, "/api/insights/reindex-job?", why="the UI starts the background job")
-    _assert_js_present(start, "prune_after=", why="the UI asks the job to prune after the pass")
+    _assert_js_present(
+        start, "prune_after=${pruneAfter", why="the UI asks the job to prune after the pass"
+    )
     route = _py_function_source(api, "insights_reindex_job")
     assert "prune_after" in route, "the reindex-job route must accept prune_after"
     job = (_SRC / "analytics" / "reindex_job.py").read_text(encoding="utf-8")
@@ -5174,13 +5176,18 @@ def test_corpus_window_mindmap_subtab():
         assert sib in nav, f"analysis sub-tab regressed: {sib} missing"
     load = _js_function_source(html, "loadAnalysis")
     _assert_js_present(load, '$("an-mindmap")', why="the Mindmap renders into its own #an panel")
+    # The graph's own params are a CLONE of the window's scope, and that clone is what is
+    # sent (an-mindmap-wrong-corpus-scope, P1): a bare "new URLSearchParams(p)" also matches
+    # the lens line at the top of loadAnalysis, so it would pass a corpus-wide graph.
     _assert_js_present(
         load,
-        "new URLSearchParams(p)",
+        "const gp = new URLSearchParams(p)",
         why="the graph is scoped to THIS window's corpus, never corpus-wide",
     )
     _assert_js_present(
-        load, '"/api/insights/graph?"', why="the EXISTING graph endpoint, no new backend"
+        load,
+        '"/api/insights/graph?" + gp.toString()',
+        why="the EXISTING graph endpoint, asked with the window-scoped params",
     )
     _assert_js_present(load, "renderAnMindmap(g, mm)")
     assert html.count("async function renderMindmap(") == 1, "renderMindmap must not be forked"
