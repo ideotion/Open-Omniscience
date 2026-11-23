@@ -1254,8 +1254,8 @@ class SnapshotLeftOnDisk(OSError):
         self.path = path
 
 
-#: R799: said where no handle on the private folder can be held (Windows) and the folder was moved during the copy, so its files
-#: could not be reached to remove them. Translated x12 through ``ooServerText``.
+#: R799: said when the private folder was moved during the copy and its files could not be removed (no handle on it could be held,
+#: as on Windows, or removing through the handle failed). Translated x12 through ``ooServerText``.
 SNAPSHOT_FOLDER_MOVED = (
     "A plaintext copy of the store did not finish, and its private folder was moved during the copy, so the unfinished file could "
     'not be removed: an incomplete plaintext copy may still be on disk, in the folder that was at "{path}". It is not a usable '
@@ -1264,7 +1264,7 @@ SNAPSHOT_FOLDER_MOVED = (
 
 
 class SnapshotFolderMoved(SnapshotLeftOnDisk):
-    """R799: :class:`SnapshotLeftOnDisk` for a private folder moved during the copy where no handle on it could be held."""
+    """R799: :class:`SnapshotLeftOnDisk` for a private folder moved during the copy whose files could not be removed."""
 
     def __init__(self, path: Path) -> None:
         OSError.__init__(self, SNAPSHOT_FOLDER_MOVED.format(path=path))
@@ -1333,7 +1333,8 @@ def _empty_held(work: Path, ident: tuple[int, int], fd: int) -> bool:
     holds it; an empty folder left elsewhere holds no copy. Returns whether no file of the copy is left. Never raises."""
     try:
         for name in os.listdir(fd):
-            os.unlink(name, dir_fd=fd)  # never follows; a sub-folder (never made here) fails, and the copy is said to be left
+            with contextlib.suppress(OSError):  # one entry that fails never keeps the others; what stays is said below
+                os.unlink(name, dir_fd=fd)  # never follows; a sub-folder (never made here) fails, and the copy is said to be left
         if os.listdir(fd):
             return False
     except OSError:
@@ -1374,9 +1375,8 @@ def _empty_and_remove(work: Path, ident: tuple[int, int], fd: int | None = None)
             return False
         os.rmdir(work)
         return True
-    except FileNotFoundError:
-        return _dir_identity(work) is None and not os.path.lexists(work)
     except OSError:
+        # a name that vanished mid-walk may be the folder moved away with the copy still in it: never said to be removed
         return False
 
 
@@ -1531,7 +1531,7 @@ def _undo(
 ) -> tuple[Path | None, bool]:
     """After a failure: the name given to the copy (only while it still holds that file, never through a link) and the whole private
     folder go, through the held descriptor where there is one. Returns a path that may still hold an incomplete plaintext copy (or
-    ``None``) and whether that is because the folder was moved where no descriptor could be held. Never raises."""
+    ``None``) and whether the folder was moved, so that path no longer holds it. Never raises."""
     if placed is not None and made is not None:
         try:
             st = os.lstat(placed)
@@ -1547,7 +1547,7 @@ def _undo(
         return (work if os.path.lexists(work) else None), False
     if _empty_and_remove(work, ident, held):
         return None, False
-    return work, held is None and _dir_identity(work) != ident
+    return work, _dir_identity(work) != ident  # moved: the copy is wherever the folder went, so the message says so
 
 
 def _snapshot_into(src_p: Path, dest_p: Path) -> None:

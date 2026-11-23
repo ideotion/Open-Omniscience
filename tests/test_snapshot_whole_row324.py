@@ -630,3 +630,25 @@ def test_the_off_peak_maintenance_sweeps_snapshot_leftovers_again():
 
     body = python_function_source((ROOT / "src" / "scheduler" / "maintenance.py").read_text(encoding="utf-8"), "run_idle_maintenance")
     assert "sweep_snapshot_leftovers(data_dir())" in body
+
+
+def test_a_name_that_vanished_mid_cleanup_without_a_handle_is_never_said_removed(tmp_path, monkeypatch):
+    # the security read on the held-handle delta: without a handle, a file gone from under the walk may be the folder moved away
+    # with the copy in it, so it is said to be left, never removed
+    src = tmp_path / "store.db"
+    _plain_store(src)
+    dest = tmp_path / "snap.db"
+    monkeypatch.setattr(connect_mod, "_open_dir", lambda work, ident: None)
+    _fail_mid_copy(monkeypatch, src, dest, encrypted=False)
+    real_unlink = os.unlink
+
+    def vanished(path, *a, **kw):
+        if Path(str(path)).parent.name.startswith(connect_mod.SNAPSHOT_WORK_PREFIX):
+            raise FileNotFoundError(2, "No such file or directory")
+        return real_unlink(path, *a, **kw)
+
+    scope_os(monkeypatch, connect_mod, unlink=vanished)
+    with pytest.raises(SnapshotLeftOnDisk) as left:
+        snapshot_to_plaintext(src, dest)
+    assert "may still be on disk" in str(left.value)
+    assert not dest.exists()
