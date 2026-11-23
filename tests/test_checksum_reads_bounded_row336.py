@@ -13,8 +13,10 @@ from pathlib import Path
 
 import pytest
 
+import src.backup.bounded_hash as bounded_hash
 import src.backup.volumes as vol
 from src.backup.volumes import _COPY_BUF, _digest_matches, listed_bytes
+from tests.os_scope import scope_os
 
 
 def _sparse(path: Path, size: int) -> Path:
@@ -45,7 +47,7 @@ def test_a_volume_that_grows_while_it_is_read_is_cut_one_block_past_its_size(tmp
     listed = 3 * _COPY_BUF + 17
     grower = _sparse(tmp_path / "v0002.ooenc", 40 * _COPY_BUF)
     real_fstat = os.fstat
-    monkeypatch.setattr(vol.os, "fstat", lambda fd: os.stat_result((*real_fstat(fd)[:6], listed, *real_fstat(fd)[7:])))
+    scope_os(monkeypatch, bounded_hash, fstat=lambda fd: os.stat_result((*real_fstat(fd)[:6], listed, *real_fstat(fd)[7:])))
     total = [0]
     real_open = vol.open_regular
 
