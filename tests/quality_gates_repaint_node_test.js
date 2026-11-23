@@ -85,7 +85,9 @@ function load(names, prelude, exportsList) {
     const saved = [];
     const mod = load(["_apiErrorMessage", "overlayMerge"], `
       var window = {};
-      var _qualMergeLast = null;
+      var _qualMergeLast = null, _qualMergeRefusal = null;
+      // ooLive as a text write and a release as a no-op: the lines these assert on are the TEXT the render returns
+      function ooLive(el, render) { if (render) el.textContent = render(); }
       function _renderOverlayMerge() { throw new Error("a refusal must not render a report"); }
       function $(id) { return __els[id]; }
       function _qualTf(s, v) { return String(s).replace(/\\{(\\w+)\\}/g, (m, k) => v[k]); }
@@ -121,7 +123,9 @@ function load(names, prelude, exportsList) {
     const mod = load(["_apiErrorMessage", "overlayMerge", "_renderOverlayMerge"], `
       var window = { OOI18N: { t: (s) => __lang + ":" + s, tf: (s, v) => __lang + ":" + String(s).replace(/\\{(\\w+)\\}/g, (m, k) => v[k]) } };
       var OOI18N = window.OOI18N;
-      var _qualMergeLast = null;
+      var _qualMergeLast = null, _qualMergeRefusal = null;
+      // ooLive as a text write and a release as a no-op: the lines these assert on are the TEXT the render returns
+      function ooLive(el, render) { if (render) el.textContent = render(); }
       function _qualTf(s, v) { return OOI18N.tf(s, v); }
       function $(id) { return __els[id]; }
       function _overlaySaveAs() {}

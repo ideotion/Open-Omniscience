@@ -500,7 +500,8 @@ def test_the_page_says_the_install_was_stopped_when_protected_mode_is_saved():
 
 def test_the_setup_chain_and_the_catalog_show_the_stop_note_instead_of_a_bare_cancel():
     js = _js("app-ai-tools.js")
-    assert js.count('say(done.stopped_note ? t(done.stopped_note) : t("Cancelled."))') == 2
+    # a render since row 367, so the line follows a language switch
+    assert js.count('say(() => (done.stopped_note ? t(done.stopped_note) : t("Cancelled.")))') == 2
     assert "st.stopped_note ? t(st.stopped_note)" in js
 
 
