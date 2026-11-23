@@ -27,6 +27,7 @@ from src.annotations.bundle import (
 )
 from src.monitoring.secret_scrub import log_failure
 from src.safety.file_lock import atomic_replace, file_lock
+from src.utils.interrupts import kept_items
 
 _LOG = logging.getLogger(__name__)
 STORE_VERSION = "oo-annotations-store-1"
@@ -213,7 +214,8 @@ def adopt_imported_record(record: dict, *, allow_trusted: bool = False, withheld
             }
         # Write the record with the trust flag the CALLER's verification context allows —
         # never the incoming flag verbatim (an unverified artifact must not auto-trust).
-        stored = {k: v for k, v in record.items() if allow_trusted or k != TRUST_WITHHELD}
+        # a frame of its own: a filtered comprehension under the lock's ``with`` (src/utils/interrupts.py)
+        stored = kept_items(record, lambda k, _v: allow_trusted or k != TRUST_WITHHELD)
         stored["trusted"] = trusted
         if withheld and _SIGNER_HEX.match(signer):
             stored[TRUST_WITHHELD] = {"signer": signer}
