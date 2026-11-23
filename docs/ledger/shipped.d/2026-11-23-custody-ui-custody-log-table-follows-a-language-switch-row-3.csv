@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-23,custody/ui,Custody log table follows a language switch (row 351),shipped,PR pending; row 351,src/static/app-ai-tools.js;src/static/app-boot.js;tests/test_custody_log_repaint_row351.py,"The custody log table (headers, Action and Time cells) is drawn by custodyEntriesPaint into a data-i18n-dyn table that keeps its entries; the oo:langchange listener repaints it from them with no fetch; a failed load clears the kept entries."

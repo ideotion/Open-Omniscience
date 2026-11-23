@@ -2723,21 +2723,37 @@
       return alg ? `<code dir="ltr">${esc(alg)}</code>` : "?";
     }
 
+    // Row 351: the entries table is drawn here in the reader's language (headers, Action and Time cells), so the i18n
+    // walker keeps out (it would cache the first language as "the English" and freeze it) and a language switch repaints
+    // it from the entries kept on the table, with no fetch (custodyEntriesRepaint, from the oo:langchange listener).
+    function custodyEntriesPaint(host, entries) {
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      host.setAttribute("data-i18n-dyn", "");
+      host._ooCustEntries = entries;
+      host.innerHTML = `<tr><th>#</th><th>${esc(tr("Action"))}</th><th>${esc(tr("Actor"))}</th><th>${esc(tr("Time"))}</th>`
+        + `<th>${esc(tr("Signature"))}</th></tr>` +
+        entries.map(e =>
+          `<tr><td>${esc(String(e.seq))}</td><td>${custodyActionHtml(e.action, tr)}</td><td translate="no">${esc(e.actor||"—")}</td>
+           <td class="muted" style="font-size:12px">${custodyEntryTimeHtml(e.timestamp, tr)}</td>
+           <td><span class="pill" translate="no">${custodySigHtml(e.signature)}</span></td></tr>`).join("");
+    }
+    function custodyEntriesRepaint() {
+      const host = $("cust-entries");
+      if (host && Array.isArray(host._ooCustEntries)) custodyEntriesPaint(host, host._ooCustEntries);
+    }
+
     async function viewChain() {
       const id = custItem(); if (!id) return;
-      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const trf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       try {
         const d = await api("/api/custody/" + encodeURIComponent(id));
-        const t = $("cust-entries");
-        t.innerHTML = "<tr><th>#</th><th>Action</th><th>Actor</th><th>Time</th><th>Signature</th></tr>" +
-          d.entries.map(e =>
-            `<tr><td>${esc(String(e.seq))}</td><td>${custodyActionHtml(e.action, tr)}</td><td translate="no">${esc(e.actor||"—")}</td>
-             <td class="muted" style="font-size:12px">${custodyEntryTimeHtml(e.timestamp, tr)}</td>
-             <td><span class="pill" translate="no">${custodySigHtml(e.signature)}</span></td></tr>`).join("");
+        custodyEntriesPaint($("cust-entries"), Array.isArray(d.entries) ? d.entries : []);
         $("cust-result").textContent = trf("Custody entries: {n}", { n: d.entry_count });
-      } catch (e) { $("cust-entries").innerHTML = ""; toast(_failMsg("View chain: {error}", e), "err"); }
+      } catch (e) {
+        const host = $("cust-entries"); host._ooCustEntries = null; host.innerHTML = "";
+        toast(_failMsg("View chain: {error}", e), "err");
+      }
     }
 
     async function verifyChain() {
