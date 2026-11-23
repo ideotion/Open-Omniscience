@@ -127,6 +127,7 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/wiki/lane_search.py": {"getattr reaches how, a way round the scan of the log calls": 1},
     "src/backup/runlog.py": {"getattr reaches attr, a way round the scan of the log calls": 1},
     "src/backup/folder_backup.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # R787: reads the errno of the OSError from placing one artifact member to tell a name this system cannot hold (refused, that member only) from any other failure (raised); its words are not used
+    "src/safety/crypto_erase.py": {"the caught exception 'exc' is used outside a scrubbing call": 4},  # R798 (row 333): ``_absent`` reads the class and errno of a failed lstat or stat to tell "not there" from "could not be looked at", and ``_listing`` hands a failed listing to the R798 callback, which takes only its ``filename`` (the folder, for the report and a masked log line); its words are not used
 }
 
 #: Functions that take a caught exception to CLASSIFY it (a bool, an enum, an int, a class name) or to build an in-memory dedupe

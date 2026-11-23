@@ -791,9 +791,11 @@ imply a protection we cannot deliver.
   main file, log and log index with one `F_GETLK` (the shared locks SQLite holds for as long as a connection is open in WAL
   mode; never this process's own, and no process id is read); and while a holder is seen it rewrites through its kept
   descriptors every 100 ms for at most 2 s, each pass stopped at the bound and each file rewritten up to its size when kept
-  plus 256 MiB, so a holder that grows the shared file cannot make the erase fill the disk; the panic wipe's 15 s late pass
+  plus 256 MiB, so a holder that grows the shared file cannot make the erase fill the disk; then (R796) one more rewrite,
+  under a 2 s bound of its own, always runs, whatever was found; the panic wipe's 15 s late pass
   does the same before it lets its descriptors go (its finding is logged, without a path). The report says `other_holder`:
-  `none` (none SEEN), `held` (one was still there when the bound ended: the result says the erase may be incomplete, names
+  `none` (none SEEN), `held` (one was seen at any point of the check, even if it let go before the end, since it may have
+  written behind the last rewrite: the result says the erase may be incomplete, names
   closing that program or restarting the computer, and its `limit` no longer claims the corpus unrecoverable) or `unknown`
   (Windows, where an open file cannot be found from here, a platform whose lock record is not read, a check that failed, or a
   store file that could not be kept: said as such, never clean). Stated limits: a program that has the database open but holds
@@ -802,9 +804,19 @@ imply a protection we cannot deliver.
   (measured: such a process's next write was refused and left no salt, because SQLite rereads page 1 and finds it destroyed;
   a transaction already under way that commits page 1 after the last rewrite is the window left); a holder on another
   machine sharing the folder over a network file system may hold locks this machine cannot see; key files, the cache and
-  `anchors.db` are not checked. With no other holder the check costs one probe per kept file. Every file under the data
+  `anchors.db` are not checked. With no other holder the check costs two probes per kept file and the one more rewrite (bounded the same way, heads first);
+  a probe that could not tell is never cleared by a later one that saw nothing. Every file under the data
   dir the earlier steps did not
   handle is then overwritten in full, so a future large file there must get its own unlink-only step after its key is gone.
+  A folder any walk of either erase could not list (R798, row 333: the keys folder, the copies beside each database, the app's
+  own entries of a shared folder, steps 5b and 6, and the uninstall watcher's top-level, keys and data walks) holds files the
+  erase never checked: the result is then "may be incomplete" (`unlisted_folders` in the panic report, a visible caveat ×12),
+  the log says "could not check" with the count and each path as its role, and "destroyed" is said only when every folder was
+  listed and every targeted file was overwritten. A folder that is not there is not one it could not list. A folder that can be
+  listed but not searched (mode r--) counts too: an entry in it that cannot be looked at is never taken for a link, a file
+  already handled or one that is not there; it is named as not overwritten and its folder as one it could not check, in both
+  copies, and it never stops the erase. The log's path masking is told the erase's data folder, so it never makes again the
+  folder the erase has just removed.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
@@ -832,7 +844,7 @@ imply a protection we cannot deliver.
   `F_GETLK` per kept file, a rewrite every 100 ms for about 2 s while a holder is seen, then always one more rewrite bounded
   by another 2 s plus the disk's flush, salt-bearing heads first, each file capped at its size when kept plus 256 MiB, at
   most 64 files kept); its audit log (`~/.open-omniscience-uninstall.log`) then says, without a path or a process id, that
-  another program had the database open while the erase ran (once a holder is seen, never "none"), that it could not check
+  another program had the database open during the erase (once a holder is seen, never "none"), that it could not check
   (always so on Windows, and whenever a store file was a link, could not be kept or nothing was probed), or that none was
   seen. No line of that log names a path or a process id (row 334): a path is written as its role (`<data>`, `<home>/.../<file name>`, `.../<file name>`), and one it cannot read as `<path withheld>`. A holder with no lock at that moment, one using a locking scheme `F_GETLK` does not see, or one on another computer
   through a network share cannot be seen, so "none" is never a proof. Such

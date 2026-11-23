@@ -64,7 +64,12 @@ from starlette.requests import HTTPConnection
 from src.api._wiring import wire
 from src.api.country_wire import CountryWireResponse
 from src.api.country_wire import CountryWireResponse as JSONResponse
-from src.api.search_filters import AdvancedSearch, advanced_search_params, published_until, result_ordering
+from src.api.search_filters import (
+    AdvancedSearch,
+    advanced_search_params,
+    published_until,
+    result_ordering,
+)
 from src.catalog.provenance import (
     NEWSLETTER_DOMAINS,
     PROVENANCE_CLASSES,
@@ -75,7 +80,13 @@ from src.database.file_identity import REPLACED_WORDS, StoreReplacedError
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
-from src.monitoring.secret_scrub import http_detail, is_driver_text, log_failure, scrubbed, unicode_note
+from src.monitoring.secret_scrub import (
+    http_detail,
+    is_driver_text,
+    log_failure,
+    scrubbed,
+    unicode_note,
+)
 
 # Configure logging using shared config
 from src.utils.access_log import install_access_line_filter
@@ -4013,12 +4024,16 @@ def _panic_cli(*, force: bool) -> None:
     # R792: only "none" is a clean erase; the other two are said in plain words, never folded into the line above.
     holder = report.get("other_holder", "unknown")
     if holder == "held":
-        print("THE ERASE MAY BE INCOMPLETE: another program still had the database open when the erase ended, and it may have "
+        print("THE ERASE MAY BE INCOMPLETE: another program had the database open during the erase, and it may have "
               "written the database's key material back to the disk. Close that program or restart the computer; overwriting the "
               "disk's free space after that may reach what it wrote, but not reliably on SSDs or copy-on-write file systems.")
     elif holder != "none":
         print("The erase could not check whether another program had the database open. If one did, the erase may be "
               "incomplete: close such a program or restart the computer.")
+    if report.get("unlisted_folders"):
+        # R798: the files in a folder the erase could not list were never checked.
+        print(f"THE ERASE MAY BE INCOMPLETE: it could not list {report['unlisted_folders']} of the folders it was to erase, so it "
+              "could not check the files in them. Make those folders readable (the app log names them), then run the wipe again.")
     print(report["limit"])
 
 

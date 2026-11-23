@@ -101,17 +101,31 @@ _ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", "analytics.
 # included, in a WAL frame or the journal far past their first 4 KiB. Only the -shm index (no page data) is head-only.
 def header_only(name):
     return name in _ENC or any(name == b + "-shm" for b in _ENC)
-def overwrite(p, head_only):
+def overwrite(p, head_only):   # True once every byte it was to write is written and synced (R798: nothing else is "destroyed")
     try:
-        if os.path.islink(p) or not os.path.isfile(p): return   # a link is never written through, nor a FIFO or a device
-        n = os.path.getsize(p)
+        try: st = os.lstat(p)
+        except FileNotFoundError: return True                          # gone already: nothing left to overwrite
+        except OSError: unreached(p); return False                     # could not be looked at: never counted as handled
+        if not stat.S_ISREG(st.st_mode): return True   # a link is never written through, nor a FIFO or a device
+        n = st.st_size
         limit = min(n, PAGE1) if head_only else n
         with open(p, "r+b", buffering=0) as f:
             w = 0
             while w < limit:
                 c = os.urandom(min(CHUNK, limit - w)); f.write(c); w += len(c)
             f.flush(); os.fsync(f.fileno())
-    except OSError: pass
+        return True
+    except OSError: return False
+# R798: every folder a walk of the wipe could not list (it then checked none of the files in it); one is enough for "may be
+# incomplete", and the log gives their count and each as its role (tok), never "DB salt pages destroyed".
+unlisted_dirs = []
+def unlisted(e):
+    if not isinstance(e, FileNotFoundError): unlisted_dirs.append(getattr(e, "filename", None))   # gone mid-walk: nothing in it
+def unreached(p): unlisted_dirs.append(os.path.dirname(p))   # its folder could be listed, not searched (mode r--)
+def there(p):   # never following a link; one that cannot be looked at is there, and named when it is reached (R798)
+    try: os.lstat(p); return True
+    except (FileNotFoundError, NotADirectoryError): return False
+    except OSError: return True
 # R792 (part B): ANOTHER process holding the database (a second copy of the app, a database tool) keeps the unlinked files alive
 # and can go on committing into them, salt included -- measured on this watcher: a process writing in a loop through it kept
 # the salt in 5 runs of 5. Never waited on and never signalled: a descriptor is kept on each SQLite file of an encrypted
@@ -127,7 +141,7 @@ except ImportError:
 LAYOUT = "hhqqi" if sys.platform.startswith("linux") else ("qqihh" if sys.platform == "darwin" else None)
 BOUND = 2.0; STEP = 0.1; GROWTH = 256 * 1024 * 1024; MAX_KEPT = 64
 _SQL = tuple(n for n in _ENC if "duckdb" not in n)
-kept = []; held_stat = {"missed": 0, "seen": 0, "ever": False}
+kept = []; held_stat = {"missed": 0, "seen": 0, "ever": False, "unknown": False}
 def sqlite_kind(name):
     for b in _SQL:
         if name == b: return "head"
@@ -165,6 +179,7 @@ def holder_state():
         h = holder(fd)
         if h: held_stat["ever"] = True; return "held"
         unknown = unknown or h is None
+    if unknown: held_stat["unknown"] = True   # never cleared by a later probe that saw nothing (R796, the panic copy too)
     return "unknown" if unknown else "none"
 def rewrite_kept(deadline):
     # the salt-bearing heads first, so a long log cannot use the whole bound before a main file's first page is reached
@@ -198,8 +213,9 @@ def check_other_holders():
     rewrite_kept(time.monotonic() + BOUND)   # always, whatever was found: what a holder committed before it let go, or unseen
     state = holder_state()
     if held_stat["ever"]: state = "held"     # a program seen holding it during the erase may have written behind the rewrite
+    elif held_stat.get("unknown"): state = "unknown"
     if state == "held":
-        rec("THE ERASE MAY BE INCOMPLETE: another program had the database open while the erase ran, and it may have "
+        rec("THE ERASE MAY BE INCOMPLETE: another program had the database open during the erase, and it may have "
             "written the database's key material back to the disk. Close that program or restart the computer; overwriting the "
             "disk's free space after that may reach what it wrote, but not reliably on SSDs or copy-on-write file systems.")
     elif state == "unknown":
@@ -228,10 +244,12 @@ wd = plan.get("wipe_data_dir")
 only = plan.get("app_only")
 def linkish(p):   # a symlink, or a Windows junction (os.walk enters those); any reparse point on a Python without isjunction
     try:
-        if os.path.islink(p): return True
+        st = os.lstat(p)
+        if stat.S_ISLNK(st.st_mode): return True
         if hasattr(os.path, "isjunction"): return os.path.isjunction(p)
-        return bool(getattr(os.lstat(p), "st_file_attributes", 0) & 0x400)
-    except OSError: return True
+        return bool(getattr(st, "st_file_attributes", 0) & 0x400)
+    except FileNotFoundError: return True    # gone: nothing to enter
+    except OSError: unreached(p); return True   # could not be looked at: never entered, and named (R798)
 def ours(nm):
     for c in dict.fromkeys((nm, re.sub(only["strip"], "", nm))):
         if c and (c in only["names"] or c.startswith(tuple(only["prefixes"])) or c.endswith(tuple(only["suffixes"]))): return True
@@ -239,31 +257,36 @@ def ours(nm):
 def roots():
     if not only: return [wd]
     try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if ours(nm)]
-    except OSError: tops = []
+    except FileNotFoundError: tops = []
+    except OSError as e: unlisted(e); tops = []
     keys = [os.path.join(wd, k) for k in only.get("key_paths", [])]
     kd = os.path.join(wd, "keys")
     try: keys += [os.path.join(kd, n) for n in os.listdir(kd) if n.endswith(tuple(only.get("key_suffixes", [])))]
-    except OSError: pass
-    return tops + [p for p in dict.fromkeys(keys) if os.path.lexists(p)]
+    except FileNotFoundError: pass
+    except OSError as e: unlisted(e)
+    return tops + [p for p in dict.fromkeys(keys) if there(p)]
+if wd and not os.path.isdir(wd) and there(wd):
+    rec("could not check the data folder %s: THE ERASE MAY BE INCOMPLETE" % tok(wd))   # there, but not a folder it can look at
 if wd and os.path.isdir(wd):
-    seen = wiped = 0
+    seen = wiped = not_overwritten = 0
     for top in roots():
         if top != wd and (linkish(top) or not os.path.isdir(top)):
             k = sqlite_kind(os.path.basename(top))
             if k and linkish(top): held_stat["seen"] += 1; held_stat["missed"] += 1   # a linked store file is never followed
             elif k: keep(top, k)
-            seen += 1; overwrite(top, header_only(os.path.basename(top)))
+            seen += 1
+            if not overwrite(top, header_only(os.path.basename(top))): not_overwritten += 1
             try: os.remove(top); wiped += 1
             except OSError: pass
             continue
-        for root, dirs, names in os.walk(top):
+        for root, dirs, names in os.walk(top, onerror=unlisted):
             dirs[:] = [d for d in dirs if not linkish(os.path.join(root, d))]
             for nm in names:
                 seen += 1; fp = os.path.join(root, nm)
                 k = sqlite_kind(nm)
                 if k and os.path.islink(fp): held_stat["seen"] += 1; held_stat["missed"] += 1
                 elif k: keep(fp, k)
-                overwrite(fp, header_only(nm))
+                if not overwrite(fp, header_only(nm)): not_overwritten += 1
                 try: os.remove(fp); wiped += 1
                 except OSError: pass
         if top != wd: shutil.rmtree(top, ignore_errors=True)
@@ -302,20 +325,27 @@ if wd and os.path.isdir(wd):
             % (tok(wd), only.get("reason"), left))
     else:
         shutil.rmtree(wd, ignore_errors=True)
-    rec("wiped data %s (%d/%d files, crypto-erase: DB salt pages destroyed; %d scrub bytes)" % (tok(wd), wiped, seen, scrubbed))
+    gone = list(dict.fromkeys(unlisted_dirs))
+    if gone:
+        rec("could not check %d folder(s) it could not list: %s" % (len(gone), ", ".join(tok(d) for d in gone)))
+    if gone or not_overwritten:
+        rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
+            % (tok(wd), wiped, seen, not_overwritten, scrubbed))
+    else:
+        rec("wiped data %s (%d/%d files, crypto-erase: DB salt pages destroyed; %d scrub bytes)" % (tok(wd), wiped, seen, scrubbed))
 # DuckDB analytics cache can live outside the data dir (OO_COLUMNAR_DIR). Only present in
 # the plan when it actually differs from wd -- head-wipe the two known files there (never
 # rmtree an externally-configured directory we don't otherwise own).
 sd = plan.get("wipe_store_dir")
 if sd and os.path.isdir(sd):
-    sd_wiped = 0
+    sd_wiped = sd_failed = 0
     for nm in ("analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb"):
         fp = os.path.join(sd, nm)
-        if os.path.exists(fp):
-            overwrite(fp, True)
+        if there(fp):
+            if not overwrite(fp, True): sd_failed += 1
             try: os.remove(fp); sd_wiped += 1
             except OSError: pass
-    rec("wiped columnar store %s (%d files, header-only)" % (tok(sd), sd_wiped))
+    rec("wiped columnar store %s (%d files, header-only%s)" % (tok(sd), sd_wiped, "; %d not overwritten, THE ERASE MAY BE INCOMPLETE" % sd_failed if sd_failed else ""))
 af = plan.get("app_folder")
 if af and os.path.isdir(af):
     shutil.rmtree(af, ignore_errors=True)
