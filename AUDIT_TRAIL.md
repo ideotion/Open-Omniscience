@@ -5,6 +5,30 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
 
 ---
 
+## 2026-11-23 · Transversal audit — edition 17 (full re-derivation, report-only)
+
+- **Base commit:** `main` at `b2f02a23e70ea5271edaa47f2b2902cea4f8df89`; commissioned as a full
+  transversal, quality, performance, functional, security and optimisation audit — **report-only;
+  findings point at issues, no solutions proposed**. Performance emphasised, with backup import and
+  post-import re-indexing named as the pain.
+- **Method:** automated gates re-run locally (ruff 0.17.5 blocking + advisory lanes, mypy, bandit,
+  pip-audit 2.10.1 vs `requirements.lock`, targeted pytest), grep sweeps, code reads, and a
+  measurement harness (synthetic 500/2k/20k-article corpora → real `write_backup_v2` export →
+  `restore_legacy_path` into a fresh instance → `reindex_imported_articles` drain, cProfile; live
+  loopback server probed over httpx). Every claim tagged [MEASURED] / [CODE-READ] / [ARITHMETIC] /
+  [HYPOTHESIS].
+- **Headline findings:** P0 — the restore's swap quiesce barrier waits up to 180 s on a lease the app's
+  own `reindex-resume` drain holds (154 s of a 158 s restore at 2 k articles; >570 s vs 17.5 s at 20 k;
+  one 500-article import hard-refused after 180 s), and the post-import re-index drain runs at ~6–10
+  articles/s (≈35–60 h at the 1.28 M-article field scale, matching audit 16's 50–61 h). P1 — 74
+  dependency advisories in the lock (pillow ×42 on untrusted images, pypdf ×18, …); write path degrades
+  1,800→1,190 art/s from 2 k→20 k articles; read endpoints already slow at 20 k (coordination 1.92 s).
+  Gates otherwise green: blocking ruff clean, mypy clean (834 files), advisory lane 389 ≤ 432, bandit
+  343 LOW only, targeted tests green.
+- **Full log:** [`docs/audit/17_FULL_TRANSVERSAL_AUDIT_2026-11-23.md`](docs/audit/17_FULL_TRANSVERSAL_AUDIT_2026-11-23.md)
+  (+ measurement tables
+  [`17_FULL_TRANSVERSAL_AUDIT_2026-11-23_TABLES.md`](docs/audit/17_FULL_TRANSVERSAL_AUDIT_2026-11-23_TABLES.md)).
+
 ## 2026-09-24 · Field diagnostics — first batch: six machines (analysis + plan)
 
 - **Base commit:** `main` at `c8445c62` (PR #1170); written from the six all-diagnostics
