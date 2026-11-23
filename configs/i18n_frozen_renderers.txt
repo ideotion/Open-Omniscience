@@ -62,15 +62,11 @@ app-backup.js _uxLoadInventory
 app-backup.js _uxResume
 app-backup.js _uxShowLastCompletedExportSummary
 app-backup.js _uxShowPaused
-app-backup.js _volRefresh
 app-backup.js encryptCorpus
-app-backup.js loadAlternates
 app-backup.js panicWipe
 app-backup.js secureErase
 app-backup.js tick
 app-backup.js uninstallApp
-app-backup.js volBackupStart
-app-backup.js volRestoreStart
 app-boot.js load
 app-claim.js claimExport
 app-claim.js claimRun
