@@ -78,15 +78,20 @@ def _homes() -> list[str]:
     return found
 
 
-def _roots() -> list[tuple[str, str]]:
-    """``(root, how)``, longest first: the app's directory, the data directory, every home directory."""
+def _roots(data_root: str | None = None) -> list[tuple[str, str]]:
+    """``(root, how)``, longest first: the app's directory, the data directory, every home directory. ``data_root``, when given,
+    is the data directory, and ``src.paths.data_dir`` is never asked: it makes a missing folder again, and the erase that just
+    removed the folder logs after it (row 333)."""
     roots: list[tuple[str, str]] = [(str(Path(__file__).resolve().parents[2]), "app")]
-    try:
-        from src.paths import data_dir
+    if data_root is not None:
+        roots.append((str(data_root), "data"))
+    else:
+        try:
+            from src.paths import data_dir
 
-        roots.append((str(data_dir()), "data"))
-    except Exception:  # noqa: BLE001 - a diagnostic never fails for want of a directory
-        pass
+            roots.append((str(data_dir()), "data"))
+        except Exception:  # noqa: BLE001 - a diagnostic never fails for want of a directory
+            pass
     roots.extend((home, "home") for home in _homes())
     return sorted(roots, key=lambda r: -len(r[0]))
 
@@ -117,10 +122,11 @@ def _collapse(match: re.Match[str]) -> str:
     return f"<{how}>/…/{names[-1]}" if names else f"<{how}>"
 
 
-def tokenise_paths(text: str) -> str:
-    """``text`` with every absolute path rewritten as in the module docstring."""
+def tokenise_paths(text: str, *, data_root: str | None = None) -> str:
+    """``text`` with every absolute path rewritten as in the module docstring; ``data_root`` names the data directory (see
+    :func:`_roots`)."""
     try:
-        for root, how in _roots():
+        for root, how in _roots(data_root):
             text = _root_pattern(root).sub(f"<{how}>", text)
         text = _TOKENISED.sub(_collapse, text)
         text = _PROFILE_UNC.sub("<home>", text)
