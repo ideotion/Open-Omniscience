@@ -99,11 +99,6 @@ app-corpus.js loadTrendWindows
 app-corpus.js renderTrendMultiples
 app-corpus.js renderTrendSlope
 app-diagnostics.js _chronoDraw
-app-diagnostics.js _paintAiCheck
-app-diagnostics.js _paintAiCoordinator
-app-diagnostics.js _paintAiSweepButton
-app-diagnostics.js _paintPerceptionLangToggles
-app-diagnostics.js _renderAiCheck
 app-diagnostics.js discoverSources
 app-diagnostics.js discoverWorld
 app-diagnostics.js downloadDiagnosticsVolumes
@@ -111,13 +106,8 @@ app-diagnostics.js enrichSourceTypes
 app-diagnostics.js enrichSources
 app-diagnostics.js goldBuilderLoad
 app-diagnostics.js goldBuilderSave
-app-diagnostics.js loadAiActivity
 app-diagnostics.js loadCountryForm
-app-diagnostics.js loadPerceptionGate
 app-diagnostics.js loadSessionForensics
-app-diagnostics.js renderKeywordTriageResult
-app-diagnostics.js renderPerceptionExtractResult
-app-diagnostics.js renderSourceTagsResult
 app-diagnostics.js runAllDiagnostics
 app-diagnostics.js viewKeywordGrowth
 app-dossier.js dossierSearchHint
