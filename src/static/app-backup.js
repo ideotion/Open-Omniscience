@@ -4337,7 +4337,9 @@
         const notRemoved = !back && r.scope === "data-folder" && r.removed === false && (!keptForeign || (r.not_removed || []).length > 0);
         // R806 (5) never follows a keys folder that is a link; the app's own keys may be where it points, so the result is never clean.
         const keysLink = r.keys_link === true;
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink;
+        // Anything of the app's whose removal failed (a key file in a kept keys folder, an entry in a folder it does not own) is never clean.
+        const leftOver = (r.not_removed || []).length > 0;
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver;
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
         // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
         const rec = plaintext

@@ -344,3 +344,70 @@ def test_the_watcher_says_a_keys_link_may_leave_the_apps_keys(tmp_path):
     os.symlink(elsewhere, data / "keys")
     text = _watch(tmp_path, data)
     assert "is a link, which the wipe never follows" in text and "THE ERASE MAY BE INCOMPLETE" in text, text
+
+
+# --- the delta security reads: an app key that survives is never hidden, and the name rule is exact ------------------------- #
+def test_an_app_key_whose_unlink_failed_in_a_kept_keys_is_said_not_removed(app_data, monkeypatch):
+    _app_folder(app_data)
+    (app_data / "keys" / "mine.asc").write_bytes(b"mine")
+    real = crypto_erase._shred
+
+    def shred(path, **kw):
+        if path.name == "custody_ed25519.pem":
+            s, overwritten, _w = real(path.with_name("x"), **kw)  # nothing there: the unlink "fails", the file stays
+            return True, True, False
+        return real(path, **kw)
+
+    monkeypatch.setattr(crypto_erase, "_shred", shred)
+    out = _erase()
+    assert out["folder_kept_foreign"] is True and "keys/custody_ed25519.pem" in out["not_removed"], out
+    assert "mine.asc" not in str(out["not_removed"]), "never a name of the operator's"
+
+
+def test_the_watcher_says_incomplete_when_an_app_key_survives(tmp_path):
+    data = tmp_path / "OOS data"
+    _app_folder(data)
+    (data / "keys" / "mine.asc").write_bytes(b"mine")
+    os.chmod(data / "keys", 0o500)  # the unlinks fail (as a non-root user)
+    try:
+        text = _watch(tmp_path, data)
+    finally:
+        os.chmod(data / "keys", 0o700)
+    if (data / "keys" / "custody_ed25519.pem").exists():
+        assert "could not be removed or were not reached" in text and "THE ERASE MAY BE INCOMPLETE" in text, text
+
+
+def test_the_watcher_without_a_key_list_never_reads_clean(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    from src.safety.data_scope import owned_spec
+    from src.safety.uninstall import _WATCHER_SRC
+
+    data = tmp_path / "projects"
+    _app_folder(data)
+    (data / "thesis.odt").write_bytes(b"MY THESIS")
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    log = tmp_path / "audit.log"
+    plan = {"files": [], "venv": None, "app_folder": None, "wipe_data_dir": str(data), "audit_log": str(log),
+            "app_only": {**owned_spec(shared=True), "reason": "shared_folder"}}
+    subprocess.run([sys.executable, "-c", _WATCHER_SRC, str(dead.pid), json.dumps(plan)], check=True, timeout=120)
+    text = log.read_text(encoding="utf-8")
+    assert "given no list of the app's key files" in text and "salt pages destroyed" not in text, text
+
+
+def test_settle_drops_kept_once_keys_is_gone(tmp_path):
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    out = {"scope": "data-folder", "data_dir": str(data), "folder_kept_foreign": True, "kept_items": 1, "not_removed": [],
+           "removed": False, "limit": crypto_erase._LIMIT_NOTE}
+    crypto_erase.settle_removed(out)
+    assert out["folder_kept_foreign"] is False and out["kept_items"] == 0
+
+
+def test_a_pending_name_takes_ascii_digits_only():
+    assert re.fullmatch(data_scope.KEYS_PENDING_RE, "custody_ed25519.pem.12.34.0123456789ab.new")
+    assert not re.fullmatch(data_scope.KEYS_PENDING_RE, "custody_ed25519.pem.١.2.0123456789ab.new")
+    assert not re.fullmatch(data_scope.KEYS_PENDING_RE, "custody_ed25519.pem.1.2.0123456789AB.new")

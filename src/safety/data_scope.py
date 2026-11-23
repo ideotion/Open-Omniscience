@@ -91,7 +91,7 @@ APP_KEY_NAMES: frozenset[str] = frozenset({
 #: passes (src/custody/keyfile.py:316 and :370).
 KEYS_PENDING = ".pending"
 KEYS_PENDING_RE = (
-    "(?:" + "|".join(re.escape(n) for n in sorted(APP_KEY_NAMES)) + r")\.\d+\.\d+\.[0-9a-f]{12}\.(?:new|rewrap)"
+    "(?:" + "|".join(re.escape(n) for n in sorted(APP_KEY_NAMES)) + r")\.[0-9]+\.[0-9]+\.[0-9a-f]{12}\.(?:new|rewrap)"  # ASCII digits only: \d takes any script's
 )
 
 

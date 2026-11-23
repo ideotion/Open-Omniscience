@@ -134,7 +134,13 @@ def settle_removed(report: dict) -> bool:
                 report["folder_kept_foreign"] = False  # gone since (the operator removed it): nothing is kept any more
                 report["removed"] = True
                 return True
-            rest = sorted(e.name for e in _listing(base) if e.name != "keys")
+            if _kind(base / "keys") == "absent":
+                report["folder_kept_foreign"] = False  # its keys folder is gone since: not kept for it any more
+                report["kept_items"] = 0
+            failed: list[OSError] = []
+            rest = sorted(e.name for e in _listing(base, failed.append) if e.name != "keys")
+            if failed:
+                rest = rest or ["?"]  # could not be listed: never read as "only keys is left"
             if rest:
                 report["not_removed"] = sorted({*(report.get("not_removed") or []), *rest})
                 limit = report.get("limit")
@@ -651,6 +657,24 @@ def _destroy_app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str
     with contextlib.suppress(OSError):
         keys_dir.rmdir()  # only when empty: what is left in it is not the app's to remove
     return seen, wiped
+
+
+def _app_keys_left(keys_dir: Path) -> list[str]:
+    """The app's own key files and private copies still in ``keys`` after step 2 (as ``keys/<the app's own name>``: never a name
+    of the operator's), and ``keys/.pending`` itself when it is a link or a junction, which is never entered."""
+    from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING, KEYS_PENDING_RE
+
+    if _kind(keys_dir) != "dir":
+        return []
+    left = [f"keys/{n}" for n in sorted(APP_KEY_NAMES) if _kind(keys_dir / n) == "file"]
+    pending = keys_dir / KEYS_PENDING
+    kind = _kind(pending)
+    if kind == "link":
+        left.append(f"keys/{KEYS_PENDING}")
+    elif kind == "dir":
+        left += [f"keys/{KEYS_PENDING}/{e.name}" for e in _listing(pending)
+                 if re.fullmatch(KEYS_PENDING_RE, e.name) and _kind(Path(e.path)) == "file"]
+    return left
 
 
 def _kept_in_keys(keys_dir: Path) -> int:
@@ -1329,6 +1353,10 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         removed_at_rmtree = not _present(base)  # before any log line: one that makes it again then reads "came back", never "not removed"
     # Kept ON PURPOSE: in shared scope for the entries that are not the app's (R711), else for a keys folder that is not (R806).
     kept_foreign = _present(base) and (bool(kept_items) if app_only else keys_foreign and _kind(keys_dir) != "absent")
+    # An app key or private copy still in a kept keys folder (its unlink failed), or a ``.pending`` that is a link the app's
+    # copies may have gone through: never hidden by "kept", said as not removed (R806 / R807; the delta security reads).
+    if kept_foreign or app_only:
+        left["not_removed"] = sorted({*left["not_removed"], *_app_keys_left(keys_dir)})
 
     overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
     unlisted_folders[:] = list(dict.fromkeys(unlisted_folders))  # 5b and 6 walk the same folders
