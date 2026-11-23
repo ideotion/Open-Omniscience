@@ -154,6 +154,10 @@ def test_a_node_drawn_through_oolive_is_exempt(src):
         'function paint(h) { ooLive(h, () => t("Hello")); h.textContent = t("Bye"); }',
         # released: what is written after the release is an ordinary write
         'function paint(h) { ooLive(h, null); h.textContent = t("Bye"); }',
+        # an inline render that writes ANOTHER node is the caller's code, counted like any other
+        'function paint(h) { ooLive(h, () => { other.textContent = t("Bye"); return 1; }); }',
+        'function paint(h) { ooLive(h, function () { other.innerHTML = t("Bye"); return 1; }); }',
+        'function paint(h) { ooLive(h, () => (other.textContent = t("Bye"))); }',
         # a namesake method is not the helper
         'function paint(h) { x.ooLive(h, () => 1); h.textContent = t("Bye"); }',
     ],

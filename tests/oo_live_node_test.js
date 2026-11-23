@@ -128,6 +128,31 @@ function harness() {
   assert.strictEqual(out.innerHTML, "<b>En cours…</b>");
 }
 
+// 1c. THE HOVER CONVENTION: app-boot.js marks every [title] the HTML holds (a class; a role and aria-label on SVG) after
+// the write. The serialised HTML changes, the text does not, and the node must still be repainted.
+{
+  const h = harness();
+  const out = new El("DIV");
+  h.fns.ooLiveHtml(out, () => '<span title="x">' + h.t("Running…") + "</span>");
+  out._html = out._html.replace("<span ", '<span class="oo-tip-target" ');   // what mark() does to the live DOM
+  h.switchTo("fr", out);
+  assert.ok(h.fns.nodes.has(out), "a node the hover convention marked is still kept");
+  assert.strictEqual(out.innerHTML, '<span title="x">En cours…</span>');
+}
+
+// 1d. A render that releases its own node: what it returns is not written into the released node.
+{
+  const h = harness();
+  const btn = new El("BUTTON");
+  btn.replaceChildren(new Text("Start sweep"));
+  let release = false;
+  h.fns.ooLive(btn, () => { if (release) h.fns.ooLive(btn, null); return h.t("Running…"); });
+  release = true;
+  h.switchTo("fr", btn);
+  assert.strictEqual(btn.textContent, "Start sweep", "the static label is back, not the render's output");
+  assert.ok(!btn.hasAttribute("data-i18n-dyn"));
+}
+
 // 2. RELEASE: a button's static label comes back, and the walker translates it again on every switch.
 {
   const h = harness();

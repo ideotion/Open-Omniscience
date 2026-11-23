@@ -205,9 +205,13 @@
     function _ooLiveDraw(el) {
       const s = el.__ooLive;
       const v = s.render();
+      if (el.__ooLive !== s) return;   // the render released its own node: what it returned is no longer kept
       const str = v == null ? "" : String(v);
-      if (s.html) { el.innerHTML = str; s.drawn = el.innerHTML; }
-      else { el.textContent = str; s.drawn = el.textContent; }
+      if (s.html) el.innerHTML = str; else el.textContent = str;
+      // The TEXT is the fingerprint, also for HTML: the hover convention (app-boot.js) adds a class, and on SVG a role
+      // and an aria-label, to every [title] it finds after the write, so comparing innerHTML would take that for a
+      // foreign write and drop every titled node at the first switch. Nothing of ours changes the text.
+      s.drawn = el.textContent;
     }
     function _ooLiveTake(el, render, html) {
       if (!el) return;
@@ -226,7 +230,7 @@
     function ooLiveRepaint() {
       for (const el of Array.from(_ooLiveNodes)) {
         const s = el.__ooLive;
-        if (!s || !el.isConnected || (s.html ? el.innerHTML : el.textContent) !== s.drawn) { _ooLiveDrop(el, false); continue; }
+        if (!s || !el.isConnected || el.textContent !== s.drawn) { _ooLiveDrop(el, false); continue; }
         try { _ooLiveDraw(el); }
         catch (e) { if (window.console) console.warn("ooLiveRepaint", e); }
       }

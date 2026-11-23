@@ -28,7 +28,8 @@ METHOD (source only; nothing is executed):
   (``t(``, ``tf(``, ``tr(``, ``trf(``, ``_t(``, ``_tf(``, ``_custT(``, ``OOI18N.t(``, ``OOI18N.tf(``).
 * Exempt, any one of:
   0. (row 364) the node and the render passed to ``ooLive(el, render)``/``ooLiveHtml(el, render)``
-     are not looked at: those arguments are blanked before sinks and translators are matched, so a
+     are not looked at: those arguments are blanked before sinks and translators are matched (unless
+     they hold a sink, which an inline render would aim at another node), so a
      unit that draws ONLY through the helper has nothing left to count, while a write to another
      node in the same unit -- or to the same node outside the call, or after ``ooLive(el, null)``
      released it -- still counts;
@@ -265,13 +266,19 @@ def _blank_live_calls(skel: str) -> str:
     """``skel`` with the arguments of every ``ooLive(...)``/``ooLiveHtml(...)`` call blanked.
 
     The node passed and the t() calls in its render are then neither a sink nor a translator of
-    the unit's: that node is kept and redrawn on a switch. Only those arguments are blanked, so a
+    the unit's: that node is kept and redrawn on a switch. Only those arguments are blanked, and
+    only when they hold no sink (an inline render that writes another node is counted), so a
     write into ANY other node (or into the same node outside the call) still counts, and a release
     (``ooLive(el, null)``) exempts nothing written after it.
     """
     out = list(skel)
     for m in _LIVE_CALL.finditer(skel):
-        for j in range(m.end(), _close(skel, m.end() - 1, "(", ")")):
+        end = _close(skel, m.end() - 1, "(", ")")
+        # An inline render is not a unit of its own, so its body is the caller's code: a sink inside it writes some
+        # other node, and the call is then left as it stands, to be counted like any other code.
+        if _SINK.search(skel, m.end(), end):
+            continue
+        for j in range(m.end(), end):
             out[j] = " "
     return "".join(out)
 
