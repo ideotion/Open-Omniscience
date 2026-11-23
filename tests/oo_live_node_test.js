@@ -88,14 +88,20 @@ function harness() {
   const OOI18N = engine(map, () => lang);
   const t = OOI18N.t;
   const warned = [];
-  const src = ["const _ooLiveNodes = new Set();",
-    ...["_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml", "ooLiveRepaint"].map((n) => extractFrom(APP, n)),
+  const src = ["const _ooLiveNodes = new Set();", "let _ooLiveObs = null;",
+    ...["_ooLiveWatch", "_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml", "ooLiveRepaint"].map((n) => extractFrom(APP, n)),
     "return { ooLive, ooLiveHtml, ooLiveRepaint, nodes: _ooLiveNodes };"].join("\n");
   const document = { createElement: (tag) => new El(tag.toUpperCase()) };
-  const fns = new Function("window", "console", "document", src)({ console: true }, { warn: (...a) => warned.push(a) }, document);
+  // A MutationObserver that records what it watches; mutate() delivers a child change, as the browser does after a write.
+  const watched = new Set(); let observerCb = null;
+  class MutationObserver { constructor(cb) { observerCb = cb; } observe(el, opts) { assert.deepStrictEqual(opts, {childList: true}); watched.add(el); } }
+  const applied = [];
+  const win = { console: true, OOI18N: { apply: (el) => { applied.push(el); apply(el); } } };
+  const fns = new Function("window", "console", "document", "MutationObserver", src)(win, { warn: (...a) => warned.push(a) }, document, MutationObserver);
   const apply = walkerFor(map);
   return {
-    fns, t, apply, warned,
+    fns, t, apply, warned, watched, applied,
+    mutate(el) { if (watched.has(el) && observerCb) observerCb([{ target: el, type: "childList" }]); },
     // setLang() as shipped: swap the map, walk the page, then fire oo:langchange (here: the one listener's call)
     switchTo(l, ...roots) {
       lang = l; for (const k of Object.keys(map)) delete map[k];
@@ -204,6 +210,31 @@ function harness() {
   h.switchTo("fr", st);
   assert.ok(!h.fns.nodes.has(st), "dropped although its text is unchanged");
   assert.ok(!st.hasAttribute("data-i18n-dyn"), "and left unmarked");
+}
+
+// 1h. AN HTML HOST DRAWN OVER BY OTHER CODE is let go at once, not at the next switch, and what was written is walked:
+//     a list drawn where the "Loading…" line was must not sit untranslated behind the marker.
+{
+  const h = harness();
+  const box = new El("DIV");
+  h.switchTo("fr", box);
+  h.fns.ooLiveHtml(box, () => h.t("Running…"));
+  assert.ok(h.watched.has(box), "an HTML host is watched");
+  h.mutate(box);                          // its own draw: nothing changes
+  assert.ok(h.fns.nodes.has(box) && box.hasAttribute("data-i18n-dyn"));
+  box.innerHTML = "Start sweep";          // other code draws walker-translated English over it
+  h.mutate(box);
+  assert.ok(!h.fns.nodes.has(box), "let go");
+  assert.ok(!box.hasAttribute("data-i18n-dyn"), "unmarked");
+  assert.deepStrictEqual(h.applied, [box], "and walked at once");
+  assert.strictEqual(box.textContent, "Démarrer le balayage", "so it reads in the page's language now");
+  const span = new El("SPAN");
+  h.fns.ooLive(span, () => h.t("Running…"));
+  assert.ok(!h.watched.has(span), "text mode leaves its host unmarked, so nothing to watch");
+  span.textContent = "other";
+  h.switchTo("de", span);
+  assert.ok(!h.fns.nodes.has(span));
+  assert.strictEqual(h.applied.length, 1, "an unmarked host needs no extra walk: setLang already walked it");
 }
 
 // 2. RELEASE: a button's static label comes back, and the walker translates it again on every switch.

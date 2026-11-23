@@ -32,6 +32,6 @@ def test_the_listener_repaints_and_the_helper_is_declared_once():
     boot = (_STATIC / "app-boot.js").read_text(encoding="utf-8")
     assert 'typeof ooLiveRepaint === "function") ooLiveRepaint();' in boot
     every = "".join(p.read_text(encoding="utf-8") for p in sorted(_STATIC.glob("*.js")))
-    for name in ("ooLive", "ooLiveHtml", "ooLiveRepaint", "_ooLiveTake", "_ooLiveDraw", "_ooLiveDrop", "_ooLiveMark", "_ooLiveForeign"):
+    for name in ("ooLive", "ooLiveHtml", "ooLiveRepaint", "_ooLiveTake", "_ooLiveDraw", "_ooLiveDrop", "_ooLiveMark", "_ooLiveForeign", "_ooLiveWatch"):
         found = re.findall(rf"(?<![\w$.])function\s+{name}\s*\(", every)
         assert len(found) == 1, f"{name} declared {len(found)} times: a later one silently overrides"

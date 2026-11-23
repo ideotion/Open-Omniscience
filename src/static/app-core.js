@@ -201,9 +201,25 @@
     //   * ooLiveHtml tells a foreign write by its text alone, so one that keeps the same text is overwritten at the
     //     next switch; and each repaint redraws the markup, so form state inside it is not kept.
     //   * A render that throws is caught for its node alone, so one surface cannot stop the others repainting.
+    //   * An HTML host is marked, so the walker skips it while it is held. Other code drawing over it (a list drawn
+    //     where its "Loading…" line was) is seen AT ONCE by a MutationObserver: the host is let go and its new content
+    //     walked, so text that relies on the walker is translated now, not frozen until the next switch.
     const _ooLiveNodes = new Set();
+    let _ooLiveObs = null;
+    function _ooLiveWatch(el) {
+      if (typeof MutationObserver !== "function") return;
+      if (!_ooLiveObs) {
+        _ooLiveObs = new MutationObserver((recs) => {
+          for (const r of recs) {
+            const el = r.target, s = el.__ooLive;
+            if (s && s.html && _ooLiveNodes.has(el) && _ooLiveForeign(el, s)) _ooLiveDrop(el, false);
+          }
+        });
+      }
+      _ooLiveObs.observe(el, {childList: true});
+    }
     function _ooLiveMark(el, s) {
-      if (s.html) el.setAttribute("data-i18n-dyn", "");
+      if (s.html) { el.setAttribute("data-i18n-dyn", ""); _ooLiveWatch(el); }
       else if (!s.hadMarker) el.removeAttribute("data-i18n-dyn");
     }
     function _ooLiveForeign(el, s) {   // something other than this render wrote el since its last draw
@@ -215,8 +231,11 @@
       _ooLiveNodes.delete(el);
       if (!s) return;
       el.__ooLive = null;
+      const unmarked = !s.hadMarker && el.hasAttribute("data-i18n-dyn");
       if (!s.hadMarker) el.removeAttribute("data-i18n-dyn");
       if (restore && !_ooLiveForeign(el, s)) el.replaceChildren(...s.saved);
+      // what the walker skipped while el was marked is walked now (a restore is walked anyway: it is a child change)
+      else if (unmarked && el.isConnected && window.OOI18N && typeof window.OOI18N.apply === "function") window.OOI18N.apply(el);
     }
     function _ooLiveDraw(el) {
       const s = el.__ooLive;
