@@ -124,8 +124,26 @@ def settle_removed(report: dict) -> bool:
     that is there again makes ``removed`` False, sets ``folder_back`` and puts the "may be incomplete" sentence first in ``limit``.
     Logs nothing (a log line after the measure is what this measure is for). Returns ``removed``. Never raises."""
     try:
-        if report.get("scope") != "data-folder" or not report.get("data_dir") or report.get("folder_kept_foreign"):
-            return bool(report.get("removed"))  # R806: a folder kept on purpose is said as kept, never as "could not be removed"
+        if report.get("scope") != "data-folder" or not report.get("data_dir"):
+            return bool(report.get("removed"))
+        if report.get("folder_kept_foreign"):
+            # R806: a folder kept on purpose for its keys is said as kept, never as "could not be removed"; anything else at its top
+            # now (a removal that failed, or something written there after) is said as not removed, so "kept" never hides it.
+            base = Path(report["data_dir"])
+            if not _present(base):
+                report["folder_kept_foreign"] = False  # gone since (the operator removed it): nothing is kept any more
+                report["removed"] = True
+                return True
+            rest = sorted(e.name for e in _listing(base) if e.name != "keys")
+            if rest:
+                report["not_removed"] = sorted({*(report.get("not_removed") or []), *rest})
+                limit = report.get("limit")
+                if not isinstance(limit, str):
+                    report["limit"] = _NOT_REMOVED_SENTENCE + _DEFENCE_TAIL
+                elif not limit.startswith(_NOT_REMOVED_SENTENCE):
+                    report["limit"] = _NOT_REMOVED_SENTENCE + " " + limit
+            report["removed"] = False
+            return False
         removed_before = bool(report.get("removed")) or bool(report.get("removed_at_rmtree"))
         removed = not _present(Path(report["data_dir"]))
         report["removed"] = removed
@@ -575,23 +593,13 @@ def _key_files_lock() -> contextlib.AbstractContextManager:
     return KEY_FILES_LOCK
 
 
-#: The key files the app keeps beside the two named above: the evidence-signing key (src/reporting/evidence.py) and the
-#: private copies a key change stages in ``keys/.pending`` (src/custody/keyfile.py). In a shared folder every file whose name
-#: ends like one of the app's key forms goes too (the annotation signer, a key a restore placed: src/backup/merge.py _KEY_FORMS).
-_OTHER_KEY_FILES = ("evidence_ed25519.pem",)
-_KEYS_PENDING = ".pending"
-KEY_FORM_SUFFIXES = ("_ed25519.pem", "_ml_dsa_65.key")
-
-
-def _destroy_keys_folder(
-    keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, *, shared: bool = False, unreached=None
-) -> tuple[int, int]:
-    """Step 2 and 2b of the quick erase, ``(seen, wiped)``: the named key files, then everything else in the keys folder
-    (the evidence key, a private copy in ``keys/.pending``), then the folder itself, so nothing can be added to it
-    before the caller lets the key-file lock go. In a SHARED data folder (R711) a ``keys`` folder may be the operator's
-    own, so only the app's key files and its ``.pending`` folder go, and the folder is removed only if that left it empty. A function of its own with no handler, called inside the caller's
-    ``with``: CPython 3.13 leaves a loop's back-edge outside the exception table of the block around it, so the loops
-    live here (R163; tests/test_loop_heads_reach.py)."""
+def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, *, unreached=None) -> tuple[int, int]:
+    """Step 2 and 2b of the quick erase in a ``keys`` folder that is the app's by its content (R806 (2)), ``(seen, wiped)``: the
+    corpus signer's named key files, then everything else in it (the evidence key, a private copy in ``keys/.pending``), then the
+    folder itself, so nothing can be added to it before the caller lets the key-file lock go. In shared scope, and for a ``keys``
+    that holds anything the app did not write, :func:`_destroy_app_keys_in_foreign` is used instead: exact names only (R807 (3)).
+    A function of its own with no handler, called inside the caller's ``with``: CPython 3.13 leaves a loop's back-edge outside the
+    exception table of the block around it, so the loops live here (R163; tests/test_loop_heads_reach.py)."""
     seen = wiped = 0
     for name in _KEY_FILES:
         s, overwritten, w = track(keys_dir / name)
@@ -599,18 +607,6 @@ def _destroy_keys_folder(
         wiped += w
         if s and overwritten:
             keys_destroyed.append(name)
-    if shared:
-        others = [e.name for e in _listing(keys_dir, unlisted) if e.name.endswith(KEY_FORM_SUFFIXES) and e.name not in _KEY_FILES]
-        for name in dict.fromkeys([*_OTHER_KEY_FILES, *others]):
-            s, _overwritten, w = track(keys_dir / name)
-            seen += s
-            wiped += w
-        pending = keys_dir / _KEYS_PENDING
-        if _kind(pending, unreached) != "dir":
-            with contextlib.suppress(OSError):
-                keys_dir.rmdir()  # only when empty: what is left in it is not the app's to remove
-            return seen, wiped
-        keys_dir = pending  # walked and removed below, like the whole folder in the app's own data folder
     if _kind(keys_dir, unreached) == "dir":
         for root, dirs, names in os.walk(keys_dir, onerror=unlisted):
             dirs[:] = [d for d in dirs if _kind(Path(root, d), unreached) == "dir"]  # a link or a junction never entered
@@ -619,14 +615,12 @@ def _destroy_keys_folder(
                 seen += s
                 wiped += w
         shutil.rmtree(keys_dir, ignore_errors=True)
-    if shared:
-        with contextlib.suppress(OSError):
-            keys_dir.parent.rmdir()  # only when empty: what is left in it is not the app's to remove
     return seen, wiped
 
 
 def _destroy_app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, unreached=None) -> tuple[int, int]:
-    """R806 (2): step 2 for a ``keys`` folder that is not the app's by its content (it holds something the app did not write). Only
+    """R806 (2): step 2 for a ``keys`` folder that is not the app's by its content (it holds something the app did not write), and
+    R807 (3): for every ``keys`` in shared scope (a folder the app does not own), where ``keys`` is a common name. Only
     the app's own key files go, by their exact names (``data_scope.APP_KEY_NAMES``), and the private copies in a real ``.pending``
     folder, by their one name shape; everything else is left byte for byte, and neither folder is removed unless that left it
     empty. A ``keys`` that is a link, a junction or not a folder is never entered: nothing in it is the app's to reach."""
@@ -661,8 +655,9 @@ def _destroy_app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str
 
 def _kept_in_keys(keys_dir: Path) -> int:
     """How many entries a foreign ``keys`` folder still holds that the app did not write (1 for a ``keys`` that is a link or not a
-    folder: that entry itself). A count only: names are never read out (R806 (4))."""
-    from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING
+    folder: that entry itself). A count only: names are never read out (R806 (4)). One that cannot be listed counts 0: what it
+    holds is not known, and the erase says "could not check" for it (R798), never "holds items the app did not create"."""
+    from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING, KEYS_PENDING_RE
 
     kind = _kind(keys_dir)
     if kind == "absent":
@@ -672,11 +667,14 @@ def _kept_in_keys(keys_dir: Path) -> int:
     try:
         entries = list(os.scandir(keys_dir))
     except OSError:
-        return 1  # could not be listed (R798): the keys folder itself is the one item left, its contents uncounted
+        return 0  # could not be listed (R798): said as "could not check" (unlisted_folders), never as a count
     n = 0
     for e in entries:
         if e.name == KEYS_PENDING:
-            n += len(_listing(Path(e.path))) if _kind(Path(e.path)) == "dir" else 1
+            if _kind(Path(e.path)) != "dir":
+                n += 1
+            else:
+                n += sum(1 for f in _listing(Path(e.path)) if not (re.fullmatch(KEYS_PENDING_RE, f.name) and _kind(Path(f.path)) == "file"))
         elif e.name not in APP_KEY_NAMES:
             n += 1
         elif _kind(Path(e.path)) != "file":
@@ -1159,13 +1157,16 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # put the destroyed key back under its name after this step. Held for the keys folder only, never for the
     # rest of step 6, which rewrites everything left (a wiki dump can take hours) while a signing request waits.
     keys_dir: Path = paths["keys_dir"]
+    # R806 (5) never follows a ``keys`` that is a link; the app's own signers write THROUGH one (signing.py makes its folder with
+    # exist_ok), so the app's keys may be where it points and are not destroyed here: said, and the result is never clean.
+    keys_link = _kind(keys_dir) == "link"
     if keys_state == "unlisted":
         _unlisted(OSError(errno.EACCES, "could not list the keys folder", str(keys_dir)))
     with _key_files_lock():
-        if keys_foreign:
+        if keys_foreign or app_only:  # R807 (3): in shared scope the app's key files are matched by exact name, never by suffix
             _s, _w = _destroy_app_keys_in_foreign(keys_dir, _track, keys_destroyed, _unlisted, _unreached)
         else:
-            _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, shared=app_only, unreached=_unreached)
+            _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, unreached=_unreached)
     seen += _s
     wiped += _w
 
@@ -1320,10 +1321,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         # R806 (2): the data folder is kept because it holds items the app did not create (in keys); every other entry of it goes.
         _remove_app_folders([Path(e.path) for e in _listing(base, _unlisted) if Path(e.path) != keys_dir])
         kept_items = _kept_in_keys(keys_dir)
+        # Kept ON PURPOSE for keys only: anything else still there is a removal that failed, said as that (never hidden by "kept").
+        left["not_removed"] = sorted(e.name for e in _listing(base) if Path(e.path) != keys_dir)
     else:
         with contextlib.suppress(OSError):
             shutil.rmtree(base, ignore_errors=True)
         removed_at_rmtree = not _present(base)  # before any log line: one that makes it again then reads "came back", never "not removed"
+    # Kept ON PURPOSE: in shared scope for the entries that are not the app's (R711), else for a keys folder that is not (R806).
+    kept_foreign = _present(base) and (bool(kept_items) if app_only else keys_foreign and _kind(keys_dir) != "absent")
 
     overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
     unlisted_folders[:] = list(dict.fromkeys(unlisted_folders))  # 5b and 6 walk the same folders
@@ -1334,6 +1339,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             len(unlisted_folders),
             _masked(unlisted_folders, base),
         )
+    if keys_link:
+        _LOG.error("CRYPTO-ERASE: the keys folder is a link, which the erase never follows: the app's key files may be where it points "
+                   "and were not destroyed; the erase may be incomplete")
     if overwrite_failures:
         _LOG.error(
             "CRYPTO-ERASE: %d file(s) could NOT be overwritten (only unlinked, if that): %s",
@@ -1376,13 +1384,15 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         # R806 (4): the folder was kept ON PURPOSE because it holds items the app did not create (a count, never their names), so
         # the report says "folder kept because it holds items the app did not create", never "could not be removed" or "destroyed".
         "keys_folder": keys_state,
-        "folder_kept_foreign": bool(kept_items) and _present(base),
+        "folder_kept_foreign": kept_foreign,
         "kept_items": kept_items,
+        "keys_link": keys_link,
         # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
         "unlisted_folders": len(unlisted_folders),
         # R805 (a): this process's own connections on the store still open when the erase ran (None: could not tell).
         "own_connections_open": own_open,
-        "limit": _LIMIT_NOTE_UNLISTED if unlisted_folders else _LIMIT_NOTE,
+        "limit": (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
+        + (_LIMIT_NOTE_UNLISTED if unlisted_folders else _LIMIT_NOTE),
     }
 
 

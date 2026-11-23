@@ -845,9 +845,15 @@ imply a protection we cannot deliver.
   names the app writes there (`data_scope.APP_KEY_NAMES`, each with where it is written, and `.pending` with its private
   copies). A `keys` holding anything else, or that is a link, is foreign: only the app's key files in it are destroyed (a link
   is never followed), everything else is left byte for byte, every other entry of the data folder goes, and the folder is
-  kept and said as "kept because it holds N items the app did not create" (a count, never the names), never "could not be
-  removed" and never "destroyed"; one that cannot be listed is "could not check" (R798). The secure-uninstall watcher applies
-  the same rule. The other folder names the app owns are still owned by name (a proposed follow-up row).
+  kept and said as "kept because it holds items the app did not create (count: N)" (a count, never the names), never "could
+  not be removed" and never "destroyed"; one that cannot be listed is "could not check" (R798), never a count. Anything else
+  still at the top of a kept folder (a removal that failed, or a file written there after) is said as "could not be removed",
+  so "kept" never hides it. A `keys` that is a link is never followed, but the app's own signers write through one, so the
+  result then says the app's keys may be where it points and were not destroyed, and is never clean. R807 (3): in shared scope
+  (a folder the app does not own) the app's key files are matched by these EXACT names too, never by suffix, and a private copy
+  only by its exact name plus the generated tail (`<key file>.<pid>.<thread>.<token>.new|rewrap`), so an operator's own
+  `foo_ed25519.pem` stays byte for byte. The secure-uninstall watcher applies the same rules. The other folder names the app
+  owns are still owned by name (row 378).
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or

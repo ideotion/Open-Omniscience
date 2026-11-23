@@ -286,31 +286,41 @@ def keys_state(kd):
     return "app"
 kstate = keys_state(os.path.join(wd, "keys")) if (wd and not only and ks) else "absent"
 keys_foreign = kstate in ("foreign", "unlisted")
+keys_link = bool(wd) and lkind(os.path.join(wd, "keys")) == "link"   # never followed; the app's keys may be where it points
+def app_keys(kd):   # R806/R807 (3): the app's key files in keys by their EXACT names, and its private copies by their one name
+    mine = []
+    if lkind(kd) == "dir":   # a link or a junction is never entered
+        # one that cannot be looked at is taken too: the wipe then names it as not overwritten (R798), never passes it over
+        mine = [os.path.join(kd, n) for n in ks.get("names", ()) if lkind(os.path.join(kd, n)) in ("file", "unlisted")]
+        pd = os.path.join(kd, ks.get("pending", ".pending"))
+        if lkind(pd) == "dir":
+            try: mine += [os.path.join(pd, n) for n in sorted(os.listdir(pd))
+                          if re.fullmatch(ks.get("pending_re", "(?!)"), n) and lkind(os.path.join(pd, n)) in ("file", "unlisted")]
+            except OSError as e: unlisted(e)
+    return mine
+def not_apps(kd):   # how many entries of keys the app did not write (a count only, never a name); None when it cannot be listed
+    if lkind(kd) != "dir": return 1
+    try: names = os.listdir(kd)
+    except OSError: return None
+    n = 0
+    for nm in names:
+        if nm == ks.get("pending", ".pending") and lkind(os.path.join(kd, nm)) == "dir":
+            try: n += sum(1 for x in os.listdir(os.path.join(kd, nm))
+                          if not (re.fullmatch(ks.get("pending_re", "(?!)"), x) and lkind(os.path.join(kd, nm, x)) == "file"))
+            except OSError: return None
+        elif nm not in ks.get("names", ()) or lkind(os.path.join(kd, nm)) != "file": n += 1
+    return n
 def roots():
     if not only and keys_foreign:
-        kd = os.path.join(wd, "keys")
         try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if nm != "keys"]
         except FileNotFoundError: tops = []
         except OSError as e: unlisted(e); tops = []
-        mine = []
-        if lkind(kd) == "dir":   # a link or a junction is never entered
-            mine = [os.path.join(kd, n) for n in ks.get("names", ()) if lkind(os.path.join(kd, n)) == "file"]
-            pd = os.path.join(kd, ks.get("pending", ".pending"))
-            if lkind(pd) == "dir":
-                try: mine += [os.path.join(pd, n) for n in sorted(os.listdir(pd))
-                              if re.fullmatch(ks.get("pending_re", "(?!)"), n) and lkind(os.path.join(pd, n)) == "file"]
-                except OSError as e: unlisted(e)
-        return mine + tops   # the app's key material first
+        return app_keys(os.path.join(wd, "keys")) + tops   # the app's key material first
     if not only: return [wd]
     try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if ours(nm)]
     except FileNotFoundError: tops = []
     except OSError as e: unlisted(e); tops = []
-    keys = [os.path.join(wd, k) for k in only.get("key_paths", [])]
-    kd = os.path.join(wd, "keys")
-    try: keys += [os.path.join(kd, n) for n in os.listdir(kd) if n.endswith(tuple(only.get("key_suffixes", [])))]
-    except FileNotFoundError: pass
-    except OSError as e: unlisted(e)
-    return tops + [p for p in dict.fromkeys(keys) if there(p)]
+    return app_keys(os.path.join(wd, "keys")) + tops   # R807 (3): in shared scope too, exact names only, never a suffix
 if wd and not os.path.isdir(wd) and there(wd):
     rec("could not check the data folder %s: THE ERASE MAY BE INCOMPLETE" % tok(wd))   # there, but not a folder it can look at
 if kstate == "unlisted":
@@ -384,8 +394,11 @@ if wd and os.path.isdir(wd):
                 rec("free disk space overwritten: %d bytes; %d bytes were left unwritten so the disk would not fill, and anything "
                     "in that part was not overwritten" % (scrubbed, RESERVE))
     if only:
-        try: os.rmdir(os.path.join(wd, "keys"))     # only when empty: what is left in it is not the app's
-        except OSError: pass
+        kd = os.path.join(wd, "keys")
+        for d in (os.path.join(kd, ks.get("pending", ".pending")), kd):
+            if lkind(d) == "dir":
+                try: os.rmdir(d)              # only when empty: what is left in it is not the app's
+                except OSError: pass
         try: left = len(os.listdir(wd))
         except OSError: left = -1
         rec("wiped the app's own files in %s, a folder it does not own (%s), and left the folder and %d other entries"
@@ -399,12 +412,13 @@ if wd and os.path.isdir(wd):
         if lkind(kd) == "absent":
             shutil.rmtree(wd, ignore_errors=True)   # nothing of the operator's was left after all
         else:
-            if lkind(kd) != "dir": left = 1
+            left = not_apps(kd)
+            if left is None:
+                rec("kept the data folder %s because its keys folder could not be checked; the app's own files in it were wiped"
+                    % tok(wd))
             else:
-                try: left = sum(1 for n in os.listdir(kd))
-                except OSError: left = 1
-            rec("kept the data folder %s because it holds %d item(s) the app did not create (in its keys folder); "
-                "the app's own files in it were wiped" % (tok(wd), left))
+                rec("kept the data folder %s because it holds items the app did not create (count: %d) (in its keys folder); "
+                    "the app's own files in it were wiped" % (tok(wd), left))
     else:
         shutil.rmtree(wd, ignore_errors=True)
     removed_now = not only and not there(wd)   # R802: measured right after the wipe's own removal
@@ -415,13 +429,19 @@ if wd and os.path.isdir(wd):
         rec("the app had not stopped after two minutes, so the wipe went ahead while it may still have been writing")
     # R802 (5): measured after the wipe's last write, and said truthfully: a data folder removed whole that is there again was written to after.
     back = removed_now and there(wd)
-    kept = not only and not removed_now and not (keys_foreign and there(wd))   # R806: kept on purpose is never "could not be removed"
+    # R806: kept on purpose (for keys alone) is never "could not be removed"; anything else left at its top is, and is said so
+    try: rest = [nm for nm in os.listdir(wd) if nm != "keys"] if (keys_foreign and there(wd)) else []
+    except OSError: rest = [None]
+    kept = not only and not removed_now and not (keys_foreign and there(wd) and not rest)
+    if keys_link:
+        rec("the keys folder of %s is a link, which the wipe never follows: the app's key files may be where it points and were not "
+            "wiped; THE ERASE MAY BE INCOMPLETE" % tok(wd))
     if back:
         rec("THE ERASE MAY BE INCOMPLETE: the data folder %s existed again after the wipe had removed it, so something recreated "
             "it afterwards. Restart the computer, then remove that folder." % tok(wd))
     elif kept:
         rec("the data folder %s itself could not be removed, so something may be left in it: check it and remove it by hand" % tok(wd))
-    if gone or not_overwritten or back or kept or not server_gone:
+    if gone or not_overwritten or back or kept or keys_link or not server_gone:
         rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
             % (tok(wd), wiped, seen, not_overwritten, scrubbed))
     else:
@@ -596,16 +616,10 @@ def _app_only(scope: dict | None) -> dict | None:
     """The app's own names for the watcher when the data folder is broad (R711), else None (the folder is removed whole)."""
     if not scope or not scope.get("broad"):
         return None
-    from src.safety.crypto_erase import (
-        _KEY_FILES,
-        _KEYS_PENDING,
-        _OTHER_KEY_FILES,
-        KEY_FORM_SUFFIXES,
-    )
     from src.safety.data_scope import owned_spec
 
-    keys = [f"keys/{n}" for n in (*_KEY_FILES, *_OTHER_KEY_FILES, _KEYS_PENDING)]
-    return {**owned_spec(shared=True), "key_paths": keys, "key_suffixes": list(KEY_FORM_SUFFIXES), "reason": scope.get("reason")}
+    # R807 (3): no key paths or suffixes here any more: the watcher reaches the app's key files by the exact names in keys_spec.
+    return {**owned_spec(shared=True), "reason": scope.get("reason")}
 
 
 def _keys_spec() -> dict:

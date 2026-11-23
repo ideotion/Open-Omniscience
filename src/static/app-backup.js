@@ -4332,8 +4332,12 @@
         // A data folder the erase could not remove at all (a link, an entry it could not delete) is said as that, never as "came back".
         // R806: a folder kept ON PURPOSE (it holds items the app did not create) is said as kept, never as "could not be removed".
         const keptForeign = r.folder_kept_foreign === true;
-        const notRemoved = !back && r.scope === "data-folder" && r.removed === false && !r.folder_kept_foreign;
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved;
+        const keptCount = Number(r.kept_items) || 0;  // 0 when keys could not be listed: then the "could not list" notice speaks
+        // ...but anything ELSE left at its top is a removal that failed, and "kept" never hides it (R806 / R807).
+        const notRemoved = !back && r.scope === "data-folder" && r.removed === false && (!keptForeign || (r.not_removed || []).length > 0);
+        // R806 (5) never follows a keys folder that is a link; the app's own keys may be where it points, so the result is never clean.
+        const keysLink = r.keys_link === true;
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink;
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
         // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
         const rec = plaintext
@@ -4358,8 +4362,9 @@
           (holder === "none" ? "" : `<div class="card-caveat">${esc(holderNote)}</div>`) +
           // R806 (4): one of two outcomes for the folder, a count and never the names of what was kept.
           (keptForeign
-            ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds {n} items the app did not create.", { n: fmtNum(Number(r.kept_items) || 0, 0) }))}</div>`
+            ? (keptCount ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds items the app did not create (count: {n}).", { n: fmtNum(keptCount, 0) }))}</div>` : "")
             : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
+          (keysLink ? `<div class="card-caveat">${esc(t("The keys folder in the data folder is a link, which the erase never follows: the app’s signing keys may be where it points, and they were not destroyed. Remove them there by hand."))}</div>` : "") +
           (notRemoved ? `<div class="card-caveat">${esc(t("The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."))}</div>` : "") +
           (back ? `<div class="card-caveat">${esc(t("The data folder existed again when the erase ended, although the erase had removed it: something recreated it afterwards, so the erase may be incomplete. Restart the app, run the wipe again, then run the full free-space overwrite below."))}</div>` : "") +
           (unlisted ? `<div class="card-caveat">${esc(tfw("The erase could not list {n} of the folders it was to erase, so it could not check the files in them: the erase may be incomplete. Make those folders readable (the app log names them), then run the wipe again and a full overwrite of free disk space below.", { n: fmtNum(unlisted, 0) }))}</div>` : "") +

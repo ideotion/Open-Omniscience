@@ -85,10 +85,14 @@ APP_KEY_NAMES: frozenset[str] = frozenset({
     *(f"{who}{form}" for who in ("custody", "evidence", "annotations") for form in ("_ed25519.pem", "_ml_dsa_65.key")),
     "evidence_ed25519.pem.restored-from-backup",
 })
-#: The private-copy folder inside ``keys`` (src/custody/keyfile.py:108), and the one name shape the app gives a file in it:
-#: ``<key file>.<pid>.<thread>.<token>.<kind>`` (src/custody/keyfile.py:111-128, private_name).
+#: The private-copy folder inside ``keys`` (src/custody/keyfile.py:108), and the one name the app gives a file in it:
+#: ``<key file>.<pid>.<thread>.<token>.<kind>`` (src/custody/keyfile.py:111-128, private_name), where ``<key file>`` is one of the
+#: EXACT names above (R807 (3): never a suffix or a looser shape) and ``<kind>`` is ``new`` or ``rewrap``, the only two the app
+#: passes (src/custody/keyfile.py:316 and :370).
 KEYS_PENDING = ".pending"
-KEYS_PENDING_RE = r"[A-Za-z0-9_.-]+\.\d+\.\d+\.[0-9a-f]{12}\.[a-z]+"
+KEYS_PENDING_RE = (
+    "(?:" + "|".join(re.escape(n) for n in sorted(APP_KEY_NAMES)) + r")\.\d+\.\d+\.[0-9a-f]{12}\.(?:new|rewrap)"
+)
 
 
 def keys_folder_state(keys_dir: Path) -> str:

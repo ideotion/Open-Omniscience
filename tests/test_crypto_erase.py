@@ -695,7 +695,7 @@ def test_an_erase_in_a_folder_the_app_does_not_own_removes_only_the_app_s_files(
     (keys / "custody_ed25519.pem").write_bytes(b"PRIVATE" * 10)
     (keys / "evidence_ed25519.pem").write_bytes(b"EVIDENCE" * 10)
     (keys / ".pending").mkdir()
-    (keys / ".pending" / "staged.pem").write_bytes(b"STAGED" * 10)
+    (keys / ".pending" / "custody_ed25519.pem.1.2.0123456789ab.new").write_bytes(b"STAGED" * 10)  # the app's one pending name
     (keys / "id_ed25519").write_bytes(b"the operator's own ssh key")
     (keys / "annotations_ed25519.pem").write_bytes(b"ANNOTATION SIGNER" * 10)
     (home / "annotations").mkdir()
@@ -826,7 +826,7 @@ def test_the_watcher_keeps_a_lane_database_header_only(tmp_path):
 def test_the_watcher_in_a_folder_the_app_does_not_own_wipes_only_the_app_s_files(tmp_path):
     """R711: the plan's names decide, the folder, the operator's files and the app's common names stay, and the audit log gives a
     count, never the operator's file names (one of them not even UTF-8)."""
-    from src.safety.uninstall import _app_only
+    from src.safety.uninstall import _app_only, _keys_spec
 
     home = tmp_path / "home"
     home.mkdir()
@@ -855,7 +855,7 @@ def test_the_watcher_in_a_folder_the_app_does_not_own_wipes_only_the_app_s_files
     (home / "wiki_dumps").symlink_to(tmp_path)  # an app name that is a link: removed, never followed
     audit = tmp_path / "a.log"
     _run_watcher({"files": [], "venv": None, "app_folder": None, "wipe_data_dir": str(home), "audit_log": str(audit),
-                  "app_only": _app_only({"broad": True, "reason": "home"})})
+                  "app_only": _app_only({"broad": True, "reason": "home"}), "keys_spec": _keys_spec()})
     assert home.is_dir()
     left = sorted(os.listdir(home))
     assert "models" in left and "thesis.odt" in left and "keys" not in left
