@@ -97,7 +97,9 @@
   // languages, or restoring English with an empty map) without corrupting text.
   function apply(root) {
     root = root || document.body; if (!root) return;
-    if (observer) observer.disconnect();
+    // Records the walker has not seen yet are kept: disconnect() would drop them (a root walk from elsewhere,
+    // e.g. ooLiveHtml letting a host go, must not lose a change made elsewhere in the same task).
+    if (observer) { if (observer.takeRecords().length) schedule(); observer.disconnect(); }
     const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let n; while ((n = w.nextNode())) doText(n);
     if (root.querySelectorAll) root.querySelectorAll("[" + ATTRS.join("],[") + "]").forEach(doAttrs);
