@@ -2103,6 +2103,11 @@ def verify_stream_backup(
         "kind": m.get("kind"),
         "ok": True,
         "problems": [],
+        # Row 348: one {code, params} per entry of `problems`, in the same order, so a
+        # reader can say each problem in its own language. `problems` stays as it was
+        # (English, for API callers and the P0 check); params are data (member and
+        # volume names, an exception's scrubbed words), never translated.
+        "problem_codes": [],
         "bad_volumes": [],
         "missing_volumes": [],
         "volumes": len(m.get("volumes") or []),
@@ -2117,9 +2122,10 @@ def verify_stream_backup(
         ),
     }
 
-    def _fail(problem: str) -> None:
+    def _fail(problem: str, code: str, **params: str) -> None:
         report["ok"] = False
         report["problems"].append(problem)
+        report["problem_codes"].append({"code": code, "params": params})
 
     if m.get("kind") == STREAM_KIND:
         state = _manifest_signature_state(m)
@@ -2138,7 +2144,8 @@ def verify_stream_backup(
             what = "is not signed" if state == "unsigned" else "signature does not match its content"
             _fail(
                 f"the volume manifest {what}, so the set's index cannot be relied on "
-                "(an interrupted finalize, or a change after it was written); re-run the backup"
+                "(an interrupted finalize, or a change after it was written); re-run the backup",
+                "manifest-unsigned" if state == "unsigned" else "manifest-bad-signature",
             )
     else:
         report["signature"] = "not-applicable (oo-volumes-1 sets are unsigned)"
@@ -2149,7 +2156,8 @@ def verify_stream_backup(
     report["bad_volumes"] = status["bad"]
     report["missing_volumes"] = status["missing"]
     if status["bad"]:
-        _fail("corrupt or missing data volumes: " + ", ".join(sorted(status["bad"])))
+        bad_list = ", ".join(sorted(status["bad"]))
+        _fail("corrupt or missing data volumes: " + bad_list, "bad-volumes", volumes=bad_list)
 
     par = m.get("parity")
     bad_parity: list[str] = []
@@ -2168,10 +2176,12 @@ def verify_stream_backup(
             "tolerance_remaining": max(0, usable),
         }
         if bad_parity:
+            par_list = ", ".join(sorted(bad_parity))
             _fail(
                 "corrupt parity volumes (data may be intact but protection is "
-                "reduced — re-run the backup to regenerate parity): "
-                + ", ".join(sorted(bad_parity))
+                "reduced — re-run the backup to regenerate parity): " + par_list,
+                "bad-parity",
+                volumes=par_list,
             )
         report["recoverable"] = bool(status["bad"]) and len(status["bad"]) <= max(0, usable)
     else:
@@ -2182,7 +2192,12 @@ def verify_stream_backup(
         for mm in m.get("members") or []:
             for vname in mm.get("volumes") or []:
                 if vname not in vol_by_name:
-                    _fail(f"member {mm['name']} references a volume missing from the index: {vname}")
+                    _fail(
+                        f"member {mm['name']} references a volume missing from the index: {vname}",
+                        "member-volume-unindexed",
+                        member=str(mm["name"]),
+                        volume=str(vname),
+                    )
         known = set(vol_by_name) | {pv["name"] for pv in (par or {}).get("volumes") or []}
         orphans = sorted(
             p.name
@@ -2194,7 +2209,7 @@ def verify_stream_backup(
 
     if passphrase and m.get("kind") == STREAM_KIND and not status["bad"]:
         if not _key_check_ok(m.get("key_check"), passphrase):
-            _fail("the passphrase does not match this volume set")
+            _fail("the passphrase does not match this volume set", "passphrase-mismatch")
         else:
             report["decrypted"] = True
             envelope_bytes: bytearray | None = None
@@ -2226,10 +2241,19 @@ def verify_stream_backup(
                     from src.monitoring.secret_scrub import exception_text
 
                     reason = exception_text(exc, passphrase, typed=False)
-                    _fail(f"member {mm['name']} failed to decrypt: {reason}")
+                    _fail(
+                        f"member {mm['name']} failed to decrypt: {reason}",
+                        "member-decrypt-failed",
+                        member=str(mm["name"]),
+                        reason=str(reason),
+                    )
                     continue
                 if h.hexdigest() != mm.get("plaintext_sha256"):
-                    _fail(f"member {mm['name']} failed its whole-plaintext checksum")
+                    _fail(
+                        f"member {mm['name']} failed its whole-plaintext checksum",
+                        "member-checksum-mismatch",
+                        member=str(mm["name"]),
+                    )
                 if collect is not None:
                     envelope_bytes = collect
             if envelope_bytes is not None:
@@ -2237,7 +2261,7 @@ def verify_stream_backup(
                 if report.get("envelope_signature") == "bad-signature" or report.get(
                     "envelope_mismatches"
                 ):
-                    _fail("the signed inner envelope does not match the volume index")
+                    _fail("the signed inner envelope does not match the volume index", "envelope-mismatch")
     return report
 
 
