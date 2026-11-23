@@ -89,7 +89,7 @@ function harness() {
   const t = OOI18N.t;
   const warned = [];
   const src = ["const _ooLiveNodes = new Set();",
-    ...["_ooLiveMark", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml", "ooLiveRepaint"].map((n) => extractFrom(APP, n)),
+    ...["_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml", "ooLiveRepaint"].map((n) => extractFrom(APP, n)),
     "return { ooLive, ooLiveHtml, ooLiveRepaint, nodes: _ooLiveNodes };"].join("\n");
   const document = { createElement: (tag) => new El(tag.toUpperCase()) };
   const fns = new Function("window", "console", "document", src)({ console: true }, { warn: (...a) => warned.push(a) }, document);
@@ -270,6 +270,58 @@ function harness() {
   assert.strictEqual(st.textContent, "an error the server sent");
   assert.ok(!h.fns.nodes.has(st));
   assert.ok(!st.hasAttribute("data-i18n-dyn"), "handed back to the walker");
+}
+
+// 3b. BUILT, THEN ATTACHED: rows taken before they join the page are kept by the next draws, and follow a switch.
+{
+  const h = harness();
+  const rows = [new El("SPAN"), new El("SPAN"), new El("SPAN")];
+  for (const r of rows) { r.attached = false; h.fns.ooLive(r, () => h.t("Running…")); }
+  for (const r of rows) r.attached = true;
+  h.switchTo("fr");
+  for (const r of rows) assert.strictEqual(r.textContent, "En cours…", "every row, not only the last");
+  rows[0].attached = false;
+  h.fns.ooLive(new El("SPAN"), () => h.t("Running…"));
+  assert.ok(!h.fns.nodes.has(rows[0]), "once seen in the page, leaving it is gone");
+  const lone = new El("SPAN"); lone.attached = false;
+  h.fns.ooLive(lone, () => h.t("Running…"));
+  h.switchTo("de");
+  assert.ok(!h.fns.nodes.has(lone), "a switch while still detached drops it");
+  const shown = new El("SPAN");
+  h.fns.ooLive(shown, () => h.t("Running…"));   // taken while in the page
+  shown.attached = false;
+  h.fns.ooLive(new El("SPAN"), () => h.t("Running…"));
+  assert.ok(!h.fns.nodes.has(shown), "a node taken in the page and then removed is gone at the next draw");
+}
+
+// 4b. RELEASE AFTER A FOREIGN WRITE keeps that write: the saved label does not come back over it.
+{
+  const h = harness();
+  const btn = new El("BUTTON");
+  btn.replaceChildren(new Text("Start sweep"));
+  h.fns.ooLive(btn, () => h.t("Running…"));
+  btn.textContent = "Saved";
+  h.fns.ooLive(btn, null);
+  assert.strictEqual(btn.textContent, "Saved");
+  assert.strictEqual(h.fns.nodes.size, 0);
+  const b2 = new El("BUTTON");
+  b2.replaceChildren(new Text("Start sweep"));
+  h.fns.ooLive(b2, () => "Job 7");
+  b2.textContent = "Job 7";              // the same text, but not this render's span
+  h.fns.ooLive(b2, null);
+  assert.strictEqual(b2.childNodes.length, 1);
+  assert.strictEqual(b2.childNodes[0].nodeName, "#text", "the foreign text node stays; the label is not restored over it");
+}
+
+// 4c. A RENDER THAT RE-TAKES ITS OWN NODE: the newer render's output stands.
+{
+  const h = harness();
+  const st = new El("SPAN");
+  let once = true;
+  h.fns.ooLive(st, () => { if (once) { once = false; h.fns.ooLive(st, () => h.t("Done.")); } return h.t("Running…"); });
+  assert.strictEqual(st.textContent, "Done.");
+  h.switchTo("fr");
+  assert.strictEqual(st.textContent, h.t("Done."));
 }
 
 // 5. ONE RENDER THAT THROWS does not stop the others.

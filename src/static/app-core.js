@@ -195,12 +195,20 @@
     //     its English. A status line that held nothing is left empty.
     //   * A node something else has written since its last draw is dropped from the list and left as it is: its text
     //     is no longer this render's. A node that left the document is dropped too, so nothing is kept for nothing.
-    //   * Give ooLive a node that is in the page: one still detached may be dropped as gone by the next call.
+    //   * ooLive(el, null) on a node something else has written since its last draw leaves that write in place.
+    //   * A node may be taken before it is attached (a row built, then appended): it is dropped as gone only once it
+    //     has been seen in the document and left it, or if a language switch comes while it is still detached.
+    //   * ooLiveHtml tells a foreign write by its text alone, so one that keeps the same text is overwritten at the
+    //     next switch; and each repaint redraws the markup, so form state inside it is not kept.
     //   * A render that throws is caught for its node alone, so one surface cannot stop the others repainting.
     const _ooLiveNodes = new Set();
     function _ooLiveMark(el, s) {
       if (s.html) el.setAttribute("data-i18n-dyn", "");
       else if (!s.hadMarker) el.removeAttribute("data-i18n-dyn");
+    }
+    function _ooLiveForeign(el, s) {   // something other than this render wrote el since its last draw
+      return el.textContent !== s.drawn
+        || (!s.html && (s.span.parentNode !== el || el.childNodes.length !== 1));
     }
     function _ooLiveDrop(el, restore) {
       const s = el.__ooLive;
@@ -208,12 +216,14 @@
       if (!s) return;
       el.__ooLive = null;
       if (!s.hadMarker) el.removeAttribute("data-i18n-dyn");
-      if (restore) el.replaceChildren(...s.saved);
+      if (restore && !_ooLiveForeign(el, s)) el.replaceChildren(...s.saved);
     }
     function _ooLiveDraw(el) {
       const s = el.__ooLive;
+      const gen = s.gen;
       const v = s.render();
-      if (el.__ooLive !== s) return;   // the render released its own node: what it returned is no longer kept
+      // the render released or re-took its own node: what it returned is no longer the one to keep
+      if (el.__ooLive !== s || s.gen !== gen) return;
       const str = v == null ? "" : String(v);
       if (s.html) el.innerHTML = str;
       else {
@@ -227,25 +237,31 @@
     }
     function _ooLiveTake(el, render, html) {
       if (!el) return;
-      for (const n of _ooLiveNodes) if (n !== el && !n.isConnected) _ooLiveDrop(n, false);
+      for (const n of Array.from(_ooLiveNodes)) {
+        if (n === el || !n.__ooLive) continue;
+        if (n.isConnected) n.__ooLive.seen = true;
+        else if (n.__ooLive.seen) _ooLiveDrop(n, false);
+      }
       if (render == null) { if (el.__ooLive) _ooLiveDrop(el, true); return; }
       if (!el.__ooLive) {
         const span = document.createElement("span");
         span.setAttribute("data-i18n-dyn", "");
         el.__ooLive = {saved: Array.from(el.childNodes), hadMarker: el.hasAttribute("data-i18n-dyn"), span};
       }
-      Object.assign(el.__ooLive, {render, html: !!html});
-      _ooLiveMark(el, el.__ooLive);
+      const s = el.__ooLive;
+      Object.assign(s, {render, html: !!html, gen: (s.gen || 0) + 1});
+      _ooLiveMark(el, s);
       _ooLiveNodes.add(el);
       _ooLiveDraw(el);
+      if (el.isConnected) s.seen = true;
     }
     function ooLive(el, render) { _ooLiveTake(el, render, false); }
     function ooLiveHtml(el, render) { _ooLiveTake(el, render, true); }
     function ooLiveRepaint() {
       for (const el of Array.from(_ooLiveNodes)) {
         const s = el.__ooLive;
-        const gone = !s || !el.isConnected || el.textContent !== s.drawn
-          || (!s.html && (s.span.parentNode !== el || el.childNodes.length !== 1));
+        if (s && el.isConnected) s.seen = true;
+        const gone = !s || !el.isConnected || _ooLiveForeign(el, s);
         if (gone) { _ooLiveDrop(el, false); continue; }
         try { _ooLiveDraw(el); }
         catch (e) { if (window.console) console.warn("ooLiveRepaint", e); }
