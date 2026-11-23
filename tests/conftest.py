@@ -331,6 +331,16 @@ def _serving_gate_open_for_in_process_clients():
 
 
 @pytest.fixture(autouse=True)
+def _erase_latch_reset():
+    """R802: an erase latches its folder for the rest of the PROCESS (nothing writes into it or makes it again until a restart). A
+    test process runs many erases, each of its own folder; this gives the next test a process that has erased nothing."""
+    yield
+    from src import paths
+
+    paths._reset_erased_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _write_gate_not_leaked(request):
     """Guard against the gate-leak HANG class of bug: a test must never leave the
     single-writer gate held — the next writer would block forever (it once did,

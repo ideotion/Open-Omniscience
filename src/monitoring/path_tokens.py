@@ -87,9 +87,9 @@ def _roots(data_root: str | None = None) -> list[tuple[str, str]]:
         roots.append((str(data_root), "data"))
     else:
         try:
-            from src.paths import data_dir
+            from src.paths import data_dir_path
 
-            roots.append((str(data_dir()), "data"))
+            roots.append((str(data_dir_path()), "data"))  # R802: where it is, never made (a masking never writes a folder)
         except Exception:  # noqa: BLE001 - a diagnostic never fails for want of a directory
             pass
     roots.extend((home, "home") for home in _homes())

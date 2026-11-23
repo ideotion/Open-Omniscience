@@ -20,6 +20,7 @@ import contextlib
 import json
 import logging
 import re
+import sys
 import threading
 import time
 import traceback
@@ -42,11 +43,13 @@ from src.monitoring.secret_scrub import (
     record_traceback,
     scrubbed,
 )
-from src.paths import data_dir
+from src.paths import data_dir_path, erased_folder_of
 from src.safety.file_lock import atomic_replace, file_lock, locked_append
 
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
 _LOCK = threading.Lock()
+#: How long a record waits for the journal's lock before it goes to stderr instead (R802 read: never an unbounded wait).
+_LOCK_WAIT_S = 5.0
 _installed = False
 
 # An HTTP error RESPONSE (status >= 400) returned to the client — the "not found",
@@ -124,7 +127,41 @@ class _ThirdPartyCacheNoiseFilter(logging.Filter):
 
 
 def _log_path() -> Path:
-    return data_dir() / "app_errors.jsonl"
+    # R802 (1): never ``data_dir()``, which makes a missing folder again. The journal writes into the data folder only while it is there.
+    return data_dir_path() / "app_errors.jsonl"
+
+
+def latch_for_erase(folder: Path) -> None:
+    """R802 (2): latch ``folder`` (``src.paths.latch_erased``) while holding the journal's lock, so a record being written when the erase
+    starts finishes and lets its file and its lock file go first, and every later one goes to stderr. Waits at most two seconds for that
+    record (one stuck behind another server's lock); the latch is set either way, and nothing after it can make the folder again."""
+    from src.paths import latch_erased
+
+    got = False
+    if not getattr(_IN_APPEND, "busy", False):  # never wait on this thread's own record
+        got = _LOCK.acquire(timeout=2.0)
+    try:
+        latch_erased(folder)
+    finally:
+        if got:
+            _LOCK.release()
+
+
+def _to_stderr(entry: dict) -> None:
+    """R802 (1): where a record goes when the data folder is not there (removed, or erased in this process): stderr only, never a file
+    that would make the folder again. Stderr may be kept by a launcher in a file outside the erased folder, so the record's TEXT never
+    goes there (a message can carry what the scrub did not recognise, a traceback a path): only when it was, its level and logger, and
+    an HTTP record's status and method, each a value the app chose. The text was meant for the journal, and the journal is gone."""
+    try:
+        # Each field by its own name (never a loop over the record's keys): the message and the traceback are never read here.
+        fields = (("at", entry.get("at")), ("level", entry.get("level")), ("logger", entry.get("logger")),
+                  ("status", entry.get("status")), ("method", entry.get("method")), ("kind", entry.get("kind")))
+        short = {name: str(value)[:120] for name, value in fields if value is not None}
+        sys.stderr.write("app error journal (no data folder; the record's text is not kept): " + json.dumps(short, ensure_ascii=False)
+                         + "\n")
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001, S110 - the log must never break the app
+        pass
 
 
 def _trim(path: Path) -> None:
@@ -133,7 +170,7 @@ def _trim(path: Path) -> None:
 
     An in-place ``write_text`` empties the file first, so a crash inside it (the thing this journal exists to survive) left no journal. The temp is named for
     the process and the thread, so two writers never share one; one a killed process left behind is swept when its process no longer runs."""
-    with file_lock(path):
+    with file_lock(path, create_folder=False):
         lines = path.read_text(encoding="utf-8").splitlines()[-_CAP:]
         atomic_replace(path, "\n".join(lines) + "\n", newline="\n")  # LF on every OS: the kept lines are the bytes they were (row 109)
 
@@ -154,10 +191,24 @@ def _append(entry: dict) -> None:
     _IN_APPEND.busy, _IN_APPEND.pending = True, []
     try:
         line = json.dumps(entry, ensure_ascii=False)
-        with _LOCK:
+        if erased_folder_of(_log_path()):
+            _to_stderr(entry)  # R802: latched; nothing to wait on the lock for (a stuck journal write never holds a record back)
+            return
+        if not _LOCK.acquire(timeout=_LOCK_WAIT_S):
+            _to_stderr(entry)  # a record is never lost, nor a thread held, behind a journal write that does not end
+            return
+        with contextlib.ExitStack() as _held:
+            _held.callback(_LOCK.release)
             path = _log_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            locked_append(path, line + "\n", newline="\n")  # one JSONL shape on every OS, so a trim keeps the bytes
+            # R802: never into a folder an erase in this process has started on, and never making a missing one (nor its lock file).
+            if erased_folder_of(path) or not path.parent.is_dir():
+                _to_stderr(entry)
+                return
+            try:
+                locked_append(path, line + "\n", newline="\n", create_folder=False)  # one JSONL shape on every OS, so a trim keeps the bytes
+            except OSError:
+                _to_stderr(entry)  # the folder went between the look and the write, or an erase latched it
+                return
             # Bounded by construction: trim once the file doubles the cap.
             if path.stat().st_size > 512 * 1024:
                 _trim(path)

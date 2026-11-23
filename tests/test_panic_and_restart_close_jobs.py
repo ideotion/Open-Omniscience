@@ -103,8 +103,9 @@ def test_a_failing_close_step_never_stops_the_wipe(panic_steps, monkeypatch):
     monkeypatch.setattr(after_shutdown, "stop_jobs_and_close", boom)
     monkeypatch.setattr(session, "dispose_engine", boom)
     report = panic_wipe(confirm=True)
-    # The erase's own report, with what R792's check after the tidying adds (no kept file here: nothing to ask, none seen).
-    assert report == {"files_wiped": 0, "other_holder": "none"}
+    # The erase's own report, with what R792's check after the tidying adds (no kept file here: nothing to ask). R805 (a): the pool
+    # could not be closed, so whether this process still holds a connection is not known, and that is "unknown", never "none".
+    assert report["files_wiped"] == 0 and report["own_connections_open"] is None and report["other_holder"] == "unknown", report
     assert panic_steps == [("erase",)]
 
 

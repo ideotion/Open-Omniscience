@@ -87,6 +87,7 @@ from src.monitoring.secret_scrub import (
     scrubbed,
     unicode_note,
 )
+from src.paths import ERASED_WORDS, DataFolderErased
 
 # Configure logging using shared config
 from src.utils.access_log import install_access_line_filter
@@ -372,6 +373,19 @@ def _run_startup_upkeep() -> None:
             logger.info(f"removed {_n} stale restore staging dir(s)")
     except Exception as exc:  # noqa: BLE001 - the janitor must never block startup
         log_failure(logger, "stale-staging cleanup failed", exc, level=logging.WARNING)
+    # R799 (row 338): a plaintext snapshot's private folder a crash left in the data folder (and beside the library when that sits
+    # inside it) is removed, only under the conditions the sweep lists; anything else with its name start is logged, masked, and
+    # left. One changed in the last minutes is left for the off-peak sweep (src/scheduler/maintenance.py), which runs it again.
+    try:
+        from src.api.unlock import main_db_path as _snap_db_path
+        from src.database.connect import sweep_snapshot_leftovers
+        from src.paths import data_dir as _snap_data_dir
+
+        _live = _snap_db_path()
+        for _folder in {Path(_snap_data_dir()), *([_live.parent] if _live is not None else [])}:
+            sweep_snapshot_leftovers(_folder)
+    except Exception as exc:  # noqa: BLE001 - the janitor must never block startup
+        log_failure(logger, "snapshot leftover sweep failed", exc, level=logging.WARNING)
     # W5 (2026-07-26 hardware diagnostics): the recurring off-peak sweep
     # (src.scheduler.maintenance.run_idle_maintenance) is the primary backstop
     # for aged pre-restore-*.db safety-net snapshots, but an instance that
@@ -1194,12 +1208,24 @@ wire(app)
 # General health check endpoint
 @app.get("/api/health")
 async def health_check():
-    """Check API health status"""
-    return {
+    """Check API health status.
+
+    R805 (d): after an erase in this process the answer stays a 200 (the launcher reads any other as "no server" and would start a
+    second one, which would make the data folder again) and says so plainly: ``data_erased`` with the restart words. It reads no file."""
+    from src.paths import data_dir_path, erased_folder_of
+
+    out: dict[str, object] = {
         "status": "healthy",
         "version": APP_VERSION,
         "timestamp": datetime.now(UTC).isoformat(),
     }
+    try:
+        erased = erased_folder_of(data_dir_path())
+    except Exception:  # noqa: BLE001 - health never fails on this question
+        erased = False
+    if erased:
+        out.update(status="data-erased", data_erased=True, detail=ERASED_WORDS)
+    return out
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -1498,6 +1524,13 @@ async def lane_swapping_handler(request: Request, refused: LaneSwapping):
     catch-all's 500: it is a refusal the operator answers by doing it again, as :class:`StoreReplacedError`'s is."""
     logger.info("a request met a store switch and was refused (%s)", type(refused).__name__)
     return JSONResponse(status_code=409, content={"detail": SWAPPING_WORDS})
+
+
+@app.exception_handler(DataFolderErased)
+async def data_folder_erased_handler(request: Request, refused: DataFolderErased):
+    """R802: a request that met the erase's latch (the data folder was erased in this process; nothing reads it as a store or writes
+    into it again until a restart). A 503 with the fixed words (keyed in every locale) and no traceback, never the catch-all's 500."""
+    return JSONResponse(status_code=503, content={"detail": ERASED_WORDS})
 
 
 @app.exception_handler(KvWriteRefused)
@@ -4021,6 +4054,12 @@ def _panic_cli(*, force: bool) -> None:
         # R798: the files in a folder the erase could not list were never checked.
         print(f"THE ERASE MAY BE INCOMPLETE: it could not list {report['unlisted_folders']} of the folders it was to erase, so it "
               "could not check the files in them. Make those folders readable (the app log names them), then run the wipe again.")
+    if report.get("scope") == "data-folder" and report.get("removed") is False and not report.get("folder_back"):
+        print("The data folder itself could not be removed, so something may be left in it: check it and remove it by hand.")
+    if report.get("folder_back"):
+        # R802 (5): measured after the wipe's last log line.
+        print("THE ERASE MAY BE INCOMPLETE: the data folder existed again when the erase ended, although the erase had removed it: "
+              "something recreated it afterwards. Restart the app, then run the wipe again.")
     print(report["limit"])
 
 

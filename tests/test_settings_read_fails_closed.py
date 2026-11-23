@@ -463,7 +463,9 @@ def test_the_crypto_erase_forgets_the_stores_seen_and_the_panic_wipe_goes_offlin
         assert not kv_store._seen and not kv_store._cache, "the wiped store is still remembered"
         assert not served_cache._CACHE, "the served counts of the wiped corpus are still served"
         assert not insights._STATUS_MEMO, "the status scans carried beside them are still carried"
-        with pytest.raises(Exception, match=r"(?i)airplane|offline|kill|blocked"):
+        # Refused either by the kill switch or, before it, by the settings read itself: the store is in the folder the wipe latched
+        # (R802), so that read never opens it again, even by a "file:" URI.
+        with pytest.raises(Exception, match=r"(?i)airplane|offline|kill|blocked|erased"):
             following_session("wiki", "ua").get("https://example.org/", timeout=2)
     finally:
         I.clear_kill_switch()

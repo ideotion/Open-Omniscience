@@ -5143,7 +5143,7 @@
   `fmtYear`, `fmtDate`, `dateToT`, `lon2x`/`lat2y`, `tmapFindCoverage`), which are INTERLEAVED with the
   dead ones (the ledger hazard: a wrong deletion passes `node --check` but breaks the map at runtime);
   (2) the orphaned handlers `loadIndicesData` (app.js:5560) + `loadMarketData` (:6080) — buttons gone;
-  (3) the retired `#corpus-win` modal DOM (`index.html:1987`) + the `openCorpus(term){ openAnalysisFor
+  (3) [RESOLVED 2026-11-23, row 357, PR #2317: the modal DOM and its close-listener were deleted; `openCorpus` has live callers (the `#an` keyword chips) and stays] the retired `#corpus-win` modal DOM (`index.html:1987`) + the `openCorpus(term){ openAnalysisFor
   (term); }` wrapper + the `corpus-win` close-listener (app.js:12407) — needs the `#mm-kit` relocation
   untangled first; (4) the orphaned `#onboard` welcome-card i18n keys (en.json:537/539/834 + ×12) — the
   hot-conflict locale files, so coordinate with parallel sessions. **DO NOT DELETE `firstRun`
@@ -13398,7 +13398,7 @@ audits — the 2026-07-22 GUI audit (`mkt-004`, filed under HONESTY) and the 202
 assumed: `_renderFeedVerdicts` has NO other entry point, so deleting them removes the app's only surface
 for "this official feed refused". Both buttons are restored, consent-gated and browser-verified.
 
-**STILL OPEN, and NARROWED — the `#corpus-win` deletion pass.** The retired modal's markup and
+**RESOLVED 2026-11-23 (row 357, PR #2317): the `#corpus-win` deletion pass ran -- the modal markup, `corpusTab`/`renderCorpus*`, `_mmKitHome` and the boot wiring were deleted and every pin re-anchored to the live `#an`/Explore path (headless boot smoke, no human browser walk; the pins with no live equivalent are listed in the PR). Text below kept as written.** **STILL OPEN, and NARROWED — the `#corpus-win` deletion pass.** The retired modal's markup and
 `corpusTab`/`renderCorpus*` are still in the tree, still unreachable, still gated on the
 browser-verified deletion bar. Two things are now known that were not: (a) `renderCorpusSources` was
 repaired this pass and the repair is a SOURCE fix with no runtime effect — the deletion pass should
@@ -13517,7 +13517,7 @@ AI-keyword read-only lens · deduced agenda events' keyword-corpus links.
 columns since the Sentiment subtab shipped. Only the feed cards and the Search list did not, and
 they do now.
 
-**STILL OPEN and unchanged from the last round:** the `#corpus-win` deletion pass (its superset
+**RESOLVED 2026-11-23 (row 357, PR #2317): the `#corpus-win` deletion pass ran -- the modal markup, `corpusTab`/`renderCorpus*`, `_mmKitHome` and the boot wiring were deleted and every pin re-anchored to the live `#an`/Explore path (headless boot smoke, no human browser walk; the pins with no live equivalent are listed in the PR). Text below kept as written.** **STILL OPEN and unchanged from the last round:** the `#corpus-win` deletion pass (its superset
 claim is audited for Sources only; the other five subtabs are not), and the eight misfiled
 lesson-shaped entries awaiting the relocation ruling.
 
@@ -13622,7 +13622,7 @@ test to apply to the two still open — date/period search with the calendar pic
 Enter-to-corpus-window absorption gate.
 
   **RULED 2026-09-15 (answer sheet Q605 = b): a SymSpell-shaped precomputed table built by a background job (deletes-within-2 over the keyword vocabulary), offering "did you mean" — never silently rewriting the query; the 0.5 advanced-search slice (S05-01) carries it. See the head entry.**
-- **STILL OPEN and untouched by these three rounds:** the `#corpus-win` deletion pass (its
+- **STILL OPEN and untouched by these three rounds:** the `#corpus-win` deletion pass [RESOLVED 2026-11-23, row 357, PR #2317: deleted] (its
   superset claim is audited for Sources only); the eight misfiled lesson-shaped entries
   awaiting the relocation ruling; the 38 cross-language ring kills recorded in round two,
   whose three options are still open; and, from the round-two triage's verified list, the
@@ -13678,7 +13678,7 @@ is behind it.
   super-group navigation offered through the `⊕` chips instead. Partial by design, recorded so the
   deletion pass is not asked to re-derive it.
 
-**THE DELETION BAR IS UNCHANGED and this does not clear it.** The markup and `corpusTab` /
+**RESOLVED 2026-11-23 (row 357, PR #2317): the `#corpus-win` deletion pass ran -- the modal markup, `corpusTab`/`renderCorpus*`, `_mmKitHome` and the boot wiring were deleted and every pin re-anchored to the live `#an`/Explore path (headless boot smoke, no human browser walk; the pins with no live equivalent are listed in the PR). Text below kept as written.** **THE DELETION BAR IS UNCHANGED and this does not clear it.** The markup and `corpusTab` /
 `renderCorpus*` are still unreachable in the tree, still gated on the browser-verified deletion
 pass (the Desk-lesson "made unreachable" bar). What has changed is that the claim licensing that
 deletion is now enforced by execution rather than asserted in a comment:

@@ -514,8 +514,8 @@ def shared_links(
     from src.database.models import Article, ArticleLink
 
     # EXACT resolution -- audit §4.1 (P0), THIRD site, and the one that shows what
-    # an incomplete fix costs. `term` here is never typed by a human: it is
-    # `_corpusTerm`, a keyword the app itself chose when the corpus window opened.
+    # an incomplete fix costs. `term` here was never typed by a human: it was `_corpusTerm`,
+    # a keyword the app chose when the corpus window opened (window deleted in #2317).
     # With the fuzzy default, a window opened on the commodity `Dy` answered
     # `resolved: null` on Trend, Context and Keywords -- honestly empty, because
     # those callers were fixed first -- while THIS endpoint returned 36 articles

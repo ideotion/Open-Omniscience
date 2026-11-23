@@ -817,6 +817,29 @@ imply a protection we cannot deliver.
   already handled or one that is not there; it is named as not overwritten and its folder as one it could not check, in both
   copies, and it never stops the erase. The log's path masking is told the erase's data folder, so it never makes again the
   folder the erase has just removed.
+  From the moment an erase starts, and for the rest of the process, nothing in the app writes into the folder being erased or
+  makes it again (R802, row 343): the erase latches it (`src/paths.py`, while the error journal's lock is held, so a record being
+  written lets its file and lock file go first); `data_dir()` then refuses it on every thread, an interpreter audit hook refuses
+  every Python open for writing, folder creation, rename, link, symlink and stdlib SQLite connect into it (a writer that kept a
+  path from before the erase included; a call relative to a folder handle is placed through the handle's name and refused when
+  it cannot be placed), and the store opener (a `file:` URI read the way SQLite reads it), the file lock and the atomic replace
+  refuse it first. A store an override puts outside the folder (`DATABASE_URL`, `OO_COLUMNAR_DIR`) is latched by its own files.
+  The panic wipe latches from its first step. Reading is never refused. The error journal never makes a missing data folder:
+  with the folder gone, or latched, records go to stderr only, and a record never waits more than a few seconds on the journal's
+  lock. `removed` is measured after the erase's last log line: a folder the erase removed that is there again reads "something
+  recreated it, so the erase may be incomplete" (`folder_back`), and one it never removed reads "could not be removed"; both are
+  visible caveats ×12. A secure uninstall latches the folder as soon as its watcher is started, and the watcher says the same two
+  things after its wipe, and when the app had not stopped after the two-minute wait. After a wipe, requests that need the data
+  folder are answered 503 ("restart the app") while health stays 200 and says `data-erased`, so the launcher neither loops nor
+  starts a second server. R805: an erase outside the panic that keeps the folder closes this process's own pool on the store
+  before it overwrites, and counts any connection it could not close (or could not count) as a holder ("may be incomplete",
+  never "destroyed"); the optional free-space scrub writes only on the drive that held the data (read at the latch; another
+  drive, or one that could not be read, is "free space not scrubbed" with the reason), into a private 0700 folder made without
+  following links in the nearest folder above the erased one (inside it when it was kept), removed on failure and interruption
+  too, keeps a 64 MiB disk reserve, and shows where it wrote; a scrub folder a crash left is removed at the next scrub only when
+  it is a real folder of this user with the app's prefix. Not covered: a store or cache engine writing from C into a file it
+  already held open, a write already past its open when the latch lands, a child process, and another process (R792 reports
+  it); within this process, a kept folder (app-only scope) refuses every write of the app's under it until a restart.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or

@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
+from src.backup.bounded_hash import LongerThanListed, sha256_read
 from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.backup.manifest_file import read_manifest_json
@@ -1703,25 +1704,21 @@ def _blob_sha256_from_name(rel: str) -> str | None:
     return m.group(1).lower() if m else None
 
 
-def _sha256_file(path: Path) -> str:
+def _sha256_file(path: Path, max_bytes: int | None = None) -> str:
     """The SHA-256 of a regular file. The verify reaches a member through its name inside the backup folder, so a
     pipe or a device there raises :class:`NotARegularFile` without blocking or reading (row 312), and
     a link is never followed either (no backup we write holds one; one swapped in after the traversal guard looked
-    could lead out of the folder), so it reads as a checksum mismatch."""
-    h = hashlib.sha256()
+    could lead out of the folder), so it reads as a checksum mismatch. With ``max_bytes`` (the size the manifest
+    lists, row 342) a file that holds more raises :class:`LongerThanListed`, read at most one byte past it."""
     with open_regular(path) as f:
-        for chunk in iter(lambda: f.read(_COPY_BUF), b""):
-            h.update(chunk)
-    return h.hexdigest()
+        return sha256_read(f, max_bytes, chunk=_COPY_BUF)
 
 
-def _hash_fd(fd: int) -> str:
-    """The SHA-256 of an open file, read to its end (the handle is closed)."""
-    h = hashlib.sha256()
+def _hash_fd(fd: int, max_bytes: int | None = None) -> str:
+    """The SHA-256 of an open file (the handle is closed), read no further than one byte past ``max_bytes`` (the size
+    the manifest lists, row 342: a file that grew after its size was checked raises :class:`LongerThanListed`)."""
     with adopt_fd(fd, "rb") as f:  # row 344: closed exactly once, whatever is raised on the way
-        for chunk in iter(lambda: f.read(_COPY_BUF), b""):
-            h.update(chunk)
-    return h.hexdigest()
+        return sha256_read(f, max_bytes, chunk=_COPY_BUF)
 
 
 def _verify_member(
@@ -1784,7 +1781,9 @@ def _verify_member(
                 return "size_only", {}, False
             # The handle was opened O_NONBLOCK (a pipe never blocks the open); a regular file reads the same.
             owned, fd = fd, -1  # handed over before the call: _hash_fd closes it, whatever happens
-            actual_hex = _hash_fd(owned)
+            actual_hex = _hash_fd(owned, max_bytes=size)
+        except LongerThanListed:
+            return "checksum_mismatch", {}, True  # it grew past the size listed after the size was checked
         except OSError:
             return "unreadable", {}, hash_it
         finally:
@@ -1800,8 +1799,8 @@ def _verify_member(
         if not hash_it:
             return "size_only", {}, False
         try:
-            actual_hex = _sha256_file(path)
-        except NotARegularFile:
+            actual_hex = _sha256_file(path, size)
+        except (NotARegularFile, LongerThanListed):
             actual_hex = ""  # a link, or swapped for a pipe or a device after the look: never a match
     except (OSError, ValueError):
         return "unreadable", {}, hash_it

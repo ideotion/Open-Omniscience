@@ -259,11 +259,15 @@ def test_a_real_unsearchable_folder_in_the_panic_wipe(tmp_path, monkeypatch, sha
     assert (keys / "custody_ed25519.pem").exists() and "may be incomplete" in report["limit"], report
 
 
-def _without_the_error_file_log(monkeypatch) -> None:
-    """The app's error-file handler (src/monitoring/errorlog.py), when another test installed it, writes every warning into
-    data_dir() itself; that is a separate matter (proposed as its own row), so these tests measure the erase's own masking only."""
+def _with_the_error_file_log(monkeypatch) -> None:
+    """The app's error-file handler (src/monitoring/errorlog.py) writes every warning into the data folder while it is there; with it
+    installed, as in the running app, the erase's last log lines must still leave the folder gone (R802, which restored it here)."""
+    from src.monitoring import errorlog
+
     root = logging.getLogger()
-    monkeypatch.setattr(root, "handlers", [h for h in root.handlers if type(h).__name__ != "_JsonlErrorHandler"])
+    monkeypatch.setattr(root, "handlers", list(root.handlers))  # whatever install() adds goes when the test ends
+    monkeypatch.setattr(errorlog, "_installed", errorlog._installed)
+    errorlog.install()
 
 
 def test_the_erase_never_makes_again_the_folder_it_removed(tmp_path, monkeypatch):
@@ -272,7 +276,7 @@ def test_the_erase_never_makes_again_the_folder_it_removed(tmp_path, monkeypatch
     data.mkdir()
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)
     monkeypatch.setenv("OO_DATA_DIR", str(data))
-    _without_the_error_file_log(monkeypatch)
+    _with_the_error_file_log(monkeypatch)
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert report["removed"] is True and not data.exists(), report
 
@@ -366,7 +370,7 @@ def test_a_failed_overwrite_never_makes_the_configured_data_folder_again(tmp_pat
         return real_open(path, *a, **k)
 
     scope_os(monkeypatch, crypto_erase, open=refuse)
-    _without_the_error_file_log(monkeypatch)
+    _with_the_error_file_log(monkeypatch)
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert str(data / "stuck.bin") in report["overwrite_failures"], report
     assert not other.exists()

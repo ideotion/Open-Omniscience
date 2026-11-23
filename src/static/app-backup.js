@@ -4327,7 +4327,11 @@
         const holder = r.other_holder || "unknown";
         // R798: a folder the erase could not list holds files it never checked, so that result is never clean either.
         const unlisted = Number(r.unlisted_folders) || 0;
-        const clean = holder === "none" && unlisted === 0;
+        // R802: a data folder the erase removed whole that is there again when it ends was written into after it, so that result is never clean.
+        const back = r.folder_back === true;
+        // A data folder the erase could not remove at all (a link, an entry it could not delete) is said as that, never as "came back".
+        const notRemoved = !back && r.scope === "data-folder" && r.removed === false;
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved;
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
         // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
         const rec = plaintext
@@ -4350,6 +4354,8 @@
           (clean ? `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` : "") +
           `<span class="muted">${esc(r.limit)}</span>` +
           (holder === "none" ? "" : `<div class="card-caveat">${esc(holderNote)}</div>`) +
+          (notRemoved ? `<div class="card-caveat">${esc(t("The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."))}</div>` : "") +
+          (back ? `<div class="card-caveat">${esc(t("The data folder existed again when the erase ended, although the erase had removed it: something recreated it afterwards, so the erase may be incomplete. Restart the app, run the wipe again, then run the full free-space overwrite below."))}</div>` : "") +
           (unlisted ? `<div class="card-caveat">${esc(tfw("The erase could not list {n} of the folders it was to erase, so it could not check the files in them: the erase may be incomplete. Make those folders readable (the app log names them), then run the wipe again and a full overwrite of free disk space below.", { n: fmtNum(unlisted, 0) }))}</div>` : "") +
           // R711: in a folder the app does not own, only its files went; the folder and the rest stayed, and the names are in the report.
           (r.scope === "app-only"
@@ -4383,10 +4389,31 @@
           {method: "POST", body: JSON.stringify({confirm: true, passes})});
         // The size through the one localised writer (Y9): "MiB" was English in every
         // locale and the only binary-prefixed unit the app printed anywhere.
-        if (box) box.innerHTML +=
-          `<div class="hint" style="margin-top:6px"><span class="pill warn">overwritten</span> ` +
-          `${r.passes}× — ${esc(_fmtBytes(r.bytes_written || 0))}. <span class="muted">${esc(r.limit)}</span></div>`;
-        toast("Full overwrite complete. Restart the app.", "warn");
+        // R805 (c): when no folder on the drive that held the data could be used, nothing was overwritten, and it says why, never "overwritten".
+        const notDone = {
+          other_drive: "Free disk space was not overwritten: the folder above the erased data folder is on another drive, so writing there would not reach the erased data.",
+          drive_unread: "Free disk space was not overwritten: the app could not tell which drive held the erased data folder.",
+          no_folder: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
+          nothing_written: "Free disk space was not overwritten: nothing could be written on the drive that held the data, which may already be full.",
+        }[r.scrub_not_done];
+        const tfw = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf
+          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+        if (box && r.scrub_not_done) {
+          box.innerHTML += `<div class="card-caveat" style="margin-top:6px">${esc(t(notDone || "Free disk space was not overwritten: no folder on the drive that held the data could be used for it."))}</div>`;
+        } else if (box) {
+          box.innerHTML +=
+            `<div class="hint" style="margin-top:6px"><span class="pill warn">${esc(t("overwritten"))}</span> ` +
+            `${r.passes}× — ${esc(_fmtBytes(r.bytes_written || 0))}. <span class="muted">${esc(r.limit)}</span></div>` +
+            // R805 (c)4: the folder is now outside the data folder, so it is shown as the plain path it is.
+            (r.scrub_folder_left
+              ? `<div class="card-caveat">${esc(tfw("The overwrite could not remove all its temporary files from {path}: remove that folder by hand.", { path: "\u0001path\u0002" })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder_left))}</bdi>`)}</div>`
+              : "") +
+            (r.scrub_folder
+              ? `<div class="hint">${esc(tfw("The overwrite wrote its temporary files in {path} and removed them. It left {reserve} of free space unwritten so the disk would not fill completely; anything in that part was not overwritten.", { path: "\u0001path\u0002", reserve: _fmtBytes(r.reserve_bytes || 0) })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder))}</bdi>`)}</div>`
+              : "");
+        }
+        toast(r.scrub_not_done ? t("Free disk space was not overwritten. Restart the app.") : t("Full overwrite complete. Restart the app."), "warn");
       } catch (e) { toast(_failMsg("Full overwrite failed: {error}", e), "err"); }
     }
 

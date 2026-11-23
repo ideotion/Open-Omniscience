@@ -44,6 +44,7 @@ import shutil
 import stat
 import struct
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -102,6 +103,83 @@ _LIMIT_NOTE_UNLISTED = (
     _UNLISTED_SENTENCE + " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
     "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
 )
+
+
+# R802 (5): the note when the data folder the erase removed is there again when the erase ends -- something wrote into it after.
+_FOLDER_BACK_SENTENCE = (
+    "The data folder existed again when the erase ended, although the erase had removed it: something recreated it afterwards, "
+    "so the erase may be incomplete."
+)
+_NOT_REMOVED_SENTENCE = (
+    "The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."
+)
+_DEFENCE_TAIL = (
+    " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
+    "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
+)
+
+
+def settle_removed(report: dict) -> bool:
+    """R802 (5): measure ``removed`` again, AFTER the erase's last log line, and say so truthfully. A data folder the erase removed whole
+    that is there again makes ``removed`` False, sets ``folder_back`` and puts the "may be incomplete" sentence first in ``limit``.
+    Logs nothing (a log line after the measure is what this measure is for). Returns ``removed``. Never raises."""
+    try:
+        if report.get("scope") != "data-folder" or not report.get("data_dir"):
+            return bool(report.get("removed"))
+        removed_before = bool(report.get("removed")) or bool(report.get("removed_at_rmtree"))
+        removed = not _present(Path(report["data_dir"]))
+        report["removed"] = removed
+        if not removed and not removed_before:
+            # The erase never removed it (a link as the data folder, an entry it could not delete): said as that, never "came back".
+            limit = report.get("limit")
+            if not isinstance(limit, str) or limit == _LIMIT_NOTE:
+                report["limit"] = _NOT_REMOVED_SENTENCE + _DEFENCE_TAIL
+            elif not limit.startswith(_NOT_REMOVED_SENTENCE):
+                report["limit"] = _NOT_REMOVED_SENTENCE + " " + limit
+        elif not removed:
+            report["folder_back"] = True
+            limit = report.get("limit")
+            if not isinstance(limit, str) or limit == _LIMIT_NOTE:
+                report["limit"] = _FOLDER_BACK_SENTENCE + _DEFENCE_TAIL
+            elif not limit.startswith(_FOLDER_BACK_SENTENCE):
+                report["limit"] = _FOLDER_BACK_SENTENCE + " " + limit
+        return removed
+    except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
+        report["removed"] = False
+        return False
+
+
+def _latch(base: Path) -> None:
+    """R802 (2): from here to the end of the process nothing in the app writes into ``base`` or makes it again (``src.paths.latch_erased``),
+    set while the error journal's lock is held so a record being written lets its file and lock file go first."""
+    try:
+        from src.monitoring.errorlog import latch_for_erase
+
+        latch_for_erase(base)
+    except Exception:  # noqa: BLE001 - the latch is set whatever the journal could do
+        from src.paths import latch_erased
+
+        latch_erased(base)
+
+
+def _latch_outside(paths: dict, base: Path) -> None:
+    """R802: the stores an override put outside ``base`` (``DATABASE_URL``'s main file, ``OO_COLUMNAR_DIR``'s columnar files), each
+    latched by its exact file and side files, so nothing in this process makes them again; their folder is never latched whole."""
+    try:
+        from src.paths import erased_folder_of, latch_erased
+
+        files: list[Path] = []
+        main = paths.get("main_db")
+        if isinstance(main, Path):
+            files += [main, *(Path(str(main) + s) for s in ("-wal", "-shm", "-journal"))]
+        store = paths.get("store_dir")
+        if isinstance(store, Path):
+            files += [store / n for n in _DUCK_FILES]
+        for f in files:
+            if not erased_folder_of(f):
+                latch_erased(f)
+    except Exception:  # noqa: BLE001 - never blocks the erase; the folder's own latch is already set
+        _LOG.warning("CRYPTO-ERASE: could not latch a store outside the data folder")
 
 
 #: The data folder of the erase running in this context, so the log lines of the helpers it calls are masked against it too.
@@ -593,6 +671,7 @@ def _resolve(data_dir: Path | None) -> dict:
     """Resolve every wipe target. For the default store (``data_dir is None``) the
     real resolvers are used so nothing is hardcoded; an explicit dir (tests/tools)
     derives the same layout from that base."""
+    from src.paths import DataFolderErased, data_dir_path
     from src.paths import data_dir as _default_dir
 
     if data_dir is not None:
@@ -606,16 +685,31 @@ def _resolve(data_dir: Path | None) -> dict:
             "anchors_db": base / _ANCHORS_DB,
             "lane_dbs": _lane_dbs(base),
         }
-    base = _default_dir()
-    from src.analytics.columnar import _store_dir
     from src.api.unlock import main_db_path
-    from src.custody.signing import _keys_dir
 
+    try:
+        base = _default_dir()
+        latched = False
+    except DataFolderErased:
+        # R802: a second erase in this process, of a folder the first one latched: never made again to be erased again. The
+        # same overrides as the first erase (DATABASE_URL, OO_COLUMNAR_DIR) are kept, and the keys folder is named, never made.
+        base = data_dir_path()
+        latched = True
+    if latched:
+        override = os.getenv("OO_COLUMNAR_DIR")
+        store_dir = Path(override) if override else base
+        keys_dir = base / "keys"
+    else:
+        from src.analytics.columnar import _store_dir
+        from src.custody.signing import _keys_dir
+
+        store_dir = _store_dir()
+        keys_dir = _keys_dir()
     return {
         "base": base,
         "main_db": main_db_path(),  # honors DATABASE_URL; None on a non-SQLite backend
-        "keys_dir": _keys_dir(),
-        "store_dir": _store_dir(),
+        "keys_dir": keys_dir,
+        "store_dir": store_dir,
         "custody_db": base / _CUSTODY_DB,
         "anchors_db": base / _ANCHORS_DB,
         "lane_dbs": _lane_dbs(base),
@@ -788,11 +882,17 @@ def quick_crypto_erase(
     generation = new_hold_generation() if own else hold_generation
     missed: list[str] = []
     root_token = _ERASE_ROOT.set(None)  # the erase sets its data folder; put back as it was when it ends
+    from src.paths import erase_owned
+
     try:
-        report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed)
-        report["files_not_kept"] = len(missed)  # a count: the names are never reported
+        # R802: the erase latches its folder before it touches a byte; its own overwrites, on this thread, are the writes let through.
+        with erase_owned():
+            report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed, close_own_pool=own)
+            report["files_not_kept"] = len(missed)  # a count: the names are never reported
+            if settle or own:
+                finish_holder_check(report, generation)
         if settle or own:
-            finish_holder_check(report, generation)
+            settle_removed(report)  # R802 (5): after the last log line of this erase
         return report
     finally:
         _ERASE_ROOT.reset(root_token)
@@ -811,6 +911,13 @@ def finish_holder_check(report: dict, generation: int) -> str:
         state = HOLDER_UNKNOWN
     if report.get("files_not_kept") and state == HOLDER_NONE:
         state = HOLDER_UNKNOWN  # a file of the store that could not be kept could not be asked either
+    # R805 (a): this process's own connections that the erase could not close count as a holder too: a lock the process holds
+    # itself is never seen by the probe above (POSIX locks of one process do not conflict), so it is counted, not probed.
+    own_open = report.get("own_connections_open", 0)
+    if own_open is None and state == HOLDER_NONE:
+        state = HOLDER_UNKNOWN
+    elif own_open:
+        state = HOLDER_HELD
     report["other_holder"] = state
     if state != HOLDER_NONE:
         report["limit"] = _LIMIT_NOTE_NOT_CLEAN + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
@@ -819,7 +926,25 @@ def finish_holder_check(report: dict, generation: int) -> str:
     return state
 
 
-def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[str]) -> dict:
+def _close_own_pool() -> int | None:
+    """R805 (a), for an erase outside the panic wipe (which closes the pool itself, after the key is gone): close this process's own
+    pool on the store when that store is in the folder being erased (latched by now), before a byte is overwritten. Returns the
+    connections still open after it (checked out by a thread: ``Engine.dispose`` cannot close those), ``None`` when that cannot be
+    told, ``0`` when the store is elsewhere. Never raises."""
+    try:
+        from src.database import session
+        from src.paths import erased_folder_of
+
+        db_file = getattr(session, "DB_FILE", None)
+        if not db_file or not erased_folder_of(db_file):
+            return 0
+        n = session.dispose_engine().get("checked_out")
+        return n if isinstance(n, int) else None
+    except Exception:  # noqa: BLE001 - not knowing is "unknown", never "none"
+        return None
+
+
+def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[str], close_own_pool: bool = False) -> dict:
     """The erase itself (see :func:`quick_crypto_erase`); keeps its descriptors under ``generation`` and names in ``missed``
     each file of a store that existed but could not be kept."""
 
@@ -827,6 +952,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
 
     paths = _resolve(data_dir)
     base: Path = paths["base"]
+    _latch(base)  # R802: before a byte is touched; for the rest of the process
+    _latch_outside(paths, base)  # a store the overrides put outside the folder is latched too (its exact files only)
+    own_open = _close_own_pool() if close_own_pool else 0  # R805 (a): after the latch, so no new connection opens on the store
     _ERASE_ROOT.set(base)  # every log line of this erase is masked against its own data folder, never src.paths.data_dir
     # R711. Is the data folder the app's own? One the app did not choose that also holds other files (the operator's home folder, a
     # drive root, a mount point, a projects folder) is never walked whole or removed: steps 5b and 6 reach only the entries the app
@@ -1112,12 +1240,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         seen += _s
         wiped += _w
     left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}
+    removed_at_rmtree = False
     if app_only:
         _remove_app_folders(roots)
         left = _left_entries(base)
     else:
         with contextlib.suppress(OSError):
             shutil.rmtree(base, ignore_errors=True)
+        removed_at_rmtree = not _present(base)  # before any log line: one that makes it again then reads "came back", never "not removed"
 
     overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
     unlisted_folders[:] = list(dict.fromkeys(unlisted_folders))  # 5b and 6 walk the same folders
@@ -1166,20 +1296,42 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "left_common_names": left["common"],
         "not_removed": left["not_removed"],
         "removed": not _present(base),
+        "removed_at_rmtree": removed_at_rmtree,
         # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
         "unlisted_folders": len(unlisted_folders),
+        # R805 (a): this process's own connections on the store still open when the erase ran (None: could not tell).
+        "own_connections_open": own_open,
         "limit": _LIMIT_NOTE_UNLISTED if unlisted_folders else _LIMIT_NOTE,
     }
 
 
+#: R797 / R805 (c)3: what the free-space scrub always leaves free, so it never fills to zero a drive the operator shares with other data.
+_DISK_RESERVE = 64 * 1024 * 1024
+#: The prefix of the scrub's private folder (also an app-owned name in ``data_scope``).
+_SCRUB_PREFIX = ".oo_scrub_"
+
+
+def _free_bytes(folder: Path) -> int | None:
+    try:
+        return shutil.disk_usage(folder).free
+    except OSError:
+        return None
+
+
 def _fill_free_space(path: Path, cap: int | None) -> int:
-    """Write random data to ``path`` until the volume is full (or ``cap`` bytes, a
-    test-only bound), fsync, and return the bytes written. Best-effort."""
+    """Write random data to ``path`` until the volume has only :data:`_DISK_RESERVE` free (or ``cap`` bytes, a
+    test-only bound), fsync, and return the bytes written. Best-effort; a volume whose free space cannot be read is not written."""
     written = 0
     try:
         with open(path, "wb", buffering=0) as f:
             while cap is None or written < cap:
                 n = _CHUNK if cap is None else min(_CHUNK, cap - written)
+                free = _free_bytes(path.parent)
+                if free is None:
+                    break
+                n = min(n, free - _DISK_RESERVE)  # R805 (c)3: never past the reserve
+                if n <= 0:
+                    break
                 try:
                     f.write(os.urandom(n))
                 except OSError:
@@ -1193,6 +1345,43 @@ def _fill_free_space(path: Path, cap: int | None) -> int:
     return written
 
 
+def _is_real_dir(p: Path) -> bool:
+    """A folder itself, never a link to one (lstat; a Windows junction is a link here too)."""
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return False
+    junction = getattr(os.path, "isjunction", None)
+    return stat.S_ISDIR(st.st_mode) and not (junction is not None and junction(p))
+
+
+def _real_own_folder(p: Path) -> bool:
+    """R799's conditions: a real folder (never a link), this user's own where that can be asked."""
+    if not _is_real_dir(p):
+        return False
+    getuid = getattr(os, "getuid", None)
+    try:
+        return getuid is None or os.lstat(p).st_uid == getuid()
+    except OSError:
+        return False
+
+
+def _sweep_crash_left_scrubs(where: Path) -> None:
+    """R805 (c)2: a scrub folder a crash left in ``where`` (app prefix, a real folder, this user's own) is removed; nothing else."""
+    try:
+        names = [e.name for e in os.scandir(where) if e.name.startswith(_SCRUB_PREFIX)]
+    except OSError:
+        return
+    for name in names:
+        p = where / name
+        if _real_own_folder(p):
+            shutil.rmtree(p, ignore_errors=True)
+
+
+#: Why the free space was not overwritten (R805 (c)1/2; R798 style: "could not", never a success). The UI words each ×12.
+SCRUB_NOT_DONE = ("other_drive", "drive_unread", "no_folder", "nothing_written")
+
+
 def full_secure_erase(
     passes: int = 1, *, base_dir: Path | None = None, _cap_bytes: int | None = None
 ) -> dict:
@@ -1200,37 +1389,84 @@ def full_secure_erase(
 
     Run AFTER ``quick_crypto_erase`` (which already unlinked the files): fills the
     volume's free space with random data ``passes`` times so the freed ciphertext
-    blocks are overwritten. ``passes`` must be 1, 3, or 8 (Single/Triple/Octuple).
+    blocks are overwritten, always leaving :data:`_DISK_RESERVE` free. ``passes`` must be 1, 3, or 8 (Single/Triple/Octuple).
     ``base_dir`` chooses where the fill files land (defaults to the data dir, i.e.
     the corpus volume). ``_cap_bytes`` is a TEST-ONLY per-pass byte cap so the suite
-    never has to fill a real disk."""
+    never has to fill a real disk.
+
+    R802/R805 (c): the erased data folder is never made again. The fill files go in a private folder (``mkdtemp``, mode 0700) made in
+    the data folder while it is there (a folder the erase kept), else in the nearest folder above it that is there, and only on the
+    drive that held the data folder (its device, read when the erase latched it); never through a link. When no such folder can be
+    used, the free space is NOT overwritten and ``scrub_not_done`` says why. The private folder is removed on every way out, and a
+    crash-left one only under R799's conditions. ``scrub_folder`` is the folder it was made in, shown to the operator."""
     if passes not in _ALLOWED_PASSES:
         raise ValueError(f"passes must be one of {_ALLOWED_PASSES}, got {passes!r}")
+
+    from src.paths import data_dir_path, erase_owned, erased_device, erased_folder_of
 
     if base_dir is not None:
         base = Path(base_dir)
     else:
         from src.paths import data_dir
 
-        base = data_dir()  # recreated empty by the resolver if the quick pass removed it
-    base.mkdir(parents=True, exist_ok=True)
-    scrub_dir = base / ".oo_scrub"
-    scrub_dir.mkdir(parents=True, exist_ok=True)
-
+        # R802: the folder the panic erase latched is never made again, so it is named, not asked for.
+        base = data_dir_path() if erased_folder_of(data_dir_path()) else data_dir()
+    latched = erased_folder_of(base)
+    if not latched:
+        base.mkdir(parents=True, exist_ok=True)
+    where = base
+    while not where.is_dir() and where.parent != where:
+        where = where.parent
+    not_done: str | None = None
+    if latched:
+        dev = erased_device(base)
+        try:
+            here = os.stat(where).st_dev
+        except OSError:
+            here = None
+        if dev is None or here is None:
+            not_done = "drive_unread"
+        elif here != dev:
+            not_done = "other_drive"  # the data folder was a mount point: the folder above is another drive
+    if not_done is None and not _is_real_dir(where):
+        not_done = "no_folder"  # never through a link: the fill files would land wherever it leads
     total = 0
-    for i in range(passes):
-        fill = scrub_dir / f"scrub_{i}.bin"
-        total += _fill_free_space(fill, _cap_bytes)
-        with contextlib.suppress(OSError):
-            fill.unlink()
-    with contextlib.suppress(OSError):
-        shutil.rmtree(scrub_dir, ignore_errors=True)
+    scrub_dir: Path | None = None
+    left_behind = False
+    if not_done is None:
+        with erase_owned() if latched else contextlib.nullcontext():  # the scrub's own private files, on this thread
+            _sweep_crash_left_scrubs(where)
+            try:
+                scrub_dir = Path(tempfile.mkdtemp(prefix=_SCRUB_PREFIX, dir=where))
+            except OSError:
+                not_done = "no_folder"
+            if scrub_dir is not None:
+                try:
+                    for i in range(passes):
+                        fill = scrub_dir / f"scrub_{i}.bin"
+                        total += _fill_free_space(fill, _cap_bytes)
+                        with contextlib.suppress(OSError):
+                            fill.unlink()
+                finally:  # every way out, an interrupt included
+                    shutil.rmtree(scrub_dir, ignore_errors=True)
+                    left_behind = os.path.lexists(scrub_dir)
+            if not_done is None and total == 0:
+                not_done = "nothing_written"  # a full drive, a free space that could not be read, a fill file that could not be made
 
-    _LOG.warning("SECURE-ERASE scrub on %s (%d passes, %d bytes total)", _masked([str(base)])[0], passes, total)
+    _LOG.warning("SECURE-ERASE scrub on %s (%d passes, %d bytes total)", _masked([str(base)], base)[0], passes, total)
     return {
         "phase": "free-space-scrub",
         "data_dir": str(base),
         "passes": passes,
         "bytes_written": total,
+        # R802: "data-folder", "above-data-folder" (the erased folder is not made again for the scrub) or "none".
+        "scrub_location": "none" if scrub_dir is None else ("data-folder" if where == base else "above-data-folder"),
+        # R805 (c)4: the folder the private scrub folder was made in, shown as a plain path (it may be outside the data folder).
+        "scrub_folder": None if scrub_dir is None else str(where),
+        # R805 (c)1: why the free space was not overwritten (one of SCRUB_NOT_DONE), never a scrubbed claim then.
+        "scrub_not_done": not_done,
+        # The private folder when it could not be removed (shown as a plain path, to remove by hand); None when it was.
+        "scrub_folder_left": str(scrub_dir) if (scrub_dir is not None and left_behind) else None,
+        "reserve_bytes": _DISK_RESERVE,
         "limit": _LIMIT_NOTE,
     }

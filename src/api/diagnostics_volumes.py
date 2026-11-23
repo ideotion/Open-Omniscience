@@ -79,13 +79,12 @@ rejoin instructions.
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
 import os
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 from src.analytics.upload_parts import (
     join_json_pieces,
@@ -94,8 +93,13 @@ from src.analytics.upload_parts import (
     split_json_value,
     write_manifest_zips,
 )
+from src.backup.bounded_hash import LongerThanListed, sha256_read
+from src.backup.regular_file import NotARegularFile, open_regular
 
 MANIFEST_NAME = "volumes.json"
+# The sidecar is read whole before its JSON is parsed, so it gets a ceiling (row 368): far above any set this app
+# writes (a few hundred bytes per member), far below what a file swapped in at the name could make the read take.
+MANIFEST_MAX_BYTES = 64 * 1024 * 1024
 README_NAME = "volumes-readme.json"
 # ``-2``: the 2026-10-01 shape (numbered ``part-NN-of-MM`` names, a manifest zip, members cut on
 # record boundaries). A set written under ``-1`` is refused by ``load_manifest`` and rebuilt.
@@ -188,12 +192,38 @@ def volume_max_bytes() -> int:
     return max(4096, int(mb * 1024 * 1024))
 
 
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for blk in iter(lambda: f.read(1 << 20), b""):
-            h.update(blk)
-    return h.hexdigest()
+def _sha256_file(path: Path, max_bytes: int | None = None) -> str:
+    """The SHA-256 of a regular file, read through the one bounded read the backup checks use (row 368).
+
+    A link, a pipe or a device raises :class:`NotARegularFile` without a byte read; with ``max_bytes`` (the size the
+    manifest lists) a file that holds more raises :class:`LongerThanListed`, read at most one byte past it."""
+    with open_regular(path) as f:
+        return sha256_read(f, max_bytes)
+
+
+def _volume_matches(path: Path, entry: dict[str, Any]) -> bool:
+    """Whether ``path`` is a regular file holding exactly the bytes ``entry`` lists (size and SHA-256), never read past
+    that size (row 368). A link, a pipe, a device, a file larger than listed or an entry with no whole-number size is a
+    volume that does not match: reported as bad, never read to its end. Any other read error raises as before."""
+    expect = entry.get("bytes")
+    if not isinstance(expect, int) or isinstance(expect, bool) or expect < 0:
+        return False
+    try:
+        return _sha256_file(path, expect) == entry.get("sha256")
+    except (NotARegularFile, LongerThanListed):
+        return False
+
+
+def _plain_name(name: object) -> TypeGuard[str]:
+    """A manifest entry's name is joined to the set's folder only when it is one plain file name in it."""
+    return (
+        isinstance(name, str)
+        and name not in ("", ".", "..")
+        and "/" not in name
+        and "\\" not in name
+        and "\x00" not in name
+        and Path(name).name == name
+    )
 
 
 def _part_name(name: str, idx: int, total: int) -> str:
@@ -858,10 +888,27 @@ def retire_unnamed(out_dir: str | os.PathLike[str], manifest: dict[str, Any]) ->
 
 
 def load_manifest(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
+    """The set's sidecar, read only when it is a regular file in the folder (a link, a FIFO or a device at the name is
+    refused, never opened for a blocking read) and at most :data:`MANIFEST_MAX_BYTES` long (row 368)."""
     p = Path(out_dir) / MANIFEST_NAME
-    if not p.exists():
+    if not os.path.lexists(p):
         raise VolumeError(f"no volume manifest ({MANIFEST_NAME}) in {out_dir}")
-    m = json.loads(p.read_text(encoding="utf-8"))
+    try:
+        with open_regular(p) as f:
+            if os.fstat(f.fileno()).st_size > MANIFEST_MAX_BYTES:
+                raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is larger than {MANIFEST_MAX_BYTES} bytes")
+            raw = f.read(MANIFEST_MAX_BYTES + 1)
+    except NotARegularFile:
+        raise VolumeError(
+            f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is not a regular file (a link or a device is never read)"
+        ) from None
+    except FileNotFoundError:
+        raise VolumeError(f"no volume manifest ({MANIFEST_NAME}) in {out_dir}") from None
+    except OSError as exc:
+        raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} cannot be read ({type(exc).__name__})") from None
+    if len(raw) > MANIFEST_MAX_BYTES:
+        raise VolumeError(f"the volume manifest ({MANIFEST_NAME}) in {out_dir} is larger than {MANIFEST_MAX_BYTES} bytes")
+    m = json.loads(raw.decode("utf-8"))
     if m.get("kind") != VOLUME_KIND:
         raise VolumeError(f"not a diagnostics volume set (kind={m.get('kind')!r})")
     return m
@@ -881,12 +928,16 @@ def verify_volume_set(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
     bad: list[str] = []
     missing: list[str] = []
     for v in [*m["volumes"], *m.get("manifest_files", [])]:
-        p = out / v["name"]
-        if not p.exists():
-            bad.append(v["name"])
-            missing.append(v["name"])
-        elif p.stat().st_size != v["bytes"] or _sha256_file(p) != v["sha256"]:
-            bad.append(v["name"])
+        name = v.get("name") if isinstance(v, dict) else None
+        if not _plain_name(name):  # never joined to the folder, never read
+            bad.append(str(name if name is not None else v))
+            continue
+        p = out / name
+        if not os.path.lexists(p):
+            bad.append(name)
+            missing.append(name)
+        elif not _volume_matches(p, v):  # row 368: a regular file read no further than the size listed
+            bad.append(name)
     return {"ok": not bad, "bad": bad, "missing": missing, "total": len(m["volumes"])}
 
 
