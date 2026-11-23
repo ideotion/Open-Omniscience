@@ -180,7 +180,7 @@ def test_a_file_that_cannot_be_read_is_unreadable_never_a_crash_nor_a_pass(tmp_p
     def _fails(*a, **k):
         raise OSError(5, "I/O error")
 
-    def _fails_reading(fd):  # as the real one: owns the handle and closes it, then the read fails
+    def _fails_reading(fd, **k):  # as the real one: owns the handle and closes it, then the read fails
         with os.fdopen(fd, "rb"):
             raise OSError(5, "I/O error")
 
@@ -221,7 +221,7 @@ def test_a_folder_swapped_for_a_link_after_the_look_is_refused_at_the_open(tmp_p
     monkeypatch.setattr(folder_backup, "_member_link", lambda *a, **k: None)
     hashed: list[int] = []
     real = folder_backup._hash_fd
-    monkeypatch.setattr(folder_backup, "_hash_fd", lambda fd: hashed.append(fd) or real(fd))
+    monkeypatch.setattr(folder_backup, "_hash_fd", lambda fd, **k: hashed.append(fd) or real(fd, **k))
     rep = verify_folder_backup(dest)
     assert rep["ok"] is False
     probs = {p["rel"]: p["status"] for p in rep["problems"]}

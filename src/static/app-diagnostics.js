@@ -44,33 +44,16 @@
 
     // Maintenance: FORCE-re-index the WHOLE corpus (not just un-indexed articles) —
     // recomputes keywords/metadata with the current engine. Drains stale rows an old
-    // engine produced (e.g. pre-markup-strip CSS keywords). Heavy; loops batches with
-    // a visible cursor so a big corpus never hangs the request. Confirm first.
-    let _reindexAllRunning = false;
-    // Core loops (no confirm) so the individual buttons AND the one-click
-    // "Clean up keywords" can reuse them. Each writes to the shared status span.
-    async function _reindexAllLoop(st, t) {
-      let after = 0, total = 0, guard = 0;
-      for (;;) {
-        const r = await api(`/api/insights/reindex-all?limit=300&after_id=${after}`, { method: "POST" });
-        total += r.reindexed || 0;
-        after = r.last_id || after;
-        if (st) st.textContent = `${fmtNum(total, 0)} ${t("re-indexed")}${r.remaining ? ` · ${fmtNum(r.remaining, 0)} ${t("to go")}` : ""}`;
-        if (r.done || ++guard > 5000) break;
-      }
-      return total;
-    }
-    async function _pruneCore(st, t) {
-      if (st) st.textContent = t("Pruning…");
-      const r = await api("/api/insights/prune-keywords", { method: "POST" });
-      return r;
-    }
-    // Phase 1.1: the whole-corpus re-index now runs as a BACKGROUND JOB — it survives a
-    // tab close and RESUMES from a persisted cursor (the old client loop above restarted
-    // from article 0 and stopped when the tab closed). We start it, then poll its status
-    // into the shared span; the work keeps going even if we stop polling, and it is
-    // pausable/resumable from the task manager. _reindexAllLoop/_pruneCore stay as the
-    // fallback cores (and prune is still a quick client call).
+    // engine produced (e.g. pre-markup-strip CSS keywords).
+    // Phase 1.1: the whole-corpus re-index runs as a BACKGROUND JOB — it survives a tab
+    // close and RESUMES from a persisted cursor (the old client loop restarted from
+    // article 0 and stopped when the tab closed). We start it, then poll its status into
+    // the shared span; the work keeps going even if we stop polling, and it is
+    // pausable/resumable from the task manager. With prune_after the job itself chains
+    // prune_orphan_keywords when the pass completes, so the clean-up is ONE server job.
+    // (The old client cores _reindexAllLoop/_pruneCore had no caller and were deleted in
+    // row 357; /api/insights/reindex-all and /prune-keywords stay as API routes, listed in
+    // configs/routes_without_ui.tsv.)
     async function _startReindexJob(pruneAfter, scope, restart) {
       // scope "keywords" (Phase 1.2) re-does the keyword pass only (~2/3 less work);
       // "full" also recomputes when/where/who + sentiment. `restart` discards a paused
