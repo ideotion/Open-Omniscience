@@ -2560,17 +2560,52 @@
       } catch (e) { toast(_failMsg("Import failed: {error}", e), "err"); }
       finally { input.value = ""; }
     }
+    // R800 / row 339: trust decisions that arrived in a backup another installation signed are withheld. One row per
+    // signing key names the key and the count and asks; nothing is applied until the person clicks "Import them", and
+    // "No" (focused first) leaves those authors untrusted and the question gone.
+    function _withheldTrustHtml(groups) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      return (groups || []).map(g => {
+        const key = String(g.signer || "").match(/.{1,4}/g).join(" ");
+        const sig = esc(JSON.stringify(g.signer)), n = Number(g.count) || 0;
+        const ids = esc(JSON.stringify((g.authors || []).map(a => String(a.author_id))));
+        return `<div class="draft-item withheld-trust" role="group"><div class="di-body">
+          <p>${esc(tf("Trust decisions signed with a key this installation did not make were not applied (count: {count}). Import them too?", {count: n}))}</p>
+          <p translate="no" dir="auto">${esc((g.authors || []).map(a => String(a.author_name || a.author_id || "")).join(", "))}</p>
+          <p class="hint">${esc(t("Its signing key:"))} <code dir="ltr">${esc(key)}</code></p>
+          <p class="hint">${esc(t("Its signature shows the backup is unchanged since it was signed, not who signed it. Import them only if you know that installation is yours or someone you trust."))}</p></div>
+          <button class="ghost tiny" data-autofocus data-on-click="answerWithheldTrust(${sig}, ${n}, false, ${ids})">${esc(t("No"))}</button>
+          <button class="tiny" data-on-click="answerWithheldTrust(${sig}, ${n}, true, ${ids})">${esc(t("Import them"))}</button></div>`;
+      }).join("");
+    }
+    async function answerWithheldTrust(signer, count, apply, authors) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      try {
+        const r = await api("/api/annotations/withheld-trust", {method: "POST", body: JSON.stringify({signer, count, apply: apply === true, authors: Array.isArray(authors) ? authors : null})});
+        toast(apply === true ? tf("Trust decisions applied: {count}.", {count: r.applied || 0})
+          : t("Not imported: those authors stay untrusted. You can still trust any of them in the list."));
+      } catch (e) { toast(e.message, "err"); }
+      loadAuthors();
+    }
     async function loadAuthors() {
       const box = $("anno-authors");
       try {
         const d = await api("/api/annotations/authors");
+        let withheld = "";
+        try { withheld = _withheldTrustHtml((await api("/api/annotations/withheld-trust")).groups); } catch (_e) { withheld = ""; }
         if (!d.authors || !d.authors.length) { box.innerHTML = '<div class="muted">No imported authors yet.</div>'; return; }
-        box.innerHTML = d.authors.map(a =>
+        box.innerHTML = withheld + d.authors.map(a =>
           `<div class="draft-item"><div class="di-body"><b>${esc(a.author_name||a.author_id.slice(0,12))}</b>
             <span class="hint">· ${a.annotations} annotation(s) · ${esc(a.author_id.slice(0,16))}…</span></div>
             <label class="switch" style="margin-top:0"><input type="checkbox" ${a.trusted?"checked":""}
               data-on-change="trustAuthor(${esc(JSON.stringify(a.author_id))}, this.checked)"> trust</label>
             <button class="ghost tiny" data-on-click="removeAuthor(${esc(JSON.stringify(a.author_id))})">Remove</button></div>`).join("");
+        const first = box.querySelector(".withheld-trust [data-autofocus]");
+        if (first) first.focus({preventScroll: true});  // the default answer is No
       } catch (e) { box.innerHTML = '<div class="muted">Could not load.</div>'; }
     }
     async function trustAuthor(id, trusted) {

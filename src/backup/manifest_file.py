@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 
-from src.backup.regular_file import open_regular_fd
+from src.backup.regular_file import adopt_fd, open_regular_fd
 
 #: A real manifest lists one small entry per file (about 200 bytes), so this holds some 300,000 files,
 #: and keeps what ``json.loads`` builds from it bounded too.
@@ -42,8 +42,8 @@ def read_manifest_json(
     try:
         if os.fstat(fd).st_size > max_bytes:
             return None
-        with os.fdopen(fd, "rb") as f:
-            fd = -1
+        owned, fd = fd, -1  # row 344: from here adopt_fd closes it exactly once, and this ``finally`` never does
+        with adopt_fd(owned, "rb") as f:
             raw = f.read(max_bytes + 1)
         if len(raw) > max_bytes:
             return None

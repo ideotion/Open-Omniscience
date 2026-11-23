@@ -392,4 +392,5 @@ def test_the_opener_module_stays_import_light():
     """The import scan is crypto-free and imports this; so does the crypto layer."""
     src = Path(regular_file.__file__).read_text(encoding="utf-8")
     imports = [ln for ln in src.splitlines() if ln.startswith(("import ", "from "))]
-    assert all(ln.split()[1].split(".")[0] in {"__future__", "os", "stat", "typing"} for ln in imports), imports
+    # ``io`` (row 344, ``adopt_fd``): standard library, loaded at interpreter start, and what ``os.fdopen`` itself calls.
+    assert all(ln.split()[1].split(".")[0] in {"__future__", "io", "os", "stat", "typing"} for ln in imports), imports

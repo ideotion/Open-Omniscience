@@ -50,7 +50,7 @@ from src.backup.bounded_hash import LongerThanListed, sha256_read
 from src.backup.hf_layout import HF_LAYOUT, hf_live_rel, hf_member_allowed
 from src.backup.links import is_link, is_link_stat, link_on_the_way, stays_inside
 from src.backup.manifest_file import read_manifest_json
-from src.backup.regular_file import NotARegularFile, create_new, open_regular
+from src.backup.regular_file import NotARegularFile, adopt_fd, create_new, open_regular
 from src.monitoring.secret_scrub import log_failure, record_text
 from src.shared_text import said
 
@@ -1717,12 +1717,7 @@ def _sha256_file(path: Path, max_bytes: int | None = None) -> str:
 def _hash_fd(fd: int, max_bytes: int | None = None) -> str:
     """The SHA-256 of an open file (the handle is closed), read no further than one byte past ``max_bytes`` (the size
     the manifest lists, row 342: a file that grew after its size was checked raises :class:`LongerThanListed`)."""
-    try:
-        f = os.fdopen(fd, "rb")
-    except BaseException:
-        os.close(fd)
-        raise
-    with f:
+    with adopt_fd(fd, "rb") as f:  # row 344: closed exactly once, whatever is raised on the way
         return sha256_read(f, max_bytes, chunk=_COPY_BUF)
 
 
