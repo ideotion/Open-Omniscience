@@ -135,14 +135,39 @@ def _one_volume(tmp_path: Path, passphrase: str) -> tuple[Path, dict]:
     return vol, m
 
 
-def test_an_intact_volume_that_does_not_open_is_refused_at_once(tmp_path):
-    from src.backup.stream_backup import _refuse_a_wrong_backup_passphrase
-    from src.safety.crypto import EncryptionError
+def _signed_here(m: dict, tmp_path: Path, monkeypatch) -> dict:
+    """``m`` signed by this installation's own key (a key file of the test's own, never the suite's)."""
+    import src.reporting.evidence as EV
+    from src.backup.stream_backup import _sign_manifest
+
+    monkeypatch.setattr(EV, "_default_key_path", lambda: tmp_path / "keys" / "evidence_ed25519.pem")
+    return {**m, "signature": _sign_manifest(m)}
+
+
+def test_an_unchanged_volume_that_does_not_open_is_refused_at_once(tmp_path, monkeypatch):
+    from src.backup.stream_backup import WrongBackupPassphrase, _refuse_a_wrong_backup_passphrase
 
     _vol, m = _one_volume(tmp_path, "the right words")
+    m = _signed_here(m, tmp_path, monkeypatch)
     _refuse_a_wrong_backup_passphrase(tmp_path, m, "the right words")  # the right key passes silently
-    with pytest.raises(EncryptionError, match="wrong passphrase for this backup"):
+    with pytest.raises(WrongBackupPassphrase, match="wrong passphrase for this backup"):
         _refuse_a_wrong_backup_passphrase(tmp_path, m, "the wrong words")
+
+
+def test_an_unsigned_list_is_still_refused_but_never_called_a_wrong_passphrase(tmp_path):
+    """R795: without a signature by this installation, "does not open" cannot be told apart from "was changed"."""
+    from src.backup.stream_backup import (
+        REASON_UNSIGNED,
+        BackupPassphraseUnchecked,
+        _refuse_a_wrong_backup_passphrase,
+    )
+
+    _vol, m = _one_volume(tmp_path, "the right words")
+    _refuse_a_wrong_backup_passphrase(tmp_path, m, "the right words")
+    with pytest.raises(BackupPassphraseUnchecked, match="could not check the passphrase for this backup") as refused:
+        _refuse_a_wrong_backup_passphrase(tmp_path, m, "the wrong words")
+    assert refused.value.reason == REASON_UNSIGNED
+    assert "wrong passphrase for" not in str(refused.value) and "intact" not in str(refused.value)
 
 
 def test_a_damaged_or_missing_volume_gives_no_verdict(tmp_path):
@@ -175,11 +200,12 @@ def test_the_key_check_reads_one_chunk_of_a_many_chunk_file(tmp_path):
     assert stream_key_opens(enc1, "the right words") is True
 
 
-def test_a_set_whose_passphrase_is_certainly_wrong_is_named_and_nothing_else_is(tmp_path):
+def test_a_set_whose_passphrase_is_certainly_wrong_is_named_and_nothing_else_is(tmp_path, monkeypatch):
     from src.backup.stream_backup import STREAM_KIND, backup_passphrase_is_wrong
 
     _vol, m = _one_volume(tmp_path, "the right words")
-    (tmp_path / "volumes.json").write_text(json.dumps({"kind": STREAM_KIND, **m}), encoding="utf-8")
+    m = _signed_here({"kind": STREAM_KIND, **m}, tmp_path, monkeypatch)
+    (tmp_path / "volumes.json").write_text(json.dumps(m), encoding="utf-8")
     assert backup_passphrase_is_wrong(tmp_path, "the wrong words") is True
     assert backup_passphrase_is_wrong(tmp_path, "the right words") is False
     assert backup_passphrase_is_wrong(tmp_path / "nowhere", "the wrong words") is False  # unreadable: no verdict
@@ -193,9 +219,9 @@ def test_the_run_is_refused_before_anything_starts_when_one_backup_key_is_wrong(
 
     def wrong(path, key):
         seen.append((path, key))
-        return path == "/b/2"
+        return ("wrong", None) if path == "/b/2" else ("none", None)
 
-    monkeypatch.setattr(SB, "backup_passphrase_is_wrong", wrong)
+    monkeypatch.setattr(SB, "backup_passphrase_check", wrong)
     with pytest.raises(ValueError, match="Wrong passphrase for two") as err:
         queue.start(
             [{"kind": "corpus", "path": "/b/1"}, {"kind": "corpus", "path": "/b/2", "label": "two", "passphrase": "typo words"}],

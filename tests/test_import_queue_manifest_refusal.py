@@ -87,7 +87,7 @@ def test_the_start_is_refused_naming_each_backup_and_nothing_runs(tmp_path, monk
     from src.backup.import_queue import ImportQueueManager
 
     asked: list[str] = []
-    monkeypatch.setattr(SB, "backup_passphrase_is_wrong", lambda p, k: asked.append(p) or False)
+    monkeypatch.setattr(SB, "backup_passphrase_check", lambda p, k: asked.append(p) or ("none", None))
     good = _set(tmp_path / "good", ["v0001.ooenc"])
     bad = _set(tmp_path / "bad", ["v0001.ooenc", "v0001.ooenc"])
     mgr = ImportQueueManager(state_path=tmp_path / "q.json")
@@ -107,7 +107,7 @@ def test_a_start_with_only_readable_backups_goes_on_to_the_passphrase_check(tmp_
     import src.backup.stream_backup as SB
     from src.backup.import_queue import ImportQueueManager
 
-    monkeypatch.setattr(SB, "backup_passphrase_is_wrong", lambda p, k: True)
+    monkeypatch.setattr(SB, "backup_passphrase_check", lambda p, k: ("wrong", None))
     good = _set(tmp_path / "good", ["v0001.ooenc"])
     mgr = ImportQueueManager(state_path=tmp_path / "q.json")
     with pytest.raises(ValueError, match="Wrong passphrase"):
@@ -124,7 +124,7 @@ def test_an_already_merged_backup_never_stops_the_start(tmp_path, monkeypatch):
     import src.backup.stream_backup as SB
     from src.backup.import_queue import ImportQueueManager
 
-    monkeypatch.setattr(SB, "backup_passphrase_is_wrong", lambda p, k: False)
+    monkeypatch.setattr(SB, "backup_passphrase_check", lambda p, k: ("none", None))
     merged = _set(tmp_path / "merged", ["v0001.ooenc", "v0001.ooenc"])
     monkeypatch.setattr(MG, "artifact_source_digest", lambda p: "d" * 64 if Path(p) == merged else None)
     monkeypatch.setattr(MG, "find_completed_import", lambda d: {"batch_id": 7, "imported_at": "x"} if d else None)

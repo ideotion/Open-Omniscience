@@ -2170,6 +2170,48 @@
       if (/^(?:could not \w+ this backup: )?wrong passphrase or the file has been altered\.?$/i.test(s.trim())) {
         return t("Could not open this backup: the passphrase is wrong, or its files have been altered.");
       }
+      // R795 (row 330) and row 337: the early passphrase check's refusals (src/backup/stream_backup.py, and the import
+      // queue's in src/backup/import_queue.py) and the two crypto refusals of rows 312 and 329 (src/safety/crypto.py).
+      // Each is one whole sentence; a reason is one of four fixed texts, translated too, and anything else leaves the
+      // message in English rather than half translated. A queue refusal is one sentence per line, translated only when
+      // every line is one of these. tests/test_backup_passphrase_trust_r795.py pins these to the Python texts.
+      const _OO_PASS_REASONS = [
+        "this backup has no signature",
+        "its signature does not match its list of volumes",
+        "this backup was signed by another installation (for example another computer), so this one cannot confirm its list",
+        "this installation's own signing key could not be read",
+      ];
+      const _ooPassLine = (raw) => {
+        const line = raw.trim().replace(/^could not \w+ this backup: (?=wrong passphrase for this backup: |could not check the passphrase for this backup: |this file was not read: |this file is not the one that was checked)/i, "");
+        const why = (r) => (_OO_PASS_REASONS.includes(r) ? t(r) : null);
+        if (line === "wrong passphrase for this backup: its first volume matches the list of volumes signed by this installation but does not open with the passphrase given. Nothing was read past that volume and nothing was changed on this computer.") {
+          return t("Wrong passphrase for this backup: its first volume matches the list of volumes signed by this installation but does not open with the passphrase given. Nothing was read past that volume and nothing was changed on this computer.");
+        }
+        let g = /^could not check the passphrase for this backup: its first volume does not open with the passphrase given, and the backup's list of volumes could not be authenticated \((.+)\), so a wrong passphrase cannot be told apart from a changed backup\. Nothing was read past that volume and nothing was changed on this computer\.$/.exec(line);
+        if (g && why(g[1])) {
+          return tf("Could not check the passphrase for this backup: its first volume does not open with the passphrase given, and the backup's list of volumes could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a changed backup. Nothing was read past that volume and nothing was changed on this computer.", { reason: why(g[1]) });
+        }
+        g = /^Wrong passphrase for (.+?): each backup's first volume matches its list of volumes signed by this installation but does not open with the passphrase given\. Nothing was started and nothing was changed on this computer; correct it and import again\.$/.exec(line);
+        if (g) {
+          return tf("Wrong passphrase for {names}: each backup's first volume matches its list of volumes signed by this installation but does not open with the passphrase given. Nothing was started and nothing was changed on this computer; correct it and import again.", { names: iso(g[1]) });
+        }
+        g = /^Could not check the passphrase for (.+?): its first volume does not open with the passphrase given, and the backup's list of volumes could not be authenticated \((.+)\), so a wrong passphrase cannot be told apart from a changed backup\. Nothing was started and nothing was changed on this computer\.$/.exec(line);
+        if (g && why(g[2])) {
+          return tf("Could not check the passphrase for {name}: its first volume does not open with the passphrase given, and the backup's list of volumes could not be authenticated ({reason}), so a wrong passphrase cannot be told apart from a changed backup. Nothing was started and nothing was changed on this computer.", { name: iso(g[1]), reason: why(g[2]) });
+        }
+        if (line === "this file was not read: it is not a regular file, or it is a link") {
+          return t("This file was not read: it is not a regular file, or it is a link.");
+        }
+        if (line === "this file is not the one that was checked before reading (it was replaced or changed since); what was read must not be used") {
+          return t("This file is not the one that was checked before reading (it was replaced or changed since), so what was read from it is not used.");
+        }
+        return null;
+      };
+      {
+        const _lines = s.trim().split("\n");
+        const _done = _lines.map(_ooPassLine);
+        if (_done.every((x) => x !== null)) return _done.join("\n");
+      }
       // Row 156: backup/volumes.py member_in_use, a staged member another program holds (restore
       // decrypt, lane merge). Whole-message only; the name is the member's file name.
       const _inuse = /^another program is using the staged backup member (.+) right now, so it could not be opened; try again in a moment$/.exec(s.trim());
