@@ -11,6 +11,8 @@ returns *who asserted what* for a source, never a consensus number.
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -98,6 +100,32 @@ def trust(body: TrustUpdate) -> dict:
     if not store.set_trusted(body.author_id, body.trusted):
         raise HTTPException(status_code=404, detail="author not found")
     return {"author_id": body.author_id, "trusted": body.trusted}
+
+
+class WithheldTrustDecision(BaseModel):
+    signer: str
+    count: int
+    apply: bool = False
+    authors: list[str]  # the author ids shown: the set must still match (row 339), so it is required
+
+
+@router.get("/withheld-trust")
+def withheld_trust() -> dict:
+    """R800 / row 339: trust decisions withheld from backups another installation signed, one group per key."""
+    return {"groups": store.withheld_trust()}
+
+
+@router.post("/withheld-trust")
+def settle_withheld_trust(body: WithheldTrustDecision) -> dict:
+    """Apply (``apply: true``) or decline the decisions withheld from one key. ``count`` is the number the person was
+    shown; a different number now changes nothing (409). Declining leaves every author untrusted and the prompt gone."""
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", body.signer or "") or body.count < 0:
+        raise HTTPException(status_code=400, detail="not a signing key and a count")
+    try:
+        done = store.settle_withheld_trust(body.signer, apply=body.apply, expected_count=body.count, expected_authors=body.authors)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=http_detail(exc)) from exc
+    return {"signer": body.signer.lower(), "applied" if body.apply else "declined": done}
 
 
 @router.delete("/authors/{author_id}")

@@ -95,11 +95,7 @@ app-core.js loadTagCoverage
 app-corpus.js anRenderKwChips
 app-corpus.js conjCombine
 app-corpus.js conjContrast
-app-corpus.js corpusTab
 app-corpus.js loadTrendWindows
-app-corpus.js renderCorpusCompetitive
-app-corpus.js renderCorpusKeywords
-app-corpus.js renderCorpusSources
 app-corpus.js renderTrendMultiples
 app-corpus.js renderTrendSlope
 app-diagnostics.js _chronoDraw
@@ -107,8 +103,6 @@ app-diagnostics.js _paintAiCheck
 app-diagnostics.js _paintAiCoordinator
 app-diagnostics.js _paintAiSweepButton
 app-diagnostics.js _paintPerceptionLangToggles
-app-diagnostics.js _pruneCore
-app-diagnostics.js _reindexAllLoop
 app-diagnostics.js _renderAiCheck
 app-diagnostics.js _rrRenderReport
 app-diagnostics.js cancelP0Validation
