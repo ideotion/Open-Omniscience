@@ -54,6 +54,7 @@ _ALLOWED = {
     "src/database/connect.py": "``os.listdir(\"/dev/fd\")`` in ``_other_fds_on`` (R789): LISTS the process's own descriptors (macOS has no /proc) to ask whether one is open on a file; nothing is opened, written or replaced there",
     "tests/test_export_summary_reader_r302.py": "``os.symlink(\"/dev/zero\", ...)``: the TARGET of a link the test plants in a temporary folder to prove the manifest reader never follows a link; the device is never opened, written or replaced",
     "tests/test_untrusted_folder_reads_r312.py": "``os.symlink(\"/dev/zero\", ...)``: the TARGET of links the test plants in temporary backup, scan and volume folders to prove the import scan, the checksum passes, parity and decryption never read through a link or a device; the device is never opened, written or replaced",
+    "tests/test_key_reads_bounded_row341.py": "``symlink_to(\"/dev/zero\")``: the TARGET of a link the test plants at a key name in a temporary folder to prove the key reader opens it read-only, sees a device and refuses it before reading; the device is never written or replaced",
     "tests/test_stream_backup_destination_reads_r308.py": "``os.symlink(\"/dev/zero\", ...)``: the TARGET of links the test plants in a temporary export destination to prove the manifest reader and the reuse hash never follow a link; the device is never opened, written or replaced",
 }
 #: The nodes the canary checks. ``/dev/full`` exists on Linux only.
