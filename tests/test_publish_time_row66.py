@@ -8,7 +8,7 @@ midnight, exactly as before, so nothing is invented.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -44,6 +44,18 @@ def test_an_article_published_earlier_today_keeps_its_time():
     head = f'<meta property="article:published_time" content="{early.strftime("%Y-%m-%dT%H:%M:%S")}+00:00">'
     doc = ex.extract_article(_page(head), url="https://example.com/news/today")
     assert doc is not None and doc.published_at == early.replace(tzinfo=None)
+
+
+@pytest.mark.parametrize("hours_ahead", [5, 14])
+def test_a_moment_stated_in_a_zone_ahead_of_the_machine_keeps_its_time(hours_ahead):
+    # The upper bound is the machine's local end of today (htmldate's clock). A moment a second old,
+    # written in a zone far ahead (at +14:00 its own date is often already tomorrow), is past, and kept.
+    now = datetime.now(UTC).replace(microsecond=0)
+    early = now - timedelta(seconds=1)
+    stated = early.astimezone(timezone(timedelta(hours=hours_ahead)))
+    head = f'<meta property="article:published_time" content="{stated.isoformat()}">'
+    doc = ex.extract_article(_page(head), url="https://example.com/news/ahead")
+    assert doc is not None and doc.published_at == early.replace(tzinfo=None), stated.isoformat()
 
 
 def test_the_two_parse_path_keeps_the_time_too(monkeypatch):
