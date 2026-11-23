@@ -359,7 +359,7 @@ def scan_sources(
             continue
         if any(
             re.search(
-                rf"(?:\$|getElementById)\(\s*[\"']{re.escape(i)}[\"']\s*\)|[\"']#{re.escape(i)}\b",
+                rf"(?:\$|getElementById)\(\s*[\"']{re.escape(i)}[\"']\s*\)|[\"']#{re.escape(i)}(?![\w-])",
                 own_code,
             )
             for i in ids

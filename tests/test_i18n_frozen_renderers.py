@@ -158,6 +158,11 @@ def test_an_id_index_html_marks_dyn_is_exempt():
     # the same word as an ordinary string key is not a lookup of that element
     key = 'function paint() { const m = {"home-stats": 1}; $("x").textContent = t("Hello"); }'
     assert _keys({"a.js": key}, html) == {"a.js paint"}
+    # an id that merely starts with a dyn id is another element
+    longer = (
+        'function paint() { document.querySelector("#home-stats-old").textContent = t("Hello"); }'
+    )
+    assert _keys({"a.js": longer}, html) == {"a.js paint"}
 
 
 def _chain(n: int) -> str:
