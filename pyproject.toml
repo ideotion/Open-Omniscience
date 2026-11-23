@@ -91,8 +91,9 @@ dependencies = [
     # urllib3 is a direct requirement because src/ingest/urllib3_log.py is built on what it LOGS (the signed storage address of a download rides
     # its own log lines): the table of log calls there was read from 2.7.0 and 2.8.0, and tests/test_urllib3_log_withholds_the_path.py compares
     # it with the installed release's source. The ceiling is the first release NOT read; lift it only by that qualification
-    # (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never by loosening a test.
-    "urllib3>=2.7.0,<2.8.1",
+    # (docs/maintenance/EXTERNAL_DEPENDENCIES.md), never by loosening a test. The floor is 2.8.0 since Audit 17 row 373: 2.7.0 carries
+    # three published advisories that 2.8.0 fixes, so no install may resolve it.
+    "urllib3>=2.8.0,<2.8.1",
     "requests>=2.31",
     # PySocks is the SOCKS client requests and urllib3 use. Without it, protected mode over Tor (``socks5h://127.0.0.1:9050``, the
     # recommended proxy) cannot make a single request (requests raises InvalidSchema "Missing dependencies for SOCKS support"), and the
@@ -185,12 +186,14 @@ dependencies = [
     # fail, it recorded "no usable text" and carried on, which is the honest degrade
     # doing its job over a gap nobody chose. pypdf is pure Python, BSD, no native build
     # and no network, so it costs a core install nothing but its own bytes (Q1015's bar).
+    # The floor is 6.21.4 since Audit 17 row 373: it parses untrusted PDFs from the web, and
+    # 6.21.4 fixes all 18 advisories published against 6.19.0.
     #
     # WHAT DID NOT MOVE, DELIBERATELY: the [ocr] extra. OCR needs the `tesseract` SYSTEM
     # binary, which pip cannot install, and its output is a LOWER-TRUST class this
     # project tags as such -- a scanned PDF is still honestly "no usable text" on a core
     # install, and that is a different and smaller gap than the one L6 closes.
-    "pypdf>=4.0",
+    "pypdf>=6.21.4",
     # The launcher's terminal panel (R600, src/tui/panel.py) runs on the standard library's curses, which CPython does not ship on
     # Windows; windows-curses supplies it there (R602). The marker is narrower than "Windows" on purpose, because the project
     # publishes WHEELS ONLY (no sdist), so a platform with no wheel would fail the whole install, where a missing curses only means
@@ -256,7 +259,7 @@ nlp = [
 # mis-decoded PDF is NEVER stored as a garbage body even when pypdf IS present, and
 # `src/ingest/pdf.py` still degrades loudly rather than fabricating a body.
 pdf = [
-    "pypdf>=4.0",
+    "pypdf>=6.21.4",
 ]
 
 # Optional OCR fallback for SCANNED / image-only PDFs (no text layer). The
