@@ -1899,7 +1899,11 @@
 
     function _chronoRender(d) {
       const sum = $("chrono-summary");
-      if (sum) sum.innerHTML = _chronoSummaryHtml(d);
+      // Row 361: the summary is built from t()/tf() frames and the timeline below it too, so both
+      // keep out of the walker and are drawn again on a switch (chronoRepaint, from app-boot's
+      // oo:langchange listener). Not through ooLive: the live counter inside the summary is written
+      // every second, which the helper would read as a foreign write and stop following the switch.
+      if (sum) { sum.setAttribute("data-i18n-dyn", ""); sum.innerHTML = _chronoSummaryHtml(d); }
       _chronoDraw(d);
       // The live counter: the fetched figure plus the seconds since it was read.
       if (_chronoTimer) clearInterval(_chronoTimer);
@@ -1911,6 +1915,13 @@
           el.textContent = _chronoDur(base + (Date.now() - _chronoReadAt) / 1000);
         }, 1000);
       }
+    }
+
+    // Row 361: the summary and the timeline redraw from the reading they hold; never fetches, and
+    // only once a reading has been drawn (a panel nobody opened stays as it is).
+    function chronoRepaint() {
+      const sum = $("chrono-summary");
+      if (_chronoData && sum && sum.children.length) _chronoRender(_chronoData);
     }
 
     function _chronoDraw(d) {
