@@ -41,7 +41,7 @@ function harness(reports) {
   const OOI18N = engine(map, () => lang);
   const nodes = { "fixity-summary": { textContent: "", innerHTML: "" }, "fixity-result": { textContent: "", innerHTML: "" } };
   let calls = 0;
-  const src = ["let _fixityState = null;", extract("_fixityNoHash"), extract("_fixityPaint"), extract("fixityRepaint"), extract("runFixity"),
+  const src = ["let _fixityState = null; const _FIXITY_LIST_CAP = 200;", extract("_fixityNoHash"), extract("_fixityPaint"), extract("fixityRepaint"), extract("runFixity"),
     "return { runFixity, fixityRepaint };"].join("\n");
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   // The shipped grouping (thin space every three digits), so plural choice sees what the panel passes.
@@ -137,6 +137,22 @@ const NOW_HASH = "c0ffee00c0ffee00c0ffee00";
     assert.strictEqual(btn.disabled, false, "the button is usable again");
     assert.ok(h.nodes["fixity-summary"].innerHTML.includes('class="note err"'), h.nodes["fixity-summary"].innerHTML);
     assert.strictEqual(h.nodes["fixity-result"].innerHTML, "", "no verdict beside an error");
+  }
+  // Row 356: a list past the cap says how many it shows of how many; one at the cap says nothing.
+  {
+    const many = (k, noHash) => Array.from({ length: k }, (_, i) => noHash ? { id: i, stored_hash: null } : { id: i, stored_hash: "aaaaaaaaaaaaaaaa", computed_hash: "bbbbbbbbbbbbbbbb" });
+    const h = harness([{ checked: 1700, ok: 0, mismatched: 1234, missing_hash: 466, mismatches: many(1234, false).concat(many(466, true)) },
+      { checked: 400, ok: 0, mismatched: 200, missing_hash: 200, mismatches: many(200, false).concat(many(200, true)) }]);
+    await h.fns.runFixity({ disabled: false });
+    const res = h.nodes["fixity-result"].innerHTML;
+    assert.ok(res.includes("Showing the first 200 of 1\u202f234.") && res.includes("Showing the first 200 of 466."), res);
+    assert.strictEqual((res.match(/ ≠ /g) || []).length, 200, "the cap itself is unchanged");
+    h.switchTo("fr");
+    h.fns.fixityRepaint();
+    assert.ok(h.nodes["fixity-result"].innerHTML.includes("Affichage des 200 premiers sur 466."), "the line follows a language switch");
+    h.switchTo("en");
+    await h.fns.runFixity({ disabled: false });
+    assert.ok(!h.nodes["fixity-result"].innerHTML.includes("Showing the first"), "a list at the cap is whole, so no line");
   }
   console.log("fixity_result_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });

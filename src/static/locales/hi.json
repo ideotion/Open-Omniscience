@@ -5160,6 +5160,7 @@
   "Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.": "मेल खाते पहले {n} स्रोत दिखाए जा रहे हैं। शेष सूची तक पहुँचने के लिए फ़िल्टर परिष्कृत करें।",
   "Showing the first {n} mentions.": "पहले {n} उल्लेख दिखाए जा रहे हैं।",
   "Showing the first {n}.": "पहले {n} दिखाए जा रहे हैं।",
+  "Showing the first {shown} of {total}.": "{total} में से पहले {shown} दिखाए जा रहे हैं।",
   "Showing {n} of {m} changes, newest first.": "{m} में से {n} परिवर्तन दिखाए जा रहे हैं, नवीनतम पहले।",
   "Showing {n} of {total}": "{total} में से {n} दिख रहे हैं",
   "Showing {n} of {total} tracked revisions": "{total} में से {n} ट्रैक किए गए संशोधन दिखाए जा रहे हैं",

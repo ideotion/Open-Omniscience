@@ -1701,6 +1701,7 @@
     // tampering, and the computed hash the server returns for it is not shown (a hash computed now is
     // not a capture-time hash). With such rows present the verdict never reads "all match".
     let _fixityState = null;
+    const _FIXITY_LIST_CAP = 200;
     // A no-hash row: the backend sends stored_hash null for an absent OR empty hash
     // (src/verification/fixity.py), and the UI treats absent, empty and blank alike. THAT test is the
     // guarantee the split rests on; the per-row reason is display text matched as an extra signal only,
@@ -1730,18 +1731,23 @@
         (diverged ? ` · <span class="pill err">${esc(tf("{n} diverged", {n: n(diverged)}))}</span>` : "") +
         (noHash ? ` · <span class="pill warn">${esc(tf("{n} not checkable (no stored hash)", {n: n(noHash)}))}</span>` : "");
       const all = r.mismatches || [];
-      const rows = all.filter(m => !_fixityNoHash(m)).slice(0, 200).map(m =>
+      // Row 356: each list draws at most _FIXITY_LIST_CAP rows; the backend's list is complete, so when
+      // it is longer the line under it says how many are shown of how many -- never a silent cut.
+      const capped = (list) => list.length > _FIXITY_LIST_CAP
+        ? `<div class="hint">${esc(tf("Showing the first {shown} of {total}.", {shown: n(_FIXITY_LIST_CAP), total: n(list.length)}))}</div>` : "";
+      const divergedAll = all.filter(m => !_fixityNoHash(m)), noHashAll = all.filter(_fixityNoHash);
+      const rows = divergedAll.slice(0, _FIXITY_LIST_CAP).map(m =>
         `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span>` +
         `<b class="muted" title="${esc(ooSaidText(m, "reason"))}">${esc(String(m.stored_hash).slice(0, 12))} ≠ ${esc((m.computed_hash || "").slice(0, 12))}</b></div>`).join("");
-      const missingRows = all.filter(_fixityNoHash).slice(0, 200).map(m =>
+      const missingRows = noHashAll.slice(0, _FIXITY_LIST_CAP).map(m =>
         `<div class="vr"><span>#${m.id} ${esc(m.title || m.url || "")}</span></div>`).join("");
       let html = "";
       // Each note follows its count, each list its own rows: a row the counts and the lists classify
       // differently is still shown, and the clean verdict needs both counts AND both lists empty.
       if (diverged) html += `<div class="note err">${esc(tf("{n} articles diverge from their capture-time hash — evidence of tampering or bit-rot. Nothing was changed.", {n: n(diverged)}))}</div>`;
-      html += rows;
+      html += rows + capped(divergedAll);
       if (noHash) html += `<div class="note warn">${esc(tf("{n} articles have no capture-time hash, so they could not be checked. Nothing was changed.", {n: n(noHash)}))}</div>`;
-      html += missingRows;
+      html += missingRows + capped(noHashAll);
       if (!diverged && !noHash && !rows && !missingRows) html = `<div class="note ok">${esc(t("All articles match their capture-time hash."))}</div>`;
       res.innerHTML = html;
     }
