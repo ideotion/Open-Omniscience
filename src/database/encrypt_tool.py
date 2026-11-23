@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from src.database.connect import (
+    SnapshotLeftOnDisk,
     connect,
     is_encrypted_file,
     reencrypt_plain_to,
@@ -159,11 +160,19 @@ def encrypt_database(
     try:
         snapshot_to_plaintext(p, snapshot)  # inside: a snapshot a full disk cut short is a partial plaintext copy too
         swapped, retired = _export_and_swap(p, key, ts, library, removed)
-    except BaseException:
+    except BaseException as failed:
         # R742: an AUTOMATIC retry (the next unlock) that fails before anything was touched drops the snapshot it just made, so a
         # store that keeps failing (a held file, a full disk) does not leave one more full plaintext copy at every start. The
         # operator's own run keeps it, as it always did: the snapshot is that run's documented escape hatch.
-        if not keep_snapshot_on_failure and not swapped and not removed:
+        # A snapshot cut short is removed by ``snapshot_to_plaintext`` itself (R794), so the name here is a whole copy or nothing;
+        # one it could not remove is named in its own error and never touched again from here.
+        if (
+            not keep_snapshot_on_failure
+            and not swapped
+            and not removed
+            and not isinstance(failed, SnapshotLeftOnDisk)
+            and getattr(failed, "oo_snapshot_left", None) is None  # an interrupt that left one: never removed by name here
+        ):
             try:
                 snapshot.unlink(missing_ok=True)
             except OSError:
@@ -454,6 +463,11 @@ def _encrypt_the_rest(rows: list[tuple[str, Path]], key: str, main: Path, report
             # R793: said to the operator, in its fixed words (no path, no key), beside which stores were not done.
             _LOG.warning("the %s store was not encrypted yet: no room for its copies, or the room was not read; it stays pending", name)
             reasons.append(str(refused))
+            pending.append(name)
+        except SnapshotLeftOnDisk as left:
+            # R794: an unfinished plaintext copy that could not be removed is said to the operator, with its path, never only logged.
+            _LOG.error("the %s store was not encrypted yet: an unfinished plaintext copy is still on disk; it stays pending", name)
+            reasons.append(str(left))
             pending.append(name)
         except Exception as exc:  # noqa: BLE001 - a later store's failure must not hide that the library is encrypted
             log_failure(_LOG, f"the {name} store could not be encrypted yet; it stays pending", exc, key, level=logging.WARNING)
