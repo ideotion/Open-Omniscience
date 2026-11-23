@@ -57,3 +57,18 @@ def test_a_root_walk_keeps_the_records_the_walker_has_not_seen():
     body = function_body((_STATIC / "i18n.js").read_text(encoding="utf-8"), "apply")
     assert "observer.takeRecords().length) schedule();" in body
     assert body.index("takeRecords") < body.index("observer.disconnect()")
+
+
+def test_a_text_render_has_no_path_to_innerhtml():
+    """ooLive keeps a text render apart from an HTML one, under its own name and on its own path, so what a text
+    render returns can only reach textContent. With one shared ``render`` field the HTML write sat on the same path,
+    and a static reader (CodeQL on PR #2329) traced a form value drawn through ooLive into innerHTML."""
+    core = (_STATIC / "app-core.js").read_text(encoding="utf-8")
+    assert "function ooLive(el, render) { _ooLiveTake(el, render, null); }" in core
+    assert "function ooLiveHtml(el, render) { _ooLiveTake(el, null, render); }" in core
+    draw = function_body(core, "_ooLiveDraw")
+    text_branch = draw[
+        draw.index("const v = s.text();") : draw.index("// The TEXT is the fingerprint")
+    ]
+    assert "innerHTML" not in text_branch, "the text branch must never write HTML"
+    assert "s.render" not in draw
