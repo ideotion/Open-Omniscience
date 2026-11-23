@@ -435,7 +435,10 @@ if wd and os.path.isdir(wd):
     kept = not only and not removed_now and not (keys_foreign and there(wd) and not rest)
     # the app's own key files or private copies still there (an unlink that failed), and a .pending link never entered
     keys_left = [p for p in app_keys(os.path.join(wd, "keys")) if lkind(p) != "absent"]
-    if lkind(os.path.join(wd, "keys", ks.get("pending", ".pending"))) == "link": keys_left.append("pending")
+    pending_link = lkind(os.path.join(wd, "keys", ks.get("pending", ".pending"))) == "link"
+    if pending_link:
+        rec("the private-copy folder in the keys folder of %s is a link, which the wipe never follows: copies of the app's keys "
+            "may be where it points; THE ERASE MAY BE INCOMPLETE" % tok(wd))
     if not ks and lkind(os.path.join(wd, "keys")) != "absent":
         rec("could not check the keys folder of %s: the wipe was given no list of the app's key files; THE ERASE MAY BE "
             "INCOMPLETE" % tok(wd))
@@ -451,7 +454,7 @@ if wd and os.path.isdir(wd):
             "it afterwards. Restart the computer, then remove that folder." % tok(wd))
     elif kept:
         rec("the data folder %s itself could not be removed, so something may be left in it: check it and remove it by hand" % tok(wd))
-    if gone or not_overwritten or back or kept or keys_link or keys_left or not server_gone:
+    if gone or not_overwritten or back or kept or keys_link or keys_left or pending_link or not server_gone:
         rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
             % (tok(wd), wiped, seen, not_overwritten, scrubbed))
     else:

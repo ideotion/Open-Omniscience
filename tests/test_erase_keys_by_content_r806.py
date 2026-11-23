@@ -248,6 +248,7 @@ def test_the_panic_says_folder_kept_never_removed_by_hand(app_data):
         "string 6 is gated off for a folder kept on purpose, and shown again when something else was left too")
     assert "The data folder was kept because it holds items the app did not create (count: {n})." in src
     assert "keysLink" in src and re.search(r"clean\s*=[^;]*!keysLink", src)
+    assert src.count('`<bdi translate="no">keys</bdi>`') == 2 and "keysLeft" in src
     assert '`<bdi translate="no">keys</bdi>`' in src, "the folder's name is a name: never translated, isolated in every locale"
     assert "The data folder was removed." in src
 
@@ -360,10 +361,11 @@ def test_an_app_key_whose_unlink_failed_in_a_kept_keys_is_said_not_removed(app_d
 
     monkeypatch.setattr(crypto_erase, "_shred", shred)
     out = _erase()
-    assert out["folder_kept_foreign"] is True and "keys/custody_ed25519.pem" in out["not_removed"], out
-    assert "mine.asc" not in str(out["not_removed"]), "never a name of the operator's"
+    assert out["folder_kept_foreign"] is True and out["keys_left"] == 1 and out["not_removed"] == [], out
+    assert out["limit"].startswith(crypto_erase._KEYS_LEFT_SENTENCE) and "mine.asc" not in out["limit"]
 
 
+@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0), reason="root unlinks in any folder")
 def test_the_watcher_says_incomplete_when_an_app_key_survives(tmp_path):
     data = tmp_path / "OOS data"
     _app_folder(data)
@@ -373,8 +375,8 @@ def test_the_watcher_says_incomplete_when_an_app_key_survives(tmp_path):
         text = _watch(tmp_path, data)
     finally:
         os.chmod(data / "keys", 0o700)
-    if (data / "keys" / "custody_ed25519.pem").exists():
-        assert "could not be removed or were not reached" in text and "THE ERASE MAY BE INCOMPLETE" in text, text
+    assert (data / "keys" / "custody_ed25519.pem").exists()
+    assert "could not be removed or were not reached" in text and "THE ERASE MAY BE INCOMPLETE" in text, text
 
 
 def test_the_watcher_without_a_key_list_never_reads_clean(tmp_path):
@@ -411,3 +413,32 @@ def test_a_pending_name_takes_ascii_digits_only():
     assert re.fullmatch(data_scope.KEYS_PENDING_RE, "custody_ed25519.pem.12.34.0123456789ab.new")
     assert not re.fullmatch(data_scope.KEYS_PENDING_RE, "custody_ed25519.pem.١.2.0123456789ab.new")
     assert not re.fullmatch(data_scope.KEYS_PENDING_RE, "custody_ed25519.pem.1.2.0123456789AB.new")
+
+
+def test_a_surviving_key_in_shared_scope_says_why(tmp_path, monkeypatch):
+    """Final reads: in shared scope with nothing else kept, a surviving key gives its own sentence, never the plain guarantee."""
+    data = tmp_path / "projects"
+    monkeypatch.setenv("OO_DATA_DIR", str(data))
+    monkeypatch.setattr(paths, "_memo", None)
+    _app_folder(data)
+    (data / "thesis.odt").write_bytes(b"MY THESIS")
+    real = crypto_erase._shred
+
+    def shred(path, **kw):
+        if path.name == "custody_ed25519.pem":
+            return True, True, False  # its unlink "fails": the file stays
+        return real(path, **kw)
+
+    monkeypatch.setattr(crypto_erase, "_shred", shred)
+    out = _erase()
+    assert out["scope"] == "app-only" and out["keys_left"] == 1, out
+    assert out["limit"].startswith(crypto_erase._KEYS_LEFT_SENTENCE)
+
+
+def test_settle_clears_keys_left_once_keys_is_gone(tmp_path):
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    out = {"scope": "data-folder", "data_dir": str(data), "folder_kept_foreign": True, "kept_items": 1, "keys_left": 1,
+           "not_removed": [], "removed": False, "limit": crypto_erase._LIMIT_NOTE}
+    crypto_erase.settle_removed(out)
+    assert out["keys_left"] == 0

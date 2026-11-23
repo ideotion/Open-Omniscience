@@ -113,6 +113,9 @@ _FOLDER_BACK_SENTENCE = (
 _NOT_REMOVED_SENTENCE = (
     "The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."
 )
+_KEYS_LEFT_SENTENCE = (
+    "Some of the app's own key files could not be removed from the keys folder, so the erase may be incomplete: remove them by hand."
+)
 _DEFENCE_TAIL = (
     " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
     "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
@@ -137,6 +140,7 @@ def settle_removed(report: dict) -> bool:
             if _kind(base / "keys") == "absent":
                 report["folder_kept_foreign"] = False  # its keys folder is gone since: not kept for it any more
                 report["kept_items"] = 0
+                report["keys_left"] = 0
             failed: list[OSError] = []
             rest = sorted(e.name for e in _listing(base, failed.append) if e.name != "keys")
             if failed:
@@ -1354,9 +1358,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # Kept ON PURPOSE: in shared scope for the entries that are not the app's (R711), else for a keys folder that is not (R806).
     kept_foreign = _present(base) and (bool(kept_items) if app_only else keys_foreign and _kind(keys_dir) != "absent")
     # An app key or private copy still in a kept keys folder (its unlink failed), or a ``.pending`` that is a link the app's
-    # copies may have gone through: never hidden by "kept", said as not removed (R806 / R807; the delta security reads).
-    if kept_foreign or app_only:
-        left["not_removed"] = sorted({*left["not_removed"], *_app_keys_left(keys_dir)})
+    # copies may have gone through: never hidden by "kept", said as such (R806 / R807; the delta security reads). A count in the
+    # report; the app's own names only in the log's count, never an operator's.
+    keys_left = _app_keys_left(keys_dir) if (kept_foreign or app_only) else []
 
     overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
     unlisted_folders[:] = list(dict.fromkeys(unlisted_folders))  # 5b and 6 walk the same folders
@@ -1367,6 +1371,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             len(unlisted_folders),
             _masked(unlisted_folders, base),
         )
+    if keys_left:
+        _LOG.error("CRYPTO-ERASE: %d of the app's own key files could not be removed from the keys folder; the erase may be incomplete",
+                   len(keys_left))
     if keys_link:
         _LOG.error("CRYPTO-ERASE: the keys folder is a link, which the erase never follows: the app's key files may be where it points "
                    "and were not destroyed; the erase may be incomplete")
@@ -1415,11 +1422,13 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "folder_kept_foreign": kept_foreign,
         "kept_items": kept_items,
         "keys_link": keys_link,
+        "keys_left": len(keys_left),
         # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
         "unlisted_folders": len(unlisted_folders),
         # R805 (a): this process's own connections on the store still open when the erase ran (None: could not tell).
         "own_connections_open": own_open,
-        "limit": (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
+        "limit": (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
+        + (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
         + (_LIMIT_NOTE_UNLISTED if unlisted_folders else _LIMIT_NOTE),
     }
 

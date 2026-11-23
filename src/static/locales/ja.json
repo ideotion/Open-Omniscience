@@ -5257,6 +5257,7 @@
   "Some files or folders here could not be read, so this count includes only the ones that could.": "一部のファイルまたはフォルダーを読み取れなかったため、この件数には読み取れたものだけが含まれます。",
   "Some folders or files here could not be read; this figure counts only the ones that could.": "一部のフォルダーまたはファイルを読み取れませんでした。この数値は読み取れたものだけを数えています。",
   "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "一部の種類のカードがありません：データベースのログファイルがディスクを埋め尽くさないよう、{n} 個のカード生成処理を {minutes} 分後に停止しました。",
+  "Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.": "アプリの鍵ファイルの一部を {folder} フォルダーから削除できなかったため、消去が不完全な可能性があります。手動で削除してください。",
   "Some of the price feeds you rely on have stopped delivering fresh numbers, or reported an error on their last run. The figures they show may be out of date until they run again.": "利用している価格フィードの一部が新しい数値の配信を停止したか、前回の実行でエラーを報告しました。再実行されるまで、表示される数値は古い可能性があります。",
   "Some recent articles use the language of corporate deals — acquired, merged, divested. This flags the wording for you to verify against the primary filing; it never asserts a deal actually happened.": "最近の記事の一部が、買収・合併・売却といった企業取引の言葉を使っています。これは一次資料と照らして確認できるよう言葉遣いを示すもので、取引が実際に行われたと断定するものでは決してありません。",
   "Some values were adjusted to stay in their safe range:": "一部の値は安全な範囲に収まるよう調整されました:",

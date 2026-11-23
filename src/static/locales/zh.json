@@ -5257,6 +5257,7 @@
   "Some files or folders here could not be read, so this count includes only the ones that could.": "部分文件或文件夹无法读取，因此此计数只包括能读取的部分。",
   "Some folders or files here could not be read; this figure counts only the ones that could.": "部分文件夹或文件无法读取；此数字只计入能读取的部分。",
   "Some kinds of card are missing: {n} card builders were stopped after {minutes} minutes so that the database's log file cannot fill the disk.": "部分类型的卡片缺失：为防止数据库日志文件占满磁盘，{n} 个卡片生成器在 {minutes} 分钟后被停止。",
+  "Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.": "本应用的部分密钥文件无法从 {folder} 文件夹中删除，因此擦除可能不完整：请手动删除它们。",
   "Some of the price feeds you rely on have stopped delivering fresh numbers, or reported an error on their last run. The figures they show may be out of date until they run again.": "您依赖的部分价格数据源已停止提供新数据，或在上次运行时报告了错误。在它们再次运行之前，所显示的数字可能已过期。",
   "Some recent articles use the language of corporate deals — acquired, merged, divested. This flags the wording for you to verify against the primary filing; it never asserts a deal actually happened.": "一些近期文章使用了企业交易的措辞——收购、合并、剥离。这只是标出措辞，供您对照原始公告核实；它绝不断言交易真的发生了。",
   "Some values were adjusted to stay in their safe range:": "部分数值已被调整以保持在安全范围内：",
