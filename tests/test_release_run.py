@@ -931,7 +931,8 @@ def test_the_chronology_wiring_reads_on_a_press_never_on_open_and_binds_the_drag
     js = _diag_js()
     load = function_source(js, "loadChronology")
     assert '"/api/diagnostics/chronology?anchor="' in load
-    draw = function_source(js, "_chronoDraw")
+    # Row 361: the SVG is built by _chronoSvgHtml and drawn through ooLiveHtml; both bodies are read.
+    draw = function_source(js, "_chronoDraw") + function_source(js, "_chronoSvgHtml")
     assert "ooTimeline.layout(" in draw and "ooTimeline.zoomAround(" in draw and "ooTimeline.pan(" in draw
     assert draw.count('window.addEventListener("mousemove"') == 1 and "_chronoWindowBound" in draw, \
         "the SVG is re-created per render; the window listeners must be bound once"
