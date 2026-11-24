@@ -18,6 +18,14 @@ backup from the previous build still carries its derived rows. Choose ``--same``
 cannot alter any row ``index_article`` writes (a docstring, a log line, a rename, an unrelated function).
 A data file, a dictionary, a rule or a stoplist entry DOES alter rows: that is a ``--bump``.
 The sentence goes into the pin's log and must be repeated in the PR description.
+
+THE OUTPUT DIGEST (R824 step 1, row 405) is the guard on that sentence. ``configs/extraction_digests.json`` records, per
+engine, the digest of the rows a real baseline pass writes over the golden corpus (``tests/fixtures/extraction_golden/``,
+computed by ``src/analytics/golden_output.py``) and the environment it was computed in. ``--same`` REFUSES unless the
+output digest computed here equals the recorded one, and refuses as well when this environment differs from the recorded
+one (it cannot judge here). ``--bump`` re-records the output digest at the new version.
+
+    python scripts/indexer_pin.py --record-output   # first stamping only: version unchanged, no digest recorded yet
 """
 from __future__ import annotations
 
@@ -39,10 +47,71 @@ ENGINES = {
     "www": ("www_indexer_pin.json", "WWW_INDEXER_VERSION", "www_code_digest"),
 }
 MIN_NOTE = 12
+STAGE_OF = {"kw": "kw", "www": "www"}
 
 
 def _pin_path(engine: str) -> Path:
     return Path(os.environ.get("OO_INDEXER_PIN") or ROOT / "configs" / ENGINES[engine][0])
+
+
+def _digests_path() -> Path:
+    """``OO_EXTRACTION_DIGESTS`` names a copy; when only ``OO_INDEXER_PIN`` is set (a test exercising the script) the
+    digests file is the pin's sibling, so a test can never record an output digest in the real file by forgetting it."""
+    if os.environ.get("OO_EXTRACTION_DIGESTS"):
+        return Path(os.environ["OO_EXTRACTION_DIGESTS"])
+    if os.environ.get("OO_INDEXER_PIN"):
+        return Path(os.environ["OO_INDEXER_PIN"]).with_name("extraction_digests.json")
+    return ROOT / "configs" / "extraction_digests.json"
+
+
+def _golden(engine: str) -> dict:
+    sys.path.insert(0, str(ROOT))
+    from src.analytics import golden_output
+
+    return golden_output.golden_output(STAGE_OF[engine])
+
+
+def _record_output(engine: str, version: int, golden: dict) -> Path:
+    path = _digests_path()
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    from src.analytics import golden_output
+
+    fx = golden_output.load_fixture()
+    data[engine] = {
+        "version": version,
+        "output_digest": golden["output_digest"],
+        "environment": golden["environment"],
+        "articles": golden["articles"],
+        "rows": golden["rows"],
+        "scripts_covered": golden_output.scripts_covered(fx),
+    }
+    data = {k: data[k] for k in sorted(data)}
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+    return path
+
+
+def _refuse_same_on_output(engine: str) -> None:
+    """--same is a claim that the rows did not change: check it against the golden corpus before recording it."""
+    from src.analytics.golden_output import environment_differences
+
+    rec = (json.loads(_digests_path().read_text(encoding="utf-8")) if _digests_path().exists() else {}).get(engine)
+    if not rec or not rec.get("output_digest"):
+        raise SystemExit(
+            f"--same refused: no output digest is recorded for the {engine} engine in {_digests_path().name}; "
+            "record one first (--record-output on an unchanged version)"
+        )
+    golden = _golden(engine)
+    diffs = environment_differences(rec.get("environment") or {}, golden["environment"])
+    if diffs:
+        raise SystemExit(
+            "--same refused: cannot judge here. The output digest was recorded in another environment "
+            f"(differs in: {', '.join(diffs)}); run this where the recorded digest was made, or in that CI job"
+        )
+    if golden["output_digest"] != rec["output_digest"]:
+        raise SystemExit(
+            f"--same refused: the output changed (golden corpus digest {golden['output_digest'][:12]}, recorded "
+            f"{rec['output_digest'][:12]}): the rows index_article writes are different, this is a --bump"
+        )
 
 
 def _load(pin: Path) -> dict:
@@ -74,6 +143,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--bump", metavar="WHAT", help="the output of the engine changed: raise the version")
     g.add_argument("--same", metavar="WHY", help="the output did not change: keep the version, re-record the digest")
     g.add_argument("--check", action="store_true")
+    g.add_argument(
+        "--record-output", action="store_true",
+        help="first stamping only: record the golden output digest when the version is unchanged and none is recorded",
+    )
     a = ap.parse_args(argv)
     pin_path = _pin_path(a.engine)
     pin = _load(pin_path)
@@ -82,11 +155,30 @@ def main(argv: list[str] | None = None) -> int:
         ok = pin.get("digest") == digest
         print("pin current" if ok else f"pin STALE: recorded {pin.get('digest','')[:12]} actual {digest[:12]}")
         return 0 if ok else 1
+    if a.record_output:
+        found = re.search(rf"^{ENGINES[a.engine][1]} = (\d+)$", MODULE.read_text(encoding="utf-8"), re.M)
+        if not found:
+            raise SystemExit(f"{ENGINES[a.engine][1]} line not found in engine_identity.py")
+        const = int(found.group(1))
+        if int(pin.get("version", 0)) != int(const):
+            raise SystemExit(f"--record-output refused: the pin says version {pin.get('version')} and the code {const}")
+        rec = (json.loads(_digests_path().read_text(encoding="utf-8")) if _digests_path().exists() else {}).get(a.engine)
+        if rec and rec.get("output_digest"):
+            raise SystemExit(
+                "--record-output refused: an output digest is already recorded; it moves only with --bump "
+                "(or stays, checked, with --same)"
+            )
+        golden = _golden(a.engine)
+        path = _record_output(a.engine, int(const), golden)
+        print(f"recorded {a.engine} output digest {golden['output_digest'][:12]} at version {const} in {path.name}")
+        return 0
     note = (a.bump or a.same or "").strip()
     if len(note) < MIN_NOTE:
         raise SystemExit(f"say what changed (>= {MIN_NOTE} characters); the sentence is the record")
     if a.same and pin.get("digest") == digest:
         raise SystemExit("--same refused: the engine files have not changed since the last judgement")
+    if a.same:
+        _refuse_same_on_output(a.engine)
     version = int(pin.get("version", 0)) + (1 if a.bump else 0)
     if a.bump:
         _set_version(a.engine, version)
@@ -94,8 +186,13 @@ def main(argv: list[str] | None = None) -> int:
     pin.setdefault("log", []).append(
         {"version": version, "digest": digest, "kind": "bump" if a.bump else "same", "note": note}
     )
+    golden = _golden(a.engine) if a.bump else None
     pin_path.write_text(json.dumps(pin, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     print(f"{'bumped to' if a.bump else 'kept'} {ENGINES[a.engine][1]} {version}; digest {digest[:12]}")
+    if golden is not None:
+        _record_output(a.engine, version, golden)
+        print(f"re-recorded the {a.engine} output digest {golden['output_digest'][:12]} at version {version} "
+              f"under this environment: {json.dumps(golden['environment'], sort_keys=True)}")
     return 0
 
 

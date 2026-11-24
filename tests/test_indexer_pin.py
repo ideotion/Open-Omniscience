@@ -98,6 +98,8 @@ def _scratch_run(tmp_path, *args):
     mod = tmp_path / "engine_identity.py"
     shutil.copy(PIN, pin)
     shutil.copy(ROOT / "src" / "analytics" / "engine_identity.py", mod)
+    # The script finds the output digests beside the pin it is pointed at (R824 step 1): a copy, never the real file.
+    shutil.copy(ROOT / "configs" / "extraction_digests.json", tmp_path / "extraction_digests.json")
     env = {**os.environ, "OO_INDEXER_PIN": str(pin), "OO_INDEXER_MODULE": str(mod)}
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "indexer_pin.py"), *args], capture_output=True, text=True, cwd=ROOT, env=env)
     return out, pin, mod
@@ -121,6 +123,8 @@ def test_a_bump_raises_the_version_in_both_places_and_logs_the_sentence(tmp_path
     assert new["version"] == _pin()["version"] + 1 and new["log"][-1]["kind"] == "bump"
     assert new["log"][-1]["note"] == "the places rows now carry a country code"
     assert f"INDEXER_VERSION = {new['version']}" in mod.read_text(encoding="utf-8")
+    digests = json.loads((tmp_path / "extraction_digests.json").read_text(encoding="utf-8"))
+    assert digests["kw"]["version"] == new["version"], "a bump re-records the output digest at the new version"
 
 
 def test_the_pin_script_check_agrees_with_the_test():
@@ -133,7 +137,9 @@ def test_the_constant_is_one_plain_line_the_script_can_rewrite():
     assert len(re.findall(r"^INDEXER_VERSION = \d+$", text, re.M)) == 1
 
 
-@pytest.mark.parametrize("name", ["configs/indexer_pin.json", "scripts/indexer_pin.py"])
+@pytest.mark.parametrize(
+    "name", ["configs/indexer_pin.json", "scripts/indexer_pin.py", "configs/extraction_digests.json", "src/analytics/golden_output.py"]
+)
 def test_the_pin_files_are_not_part_of_the_engine(name):
     assert name not in ei.engine_files(), "the police must not hash itself"
 

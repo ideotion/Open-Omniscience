@@ -1,0 +1,66 @@
+{
+  "kw": {
+    "version": 3,
+    "output_digest": "77be66c154e02ac0ae33729a53f99c3d0ecb0dd3018c9217d41e8957f1513e40",
+    "environment": {
+      "data": "6eb2efdab4a8a7bceac41ae3752d978a87cd0b55f89353d33e5cf5c824b460c0",
+      "distributions": {
+        "simplemma": "2.0.0",
+        "vaderSentiment": "3.3.2",
+        "py3langid": "0.4.0",
+        "jieba": "0.42.1",
+        "janome": "0.5.2",
+        "pythainlp": "5.4.0",
+        "spacy": null
+      },
+      "switches": {
+        "lemma": true,
+        "segmentation": true,
+        "code_token_filter": true
+      },
+      "python": "3.13",
+      "unicode": "15.1.0"
+    },
+    "articles": 207,
+    "rows": {
+      "keyword_mentions": 3015,
+      "keywords": 2801,
+      "articles": 207,
+      "article_mentioned_dates": 240
+    },
+    "scripts_covered": [
+      "Arabic",
+      "Bengali",
+      "Cyrillic",
+      "Devanagari",
+      "Han",
+      "Hiragana",
+      "Katakana",
+      "Latin"
+    ]
+  },
+  "www": {
+    "version": 1,
+    "output_digest": "aaa973d6d42f46f98055d649d80f50abb151052a406792d885b83e48bc1a4a54",
+    "environment": {
+      "data": "361798f19c2d53a8dec68a155fc478dea36d1d33680de0f2054dd8394d974beb",
+      "python": "3.13",
+      "unicode": "15.1.0"
+    },
+    "articles": 207,
+    "rows": {
+      "article_mentioned_places": 72,
+      "article_entities": 35
+    },
+    "scripts_covered": [
+      "Arabic",
+      "Bengali",
+      "Cyrillic",
+      "Devanagari",
+      "Han",
+      "Hiragana",
+      "Katakana",
+      "Latin"
+    ]
+  }
+}
