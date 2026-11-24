@@ -16,7 +16,8 @@ from tests.js_source_helper import function_source
 
 _ROOT = Path(__file__).resolve().parent.parent
 _JS = (_ROOT / "src" / "static" / "app-diagnostics.js").read_text(encoding="utf-8")
-_PAINT = function_source(_JS, "_paintAiCoordinator")
+# Row 361: the status line is built by _aiCoordinatorStatusHtml and drawn through ooLiveHtml; both bodies are read.
+_PAINT = function_source(_JS, "_paintAiCoordinator") + function_source(_JS, "_aiCoordinatorStatusHtml")
 _LOCALES = sorted((_ROOT / "src" / "static" / "locales").glob("*.json"))
 
 

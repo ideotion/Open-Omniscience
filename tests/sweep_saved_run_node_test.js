@@ -80,6 +80,10 @@ eval(functionSource(APP, "_savedSweepAsResult"));
 eval(functionSource(APP, "_savedSweepStateLine"));
 eval(functionSource(APP, "_syncAiSweepToggle"));
 eval(functionSource(APP, "renderKeywordTriageResult"));
+// Row 361: the renderer draws through ooLiveHtml, with the saved-run line as its lead; here it only has to draw.
+eval(functionSource(APP, "_sweepResultDraw"));
+eval(functionSource(APP, "_keywordTriageHtml"));
+global.ooLiveHtml = (host, render) => { if (host) host.innerHTML = render(); };
 
 const LAST_DONE = {
   available: true,
