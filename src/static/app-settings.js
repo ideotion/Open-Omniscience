@@ -705,20 +705,22 @@
         example = (d && d.artifact) || "";
       } catch (e) { backend = null; }
       const h = _CUSTOM_MODEL_HELP[backend];
+      // The intro and the label are drawn through ooLive/ooLiveHtml from the backend this read found, so they follow a
+      // language switch with no second read (row 367). The example is a model identifier, never translated.
       if (!h) {
         // No backend answer is its own state: filling in one backend's example on a
         // guess is how an operator ends up typing an Ollama tag into a vLLM field.
-        if (intro) intro.textContent = t("Set up the local AI first — until a backend is chosen, there is no telling which kind of model name to ask you for.");
-        if (label) label.textContent = t("Model name");
+        if (intro) ooLive(intro, () => t("Set up the local AI first — until a backend is chosen, there is no telling which kind of model name to ask you for."));
+        if (label) ooLive(label, () => t("Model name"));
         if (input) input.placeholder = "";
         return;
       }
-      if (label) label.textContent = t(h.label);
+      if (label) ooLive(label, () => t(h.label));
       if (input) input.placeholder = example;
       if (intro) {
-        intro.innerHTML =
+        ooLiveHtml(intro, () =>
           esc(t(h.lead)) + ' <a href="' + esc(h.href) + '" target="_blank" rel="noopener">' +
-          esc(h.linkText) + " \u2197</a>. " + esc(t(h.form));
+          esc(h.linkText) + " \u2197</a>. " + esc(t(h.form)));
       }
     }
 
@@ -749,14 +751,15 @@
       if (!tag) return;
       // R671: an Ollama cloud model (a ":cloud" or "-cloud" tag) would send every prompt off this computer. Refused before the
       // consent popup, since going online would not make it acceptable; the server refuses it too.
+      // Every line in #llm-pull-progress is drawn through ooLive from what this pull holds, so it follows a language
+      // switch with no second request (row 367); the job's own progress words are the server's, shown as they came.
+      const say = (render) => { const el = $("llm-pull-progress"); if (el) ooLive(el, render); };
       if (_ooIsCloudModel(tag)) {
-        const prog0 = $("llm-pull-progress");
-        if (prog0) prog0.textContent = t("That model runs on Ollama's cloud, not on this computer, so it is refused: the text you give it would leave the machine. Choose a local model.");
+        say(() => t("That model runs on Ollama's cloud, not on this computer, so it is refused: the text you give it would leave the machine. Choose a local model."));
         return;
       }
       if (!await ensureAiEgress(t("Download a model you named (over the clear internet)"))) return;
-      const prog = $("llm-pull-progress");
-      if (prog) prog.textContent = t("Queued") + " " + tag + "…";  // instant feedback
+      say(() => t("Queued") + " " + tag + "…");  // instant feedback
       try {
         const r = await api("/api/llm/models/pull-custom",
           {method: "POST", body: JSON.stringify({identifier: tag})});
@@ -765,20 +768,19 @@
         // is the whole value of the check.
         const refused = (r && r.refused) || [];
         if (refused.length) {
-          if (prog) prog.textContent = refused.map((x) => (x.reason ? t(x.reason) : t("refused"))).join(" ");
+          say(() => refused.map((x) => (x.reason ? t(x.reason) : t("refused"))).join(" "));
           return;
         }
         const el = $("llm-pull-tag"); if (el) el.value = "";
         if (r && r.backend === "vllm") {
           // vLLM downloads through its own job, not the Ollama pull queue, so the
           // Ollama poller would sit on an empty queue and report nothing happening.
-          await _followJob("/api/llm/models/install/status?backend=vllm",
-            (m) => { if (prog) prog.textContent = m; });
+          await _followJob("/api/llm/models/install/status?backend=vllm", (m) => say(() => m));
           loadLlmModels();
         } else {
           _llmPullStartPoll();
         }
-      } catch (e) { if (prog) prog.textContent = ooLabelText(t("Download failed"), e.message); }
+      } catch (e) { say(() => ooLabelText(t("Download failed"), e.message)); }
     }
     async function cancelPull(model) {
       try { await api("/api/llm/pull/cancel", {method: "POST", body: JSON.stringify({model})}); _llmPullRefresh(); }
@@ -796,10 +798,16 @@
       try { s = await api("/api/llm/pull/status"); } catch (e) { return; }
       const active = s.active, queue = s.queue || [];
       if (!active && !queue.length) {
-        box.style.display = "none"; box.innerHTML = "";
+        box.style.display = "none"; ooLiveHtml(box, () => "");
         if (_llmPullPoll) { clearInterval(_llmPullPoll); _llmPullPoll = null; loadLlmModels(); }  // a finished pull now shows as installed
         return;
       }
+      // Drawn through ooLiveHtml from this status answer, so it follows a language switch between polls (row 367).
+      ooLiveHtml(box, () => _llmPullHtml(active, queue));
+      box.style.display = "";
+    }
+    function _llmPullHtml(active, queue) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       let html = `<h3 style="margin:0 0 6px">${esc(t("Downloads"))}</h3>`;
       if (active) {
         const pct = active.percent || 0;
@@ -814,7 +822,7 @@
           `<code>${esc(m)}</code> <span class="pill muted">${esc(t("Queued"))}</span>` +
           `<button class="tiny secondary" data-on-click="cancelPull(${esc(JSON.stringify(m))})">${esc(t("Cancel"))}</button></div>`;
       }
-      box.innerHTML = html; box.style.display = "";
+      return html;
     }
 
     // --- LLM behaviour & prompts (Settings → Models) --------------------------- //
@@ -867,10 +875,14 @@
     function copyLlmPrompt(k, btn) {
       const ta = $("llm-prompt-" + k); if (!ta) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // "Copied" is held through ooLive and then released, which puts the button's own label back (and lets the page's
+      // walker translate it), so a switch in between redraws it and a second click never makes "Copied" the label (row 367).
       const done = () => {
         if (!btn) return;
-        const o = btn.textContent; btn.textContent = t("Copied");
-        setTimeout(() => { btn.textContent = o; }, 1200);
+        const n = (btn._ooCopied || 0) + 1;
+        btn._ooCopied = n;
+        ooLive(btn, () => t("Copied"));
+        setTimeout(() => { if (btn._ooCopied === n) ooLive(btn, null); }, 1200);   // only the last click's timer releases it
       };
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -897,10 +909,11 @@
       if (btn) btn.disabled = true;
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
-        if (status) status.textContent = t("Saved.");
+        if (status) ooLive(status, () => t("Saved."));   // follows a language switch (row 367)
         loadLlmPrompts();
       } catch (e) {
-        if (status) status.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+        const why = e.message;
+        if (status) ooLiveHtml(status, () => `<span class="note err">${esc(why)}</span>`);
       } finally { if (btn) btn.disabled = false; }
     }
 
@@ -1255,28 +1268,54 @@
     //    plain-language impact of moving it, and -- where a bound exists to stop an
     //    underpowered claim -- the reason for that bound. Nothing here ranks or
     //    scores a producer; these are the thresholds each already applied.
-    let _cardCat = null;
+    //    The form is drawn through ooLiveHtml (row 367), so a language switch redraws it with no request. A redraw
+    //    starts from the form AS IT STANDS (_cardFormState): what was ticked or typed and not saved yet, and which
+    //    sections were open, are kept; only a fresh read of the catalogue draws the stored values.
+    let _cardCat = null, _cardFresh = false;
     async function loadCardCatalog() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const host = $("cards-host"); if (!host) return;
       try { _cardCat = await api("/api/settings/cards"); }
       catch (e) {
-        host.innerHTML = `<div class="muted">${esc(t("Could not load the Leads catalogue."))}</div>`;
+        ooLiveHtml(host, () => `<div class="muted">${esc(t("Could not load the Leads catalogue."))}</div>`);
         return;
       }
       renderCardCatalog();
     }
-    function _cardTunableRow(prod, tn) {
+    function _cardKey(prod, key) { return prod + "\u0000" + key; }
+    function _cardFormState(host) {
+      if (!host || !host.querySelector || !host.querySelector(".card-fam")) return null;
+      const st = {on: {}, val: {}, fam: {}, tune: {}};
+      host.querySelectorAll(".card-on").forEach((cb) => { st.on[cb.value] = !!cb.checked; });
+      host.querySelectorAll(".card-tune").forEach((row) => {
+        const input = row.querySelector("input");
+        if (input) st.val[_cardKey(row.dataset.prod, row.dataset.key)] = input.value;
+      });
+      host.querySelectorAll("details.card-fam").forEach((d) => { st.fam[d.dataset.fam] = !!d.open; });
+      host.querySelectorAll(".card-prod").forEach((p) => {
+        const d = p.querySelector("details.card-finetune");
+        if (d) st.tune[p.dataset.prod] = !!d.open;
+      });
+      return st;
+    }
+    // the value the form shows for a tunable: the one typed and not saved yet, else the stored one
+    function _cardVal(st, prod, tn) {
+      const k = _cardKey(prod, tn.key);
+      return st && Object.prototype.hasOwnProperty.call(st.val, k) ? st.val[k] : String(tn.value);
+    }
+    function _cardOn(st, p) { return st && Object.prototype.hasOwnProperty.call(st.on, p.name) ? st.on[p.name] : !!p.enabled; }
+    function _cardTunableRow(prod, tn, st) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const step = tn.kind === "float" ? "0.01" : "1";
-      const changed = Number(tn.value) !== Number(tn.default);
+      const value = _cardVal(st, prod, tn);
+      const changed = Number(value) !== Number(tn.default);
       // The range is SHOWN, not just enforced: an operator should be able to read
       // the bounds without discovering them by being corrected.
       const range = `${ooLtrIsolate(tn.lo + "–" + tn.hi)}${tn.unit ? " " + esc(tn.unit) : ""}`;
       return `<div class="card-tune" data-prod="${esc(prod)}" data-key="${esc(tn.key)}">
         <label class="sl" for="ct-${esc(prod)}-${esc(tn.key)}">${esc(tn.label)}</label>
         <input id="ct-${esc(prod)}-${esc(tn.key)}" type="number" class="card-tune-in"
-               value="${esc(String(tn.value))}" min="${esc(String(tn.lo))}" max="${esc(String(tn.hi))}"
+               value="${esc(value)}" min="${esc(String(tn.lo))}" max="${esc(String(tn.hi))}"
                step="${step}" data-default="${esc(String(tn.default))}">
         <span class="muted card-tune-range">${esc(t("safe range"))} ${range}</span>
         <button class="ghost tiny card-tune-reset" ${changed ? "" : "disabled"}
@@ -1290,47 +1329,58 @@
     // removed. Open at Full; folded at Standard and Essentials, EXCEPT where a value
     // already differs from the one the app ships with -- a changed setting is never
     // tucked out of sight. saveCardSettings reads the rows wherever they sit.
-    function _cardFineTune(p) {
+    function _cardFineTune(p, st) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m)));
-      const changed = p.tunables.filter(tn => Number(tn.value) !== Number(tn.default)).length;
+      const changed = p.tunables.filter(tn => Number(_cardVal(st, p.name, tn)) !== Number(tn.default)).length;
       const depth = (typeof uiDepth === "function") ? uiDepth() : "full";
-      const open = depth === "full" || changed > 0;
+      const open = st && Object.prototype.hasOwnProperty.call(st.tune, p.name) ? st.tune[p.name] : (depth === "full" || changed > 0);
       const n = (typeof fmtNum === "function") ? fmtNum(p.tunables.length, 0) : String(p.tunables.length);
       return `<details class="card-finetune"${open ? " open" : ""}>
         <summary>${esc(tf("Fine-tune ({n})", {n}))}${changed ? ` <span class="muted">· ${esc(tf("{n} changed", {n: String(changed)}))}</span>` : ""}</summary>
-        ${p.tunables.map(tn => _cardTunableRow(p.name, tn)).join("")}
+        ${p.tunables.map(tn => _cardTunableRow(p.name, tn, st)).join("")}
       </details>`;
     }
     function renderCardCatalog() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const host = $("cards-host"); if (!host || !_cardCat) return;
-      host.innerHTML = (_cardCat.families || []).map(fam => {
-        const on = fam.producers.filter(p => p.enabled).length;
-        return `<details class="card-fam" data-fam="${esc(fam.family)}">
-          <summary><span class="card-fam-t">${esc(fam.label)}</span>
+      _cardFresh = true;   // a fresh read: the stored values, never what the older form held (its open families stay)
+      ooLiveHtml(host, _cardCatalogHtml);
+    }
+    function _cardCatalogHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const st = _cardFormState($("cards-host"));
+      // a fresh read (or a depth change) draws the stored values and each fine-tune fold's default for the depth;
+      // the families that were open stay open
+      if (st && _cardFresh) { st.on = {}; st.val = {}; st.tune = {}; }
+      _cardFresh = false;
+      return (_cardCat.families || []).map(fam => {
+        const on = fam.producers.filter(p => _cardOn(st, p)).length;
+        const open = st && st.fam[fam.family] ? " open" : "";
+        return `<details class="card-fam" data-fam="${esc(fam.family)}"${open}>
+          <summary><span class="card-fam-t">${esc(t(fam.label))}</span>
             <span class="muted">— ${on}/${fam.producers.length} ${esc(t("on"))}</span></summary>
           ${fam.producers.map(p => `<div class="card-prod" data-prod="${esc(p.name)}">
             <label class="switch">
-              <input type="checkbox" class="card-on" value="${esc(p.name)}" ${p.enabled ? "checked" : ""}
+              <input type="checkbox" class="card-on" value="${esc(p.name)}" ${_cardOn(st, p) ? "checked" : ""}
                      data-on-change="cardSetEnabled(this)"> <b>${esc(p.label)}</b></label>
             <div class="hint card-prod-d">${esc(p.description)}</div>
-            ${p.tunables.length ? _cardFineTune(p) : ""}
+            ${p.tunables.length ? _cardFineTune(p, st) : ""}
           </div>`).join("")}
         </details>`;
       }).join("") + `<div class="row" style="margin-top:10px;gap:8px">
         <button data-on-click="saveCardSettings()">${esc(t("Save Lead settings"))}</button></div>`;
     }
     function cardSetEnabled(cb) {
-      const fam = cb.closest(".card-fam");
-      if (!fam) return;
-      // keep the family's "N/M on" counter honest as you click, before any save
-      const boxes = fam.querySelectorAll(".card-on");
-      const on = Array.from(boxes).filter(b => b.checked).length;
-      const label = fam.querySelector("summary .muted");
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      if (label) label.textContent = `— ${on}/${boxes.length} ${t("on")}`;
+      const host = $("cards-host");
+      if (!host || !_cardCat || !cb.closest(".card-fam")) return;
+      // keep the family's "N/M on" counter honest as you click, before any save: the form is redrawn from itself
+      // (the count is part of what a language switch redraws, so it is never written beside the render), and the
+      // focus goes back to the box that was clicked.
+      const name = cb.value;
+      ooLiveHtml(host, _cardCatalogHtml);
+      const again = Array.from(host.querySelectorAll(".card-on")).find((b) => b.value === name);
+      if (again && typeof again.focus === "function") again.focus();
     }
     function cardResetTunable(prod, key) {
       const el = document.querySelector(`.card-tune[data-prod="${prod}"][data-key="${key}"] input`);
@@ -1357,17 +1407,18 @@
         // A value the backend had to pull into range is REPORTED here, never applied
         // in silence (ruling 3) -- the operator would otherwise believe a Lead runs
         // at a setting it does not have.
+        // Drawn through ooLiveHtml from this answer, so it follows a language switch (row 367).
         const notes = s.clamped || [];
         if (notes.length) {
-          msg.innerHTML = `<span class="note warn">${esc(t("Some values were adjusted to stay in their safe range:"))}</span>` +
+          ooLiveHtml(msg, () => `<span class="note warn">${esc(t("Some values were adjusted to stay in their safe range:"))}</span>` +
             notes.map(n => `<div class="hint">${esc(n.producer)} · ${esc(n.key)}${
-              n.given !== undefined ? ` ${esc(String(n.given))} → ${esc(String(n.used))}` : ""} — ${ooSaidHtml(n, "reason")}</div>`).join("");
+              n.given !== undefined ? ` ${esc(String(n.given))} → ${esc(String(n.used))}` : ""} — ${ooSaidHtml(n, "reason")}</div>`).join(""));
         } else {
-          msg.innerHTML = `<span class="note ok">${esc(t("Lead settings saved."))}</span>`;
+          ooLiveHtml(msg, () => `<span class="note ok">${esc(t("Lead settings saved."))}</span>`);
         }
         loadCardCatalog();   // re-read so the inputs show what is actually stored
       } catch (e) {
-        msg.innerHTML = `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`;
+        ooLiveHtml(msg, () => `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`);
       }
     }
 

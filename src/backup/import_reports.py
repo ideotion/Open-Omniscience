@@ -414,6 +414,23 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
         for entry in not_placed:
             if isinstance(entry, dict):
                 lines.append(f"- {_md_code(entry.get('name'))}: {entry.get('reason')}")
+        # R808: the files that are not keys this app creates are counted whole and listed only up to a cap
+        other = keys.get("not_app_keys")
+        if (
+            isinstance(other, dict)
+            and isinstance(other.get("count"), int)
+            and isinstance(other.get("listed"), int)
+            and other["count"] > other["listed"]
+        ):
+            lines.append(
+                f"- and {_fmt_count(other['count'] - other['listed'])} more files that are not keys this app creates "
+                f"({_fmt_count(other['count'])} in all), not listed one by one"
+            )
+        # R811 (3): what a signer's key not placed means when this install has no key of that signer
+        notes = [str(n["note"]) for n in keys.get("notes") or () if isinstance(n, dict) and isinstance(n.get("note"), str)]
+        if notes:
+            lines.append("")
+            lines.extend(notes)
         lines.append("")
 
     # R613: on an install that holds no passphrase a carried encrypted key is placed exactly as carried, never in the

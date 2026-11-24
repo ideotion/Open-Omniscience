@@ -4377,7 +4377,12 @@
             ? t("The data drive could not be identified. Nothing on it was checked or erased. The data on that drive still exists.")
             : t("The data drive was not present. Nothing on it was checked or erased. The data on that drive still exists."))}</div>` : "") +
           // R812 (decision 1): the connections on that drive are kept open, never closed, so its key stays in memory: said.
-          (r.drive_key_in_memory === true ? `<div class="card-caveat">${esc(t("The key to the data on that drive stays in this app’s memory until the app is closed: close the app now."))}</div>` : "") +
+          // R813: the cost, and what to do; when the app closes itself (row 389), the cost alone, then the sentence that it is closing.
+          (r.drive_key_in_memory === true ? `<div class="card-caveat">${esc(r.app_closing === true
+            ? t("The key to the data on that drive stays in this app’s memory until the app is closed.")
+            : t("The key to the data on that drive stays in this app’s memory until the app is closed: close the app now."))}</div>` : "") +
+          // R813 row 389: the server closes itself a few seconds after this answer, so the key leaves its memory.
+          (r.app_closing === true ? `<div class="card-caveat">${esc(t("The app is closing itself now, so that the key leaves its memory. Open the app again to go on."))}</div>` : "") +
           (driveLost ? `<div class="card-caveat">${esc(t("The data drive disconnected during the erase: it was only partially erased, and what was left on it could not be checked."))}` +
             // R812 (b): only when the erase had already made the app forget the drive's id (it is never restored).
             (r.drive_forgotten === true ? ` ${esc(t("Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a later launch unless it is set up again."))}` : "") +
