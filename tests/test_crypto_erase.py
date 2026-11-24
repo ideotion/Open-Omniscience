@@ -901,8 +901,7 @@ def test_a_plaintext_database_step_one_could_not_unlink_is_rewritten_whole(tmp_p
                 raise PermissionError("held open")
             return real_os_unlink(path, *a, **k)
 
-        monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {os_unlink})
-        monkeypatch.setattr(os, "unlink", os_unlink)
+        scope_os(monkeypatch, crypto_erase, unlink=os_unlink, supports_dir_fd=os.supports_dir_fd | {os_unlink})
     else:
         real_unlink = Path.unlink
 

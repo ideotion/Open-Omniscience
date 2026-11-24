@@ -51,6 +51,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure
+from src.utils.interrupts import kept
 
 _LOG = logging.getLogger(__name__)
 
@@ -738,6 +739,10 @@ def _plain_public(rec: dict) -> dict:
     return {k: rec.get(k) for k in ("state", "reason", "other_names", "deleted", "touched")}
 
 
+def _is_head(entry: list) -> bool:
+    return entry[1] == "head"
+
+
 def finish_plaintext_rewrite(report: dict, generation: int, own_open: int | None) -> None:
     """R817 (2) / R818 (b): rewrite the body of this wipe's plaintext store, only once the app's own pool on it is closed
     (``own_open == 0``); otherwise, or when that cannot be told, the body is left: "had its first page overwritten", "the rest was
@@ -749,7 +754,7 @@ def finish_plaintext_rewrite(report: dict, generation: int, own_open: int | None
     rec, may_write, parts = pending
     try:
         if rec["state"] is None and own_open != 0:
-            head = [e for e in rec.get("_held", []) if e[1] == "head"]
+            head = kept(rec.get("_held", []), _is_head)
             rec.pop("_held", None)
             rec["state"] = "first_page" if head and head[0][3] > 0 else "not_overwritten"
             rec["reason"] = rec["reason"] or "pool"
@@ -763,7 +768,7 @@ def finish_plaintext_rewrite(report: dict, generation: int, own_open: int | None
         if not rec["deleted"] and rec.get("touched"):
             rec["deleted"] = not any(os.path.lexists(p) for p in parts)  # step 6 may have removed one whose unlink failed
     except KeyboardInterrupt:  # R818 (a): a stop outside the rewrite itself (the notice, a check) is said too, never lost
-        head = [e for e in rec.pop("_held", []) if e[1] == "head"]
+        head = kept(rec.pop("_held", []), _is_head)
         if rec["state"] is None:
             rec["state"] = "first_page" if head and head[0][3] > 0 else "not_overwritten"
         rec["reason"] = rec["reason"] or "stopped"
