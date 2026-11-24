@@ -1191,7 +1191,10 @@ def test_a_failed_start_that_adds_a_migration_says_the_schema_may_have_moved(tmp
     assert h.main(["x", str(plan)]) == 1 and _result(tmp_path, h) == "start_failed_rolled_back"  # the rollback is told which commit it must find before it resets anything
     from tests.js_source_helper import function_body, read_static
 
-    assert '"start_failed_rolled_back_schema"' in function_body(read_static("app-settings.js"), "updLoadStatus")
+    js = read_static("app-settings.js")
+    # the outcome's sentence is chosen in _updLastSay, which updLoadStatus holds through ooLive (row 367)
+    assert '"start_failed_rolled_back_schema"' in function_body(js, "_updLastSay")
+    assert "_updLastSay(" in function_body(js, "updLoadStatus")
 
 
 def test_a_timed_out_merge_lock_is_left_alone_on_windows():
