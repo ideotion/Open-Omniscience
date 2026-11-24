@@ -654,7 +654,7 @@ def test_a_build_with_its_offload_folder_on_a_frozen_drive_is_never_served(tmp_p
     assert rollup_serve._on_frozen_drive(str(spill)) and rollup_serve._on_frozen_drive(True)
     assert not rollup_serve._on_frozen_drive(str(tmp_path / "elsewhere"))
     src = Path("src/analytics/rollup_serve.py").read_text(encoding="utf-8")
-    assert "if spill and (_corpus_encrypted() or _on_frozen_drive(spill)):" in src
+    assert "if spill and _on_frozen_drive(spill):" in src  # row 390: refused as the drive, before the encryption check
     assert "_on_frozen_drive(True)" in src
     assert "rollup_serve._on_frozen_drive(spill)" in Path("src/analytics/map_serve.py").read_text(encoding="utf-8")
 

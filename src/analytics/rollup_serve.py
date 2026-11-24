@@ -510,12 +510,14 @@ def _build_inmemory_and_swap() -> dict | None:
         _close_con(con, spill)
         _remove_spill(spill)
         return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
-    refused = False
+    refused: str | None = None
     with _LOCK:
         # Again under the lock the encryption's close takes (open-on-main row 50): a build that passed the check above just
         # before the library was encrypted would otherwise swap in, after that close, a connection whose folder holds plaintext.
-        if spill and (_corpus_encrypted() or _on_frozen_drive(spill)):
-            refused = True  # R813: a build whose offload folder is on a drive found changed during an erase is kept, never served
+        if spill and _on_frozen_drive(spill):
+            refused = DRIVE_CHANGED  # R813 / row 390: a build whose offload folder is on a drive that is not the marked one is kept, never served
+        elif spill and _corpus_encrypted():
+            refused = ENCRYPTED_DURING_BUILD
         else:
             old = _STATE["con"]
             _STATE["con"] = con
@@ -547,7 +549,7 @@ def _build_inmemory_and_swap() -> dict | None:
     if refused:
         _close_con(con, spill)
         _remove_spill(spill)
-        return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
+        return {"reason": refused, "at": time.time()}
     _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
     return None
 
@@ -609,10 +611,17 @@ def _refresh_persisted_build() -> bool | None:
     from src.analytics import columnar, serve_gate
     from src.analytics.corpus_epoch import get_corpus_epoch
     from src.database import library_generation
+    from src.database.drive_pin import serve_on_gone_drive
     from src.database.session import session_scope
 
     with _LOCK:
         con = _STATE["con"] if _STATE["persisted"] else None
+        if con is not None and serve_on_gone_drive(con, _STATE.get("spill")):
+            # Row 390: the cached store is on a data drive that is not the marked one (it was busy when an erase pinned the drive, or
+            # the drive changed since): it is never refreshed again. Kept open, never closed, taken out of the serve.
+            _close_con(con, _STATE.get("spill"))
+            _STATE.update(con=None, built_at=0.0, spill=None, persisted=False)
+            return _persisted_declined(DRIVE_CHANGED)
     opened_now = con is None
     new_spill = ""  # the offload folder of a connection opened by THIS call (a cached one keeps the folder recorded with it)
     if opened_now:
@@ -655,13 +664,14 @@ def _refresh_persisted_build() -> bool | None:
             token = serve_gate.change_token(s)
             epoch = get_corpus_epoch(s)
             with _LOCK:
-                if opened_now and (key_gen < 0 or _key_generation() != key_gen or _on_frozen_drive(True)):
+                gone = opened_now and _on_frozen_drive(True)
+                if opened_now and (gone or key_gen < 0 or _key_generation() != key_gen):
                     # The key was cleared (or set anew) while the store opened outside the lock: the clearing's close found nothing of it
                     # to close, and recorded now it would keep the old key inside DuckDB until the next rebuild (open-on-main row 85). A
                     # clearing from here on finds the lock held, and its close once free sees this store's generation is the old one.
                     _close_con(con, new_spill)
                     _remove_spill(new_spill)
-                    return _persisted_declined("no-passphrase")
+                    return _persisted_declined(DRIVE_CHANGED if gone else "no-passphrase")  # row 390: the drive, said as the drive
                 columnar.refresh_keyword_daily(
                     con, s, corpus_epoch=epoch, on_batch=lambda _stage, _rows: _require_library_unchanged(stamp)
                 )
@@ -866,6 +876,9 @@ _WALL_REASONS = ("duckdb-limit", "build-failed")
 ENGINE_OFF = "engine-off"
 #: The in-memory build's answer when the library was encrypted while it ran with an offload folder: not served, no hold kept.
 ENCRYPTED_DURING_BUILD = "encrypted-during-build"
+#: Row 390: the in-memory build's answer when its offload folder is on a data drive that is not the marked one (an erase found it so,
+#: or it is so now): kept, never served, no hold kept. Said as the drive, never as an encryption.
+DRIVE_CHANGED = "drive-changed"
 
 #: Whether this process has looked at the kept stop record yet (it looks once, at the first build decision, and
 #: every later change goes through ``_keep_stopped`` / ``_release_stopped``, which keep the two in step).
@@ -1252,15 +1265,15 @@ def _sweep_spill_folders(root) -> None:
 
 
 def _on_frozen_drive(path) -> bool:
-    """R813: ``path`` is on a data drive found absent, unidentified or changed during an erase (``True``: any drive is)."""
+    """R813 / row 390: ``path`` is on a data drive found absent, unidentified or changed, during an erase or now (``True``: any drive is)."""
     from src.database import drive_pin
 
-    return bool(drive_pin._FROZEN) if path is True else drive_pin.on_frozen_drive(path)
+    return bool(drive_pin._gone_bases()) if path is True else drive_pin.on_frozen_drive(path)
 
 
 def _close_con(con, spill: str | None = None) -> None:
-    """Close a serve's DuckDB connection, unless the data drive was found absent, unidentified or changed during an erase and the
-    connection is on it (R813, src/database/drive_pin.py): then it is kept open, never closed, for the rest of the process. The caller
+    """Close a serve's DuckDB connection, unless the data drive was found absent, unidentified or changed (during an erase, or now:
+    row 390) and the connection is on it (R813, src/database/drive_pin.py): then it is kept open, never closed, for the rest of the process. The caller
     holds ``_LOCK`` or owns the connection alone. Never raises."""
     from src.database.drive_pin import close_or_keep
 
@@ -1275,7 +1288,7 @@ def _remove_spill(path: str | None) -> None:
         from src.database.drive_pin import on_frozen_drive
 
         if on_frozen_drive(path):
-            return  # R813: the drive at that path changed during an erase; the folder there is not ours to remove
+            return  # R813 / row 390: the drive at that path is not the marked one; the folder there is not ours to remove
         fd = _SPILL_OWNERS.pop(str(path), None)
         if fd is not None:
             with contextlib.suppress(OSError):
@@ -1685,11 +1698,12 @@ def _build_and_swap() -> str:
                 ran = False
                 outcome = "declined"
                 return outcome
-            if stopped is not None and stopped.get("reason") in (ENGINE_OFF, ENCRYPTED_DURING_BUILD):
+            if stopped is not None and stopped.get("reason") in (ENGINE_OFF, ENCRYPTED_DURING_BUILD, DRIVE_CHANGED):
                 # The engine is off (no build ran and none can), or the library was encrypted under the build (it is not served and the
                 # next request builds with no offload). Neither is a stop, so no hold is kept (it would outlive the setting or refuse the rebuild).
                 with _LOCK:
-                    _STATE["last_skip"] = {**stopped, "source": "engine" if stopped["reason"] == ENGINE_OFF else "encryption"}
+                    source = {ENGINE_OFF: "engine", DRIVE_CHANGED: "drive"}.get(stopped["reason"], "encryption")
+                    _STATE["last_skip"] = {**stopped, "source": source}
                 ran = False
                 outcome = "declined"
                 return outcome
