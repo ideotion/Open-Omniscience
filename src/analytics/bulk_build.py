@@ -53,6 +53,7 @@ rather than guessing.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -419,6 +420,56 @@ DRAIN_KEEP: tuple[str, ...] = (ARTICLE_DELETE_INDEX,)
 #: empty one), where it measurably wins; below that the drain keeps the live indexes and claims no speed-up.
 DRAIN_WINDOW_MIN_FRACTION: float = 1.0
 
+#: The same share when the main store file is LARGER than the machine's RAM or cgroup limit (row 407c), so the operating
+#: system cannot keep it cached and every live index update can become a random read. MEASURED (row 407b, the real
+#: encrypted drain, one worker, 2026-11-24) on 10.25M mention rows (2.8 GB) inside a 2 GB memory cgroup, page cache
+#: included: 6% 388.7 vs 407.4 s (window 4.8% SLOWER), 20% 1293.5 vs 1049.1 s (window 18.9% faster); break-even about
+#: 8 to 10%. The same store held in RAM: 6% 312.6 vs 379.2 s (window 21% slower), 20% 1087.7 vs 975.1 s (10.4%
+#: faster). 0.15 is about 1.5 to 2 times the capped break-even. The cap slowed main only 1.2x where the user's 41 GB
+#: store measured 5.5x (row 412), so the gain there is likely larger than measured here.
+DRAIN_WINDOW_MIN_FRACTION_OVER_RAM: float = 0.15
+
+
+def drain_threshold(session: Session) -> dict:
+    """Which break-even share applies to this drain run, and why (row 407c), read once at the run's start:
+    ``{"min_fraction", "basis", "store_bytes", "ram_bytes"}``. :data:`DRAIN_WINDOW_MIN_FRACTION_OVER_RAM` only when
+    BOTH readings were made and the main store file is larger than the RAM that can cache it (physical, or a smaller
+    cgroup limit); otherwise
+    :data:`DRAIN_WINDOW_MIN_FRACTION` (an unread figure declines the lower share: the window is optional)."""
+    store_bytes: int | None = None
+    ram_bytes: int | None = None
+    try:
+        # The bind's own path (the app engine keeps its URL truthful beside its creator). A path with ``?`` or ``%`` that
+        # SQLAlchemy parses differently from ``session.DB_FILE`` stats no file and keeps the default share. Only the main
+        # file is measured: the write-ahead log is held small at rest (``wal_size_limit_bytes``).
+        db_path = getattr(getattr(session.get_bind(), "url", None), "database", None)
+        if db_path and db_path != ":memory:":
+            store_bytes = int(os.stat(db_path).st_size)  # a stat, never an open of the live store (R789)
+    except Exception:  # noqa: BLE001 - an unread size keeps the default share
+        store_bytes = None
+    try:
+        # The machine's RAM, or a smaller cgroup memory limit (R302): a container's limit also caps the page cache, which is
+        # what the 407b measurement varied (a 2 GB cgroup on a 15 GB machine).
+        from src.config.memory_budget import budget_ram_mb
+
+        mb = budget_ram_mb()[0]
+        ram_bytes = int(mb * 1024 * 1024) if mb else None
+    except Exception:  # noqa: BLE001 - an unread RAM keeps the default share
+        ram_bytes = None
+    if store_bytes is None:
+        basis, share = "store_size_unread", DRAIN_WINDOW_MIN_FRACTION
+    elif ram_bytes is None:
+        basis, share = "ram_unread", DRAIN_WINDOW_MIN_FRACTION
+    elif store_bytes > ram_bytes:
+        basis, share = "store_larger_than_ram", DRAIN_WINDOW_MIN_FRACTION_OVER_RAM
+    else:
+        basis, share = "store_fits_in_ram", DRAIN_WINDOW_MIN_FRACTION
+    _LOG.info(
+        "drain index window threshold %.2f (%s; store %s bytes, physical RAM %s bytes)",
+        share, basis, store_bytes if store_bytes is not None else "unread", ram_bytes if ram_bytes is not None else "unread",
+    )
+    return {"min_fraction": share, "basis": basis, "store_bytes": store_bytes, "ram_bytes": ram_bytes}
+
 #: Memory the sort of the widest dropped index holds per mention row, under ``temp_store=MEMORY``
 #: (each index is built on its own, so the widest one is the peak). Measured: the
 #: widest rebuild (``ix_mention_covering``) peaked 128 MB above its process's baseline at 2.05M rows, 142 MB at
@@ -480,7 +531,6 @@ def rebuild_preflight(session: Session, rows: int) -> dict:
     article-list build (``database/article_indexes.preflight``): free space on the database's volume, and the
     memory available against the sort plus the memory guard's floor. ``sufficient`` is ``None`` when neither
     figure could be read. Never uses a temporary file (see :func:`_rebuild_missing`)."""
-    import os
 
     from src.database.article_indexes import _available_ram_bytes, _floor_bytes, _free
 
@@ -537,8 +587,9 @@ def waiting_line(room: dict):
 
 def drain_window_plan(session: Session, backlog_articles: int) -> dict:
     """Whether one drain run opens the window, and why (R825). ``open`` is True only when the mention rows
-    the run's backlog will write are at least :data:`DRAIN_WINDOW_MIN_FRACTION` of the mention rows AND the rebuild's memory and
-    space were READ and suffice: opening is optional, so an unknown figure declines it (the heal, which
+    the run's backlog will write are at least the run's share (:func:`drain_threshold`: :data:`DRAIN_WINDOW_MIN_FRACTION`,
+    or :data:`DRAIN_WINDOW_MIN_FRACTION_OVER_RAM` for a store larger than RAM) of the mention rows AND the rebuild's
+    memory and space were READ and suffice: opening is optional, so an unknown figure declines it (the heal, which
     has no choice, goes ahead on an unknown)."""
     backlog = max(0, int(backlog_articles))
     out: dict = {"open": False, "backlog_articles": backlog, "min_fraction": DRAIN_WINDOW_MIN_FRACTION}
@@ -548,6 +599,9 @@ def drain_window_plan(session: Session, backlog_articles: int) -> dict:
     if read_state(session) is not None:
         out["reason"] = "window_already_open"
         return out
+    threshold = drain_threshold(session)
+    out["min_fraction"] = threshold["min_fraction"]
+    out["threshold"] = threshold
     rows = mention_rows_bound(session)
     # The articles already indexed: every article but the backlog (counted from the articles, not the stamps,
     # which an install older than R24 lacks for most of its corpus and would make a small backlog look large).
@@ -558,7 +612,7 @@ def drain_window_plan(session: Session, backlog_articles: int) -> dict:
     # holds none yet: the whole corpus is the backlog (and None, unlike inf, survives JSON).
     fraction = round(projected / rows, 4) if rows else None
     out.update(mention_rows_bound=rows, indexed_articles=indexed, fraction=fraction, projected_rows=projected)
-    if fraction is not None and fraction < DRAIN_WINDOW_MIN_FRACTION:
+    if fraction is not None and fraction < threshold["min_fraction"]:
         out["reason"] = "below_break_even"
         return out
     room = rebuild_preflight(session, rows + projected)
