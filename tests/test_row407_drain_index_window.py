@@ -101,7 +101,7 @@ def _backlog(session, n: int, start: int = 1000) -> int:
 
 def test_the_break_even_constant_is_measured_and_cited():
     src = (ROOT / "src/analytics/bulk_build.py").read_text(encoding="utf-8")
-    assert 0 < bb.DRAIN_WINDOW_MIN_FRACTION < 1
+    assert 0 < bb.DRAIN_WINDOW_MIN_FRACTION <= 1
     assert bb.RAM_BYTES_PER_MENTION > 0 and bb.DISK_BYTES_PER_MENTION > 0
     assert "scripts/bench_bulk_window.py" in src and (ROOT / "scripts/bench_bulk_window.py").is_file()
     assert "__FRACTION__" not in src and "__RAM__" not in src and "__DISK__" not in src

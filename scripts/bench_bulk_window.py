@@ -14,8 +14,9 @@ every index the model declares, then for each N compares the two ways to add N m
 It prints one JSON line per measurement: the seconds of each mode, the peak memory of each
 rebuild above the child's baseline (which includes the connection's 64 MiB page cache), and, once,
 the bytes the dropped indexes occupy per row (``BW_DISK=0`` skips it).
-``bulk_build.DRAIN_WINDOW_MIN_FRACTION``, ``RAM_BYTES_PER_MENTION`` and
-``DISK_BYTES_PER_MENTION`` cite its output.
+``bulk_build.RAM_BYTES_PER_MENTION`` and ``DISK_BYTES_PER_MENTION`` cite its output. It times inserts
+only, so it overstates the window's gain on a real drain, which is dominated by extraction:
+``DRAIN_WINDOW_MIN_FRACTION`` cites the real-drain timings instead.
 
     python -I scripts/bench_bulk_window.py . 2000000 50000,100000,300000
 

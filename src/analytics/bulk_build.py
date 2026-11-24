@@ -406,13 +406,18 @@ def heal_bulk_build(engine: Engine, *, inline: bool = True) -> list[str]:
 DRAIN_KEEP: tuple[str, ...] = (ARTICLE_DELETE_INDEX,)
 
 #: The share a drain run must add before the window opens: the mention rows its backlog will write (the
-#: backlog articles at the corpus's own mentions per article) against the mention rows the store holds. MEASURED, see
-#: ``scripts/bench_bulk_window.py`` and the PR of row 407: on an encrypted
-#: store of 2,000,000 indexed mention rows (4 cores, 2026-11-24), adding N rows live against drop + insert +
-#: rebuild took 20.1 s vs 30.6 s at N = 50k (2.5%), 31.2 vs 31.5 s at 80k (4%, the break-even), 39.8 vs 34.4 s
-#: at 100k (5%), 123.7 vs 42.6 s at 300k (15%) and 418.9 vs 65.6 s at 1M (50%). 5% is the first measured
-#: share the window WON, so below it the drain keeps the live indexes and claims no speed-up.
-DRAIN_WINDOW_MIN_FRACTION: float = 0.05
+#: backlog articles at the corpus's own mentions per article) against the mention rows the store holds. MEASURED on
+#: the REAL drain (``_reindex_resume_worker``, one worker, 2 CPUs, 2026-11-24), a store of 20,000 indexed articles
+#: (2.05M mention rows) with a merged backlog, live indexes (main) vs the window (row 407):
+#:   encrypted (SQLCipher): 10% 93.5 vs 105.2 s (window 12.5% SLOWER), 37% 270.0 vs 260.7 s (3.4% faster),
+#:                          100% 484.1 vs 435.6 s (10.0% faster); break-even about 23%.
+#:   plaintext:             10% 85.4 vs 93.2 s (window 9.1% slower), 37% 255.1 vs 236.2 s (7.4% faster),
+#:                          100% 454.1 vs 422.4 s (7.0% faster); break-even about 18%.
+#: The drain is dominated by extraction, so the insert-only bench (``scripts/bench_bulk_window.py``: 4% break-even,
+#: 6x at 50%) overstated the gain. The user's corpus is encrypted, and between 23% and about 40% the gain is within
+#: run-to-run noise, so the window opens only when the backlog at least DOUBLES the store (a restore into a near
+#: empty one), where it measurably wins; below that the drain keeps the live indexes and claims no speed-up.
+DRAIN_WINDOW_MIN_FRACTION: float = 1.0
 
 #: Memory the sort of the widest dropped index holds per mention row, under ``temp_store=MEMORY``
 #: (each index is built on its own, so the widest one is the peak). Measured: the
