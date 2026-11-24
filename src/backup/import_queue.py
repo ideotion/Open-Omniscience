@@ -368,9 +368,10 @@ class _CheckpointGroup:
 
 
 def _new_group_dir() -> Path:
-    d = data_dir() / f".restore-group-{secrets.token_hex(8)}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """The group's folder: private like every restore staging (R829 B), a new name made atomically, mode 0700."""
+    from src.backup.stream_backup import make_restore_staging
+
+    return make_restore_staging(data_dir(), prefix=".restore-group-")
 
 
 def _state_path() -> Path:

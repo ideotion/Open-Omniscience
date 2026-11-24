@@ -2787,7 +2787,7 @@
       if ((bk.articles_pending || 0) > 0) {
         return [{ ok: false, text: tf(
           "Analytics are still catching up: {n} imported article(s) carry no keywords until the re-index finishes.",
-          { n: fmtNum(Number(bk.articles_pending), 0) }) }];
+          { n: fmtNum(Number(bk.articles_pending), 0) }) }].concat(_uxImStageLines(bk, tf));
       }
       if (st.state === "running" || rx.state === "running") {
         // AFTER STAGE 4, and not before (Q203 = a; 2026-09-26, I2). An empty backlog at
@@ -2798,6 +2798,31 @@
         return [{ ok: false, text: t("Analytics are complete once the re-index (stage 4) finishes.") }];
       }
       return [{ ok: true, text: t("Analytics are complete — every imported article is indexed.") }];
+    }
+
+    // R824 (row 405): per stage, the imported articles whose extraction was reused from the
+    // backup, done on this computer, and still to do (and the stamps too old to say) -- counts read from the stamps,
+    // never estimated. A stage the backlog did not report is left out, never drawn as zeros.
+    function _uxImStageLines(bk, tf) {
+      const st = bk && bk.stages;
+      if (!st) return [];
+      const out = [];
+      for (const [key, tpl] of [
+        ["kw", "Keywords and dates, articles reused from the backup: {carried}; extracted on this computer: {here}; still to extract: {awaiting}."],
+        ["www", "Places, people and organisations, articles reused from the backup: {carried}; extracted on this computer: {here}; still to extract: {awaiting}."],
+      ]) {
+        const s = st[key];
+        if (!s) continue;
+        out.push({ ok: Number(s.awaiting) === 0, text: tf(tpl, {
+          carried: fmtNum(Number(s.carried), 0), here: fmtNum(Number(s.extracted_here), 0),
+          awaiting: fmtNum(Number(s.awaiting), 0) }) });
+        // A stamp written before stamps recorded where they came from: carried or extracted here, nobody can say which now.
+        if (Number(s.not_recorded) > 0) {
+          out.push({ ok: true, text: tf("{n} more articles were extracted before this version began recording whether an extraction came from a backup, so for these it is not known.", {
+            n: fmtNum(Number(s.not_recorded), 0) }) });
+        }
+      }
+      return out;
     }
 
     // `only` ("reindex") keeps the analytics statement alone -- the one of the three that

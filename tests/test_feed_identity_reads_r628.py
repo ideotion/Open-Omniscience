@@ -571,7 +571,7 @@ def test_every_engine_the_app_builds_hides_its_statements_values():
                 hides = any(k.arg == "hide_parameters" and isinstance(k.value, ast.Constant) and k.value.value is True
                             for k in node.keywords)
                 calls.append((str(path.relative_to(root)), node.lineno, hides))
-    assert len(calls) == 7, calls  # the corpus (SQLite and other), the read snapshot, the migration, the lanes, the two test stores
+    assert len(calls) == 8, calls  # the corpus (SQLite and other), the read snapshot, the migration, the lanes, the two test stores, the golden output pass (R824)
     assert all(hides for *_, hides in calls), [c for c in calls if not c[2]]
 
 
