@@ -170,7 +170,8 @@ def test_the_standalone_download_button_still_confirms():
 def test_a_platform_with_no_scripted_installer_links_the_real_one():
     """macOS/Windows have no scripted Ollama install, so a "one click" button
     there would be a promise the app cannot keep."""
-    src = _fn("loadAiSetup")
+    # The action line is drawn by _aiSetupActionHtml through ooLiveHtml (row 367).
+    src = _fn("loadAiSetup") + _fn("_aiSetupActionHtml")
     assert "scripted" in src
     assert "ollama.com/download" in src
 

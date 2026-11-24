@@ -468,7 +468,8 @@ def test_the_ai_card_keeps_a_failed_start_on_screen():
     from tests.js_source_helper import assert_present, function_body, read_static
 
     js = read_static("app.js")
-    hero = function_body(js, "loadAiHero")
+    # The card is drawn by _aiHeroHtml through ooLiveHtml from loadAiHero's reads (row 367).
+    hero = function_body(js, "loadAiHero") + function_body(js, "_aiHeroHtml")
     assert_present(hero, "act.last_start", why="the server's answer survives a reload")
     assert_present(hero, "server_log_head", why="the server's own first words belong here")
     assert_present(

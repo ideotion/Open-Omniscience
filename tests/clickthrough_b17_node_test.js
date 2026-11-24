@@ -429,7 +429,9 @@ async function run() {
     const I = i18n(lang);
     const box = {innerHTML: ""};
     const src = [ESC, extract("ooLabelHtml", null, CORE), extract("_sizeText", null, CORE), extract("_fmtBytes", null, CORE),
-      extract("loadAiStore", "async function loadAiStore(", AI), "return loadAiStore;"].join("\n");
+      // the store is read, then drawn through ooLiveHtml (row 367): the draw is what is checked here
+      "let _aiStoreRender = null, _aiStoreBusy = null; function ooLiveHtml(el, render) { el.innerHTML = render(); }",
+      extract("loadAiStore", "async function loadAiStore(", AI), extract("_aiStoreHtml", null, AI), "return loadAiStore;"].join("\n");
     // eslint-disable-next-line no-new-func
     const fn = new Function("window", "OOI18N", "$", "api", src)({OOI18N: I}, I,
       (id) => (id === "ai-store-box" ? box : null), () => Promise.resolve(payload));

@@ -246,6 +246,54 @@ def test_declaring_a_nested_function_is_not_calling_it():
     assert _keys({"a.js": src}) == {"a.js inner"}
 
 
+# ---- row 365: a closure handed translated text ------------------------------------------------
+
+_SAY = 'function go() { const out = $("x"); const say = (m) => { out.textContent = m; }; %s }'
+
+
+@pytest.mark.parametrize(
+    "call",
+    ['say(t("Saving…"));', 'say(tf("{n} saved", {n: 2}));', 'say(t("Failed:") + " " + e.message);'],
+)
+def test_a_caller_handing_t_output_to_its_own_writer_is_charged(call):
+    assert _keys({"a.js": _SAY % call}) == {"a.js go"}
+
+
+@pytest.mark.parametrize(
+    "call", ["say(n);", "say(e.message);", 'say("—");', 'toast(t("Saved")); say(n);']
+)
+def test_a_caller_handing_its_writer_anything_else_is_not_charged(call):
+    # the last case: a t() call elsewhere in the caller is not an argument of the writer
+    assert _keys({"a.js": _SAY % call}) == set()
+
+
+def test_a_writer_that_marks_its_node_charges_nothing():
+    src = (
+        'function go() { const out = $("x"); const say = (m) => { out.setAttribute("data-i18n-dyn", "");'
+        ' out.textContent = m; }; say(t("Saving…")); }'
+    )
+    assert _keys({"a.js": src}) == set()
+
+
+def test_a_writer_through_oolive_is_not_a_writer():
+    src = 'function go() { const out = $("x"); const say = (r) => { ooLive(out, r); }; say(() => t("Saving…")); }'
+    assert _keys({"a.js": src}) == set()
+
+
+def test_a_namesake_outside_the_caller_is_not_its_closure():
+    # say() is a top-level function here, not a closure of go(): its writing is its own business
+    src = 'function say(m) { $("x").textContent = m; }\nfunction go() { say(t("Saving…")); }'
+    assert _keys({"a.js": src}) == set()
+
+
+def test_a_charged_caller_that_is_repainted_is_exempt():
+    src = (
+        'document.addEventListener("oo:langchange", () => { go(); });\n'
+        + _SAY % 'say(t("Saving…"));'
+    )
+    assert _keys({"a.js": src}) == set()
+
+
 def test_a_call_written_inside_a_string_is_not_a_repaint():
     # onclick text in an HTML string is not a call the listener makes
     src = (

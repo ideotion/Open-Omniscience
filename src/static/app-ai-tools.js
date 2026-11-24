@@ -665,7 +665,9 @@
       if (btn) btn.disabled = true;
       _qualMergeLast = null;
       _qualMergeRefusal = null;
-      if (out) out.textContent = t("Merging…");
+      // "Merging…" and a failure are held through ooLive (row 367); a report or a keyed refusal is drawn by
+      // _renderOverlayMerge, which the language switch already repaints, so the hold is released before it.
+      if (out) ooLive(out, () => t("Merging…"));
       try {
         const res = await fetch("/api/diagnostics/source-qualification-merge",
                                 {method: "POST", body});
@@ -683,11 +685,13 @@
             ? _framedText(d.detail, d.detail_i18n, d.detail_vars, t) : _apiErrorMessage(d, res));
         }
         _qualMergeLast = d;
+        if (out) ooLive(out, null);
         _renderOverlayMerge();
         _overlaySaveAs(d.overlay_yaml || "", "source_qualification.yml");
       } catch (e) {
         _qualMergeLast = null;
-        if (out) out.textContent = _apiErrorMessage(e);
+        if (out && _qualMergeRefusal) { ooLive(out, null); _renderOverlayMerge(); }
+        else if (out) ooLive(out, () => _apiErrorMessage(e));
       } finally { if (btn) btn.disabled = false; }
     }
 
@@ -1323,36 +1327,55 @@
       return {target, steps, backend: b, running: target === "vllm" ? !!vllm.running : !!oll.running};
     }
 
-    let _aiSetupRunning = false;
+    // The setup card is drawn bare and held in three parts through ooLiveHtml/ooLive (row 367): the plan, the action
+    // and the status line, so a run writing its status never drops the plan's hold. The action's render reads
+    // `_aiSetupRunning`, so the button says "Working…" while a run is on and nothing writes into it.
+    let _aiSetupRunning = false, _aiSetupAction = null;
     async function loadAiSetup() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("ai-setup-box");
       if (!box || _aiSetupRunning) return;   // never clobber a run's own output
       const plan = await _aiSetupPlan();
-      if (!plan || !plan.steps.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+      if (!plan || !plan.steps.length) { box.style.display = "none"; box.innerHTML = ""; _aiSetupAction = null; return; }
       const backendName = plan.target === "vllm" ? "vLLM" : "Ollama";
-      const rows = plan.steps.map((s) => {
-        const size = s.size ? ` <span class="muted">(${esc(s.size)})</span>` : "";
-        const what = s.id === "model" ? `${s.label} — <code>${esc(s.artifact)}</code>` : esc(s.label);
-        return `<li>${what}${size}</li>`;
-      }).join("");
       // macOS/Windows have no scripted Ollama install, so a "one click" button
       // there would be a promise the app cannot keep -- link the real installer.
       const manual = plan.steps.find((s) => s.id === "install-ollama" && !s.scripted);
-      const action = manual
-        ? `<p><a href="${esc(manual.download_url)}" target="_blank" rel="noopener">${esc(t("Open ollama.com/download ↗"))}</a> ` +
-          `<span class="muted">${esc(t("then return here — the rest is one click."))}</span></p>`
-        : `<p><button id="ai-setup-btn" data-on-click="runAiSetup(this)">${esc(t("Set up local AI"))}</button></p>`;
+      _aiSetupAction = () => _aiSetupActionHtml(manual);
       box.style.display = "";
       box.innerHTML =
         `<div class="panel" style="border-color:var(--accent);margin:0 0 10px">` +
+        `<div id="ai-setup-plan"></div><div id="ai-setup-action"></div>` +
+        `<div id="ai-setup-status" class="hint" style="margin-top:6px"></div></div>`;
+      ooLiveHtml($("ai-setup-plan"), () =>
         `<strong>${esc(t("Set up local AI"))}</strong>` +
         `<p class="muted" style="margin:6px 0">` +
         esc(t("This machine will use")) + ` <b>${esc(backendName)}</b>. ` +
-        esc(t("Remaining steps:")) + `</p><ul style="margin:4px 0 8px 18px">${rows}</ul>` +
-        `<p class="card-caveat">${esc(t("The downloads go over the clear internet — not through this app's Tor proxy. They happen once; the model then runs fully offline."))}</p>` +
-        action +
-        `<div id="ai-setup-status" class="hint" style="margin-top:6px"></div></div>`;
+        esc(t("Remaining steps:")) + `</p><ul style="margin:4px 0 8px 18px">${_aiSetupRows(plan)}</ul>` +
+        `<p class="card-caveat">${esc(t("The downloads go over the clear internet — not through this app's Tor proxy. They happen once; the model then runs fully offline."))}</p>`);
+      ooLiveHtml($("ai-setup-action"), _aiSetupAction);
+    }
+    // the step labels are keys ("Install vLLM", "Download the default model"): drawn through t(), as runAiSetup does
+    function _aiSetupRows(plan) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return plan.steps.map((s) => {
+        const size = s.size ? ` <span class="muted">(${esc(s.size)})</span>` : "";
+        const what = s.id === "model" ? `${esc(t(s.label))} — <code>${esc(s.artifact)}</code>` : esc(t(s.label));
+        return `<li>${what}${size}</li>`;
+      }).join("");
+    }
+    function _aiSetupActionHtml(manual) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return manual
+        ? `<p><a href="${esc(manual.download_url)}" target="_blank" rel="noopener">${esc(t("Open ollama.com/download ↗"))}</a> ` +
+          `<span class="muted">${esc(t("then return here — the rest is one click."))}</span></p>`
+        : _aiSetupRunning
+          ? `<p><button id="ai-setup-btn" data-on-click="runAiSetup(this)" disabled>${esc(t("Working…"))}</button></p>`
+          : `<p><button id="ai-setup-btn" data-on-click="runAiSetup(this)">${esc(t("Set up local AI"))}</button></p>`;
+    }
+    function _aiSetupActionRedraw() {
+      const el = $("ai-setup-action");
+      if (el && _aiSetupAction) ooLiveHtml(el, _aiSetupAction);
     }
 
     async function runAiSetup(btn) {
@@ -1377,11 +1400,11 @@
       // place. The collector is not started: this allows the install to reach the
       // network, nothing else.
       if (!await ensureAiEgress(t("Set up local AI (downloads several GB over the clear internet)"))) return;
-      const status = $("ai-setup-status");
-      const say = (msg) => { if (status) status.textContent = msg; };
-      const was = btn ? btn.textContent : "";
+      // Each status line is a render, drawn through ooLive from what the run holds, so it follows a language switch
+      // (row 367); the jobs' own progress words are shown as they came.
+      const say = (render) => { const status = $("ai-setup-status"); if (status) ooLive(status, render); };
       _aiSetupRunning = true;
-      if (btn) { btn.disabled = true; btn.textContent = t("Working…"); }
+      _aiSetupActionRedraw();
       try {
         // The plan is a KNOWN, finite list, so "step i of N" is a real count, not
         // an invented percentage. Within a step we show the job's own reported
@@ -1391,32 +1414,35 @@
         let idx = 0;
         for (const step of plan.steps) {
           idx += 1;
-          const label = t(step.label || step.id);
-          const head = OOI18N && OOI18N.tf
-            ? OOI18N.tf("Step {i} of {n} — {label}", {i: idx, n: total, label})
-            : `Step ${idx} of ${total} — ${label}`;
-          const sayStep = (line) => say(line ? `${head} · ${line}` : head);
+          const i = idx;
+          const head = () => {
+            const label = t(step.label || step.id);
+            return OOI18N && OOI18N.tf
+              ? OOI18N.tf("Step {i} of {n} — {label}", {i, n: total, label})
+              : `Step ${i} of ${total} — ${label}`;
+          };
+          const sayStep = (line) => say(() => (line ? `${head()} · ${line}` : head()));
           sayStep("");
           if (step.id === "install-vllm") {
             // Reuses the existing installer, 409-acknowledgement path included --
             // a resource warning must still be answerable here, not only from the
             // vLLM section's own button.
             const r = await _vllmInstallStart();
-            if (!r) { say(t("Cancelled.")); return; }   // the operator declined the warning
+            if (!r) { say(() => t("Cancelled.")); return; }   // the operator declined the warning
             // AWAIT the install. Starting it is not finishing it: the POST returns
             // the moment the worker thread is spawned, so the chain used to race
             // straight on to downloading a model into a venv that did not exist
             // yet and starting a server whose backend was still installing.
             const done = await _followJob("/api/llm/vllm/install/status", sayStep);
             if (done.state === "error") {
-              say(t("vLLM install failed:") + " " + (done.error || done.detail || ""));
+              say(() => t("vLLM install failed:") + " " + (done.error || done.detail || ""));
               return;   // never carry on into steps that need the backend
             }
-            if (done.state === "cancelled") { say(done.stopped_note ? t(done.stopped_note) : t("Cancelled.")); return; }
+            if (done.state === "cancelled") { say(() => (done.stopped_note ? t(done.stopped_note) : t("Cancelled."))); return; }
           } else if (step.id === "install-ollama") {
             // Ends in the "Install Ollama" box below: elevation is explicit and
             // may need a password this app must never pretend to have.
-            say(t("Continue in the Install Ollama box below."));
+            say(() => t("Continue in the Install Ollama box below."));
             await prepareOllamaInstall({alreadyAsked: true});
             return;
           } else if (step.id === "model") {
@@ -1429,29 +1455,30 @@
             // server against weights that were not there yet.
             const done = await _followJob("/api/llm/default-model/status", sayStep);
             if (done.state === "error") {
-              say(t("Model download failed:") + " " + (done.error || done.detail || ""));
+              say(() => t("Model download failed:") + " " + (done.error || done.detail || ""));
               return;
             }
-            if (done.state === "cancelled") { say(done.stopped_note ? t(done.stopped_note) : t("Cancelled.")); return; }
+            if (done.state === "cancelled") { say(() => (done.stopped_note ? t(done.stopped_note) : t("Cancelled."))); return; }
             // "idle" means the queue was never asked for this artifact -- the install
             // call refused (a missing prerequisite, say) and reported that itself.
             // Carrying on would start a server against weights that are not coming and
             // then print "Done.", which is the one outcome worse than a visible failure.
             if (done.state === "idle") {
-              say(t("The model download never started — see the message above."));
+              say(() => t("The model download never started — see the message above."));
               return;
             }
           }
         }
         // Free, local, reversible -- so it just happens, per the pill's own rule.
-        say(t("Starting the local AI…"));
+        say(() => t("Starting the local AI…"));
         try { await aiPillStartOrInstall(); } catch (e) { /* the panels report the real state */ }
-        say(t("Done."));
+        say(() => t("Done."));
       } catch (e) {
-        say(t("Setup failed:") + " " + (e.message || e));
+        const why = e.message || e;
+        say(() => t("Setup failed:") + " " + why);
       } finally {
         _aiSetupRunning = false;
-        if (btn) { btn.disabled = false; btn.textContent = was; }
+        _aiSetupActionRedraw();
         refreshAiPanels();
       }
     }
@@ -1513,11 +1540,26 @@
         act = await api("/api/llm/activation");
         b = await api("/api/llm/backend");
       } catch (e) {
-        box.innerHTML = `<p class="muted">${esc(t("Could not read the local AI state."))}</p>`;
+        _aiHeroRender = null;
+        ooLiveHtml(box, () => `<p class="muted">${esc(t("Could not read the local AI state."))}</p>`);
         return;
       }
       try { health = await api("/api/llm/health"); } catch (e) { health = null; }
-
+      const serving = !!(health && health.available);
+      if (serving) _aiStartFailure = null;
+      // The card is drawn through ooLiveHtml from these reads (row 367), so a language switch redraws it with no request.
+      // The failure shown is the one known at this read; `_aiHeroStarting` draws the Start button as "Starting…".
+      const fail = act.last_start || (serving ? null : _aiStartFailure);
+      _aiHeroRender = () => _aiHeroHtml(act, b, health, fail);
+      ooLiveHtml(box, _aiHeroRender);
+    }
+    let _aiHeroRender = null, _aiHeroStarting = false;
+    function _aiHeroRedraw() {
+      const box = $("ai-hero");
+      if (box && _aiHeroRender) ooLiveHtml(box, _aiHeroRender);
+    }
+    function _aiHeroHtml(act, b, health, fail) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const name = act.backend === "vllm" ? "vLLM" : "Ollama";
       const serving = !!(health && health.available);
       // THREE states, not two: serving / installed-but-stopped / not set up. The
@@ -1535,7 +1577,9 @@
       } else if (act.can_start) {
         head = `<span class="warn">●</span> ` +
                esc(_tf("Installed but not running — {backend}", {backend: name}));
-        action = `<button data-on-click="aiStartNow(this)">${esc(t("Start the local AI"))}</button>`;
+        action = _aiHeroStarting
+          ? `<button data-on-click="aiStartNow(this)" disabled>${esc(t("Starting…"))}</button>`
+          : `<button data-on-click="aiStartNow(this)">${esc(t("Start the local AI"))}</button>`;
       } else {
         head = `<span class="muted">●</span> ` + esc(t("Not set up on this machine yet"));
       }
@@ -1556,8 +1600,6 @@
       // death that happened long after the click (a CUDA OOM well into a model load).
       // The local one covers the moment before the next poll, and the backends whose
       // failures the vLLM-only tri-state cannot see.
-      if (serving) _aiStartFailure = null;
-      const fail = act.last_start || (serving ? null : _aiStartFailure);
       let failed = "";
       if (fail) {
         failed = `<div class="card-caveat" style="margin-top:6px">${esc(fail.detail || "")}`
@@ -1568,8 +1610,7 @@
                   + `${esc(fail.server_log_head)}</pre></details>`;
         }
       }
-      box.innerHTML =
-        `<div style="font-size:15px">${head}</div>` + why + blocker + failed +
+      return `<div style="font-size:15px">${head}</div>` + why + blocker + failed +
         _hwChips(b.gpu || {}, b.hardware || null) +
         (action ? `<div class="row" style="gap:8px;margin-top:8px">${action}</div>` : "");
     }
@@ -1580,8 +1621,8 @@
 
     async function aiStartNow(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      // The button sits in the held hero card, so it is redrawn as "Starting…" by the card's render (row 367).
+      _aiHeroStarting = true; _aiHeroRedraw();
       try {
         const r = await api("/api/llm/activation/start", {method: "POST"});
         _aiStartFailure = (r.ready || r.started) ? null : r;
@@ -1589,7 +1630,7 @@
       } catch (e) {
         toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was; }
+        _aiHeroStarting = false; _aiHeroRedraw();
         // A vLLM engine takes tens of seconds, so re-read a few times rather than
         // painting one snapshot that will be wrong in five seconds.
         [1000, 4000, 12000].forEach(ms => setTimeout(() => { loadAiHero(); loadLlmHealth(); }, ms));
@@ -1605,7 +1646,19 @@
       const box = $("ai-store-box");
       if (!box) return;
       let r = null;
-      try { r = await api("/api/llm/model-store"); } catch (e) { box.textContent = ""; return; }
+      try { r = await api("/api/llm/model-store"); } catch (e) { _aiStoreRender = null; ooLiveHtml(box, () => ""); return; }
+      // Drawn through ooLiveHtml from this read (row 367), so a language switch redraws it with no request. The two
+      // move buttons' busy labels come from `_aiStoreBusy`, so a click never writes into the held box.
+      _aiStoreRender = () => _aiStoreHtml(r);
+      ooLiveHtml(box, _aiStoreRender);
+    }
+    let _aiStoreRender = null, _aiStoreBusy = null;   // null | "copy" | "reclaim"
+    function _aiStoreRedraw() {
+      const box = $("ai-store-box");
+      if (box && _aiStoreRender) ooLiveHtml(box, _aiStoreRender);
+    }
+    function _aiStoreHtml(r) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Sizes through the app's ONE size writer (click-through B17, T8): this helper wrote
       // "GB" by hand, so the unit stayed English in every locale and "0.0 GB" was all a
       // few-megabyte store could say. _fmtBytes keys the unit and picks it by magnitude.
@@ -1641,16 +1694,17 @@
         html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.note)}</div>`;
       }
       if (r.ollama.note || r.ollama.split_note) {
-        html += `<div style="margin-top:4px"><button class="ghost tiny" data-on-click="migrateOllamaStore(this)">` +
-                esc(t("Move them into the app folder")) + `</button>`;
+        const busy = _aiStoreBusy ? " disabled" : "";
+        html += `<div style="margin-top:4px"><button class="ghost tiny" data-on-click="migrateOllamaStore(this)"${busy}>` +
+                esc(_aiStoreBusy === "copy" ? t("Copying…") : t("Move them into the app folder")) + `</button>`;
         // The reclaim is a SEPARATE button, and only after a copy has put every model in
         // the app folder. A copy alone does not finish the job the operator asked for --
         // the folder they wanted emptied is still full -- but folding the deletion into
         // the copy would make a destructive step the default, and an interrupted "move"
         // over a multi-GB store is how both copies get lost.
-        html += ` <button class="ghost tiny" data-on-click="migrateOllamaStore(this, true)" ` +
+        html += ` <button class="ghost tiny" data-on-click="migrateOllamaStore(this, true)"${busy} ` +
                 `title="${esc(t("Deletes only the files confirmed already copied into the app folder. Run the copy first."))}">` +
-                esc(t("…then delete the originals")) + `</button></div>`;
+                esc(_aiStoreBusy === "reclaim" ? t("Deleting…") : t("…then delete the originals")) + `</button></div>`;
       }
       // Weights downloaded before the store moved here are still on the disk. Nothing
       // said so, so a model an operator already had reported "not downloaded" and its
@@ -1662,7 +1716,7 @@
         html += `<div class="card-caveat" style="margin-top:4px">${esc(r.huggingface.note)}`
               + `${gb(r.huggingface.legacy_bytes)}</div>`;
       }
-      box.innerHTML = html;
+      return html;
     }
 
     // ---- Uninstall the local AI (maintainer 2026-08-12) --------------------- //
@@ -1672,22 +1726,62 @@
     // app cannot remove. The Ollama program was installed on the system with
     // administrator rights, so what is offered there is its removal commands, not a
     // button that pretends to run them.
+    // Through the app's ONE size writer (row 367): this wrote "GB" by hand, English in every locale.
     function _gbytes(n) {
-      return (n === null || n === undefined) ? "" : ` (${(n / 1e9).toFixed(1)} GB)`;
+      return (n === null || n === undefined) ? "" : ` (${_fmtBytes(n)})`;
     }
 
     async function loadAiUninstall() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("ai-uninstall-box");
       if (!box) return;
+      // Drawn through ooLive/ooLiveHtml (row 367). The plan, the checkbox's label and the status line are held one by
+      // one, so an uninstall writing its status never drops the plan's hold, and the box (with the operator's tick) is
+      // built once per read. The buttons' "Removing…" comes from `_aiUninstallBusy`, read by the plan's render.
+      // The last uninstall's answer is drawn by the ONE read that follows it (refreshAiPanels) and then let go, so a
+      // later read (another plan, a reinstall) never shows an old "Uninstalled." under it. The render below still holds it,
+      // so a language switch repaints it until the next read.
+      const status = _aiUninstallStatus;
+      _aiUninstallStatus = null;
       let plan = null;
       try { plan = await api("/api/llm/uninstall/plan"); }
-      catch (e) { box.textContent = t("Could not read what is installed."); return; }
+      catch (e) { _aiUninstallPlan = null; ooLive(box, () => t("Could not read what is installed.")); return; }
       const installed = plan.installed || [];
       if (!installed.length) {
-        box.innerHTML = `<div>${esc(t("Nothing to uninstall — no AI backend is installed on this machine."))}</div>`;
+        _aiUninstallPlan = null;
+        // the last uninstall's answer stays under it: it is what says what was kept
+        ooLiveHtml(box, () => `<div>${esc(t("Nothing to uninstall — no AI backend is installed on this machine."))}</div>` +
+          (status ? `<div class="hint" style="margin-top:6px;white-space:pre-wrap">${esc(status())}</div>` : ""));
         return;
       }
+      ooLive(box, null);
+      box.innerHTML =
+        `<div id="ai-uninstall-plan"></div>` +
+        `<label class="small" style="display:block;margin-top:8px">` +
+        `<input type="checkbox" id="ai-uninstall-models"> <span id="ai-uninstall-models-l"></span></label>` +
+        `<div id="ai-uninstall-status" class="hint" style="margin-top:6px"></div>`;
+      _aiUninstallPlan = () => _aiUninstallPlanHtml(plan);
+      ooLiveHtml($("ai-uninstall-plan"), _aiUninstallPlan);
+      ooLive($("ai-uninstall-models-l"), () => t("also delete the downloaded models in this app's folder"));
+      const st = $("ai-uninstall-status");
+      if (st && status) { st.style.whiteSpace = "pre-wrap"; ooLive(st, status); }
+    }
+    let _aiUninstallPlan = null, _aiUninstallBusy = "";   // the JSON of the backends being removed, or ""
+    let _aiUninstallStatus = null;   // the last uninstall's answer, a render
+    function _aiUninstallRedraw() {
+      const el = $("ai-uninstall-plan");
+      if (el && _aiUninstallPlan) ooLiveHtml(el, _aiUninstallPlan);
+    }
+    function _aiUninstallPlanHtml(plan) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      // A button's label: the backend's name is data (translate="no"), "Removing…" while this button's uninstall runs.
+      const button = (backends, label) => {
+        const key = JSON.stringify(backends), busy = _aiUninstallBusy === key;
+        return `<button class="ghost tiny" data-on-click="uninstallAi(${esc(key)}, this)"${_aiUninstallBusy ? " disabled" : ""}>` +
+          (busy ? esc(t("Removing…")) : label) + `</button>`;
+      };
       const rows = (plan.backends || []).filter((b) => b.installed).map((b) => {
         const name = b.backend === "vllm" ? "vLLM" : "Ollama";
         const size = b.removable ? esc(_gbytes(b.bytes)) : "";
@@ -1699,15 +1793,13 @@
         return `<div style="margin-top:6px"><b>${esc(name)}</b>${size}` +
           (b.removable ? "" : ` <span class="muted">— ${esc(t("this app cannot remove it"))}</span>`) +
           `${why}<div style="margin-top:4px">` +
-          `<button class="ghost tiny" data-on-click="uninstallAi(${esc(JSON.stringify([b.backend]))}, this)">` +
-          `${esc(t("Uninstall"))} ${esc(name)}</button></div></div>`;
+          button([b.backend], esc(tf("Uninstall {backend}", {backend: "\u0001"})).replace("\u0001", () => `<span translate="no">${esc(name)}</span>`)) +
+          `</div></div>`;
       }).join("");
       // Offered only when BOTH are here, because that is when it is a different action
       // rather than a second name for the same one.
       const both = plan.both_installed
-        ? `<div style="margin-top:8px"><button class="ghost tiny" ` +
-          `data-on-click="uninstallAi(${esc(JSON.stringify(["vllm", "ollama"]))}, this)">` +
-          `${esc(t("Uninstall both backends"))}</button></div>` : "";
+        ? `<div style="margin-top:8px">${button(["vllm", "ollama"], esc(t("Uninstall both backends")))}</div>` : "";
       const stores = (plan.stores || []).filter((st) => st.exists);
       const storeRows = stores.length
         ? `<div style="margin-top:8px">${esc(t("Downloaded models on this machine:"))}` +
@@ -1717,17 +1809,19 @@
             (st.removable ? "" : ` — ${esc(st.kept_reason ? ooLabelText(t("kept"), st.kept_reason) : t("kept"))}`) +
             `</div>`).join("") + `</div>`
         : "";
-      box.innerHTML =
-        `<div>${ooSaidHtml(plan, "method")}</div>` + rows + both + storeRows +
-        `<label class="small" style="display:block;margin-top:8px">` +
-        `<input type="checkbox" id="ai-uninstall-models"> ` +
-        esc(t("also delete the downloaded models in this app's folder")) + `</label>` +
-        `<div id="ai-uninstall-status" class="hint" style="margin-top:6px"></div>`;
+      return `<div>${ooSaidHtml(plan, "method")}</div>` + rows + both + storeRows;
     }
 
     async function uninstallAi(backends, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const status = $("ai-uninstall-status");
+      // the status line is a render over what this uninstall answered, held through ooLive (row 367)
+      // Kept as `_aiUninstallStatus`, so the re-read that follows (refreshAiPanels rebuilds this box) draws it again: the
+      // rebuild used to wipe the answer the moment it was written. That read consumes it (loadAiUninstall).
+      const say = (render) => {
+        _aiUninstallStatus = render;
+        const el = $("ai-uninstall-status");
+        if (el) { el.style.whiteSpace = "pre-wrap"; ooLive(el, render); }
+      };
       const delete_models = !!($("ai-uninstall-models") || {}).checked;
       // Re-read the plan rather than trusting the one the panel was drawn from: it may
       // be minutes old, and the numbers in this confirm are what is being consented to.
@@ -1746,8 +1840,7 @@
         }
       }
       if (!confirm(t("Uninstall the local AI? This cannot be undone.") + "\n\n" + lines.join("\n"))) return;
-      const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Removing…"); }
+      _aiUninstallBusy = JSON.stringify(backends); _aiUninstallRedraw();
       try {
         const r = await api("/api/llm/uninstall", {
           method: "POST",
@@ -1757,18 +1850,20 @@
         // "Uninstalled." whatever happened would leave an operator believing the
         // program is gone when it is still there and will still be serving next boot.
         const freed = r.freed_bytes ? _gbytes(r.freed_bytes).trim() : "";
-        let msg = r.complete
-          ? t("Uninstalled.") + (freed ? " " + freed : "")
-          : t("Partly uninstalled.") + (freed ? " " + freed : "");
-        if ((r.kept || []).length) {
-          msg += "\n" + r.kept.map((k) => `• ${k.what}: ${k.reason || ""}`).join("\n");
-        }
-        if (status) { status.style.whiteSpace = "pre-wrap"; status.textContent = msg; }
+        say(() => {
+          let msg = r.complete
+            ? t("Uninstalled.") + (freed ? " " + freed : "")
+            : t("Partly uninstalled.") + (freed ? " " + freed : "");
+          if ((r.kept || []).length) {
+            msg += "\n" + r.kept.map((k) => `• ${k.what}: ${k.reason || ""}`).join("\n");
+          }
+          return msg;
+        });
       } catch (e) {
-        if (status) status.textContent = t("Uninstall failed:") + " " +
-          (_apiErrorMessage ? _apiErrorMessage(e) : String(e));
+        const why = _apiErrorMessage ? _apiErrorMessage(e) : String(e);
+        say(() => t("Uninstall failed:") + " " + why);
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was; }
+        _aiUninstallBusy = ""; _aiUninstallRedraw();
         refreshAiPanels();
       }
     }
@@ -1779,18 +1874,22 @@
         ? t("Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.")
         : t("Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself.");
       if (!confirm(ask)) return;
-      const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = reclaim ? t("Deleting…") : t("Copying…"); }
+      // The buttons sit in the held store box: they are redrawn busy by its render, never written into (row 367).
+      _aiStoreBusy = reclaim ? "reclaim" : "copy"; _aiStoreRedraw();
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       try {
         const r = await api("/api/llm/model-store/migrate" + (reclaim ? "?reclaim=true" : ""), {method: "POST"});
+        // Labelled counts, each locale's own words (row 367): this welded English counts onto every language.
+        const n = (x) => fmtNum(x || 0, 0);
         toast(r.ok ? (reclaim
-                        ? t("Done.") + ` ${r.copied} copied, ${r.removed} originals removed.`
-                        : t("Copied.") + ` ${r.copied} copied, ${r.skipped} already there.`)
+                        ? tf("Done. Copied: {copied} · originals removed: {removed}.", {copied: n(r.copied), removed: n(r.removed)})
+                        : tf("Copied: {copied} · already there: {skipped}.", {copied: n(r.copied), skipped: n(r.skipped)}))
                    : (r.reason || t("Could not copy the models.")), r.ok ? "" : "err");
       } catch (e) {
         toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was; }
+        _aiStoreBusy = null; _aiStoreRedraw();
         loadAiStore();
       }
     }
@@ -2485,34 +2584,48 @@
     const _CUSTODY_NO_KEY_TIP = "No signing key exists yet. The first custody entry creates it, encrypted under your passphrase when the app has one.";
     const _CUSTODY_KEY_LOST_TIP = "The custody log has entries, but its signing key is not in the keys folder. Put the key back before the next entry: otherwise that entry creates a new key, and the log records the change without the old key's endorsement.";
 
+    // Drawn through ooLiveHtml from this status (row 367), so a language switch redraws it with no request. Inside a held
+    // node the page walker no longer looks, so every word here goes through t() (the pills and hovers were English
+    // literals the walker translated; "Signing" and "Timestamps" had no key at all and were English everywhere).
     function renderCustodyStatus(s) {
+      const el = $("custody-status");
+      if (el) ooLiveHtml(el, () => _custodyStatusHtml(s));
+    }
+    function _custodyStatusHtml(s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => String(x).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const id = s.signer || {};
       const trunc = (h) => h ? esc(h.slice(0, 16)) + "…" : "—";
+      const pill = (cls, text, title) => `<span class="pill${cls ? " " + cls : ""}"${title ? ` title="${esc(title)}"` : ""}>${text}</span>`;
       const pqcPill = s.pqc_effective
-        ? '<span class="pill ok">hybrid (Ed25519 + ML-DSA)</span>'
+        ? pill("ok", esc(t("hybrid (Ed25519 + ML-DSA)")))
         : (s.pqc_enabled && !s.pqc_available
-            ? '<span class="pill warn">requested, library not installed</span>'
-            : '<span class="pill">Ed25519 only</span>');
+            ? pill("warn", esc(t("requested, library not installed")))
+            : pill("", esc(t("Ed25519 only"))));
       const otsPill = s.ots_effective
-        ? '<span class="pill ok">OpenTimestamps (Bitcoin)</span>'
+        ? pill("ok", esc(t("OpenTimestamps (Bitcoin)")))
         : (s.anchoring_mode === "opentimestamps" && !s.ots_available
-            ? '<span class="pill warn">requested, library not installed</span>'
-            : '<span class="pill">local-only</span>');
+            ? pill("warn", esc(t("requested, library not installed")))
+            : pill("", esc(t("local-only"))));
       // The hover says what the key files hold, for the value the server reports (R484 (3)). The one
       // hover before told every install to set OO_KEY_PASSPHRASE: an encrypted install does not need
       // it, and the database passphrase wraps the keys too. A value with no entry gets no hover.
       const keyTip = Object.prototype.hasOwnProperty.call(_KEY_PROTECTION_TIPS, s.key_protection)
-        ? _KEY_PROTECTION_TIPS[s.key_protection] : "";
+        ? t(_KEY_PROTECTION_TIPS[s.key_protection]) : "";
       // Reading this status never makes a key (R694): before the first entry there is none, and the pill says so.
+      // A scheme id is data (translate="no"); "unreadable" is the server's English word, so it has its own sentence.
       const keyPill = s.keys_created === false
         ? (s.log_exists
-          ? `<span class="pill warn" title="${esc(_CUSTODY_KEY_LOST_TIP)}">keys: missing</span>`
-          : `<span class="pill" title="${esc(_CUSTODY_NO_KEY_TIP)}">keys: none yet</span>`)
-        : `<span class="pill ${s.key_protection==='aes256gcm-scrypt'?'ok':'warn'}"` +
-          (keyTip ? ` title="${esc(keyTip)}"` : "") + `>keys: ${esc(s.key_protection)}</span>`;
-      $("custody-status").innerHTML =
-        `Signing: ${pqcPill} &nbsp; Timestamps: ${otsPill} &nbsp;` + keyPill +
-        `<div class="muted" style="font-size:12px;margin-top:4px">` +
+          ? pill("warn", esc(t("keys: missing")), t(_CUSTODY_KEY_LOST_TIP))
+          : pill("", esc(t("keys: none yet")), t(_CUSTODY_NO_KEY_TIP)))
+        : s.key_protection === "unreadable"
+          ? pill("warn", esc(t("keys: unreadable")), "")
+          : pill(s.key_protection === "aes256gcm-scrypt" ? "ok" : "warn",
+              esc(tf("keys: {protection}", {protection: "\u0001"}))
+                .replace("\u0001", () => `<code translate="no">${esc(s.key_protection)}</code>`), keyTip);
+      return ooLabelHtml(esc(t("Signing")), pqcPill) + " &nbsp; " + ooLabelHtml(esc(t("Timestamps")), otsPill) + " &nbsp;" + keyPill +
+        `<div class="muted" style="font-size:12px;margin-top:4px" translate="no" dir="ltr">` +
         `Ed25519 pub ${trunc(id.ed25519_pub)}` +
         (id.ml_dsa_pub ? ` · ${esc(id.ml_dsa_variant)} pub ${trunc(id.ml_dsa_pub)}` : "") + `</div>` +
         // An unreadable settings store is not an unset one: the switches below then show defaults, not the saved choice.
@@ -2566,7 +2679,7 @@
       try {
         const s = await api("/api/custody/settings");
         renderCustodyStatus(s); applyCustodyToggles(s); _renderCustodyLate(s.late);
-      } catch (e) { $("custody-status").textContent = _failMsg("Custody settings unavailable: {error}", e); }
+      } catch (e) { const el = $("custody-status"); if (el) ooLive(el, () => _failMsg("Custody settings unavailable: {error}", e)); }
     }
 
     // CUST-1 (2026-09-24): ingest entries a failure left owed are queued and written
@@ -2610,19 +2723,22 @@
       try {
         const d = await _custodyReconcile({ scan: true });
         const sc = d.scan || {};
+        // #cust-result is drawn through ooLive from this answer (row 367), so it follows a language switch.
         if (sc.since_article_id == null) {
-          out.textContent = t("The custody log has no ingest entry yet, so there is no start to measure gaps from.");
+          ooLive(out, () => t("The custody log has no ingest entry yet, so there is no start to measure gaps from."));
           if (rec) rec.style.display = "none";
           return;
         }
-        const notes = _custDrainNotes(d);
-        out.textContent = _qualTf("{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).",
-          { n: sc.missing || 0, checked: sc.checked || 0 })
-          + (sc.complete ? "" : " " + t("The scan stopped at its time budget; run it again to continue."))
-          + (notes ? " " + notes : "");
+        ooLive(out, () => {
+          const notes = _custDrainNotes(d);
+          return _qualTf("{n} stored articles since the log's first ingest entry have no ingest entry ({checked} checked).",
+            { n: sc.missing || 0, checked: sc.checked || 0 })
+            + (sc.complete ? "" : " " + t("The scan stopped at its time budget; run it again to continue."))
+            + (notes ? " " + notes : "");
+        });
         if (rec) rec.style.display = sc.missing ? "" : "none";
       } catch (e) {
-        out.textContent = _apiErrorMessage(e);
+        ooLive(out, () => _apiErrorMessage(e));
       } finally { if (btn) btn.disabled = false; }
     }
     async function custodyGapRecord(btn) {
@@ -2633,11 +2749,13 @@
         // Both drains write owed entries marked late: the gaps a refused drain left queued are written by the FIRST one of the next
         // press (R618), so counting only the second said "Recorded 0" for entries it had just written.
         const n = ((d.drained || {}).recorded || 0) + ((d.drained_after_queue || {}).recorded || 0);
-        const notes = _custDrainNotes(d);
-        out.textContent = _qualTf("Recorded {n} entries, each marked late.", { n: n }) + (notes ? " " + notes : "");
+        ooLive(out, () => {
+          const notes = _custDrainNotes(d);
+          return _qualTf("Recorded {n} entries, each marked late.", { n: n }) + (notes ? " " + notes : "");
+        });
         if (btn) btn.style.display = "none";
       } catch (e) {
-        out.textContent = _apiErrorMessage(e);
+        ooLive(out, () => _apiErrorMessage(e));
       } finally { if (btn) btn.disabled = false; }
     }
 
@@ -2750,7 +2868,7 @@
         const d = await api("/api/custody/" + encodeURIComponent(id));
         // A reply without its entries list fails loudly in the paint (as before row 351), never as an empty chain.
         custodyEntriesPaint($("cust-entries"), d.entries);
-        $("cust-result").textContent = trf("Custody entries: {n}", { n: d.entry_count });
+        ooLive($("cust-result"), () => trf("Custody entries: {n}", { n: d.entry_count }));
       } catch (e) {
         const host = $("cust-entries"); host._ooCustEntries = null; host.innerHTML = "";
         toast(_failMsg("View chain: {error}", e), "err");
@@ -2777,16 +2895,23 @@
       const id = custItem(); if (!id) return;
       try {
         const d = await api("/api/custody/" + encodeURIComponent(id) + "/verify");
-        const signer = d.verified ? custodySignerWords(d.signed_by, d.signer_key) : "";
-        const by = signer ? ' <span class="cust-signer">' + esc(signer) + '</span>' : "";
         // R716: a chain that verifies only by accepting a key change nothing vouches for never reads as a plain "verified".
-        $("cust-result").innerHTML = d.verified && d.accepted_unendorsed
-          ? '<span class="pill warn">' + esc(_custT(CUST_ACCEPTED_UNENDORSED)) + '</span> '
-            + esc((d.notes||[]).join("; ")) + by
-          : d.verified
-          ? '<span class="pill ok">verified</span> chain intact, signatures valid.' + by
-            + ((d.notes||[]).length ? ' ' + esc(d.notes.join("; ")) : "")
-          : '<span class="pill err">FAILED</span> ' + esc((d.issues||[]).join("; "));
+        // Drawn through ooLiveHtml (row 367). "verified" is checked against the keys the log itself records, so it
+        // proves the log unchanged, never who signed it: the hover says so (R800); row 382 adds whose key signed it, in the
+        // closure so a language switch redraws it too.
+        ooLiveHtml($("cust-result"), () => {
+          const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+          const signer = d.verified ? custodySignerWords(d.signed_by, d.signer_key) : "";
+          const by = signer ? ' <span class="cust-signer">' + esc(signer) + '</span>' : "";
+          return d.verified && d.accepted_unendorsed
+            ? '<span class="pill warn">' + esc(_custT(CUST_ACCEPTED_UNENDORSED)) + '</span> '
+              + esc((d.notes||[]).join("; ")) + by
+            : d.verified
+            ? `<span class="pill ok" title="${esc(t("Checked against the keys recorded in the log itself: this shows the log has not changed since it was signed, not who signed it."))}">`
+              + esc(t("verified")) + "</span> " + esc(t("chain intact, signatures valid.")) + by
+              + ((d.notes||[]).length ? " " + esc(d.notes.join("; ")) : "")
+            : '<span class="pill err">' + esc(t("FAILED")) + "</span> " + esc((d.issues||[]).join("; "));
+        });
       } catch (e) { toast(_failMsg("Verify: {error}", e), "err"); }
     }
 
@@ -2839,7 +2964,7 @@
       try {
         const r = await api("/api/custody/anchor",
           {method: "POST", body: JSON.stringify({merkle_root: root, provider, consent: provider !== "local"})});
-        $("cust-result").innerHTML = custodyAnchorResultHtml(r, t, (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null);
+        ooLiveHtml($("cust-result"), () => custodyAnchorResultHtml(r, t, (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null));
       } catch (e) { toast(_failMsg("Anchor: {error}", e), "err"); }
     }
 

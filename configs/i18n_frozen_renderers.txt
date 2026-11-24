@@ -3,26 +3,13 @@
 # whose docstring states the method and its blind spots. tests/test_i18n_frozen_renderers.py
 # requires the scan to equal this list exactly. THE LIST IS THE RATCHET: a fix deletes its own
 # line in the same PR; a new freeze would have to add one, in plain sight in the diff.
-app-ai-tools.js aiStartNow
-app-ai-tools.js anchorRoot
-app-ai-tools.js custodyGapCheck
 app-ai-tools.js installOneModel
 app-ai-tools.js installVllm
 app-ai-tools.js launchOllama
 app-ai-tools.js loadAiBackendPanel
-app-ai-tools.js loadAiHero
-app-ai-tools.js loadAiSetup
-app-ai-tools.js loadAiStore
-app-ai-tools.js loadAiUninstall
 app-ai-tools.js loadModelCatalog
 app-ai-tools.js loadVllmStatusPanel
-app-ai-tools.js migrateOllamaStore
-app-ai-tools.js overlayMerge
-app-ai-tools.js renderCustodyStatus
-app-ai-tools.js runAiSetup
-app-ai-tools.js uninstallAi
-app-ai-tools.js verifyChain
-app-ai-tools.js viewChain
+app-ai-tools.js qualifyBulkStart
 app-backup.js _uxCancelExport
 app-backup.js _uxImKeyRows
 app-backup.js _uxImLeftoverPlaintext
@@ -49,6 +36,7 @@ app-claim.js claimRun
 app-claim.js claimVerify
 app-claim.js claimWeather
 app-climate.js climateDrawCharts
+app-climate.js climateFetch
 app-climate.js climatePlaceShow
 app-climate.js loadClimateUnits
 app-climate.js renderClimate
