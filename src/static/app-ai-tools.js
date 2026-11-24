@@ -2757,16 +2757,33 @@
       }
     }
 
+    // Row 382 (R800): a chain verifies against the keys its own entries carry, which shows only that it is unchanged
+    // since they signed it. The one comparison the app can make is with its OWN custody key: "this installation" or
+    // "another installation", a plain fact, never a warning; "Signed by key" when this installation's key is unread.
+    // Plain text: the caller escapes it.
+    function custodySignerWords(signedBy, key) {
+      const k = String(key || "");
+      if (!/^[0-9a-f]{64}$/i.test(k)) return "";
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, n) => (v && v[n] != null) ? String(v[n]) : m));
+      const fp = "\u2068" + k.slice(0, 16) + "\u2069";
+      if (signedBy === "this-installation") return tf("Signed by this installation, key {fp}", { fp });
+      if (signedBy === "another-installation") return tf("Signed by another installation, key {fp}", { fp });
+      return tf("Signed by key {fp}", { fp });
+    }
+
     async function verifyChain() {
       const id = custItem(); if (!id) return;
       try {
         const d = await api("/api/custody/" + encodeURIComponent(id) + "/verify");
+        const signer = d.verified ? custodySignerWords(d.signed_by, d.signer_key) : "";
+        const by = signer ? ' <span class="cust-signer">' + esc(signer) + '</span>' : "";
         // R716: a chain that verifies only by accepting a key change nothing vouches for never reads as a plain "verified".
         $("cust-result").innerHTML = d.verified && d.accepted_unendorsed
           ? '<span class="pill warn">' + esc(_custT(CUST_ACCEPTED_UNENDORSED)) + '</span> '
-            + esc((d.notes||[]).join("; "))
+            + esc((d.notes||[]).join("; ")) + by
           : d.verified
-          ? '<span class="pill ok">verified</span> chain intact, signatures valid.'
+          ? '<span class="pill ok">verified</span> chain intact, signatures valid.' + by
             + ((d.notes||[]).length ? ' ' + esc(d.notes.join("; ")) : "")
           : '<span class="pill err">FAILED</span> ' + esc((d.issues||[]).join("; "));
       } catch (e) { toast(_failMsg("Verify: {error}", e), "err"); }
