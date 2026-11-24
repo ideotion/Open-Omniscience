@@ -49,7 +49,16 @@ class El {
   get innerHTML() { return this._html == null ? "" : this._html; }
   set textContent(v) { this.replaceChildren(new Text(v)); }
   get textContent() {
-    if (this._html != null) return this._html.replace(/<[^>]*>/g, "");
+    if (this._html != null) {
+      // the text a page shows for this markup: everything outside a tag (a character walk, not a regex rewrite)
+      let out = "", inTag = false;
+      for (const ch of this._html) {
+        if (ch === "<") inTag = true;
+        else if (ch === ">" && inTag) inTag = false;
+        else if (!inTag) out += ch;
+      }
+      return out;
+    }
     return this.childNodes.map((c) => c.textContent).join("");
   }
 }
