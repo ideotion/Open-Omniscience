@@ -6942,10 +6942,14 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     # control exists, wired to the real setting, and the operator can see how much work
     # is outstanding before switching it on.
     #
-    # `runLangDetect` / `_paintLangDetectButton` remain in app.js, unwired: they are the
-    # manual bounded-run path, and the poll they belong to is what keeps the count live.
-    # Recorded here so a future reader does not read their absence-from-the-DOM as a
-    # capability that was lost.
+    # `runLangDetect` / `_paintLangDetectButton` (the manual start/stop button's handler and
+    # painter) were REMOVED in row 367: the button left the page on 2026-08-04 and nothing
+    # called them. The checkbox below is the one control; `pollLangDetect` stays, because it
+    # keeps the count's status line live. Pinned ABSENT, so neither the dead handler nor a
+    # second button beside the checkbox comes back unnoticed.
+    assert "function runLangDetect(" not in ui and "function _paintLangDetectButton(" not in ui
+    assert "langdetect-btn" not in ui, "a second language-detection control beside the checkbox"
+    assert "function pollLangDetect(" in ui
     assert 'id="aic-m-langdetect"' in ui, "the opt-in control must exist somewhere"
     assert "ai_langdetect_auto" in ui, "and be wired to the real setting"
     assert "loadLangDetectCount" in ui, "the outstanding-work count is still surfaced"
@@ -6960,7 +6964,6 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     # transient LLMUnavailable mid-run retries with backoff instead of hard-aborting the run
     # into a benign-looking "done" (the maintainer's exact field report).
     assert 'id="langdetect-continuous"' not in ui, "the continuous checkbox must be removed"
-    assert "Language detection ongoing" in ui, "the button must toggle to a stop label while running"
     assert "_LANGDETECT_MAX_CONSECUTIVE_FAILURES" in api, "transient failures must retry, not hard-abort"
     assert "advance_langdetect_auto_start" in api, "an auto-start ride-along must exist (default ON)"
     assert "ai_langdetect_auto" in api, "the auto-start must be gated by an operator setting"

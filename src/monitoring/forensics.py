@@ -610,13 +610,14 @@ DISPOSE_STEP_WORDS = {
     "failed": "the write-back failed (its exception class is in the storage journal)",
     "locked": "the write-back did not run: the store is locked, this process never opened it",
     "fresh": "the write-back did not run: the store is new, this process never opened it",
+    "drive": "the write-back did not run: the drive at the data folder was not the marked one (row 390)",
     "no db": "the write-back did not run: there is no SQLite database file to write back into",
     "not run": "the write-back step did not run",
     "unknown": "the sentinel names a write-back result this build does not know",
 }
-#: A step ``why`` the write-back step reports, as the code the member keeps (``locked`` / ``fresh``; anything else, a missing file or another
+#: A step ``why`` the write-back step reports, as the code the member keeps (``locked`` / ``fresh`` / ``drive``; anything else, a missing file or another
 #: backend, is ``no db``).
-_SKIP_CODES = {"locked": "locked", "fresh": "fresh"}
+_SKIP_CODES = {"locked": "locked", "fresh": "fresh", "drive-changed": "drive"}
 
 
 def dispose_facts(disposed: dict[str, Any] | None, checkpoint: dict[str, Any] | None) -> dict[str, Any]:

@@ -879,6 +879,20 @@ imply a protection we cannot deliver.
   key to that drive's data stays in memory until the app is closed. The app then closes itself (row 389,
   `src/safety/panic.py:exit_after_panic`): the power button's graceful stop a few seconds after the answer is sent, and the
   process ends without it if it is still running 60 s later (status 1, so a forced end is visible). SQLITE_FCNTL_PERSIST_WAL is not reachable from our drivers.
+  The same holds OUTSIDE an erase (row 390): when another drive is put at the data folder's path while the app runs (or the
+  marked one is gone), every close of a pooled connection asks first whether the marked drive is still there
+  (`data_volume.probe`), and a connection with a file in the data folder (its main file or one it ATTACHed) is pinned instead of
+  closed: a pool recycle or overflow, the shutdown disposal and the `atexit` one. Every tracked connection on that drive, checked
+  out or not, is also pinned when the watchdog finds the drive gone, at every engine disposal and at exit, since one a disposal
+  leaves checked out is later freed with its pool, a close no patched close sees. A DuckDB serve on it is kept and its offload folder left, the write-back
+  before the shutdown disposal does not open the file there (`drive-changed`), no offload folder is made or swept and the
+  persisted rollup store is not opened there, no in-memory rollup or map is built from the library there, and a build or refresh refused for it says so (`drive-changed`, never an encryption
+  or a missing passphrase). The question is asked again at each close, so a marker read
+  that fails for a moment pins what was open in that moment (and a process out of descriptors reads the marker as missing, so it
+  pins until the watchdog's countdown closes the app). LIMITS: a connection freed between the swap and the next of those moments
+  (seconds) closes on the drive there; raw `sqlite3` connections a module opens and closes itself (the wiki dump index, the OSM
+  reader, the keyword log scan) are not pooled and not covered: they open the file at the path, so they read or write the other
+  drive's file, and close it whole.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
