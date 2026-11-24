@@ -1897,14 +1897,47 @@
     // The dual-use model list. One button per model; the artifact behind it is
     // whichever build the ACTIVE backend can use. A model with no verified build for
     // that backend renders DISABLED with its reason rather than vanishing.
-    let _catalogSel = new Set();
+    //
+    // Drawn through ooLive/ooLiveHtml (row 367): the box is built once per read and its head, rows and status line are
+    // held one by one, so a language switch repaints them and a download's status writing never drops the rows' hold.
+    // A click's "Starting…" comes from `_mcStarting`, read by the rows' render, never written into the held rows.
+    // The status line (`_mcStatus`, a render) survives the reads that happen WHILE a download runs, and the one read that
+    // follows its end draws it and lets it go, so an old "Done." never sits under a later read.
+    let _mcRows = null, _mcStatus = null, _mcFollowing = 0;
+    const _mcStarting = new Set();   // the keys whose download is being started or followed
+    function _mcRedraw() {
+      const el = $("mc-rows");
+      if (el && _mcRows) ooLiveHtml(el, _mcRows);
+    }
+    function _mcSay(render) {
+      _mcStatus = render;
+      const el = $("mc-status");
+      if (el) ooLive(el, render);
+    }
     async function loadModelCatalog() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("llm-catalog-box");
       if (!box) return;
       let c = null;
-      try { c = await api("/api/llm/models/catalog"); } catch (e) { box.innerHTML = ""; return; }
-      const rows = (c.models || []).map((m) => {
+      try { c = await api("/api/llm/models/catalog"); } catch (e) { _mcRows = null; ooLive(box, () => ""); return; }
+      const status = _mcStatus;
+      if (!_mcFollowing) _mcStatus = null;
+      ooLive(box, null);
+      box.innerHTML =
+        `<div id="mc-head"></div><div id="mc-rows"></div>` +
+        `<div class="row" style="gap:8px;margin-top:8px;align-items:center">` +
+        `<span id="mc-status" class="hint"></span></div>`;
+      ooLiveHtml($("mc-head"), () =>
+        `<div style="font-weight:600">${esc(t("Available models"))}</div>` +
+        `<div class="hint" style="margin:2px 0 6px">${ooSaidHtml(c, "method")}</div>`);
+      _mcRows = () => _modelCatalogRowsHtml(c);
+      ooLiveHtml($("mc-rows"), _mcRows);
+      const st = $("mc-status");
+      if (st && status) ooLive(st, status);
+    }
+    function _modelCatalogRowsHtml(c) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return (c.models || []).map((m) => {
         const id = "mc-" + m.key;
         // WHERE A BUILD EXISTS AT ALL, shown on every row. Distinct from whether it
         // is usable on the backend running here: "Ollama only" is a fact about the
@@ -1943,10 +1976,11 @@
         // either: a stopped daemon cannot tell us, and offering a download is the
         // honest move there -- downloading something already present is harmless,
         // whereas hiding the button on a guess would strand the operator.
+        const busy = _mcStarting.has(m.key);
         const action = m.installed === true
           ? `<span class="pill ok">${esc(t("Downloaded"))}</span>`
-          : `<button data-mckey="${esc(m.key)}" data-on-click="installOneModel(${esc(JSON.stringify(m.key))}, this)">` +
-            `${esc(t("Download"))}</button>` +
+          : `<button data-mckey="${esc(m.key)}"${busy ? " disabled" : ""} data-on-click="installOneModel(${esc(JSON.stringify(m.key))}, this)">` +
+            `${esc(busy ? t("Starting…") : t("Download"))}</button>` +
             (m.installed === null
               ? ` <span class="hint">${esc(t("already present? — could not read"))}</span>` : "");
         return `<div class="row" id="${esc(id)}" style="gap:10px;align-items:flex-start;margin:8px 0;` +
@@ -1957,22 +1991,17 @@
           (m.summary ? `<div class="hint">${esc(m.summary)}</div>` : "") + `</span>` +
           `<span style="flex:0 0 auto;white-space:nowrap">${action}</span></div>`;
       }).join("");
-      box.innerHTML =
-        `<div style="font-weight:600">${esc(t("Available models"))}</div>` +
-        `<div class="hint" style="margin:2px 0 6px">${ooSaidHtml(c, "method")}</div>` +
-        rows +
-        `<div class="row" style="gap:8px;margin-top:8px;align-items:center">` +
-        `<span id="mc-status" class="hint"></span></div>`;
     }
 
     // One model, one click. Shares the SAME endpoint and the same egress consent as the
     // multi-key path it replaces -- only the gesture changed, not the contract.
     async function installOneModel(key, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const status = $("mc-status");
       if (!await ensureAiEgress(t("Download local models (over the clear internet)"))) return;
-      const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      if (_mcStarting.has(key)) return;   // already being started or followed
+      _mcStarting.add(key); _mcFollowing++; _mcRedraw();
+      // A status no read will follow (a refusal, a failure) is drawn where it is and not kept for a later read.
+      let reread = false;
       try {
         const r = await api("/api/llm/models/install",
           {method: "POST", body: JSON.stringify({keys: [key]})});
@@ -1980,27 +2009,33 @@
           toast(`${ref.label || ref.key}: ${ref.reason || t("refused")}`, "err");
         }
         if (r.action === "nothing_to_do") {
-          if (status) status.textContent = t("Nothing to download — it was refused.");
+          _mcSay(() => t("Nothing to download — it was refused."));
           return;
         }
-        if (status) status.textContent = t("Downloading:") + " " + (r.queued || []).join(", ");
+        const queued = (r.queued || []).join(", ");
+        _mcSay(() => t("Downloading:") + " " + queued);
         if (r.backend === "ollama") _llmPullStartPoll();
         const st = await _followJob(
           "/api/llm/models/install/status?backend=" + encodeURIComponent(r.backend || ""),
-          (m) => { if (status) status.textContent = m; });
-        if (status) {
-          status.textContent = st.state === "error"
-            ? (t("Download failed:") + " " + (st.detail || ""))
-            : (st.stopped_note ? t(st.stopped_note) : (st.detail || t("Done.")));
-        }
-        // Repaint so the finished row loses its button and the picker gains the model.
-        loadModelCatalog();
-        loadLlmModels();
+          (m) => _mcSay(() => t(m)));   // a bare job state ("running") is a key; a server detail is returned as is
+        const detail = st.detail || "";
+        _mcSay(st.state === "error"
+          ? () => t("Download failed:") + " " + detail
+          : st.stopped_note ? () => t(st.stopped_note)
+            : detail ? () => detail : () => t("Done."));
+        reread = true;
       } catch (e) {
-        if (status) status.textContent = t("Download failed:") + " " + (e.message || e);
+        const msg = (e && e.message) || String(e);
+        _mcSay(() => t("Download failed:") + " " + msg);
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was || t("Download"); }
+        _mcStarting.delete(key); _mcFollowing--;
+        if (!reread && !_mcFollowing) _mcStatus = null;
+        _mcRedraw();
       }
+      if (!reread) return;
+      // Repaint so the finished row loses its button and the picker gains the model; that read draws the status above.
+      loadModelCatalog();
+      loadLlmModels();
     }
 
     function refreshAiPanels() {
@@ -2019,6 +2054,14 @@
     let _aiBackendPicks = 0;
     let _aiBackendSaving = 0;
 
+    // Drawn through ooLiveHtml (row 367): the panel is a render over the status this read got, so a language switch
+    // repaints it. A click's "Launching…" and the disabled Ollama buttons come from `_ollBusy`, read by the render; the
+    // override box keeps the operator's live tick on a repaint (only a fresh read draws the server's value).
+    let _abRender = null, _abFresh = false, _ollBusy = "";   // "" | "launch" | "release" | "stop"
+    function _abRedraw() {
+      const box = $("ai-backend-box");
+      if (box && _abRender) ooLiveHtml(box, _abRender);
+    }
     async function loadAiBackendPanel() {
       const picksAtStart = _aiBackendPicks;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -2032,103 +2075,113 @@
       try {
         const b = await api("/api/llm/backend");
         if (stale()) return;
-        const gpu = b.gpu || {};
-        const vllm = b.vllm || {};
-        // Ollama is now reported as two INDEPENDENT facts (installed / running), so
-        // "installed but stopped" is finally a state the UI can see. Older payloads
-        // carried only `ollama_available`; fall back to it so a stale server still
-        // renders truthfully rather than claiming "not installed".
-        const oll = b.ollama || {installed: !!b.ollama_available, running: !!b.ollama_available,
-                                 can_launch: false};
-        // Row 234: a refused address was never contacted, so "not running" would be a claim nobody measured.
-        const ollTxt = oll.refused
-          ? (oll.installed ? t("installed, not contacted") : t("not installed, not contacted"))
-          : oll.installed
-            ? (oll.running ? t("installed, running") : t("installed, not running"))
-            : t("not installed");
-        // HARDWARE SUITABILITY (2026-07-30). `hw` may be absent from an older
-        // server payload — render nothing then, rather than claiming a verdict.
-        const hw = b.hardware;
-        let hwHtml = "";
-        if (hw && typeof hw.practical === "boolean") {
-          const chk = hw.override_requested ? " checked" : "";
-          const line = hw.practical
-            ? (hw.overridden
-                // Practical ONLY because the operator forced it: say so plainly, so
-                // an override is never mistaken for a hardware pass.
-                ? `<p class="card-caveat">${esc(t("AI features are enabled by your override, not by this hardware."))} ${ooSaidHtml(hw, "reason")}</p>`
-                : `<p class="hint">${esc(t("Hardware:"))}${hw.name ? " " + esc(hw.name) + " —" : ""} ${ooSaidHtml(hw, "reason")}</p>`)
-            : `<p class="card-caveat">${esc(t("AI features are off by default on this hardware."))} ${ooSaidHtml(hw, "reason")}</p>`;
-          // RULING 15 (2026-07-31): the tier between "refused" and "fine" -- a
-          // CPU-only machine, a thin-VRAM card, a small unified-memory Mac. These
-          // are EXPECTATIONS, not refusals, and this is the ONE place on the tab
-          // that states them: the maintainer's review found the same "no GPU"
-          // sentence repeated in four separate boxes, which reads as nagging and
-          // buries the one statement that carries the actual consequence.
-          const warns = (hw.warnings || []).length
-            ? `<ul class="hint" style="margin:4px 0 4px 18px">` +
-              hw.warnings.map((w) => `<li>${esc(w)}</li>`).join("") + `</ul>`
-            : "";
-          hwHtml = line + warns +
-            `<p><label><input type="checkbox" id="ai-hw-override"${chk}` +
-            ` data-on-change="setAllowImpracticalHw(this.checked)"> ` +
-            `${esc(t("Run local AI anyway on this hardware"))}</label>` +
-            ` <span class="muted">${esc(t("Your choice always wins — this is a default, never a block."))}</span></p>` +
-            `<p class="hint">${ooSaidHtml(hw, "method")} ${ooSaidHtml(hw, "caveat")}</p>`;
-        }
-        box.innerHTML =
-          `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${ooSaidHtml(b, "reason")}</span></p>` +
-          // The GPU is named here only when there IS one -- its absence is stated
-          // ONCE, in the hardware block below, with the consequence attached.
-          // (Repeating "not detected" here made it the first of four identical
-          // sentences on this tab; maintainer review, 2026-07-31.)
-          `<p class="hint">${gpu.available ? "GPU: " + esc(gpu.name || "detected") + " &middot; " : ""}` +
-          `vLLM: ${vllm.installed ? "installed" : "not installed"}` +
-          `${vllm.installed ? (vllm.running ? ", running" : ", not running") : ""}` +
-          ` &middot; Ollama: ${esc(ollTxt)}</p>` +
-          // Row 234: an OO_OLLAMA_URL on another computer is refused by the rule every local-AI call obeys; the app
-          // neither contacts it nor starts a local Ollama for it, and says so here instead of a silent "not running".
-          (oll.refused
-            ? `<p class="card-caveat">${esc(t("This Ollama address is not on this computer, so the app does not contact it and does not start Ollama for it. The local AI only talks to this computer: set OO_OLLAMA_URL to 127.0.0.1, localhost or ::1."))}</p>`
-            : "") +
-          // A LAUNCH control, offered precisely when the software is present but not
-          // answering (maintainer 2026-07-29). Shown only when it is honest to show:
-          // `can_launch` is decided server-side so the rule lives in one place, and a
-          // backend that is absent gets the install box instead, never a Launch button
-          // that could only fail.
-          (oll.can_launch
-            ? `<p><button class="btn" data-on-click="launchOllama(this)">${esc(t("Launch Ollama"))}</button>` +
-              ` <span class="muted">${esc(t("starts the local Ollama service"))}</span></p>`
-            : "") +
-          // FREE THE GPU / STOP (the routes had no button). Release works on any running daemon and stops nothing; Stop only
-          // on one this app started (can_stop is decided server-side). A summary or translation run in flight pauses first.
-          (oll.running
-            ? `<p><button class="tiny secondary" title="${esc(t("Ollama unloads its models and keeps running; the next request loads one again. A running summary or translation run pauses first."))}"` +
-              ` data-on-click="releaseOllama(this)">${esc(t("Free the GPU"))}</button>` +
-              (oll.can_stop
-                ? ` <button class="tiny secondary" title="${esc(t("Stops the Ollama this app started. A running summary or translation run pauses first."))}"` +
-                  ` data-on-click="stopOllama(this)">${esc(t("Stop Ollama"))}</button>`
-                : "") + `</p>`
-            : "") +
-          (b.vllm_can_launch
-            ? `<p class="hint">${esc(t("vLLM is installed but not running — use Start in the vLLM section below."))}</p>`
-            : "") +
-          // V4: selection != capability. When neither backend can serve a request,
-          // say so where the decision is disclosed, in the theme-aware caveat colour
-          // (invariant #23's var(--caveat), AA-verified on all 17 themes).
-          (b.no_backend
-            ? `<p class="card-caveat">${esc(t("No AI backend is reachable right now — install or start one below."))}</p>`
-            : "") +
-          // HARDWARE SUITABILITY (2026-07-30, maintainer-ruled). Disclosed in BOTH
-          // directions — never a silent block, never a silent enable — beside the
-          // checkbox that reverses it. The caveat colour is invariant #23's
-          // var(--caveat) (AA-verified on all 17 themes).
-          hwHtml;
+        _abRender = () => _aiBackendHtml(b);
+        _abFresh = true;
+        ooLiveHtml(box, _abRender);
         if (sel) sel.value = b.stored_override || "auto";
       } catch (e) {
         if (stale()) return;
-        box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
+        _abRender = null;
+        ooLiveHtml(box, () => `<p class="muted">${esc(t("Could not read the backend status."))}</p>`);
       }
+    }
+    function _aiBackendHtml(b) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const fresh = _abFresh; _abFresh = false;
+      const gpu = b.gpu || {};
+      const vllm = b.vllm || {};
+      // Ollama is now reported as two INDEPENDENT facts (installed / running), so
+      // "installed but stopped" is finally a state the UI can see. Older payloads
+      // carried only `ollama_available`; fall back to it so a stale server still
+      // renders truthfully rather than claiming "not installed".
+      const oll = b.ollama || {installed: !!b.ollama_available, running: !!b.ollama_available,
+                               can_launch: false};
+      // Row 234: a refused address was never contacted, so "not running" would be a claim nobody measured.
+      const ollTxt = oll.refused
+        ? (oll.installed ? t("installed, not contacted") : t("not installed, not contacted"))
+        : oll.installed
+          ? (oll.running ? t("installed, running") : t("installed, not running"))
+          : t("not installed");
+      // HARDWARE SUITABILITY (2026-07-30). `hw` may be absent from an older
+      // server payload — render nothing then, rather than claiming a verdict.
+      const hw = b.hardware;
+      let hwHtml = "";
+      if (hw && typeof hw.practical === "boolean") {
+        // A repaint keeps the operator's live tick: the save it started repaints from the server's answer.
+        const live = $("ai-hw-override");
+        const chk = (!fresh && live ? live.checked : hw.override_requested) ? " checked" : "";
+        const line = hw.practical
+          ? (hw.overridden
+              // Practical ONLY because the operator forced it: say so plainly, so
+              // an override is never mistaken for a hardware pass.
+              ? `<p class="card-caveat">${esc(t("AI features are enabled by your override, not by this hardware."))} ${ooSaidHtml(hw, "reason")}</p>`
+              : `<p class="hint">${esc(t("Hardware:"))}${hw.name ? " " + esc(hw.name) + " —" : ""} ${ooSaidHtml(hw, "reason")}</p>`)
+          : `<p class="card-caveat">${esc(t("AI features are off by default on this hardware."))} ${ooSaidHtml(hw, "reason")}</p>`;
+        // RULING 15 (2026-07-31): the tier between "refused" and "fine" -- a
+        // CPU-only machine, a thin-VRAM card, a small unified-memory Mac. These
+        // are EXPECTATIONS, not refusals, and this is the ONE place on the tab
+        // that states them: the maintainer's review found the same "no GPU"
+        // sentence repeated in four separate boxes, which reads as nagging and
+        // buries the one statement that carries the actual consequence.
+        const warns = (hw.warnings || []).length
+          ? `<ul class="hint" style="margin:4px 0 4px 18px">` +
+            hw.warnings.map((w) => `<li>${esc(w)}</li>`).join("") + `</ul>`
+          : "";
+        hwHtml = line + warns +
+          `<p><label><input type="checkbox" id="ai-hw-override"${chk}` +
+          ` data-on-change="setAllowImpracticalHw(this.checked)"> ` +
+          `${esc(t("Run local AI anyway on this hardware"))}</label>` +
+          ` <span class="muted">${esc(t("Your choice always wins — this is a default, never a block."))}</span></p>` +
+          `<p class="hint">${ooSaidHtml(hw, "method")} ${ooSaidHtml(hw, "caveat")}</p>`;
+      }
+      return (
+        `<p><b>${esc(t("Active backend:"))}</b> ${esc(b.backend)} <span class="muted">— ${ooSaidHtml(b, "reason")}</span></p>` +
+        // The GPU is named here only when there IS one -- its absence is stated
+        // ONCE, in the hardware block below, with the consequence attached.
+        // (Repeating "not detected" here made it the first of four identical
+        // sentences on this tab; maintainer review, 2026-07-31.)
+        `<p class="hint">${gpu.available ? "GPU: " + esc(gpu.name || "detected") + " &middot; " : ""}` +
+        `vLLM: ${vllm.installed ? "installed" : "not installed"}` +
+        `${vllm.installed ? (vllm.running ? ", running" : ", not running") : ""}` +
+        ` &middot; Ollama: ${esc(ollTxt)}</p>` +
+        // Row 234: an OO_OLLAMA_URL on another computer is refused by the rule every local-AI call obeys; the app
+        // neither contacts it nor starts a local Ollama for it, and says so here instead of a silent "not running".
+        (oll.refused
+          ? `<p class="card-caveat">${esc(t("This Ollama address is not on this computer, so the app does not contact it and does not start Ollama for it. The local AI only talks to this computer: set OO_OLLAMA_URL to 127.0.0.1, localhost or ::1."))}</p>`
+          : "") +
+        // A LAUNCH control, offered precisely when the software is present but not
+        // answering (maintainer 2026-07-29). Shown only when it is honest to show:
+        // `can_launch` is decided server-side so the rule lives in one place, and a
+        // backend that is absent gets the install box instead, never a Launch button
+        // that could only fail.
+        (oll.can_launch
+          ? `<p><button class="btn"${_ollBusy ? " disabled" : ""} data-on-click="launchOllama(this)">${esc(_ollBusy === "launch" ? t("Launching…") : t("Launch Ollama"))}</button>` +
+            ` <span class="muted">${esc(t("starts the local Ollama service"))}</span></p>`
+          : "") +
+        // FREE THE GPU / STOP (the routes had no button). Release works on any running daemon and stops nothing; Stop only
+        // on one this app started (can_stop is decided server-side). A summary or translation run in flight pauses first.
+        (oll.running
+          ? `<p><button class="tiny secondary"${_ollBusy ? " disabled" : ""} title="${esc(t("Ollama unloads its models and keeps running; the next request loads one again. A running summary or translation run pauses first."))}"` +
+            ` data-on-click="releaseOllama(this)">${esc(t("Free the GPU"))}</button>` +
+            (oll.can_stop
+              ? ` <button class="tiny secondary"${_ollBusy ? " disabled" : ""} title="${esc(t("Stops the Ollama this app started. A running summary or translation run pauses first."))}"` +
+                ` data-on-click="stopOllama(this)">${esc(t("Stop Ollama"))}</button>`
+              : "") + `</p>`
+          : "") +
+        (b.vllm_can_launch
+          ? `<p class="hint">${esc(t("vLLM is installed but not running — use Start in the vLLM section below."))}</p>`
+          : "") +
+        // V4: selection != capability. When neither backend can serve a request,
+        // say so where the decision is disclosed, in the theme-aware caveat colour
+        // (invariant #23's var(--caveat), AA-verified on all 17 themes).
+        (b.no_backend
+          ? `<p class="card-caveat">${esc(t("No AI backend is reachable right now — install or start one below."))}</p>`
+          : "") +
+        // HARDWARE SUITABILITY (2026-07-30, maintainer-ruled). Disclosed in BOTH
+        // directions — never a silent block, never a silent enable — beside the
+        // checkbox that reverses it. The caveat colour is invariant #23's
+        // var(--caveat) (AA-verified on all 17 themes).
+        hwHtml);
     }
 
     async function setAllowImpracticalHw(on) {
@@ -2158,8 +2211,8 @@
       // says so honestly if it did not, so a slow start reads as "still starting"
       // rather than as a ready server the next call would find unreachable.
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Launching…"); }
+      // The button sits in the held backend panel: it is redrawn busy by the panel's render, never written into (row 367).
+      _ollBusy = "launch"; _abRedraw();
       try {
         const r = await api("/api/llm/ollama/start", {method: "POST"});
         if (r.started && r.ready) toast(t("Ollama is running."));
@@ -2168,7 +2221,7 @@
       } catch (e) {
         toast(_failMsg("Ollama: {error}", e), "err");
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was; }
+        _ollBusy = ""; _abRedraw();
       }
       loadAiBackendPanel();
       loadLlmHealth();
@@ -2178,7 +2231,7 @@
     // its reply says which happened.
     async function _ollamaAct(btn, url, doneMsg) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (btn) btn.disabled = true;
+      _ollBusy = url.endsWith("/stop") ? "stop" : "release"; _abRedraw();
       try {
         const r = await api(url, {method: "POST"});
         if (r.deferred) toast(t("The running summary or translation run pauses first; the model is freed then. Resume it in the task manager."));
@@ -2187,7 +2240,7 @@
       } catch (e) {
         toast(_failMsg("Ollama: {error}", e), "err");
       } finally {
-        if (btn) btn.disabled = false;
+        _ollBusy = ""; _abRedraw();
       }
       loadAiBackendPanel();
       loadLlmHealth();
@@ -2226,6 +2279,21 @@
       return out;
     }
 
+    // Drawn through ooLive/ooLiveHtml (row 367). The status box is a render over the status this read got. The install
+    // box is built once per read with its sentence, button, cost and progress held one by one, so the cost line and the
+    // progress writing never drop the button's hold; the button's "Starting the install…" comes from `_vllmInstalling`.
+    // The progress line (`_vllmProgress`, a render) survives the reads made WHILE an install runs, and the one read that
+    // follows its end draws it and lets it go.
+    let _vllmInstalling = false, _vllmProgress = null, _vllmInstallBtn = null;
+    function _vllmInstallRedraw() {
+      const el = $("vllm-install-btn");
+      if (el && _vllmInstallBtn) ooLiveHtml(el, _vllmInstallBtn);
+    }
+    function _vllmSay(render) {
+      _vllmProgress = render;
+      const el = $("vllm-install-progress");
+      if (el) ooLive(el, render);
+    }
     async function loadVllmStatusPanel() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("vllm-status-box");
@@ -2233,97 +2301,106 @@
       if (!box) return;
       try {
         const s = await api("/api/llm/vllm/status");
-        const parts = [];
-        parts.push(s.installed ? "installed" : "not installed");
-        if (s.installed) parts.push(s.running ? "running" : "not running");
-        // GPU presence is NOT restated here. It is one of the four repetitions the
-        // maintainer's 2026-07-31 review flagged, and the hardware block at the top
-        // of this tab already states it once with its consequence. What this
-        // section owes the operator is why ITS controls are unavailable, which the
-        // install box and the Start button's title say directly.
-        // The last start's own output, shown exactly when it is needed: installed but
-        // not running (field report 2026-07-29 — a start that failed on a bad model id
-        // or a CUDA OOM previously died with its reason discarded, leaving only a
-        // permanent "not running").
-        //
-        // BOTH ENDS are rendered, in reading order (field report 2026-08-02). Only the
-        // tail was shown, on the assumption that a CUDA OOM puts the numbers at the
-        // end — true when a running server dies, false for a startup failure, where
-        // vLLM's EngineCore child prints the reason FIRST and the parent then dumps
-        // ~20 KB ending in "See root cause above". The operator's log was 29,855 bytes
-        // and the reason sat in the 21,855 that were not shown.
-        const lg = s.server_log || {};
-        // What the log view does NOT show, said where it is read (the server states each one; the three that are
-        // plain facts about the view are translated here).
-        const notes = vllmLogNotes(s).map((n) => `<p class="muted">${esc(n)}</p>`).join("");
-        const gap = lg.elided_bytes > 0
-          ? `<p class="muted">${esc(OOI18N && OOI18N.tf
-              ? OOI18N.tf("… {n} bytes not shown …", {n: fmtNum(lg.elided_bytes, 0)})
-              : `… ${lg.elided_bytes} bytes not shown …`)}</p>`
-          : "";
-        const pre = (txt) => `<pre style="max-height:16em;overflow:auto;white-space:pre-wrap">${esc(txt)}</pre>`;
-        const logBlock = (s.installed && !s.running && lg.available && ((lg.head || "") + (lg.tail || "")).trim())
-          ? `<details style="margin-top:6px"><summary>${esc(t("Why it is not running — last server output"))}</summary>` +
-            (lg.head ? pre(lg.head) + gap : "") +
-            pre(lg.tail || "") +
-            (lg.truncated ? `<p class="muted">${esc(t("Truncated — full log:"))} ${esc(lg.path || "")}</p>` : "") +
-            notes +
-            `</details>`
-          : "";
-        // R688: a server that answers but is neither vLLM nor a known relay gets the text, and the app cannot see where
-        // that server sends it. Said here, only when such a server is the one configured; a known relay is named as
-        // refused before the first generation is.
-        const kindNote = s.server_kind === "other"
-          ? `<p class="muted">${esc(t("The server at this address does not say it is vLLM. This app cannot see whether it sends your text to another computer."))}</p>`
-          : s.server_kind === "relay"
-            ? `<p class="muted">${esc(t("The server at the vLLM address lists its models as owned by OpenAI or LiteLLM, which is how a proxy to an online service describes itself, so it is refused: the text you give it could leave the machine. Point the vLLM address at a model running on this computer."))}</p>`
-            : "";
-        // R762: an address on another computer is refused by the same rule as every local-AI call, and the app
-        // does not contact it; said here, where the address is shown, instead of a silent "not running".
-        // R767: a name that is local only if the hosts file says so (ip6-localhost, localhost.localdomain) is refused
-        // too, and the note names the address to use instead.
-        const occ = s.port_occupant || {};
-        const refusedNote = occ.state !== "refused" ? ""
-          : occ.use_instead
-            ? `<p class="card-caveat">${esc(t("This vLLM address uses a name that is on this computer only if its hosts file says so; otherwise it is looked up on the internet, so the app does not contact it. Use this address instead:"))} <code>${esc(occ.use_instead)}</code></p>`
-            : `<p class="card-caveat">${esc(t("This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1."))}</p>`;
-        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + refusedNote + kindNote + logBlock;
+        const progress = _vllmProgress;
+        if (!_vllmInstalling) _vllmProgress = null;
+        ooLiveHtml(box, () => _vllmStatusHtml(s));
         if (!s.installed) {
           if (!installBox) return;
+          installBox.style.display = "";
+          ooLive(installBox, null);
           if (!s.gpu || !s.gpu.available) {
-            installBox.style.display = "";
             // States the CONSEQUENCE, not the detection: "no GPU" is said once, at
             // the top of this tab (maintainer review 2026-07-31). What is genuinely
             // needed here is why vLLM is not offered and what serves instead.
-            installBox.innerHTML =
-              `<p class="muted">${esc(t("vLLM needs a dedicated NVIDIA GPU, so it is not offered on this machine — installing it would put several GB into a backend that could never serve here. Ollama, above, is the path that works: local inference runs on the CPU."))}</p>`;
+            ooLiveHtml(installBox, () =>
+              `<p class="muted">${esc(t("vLLM needs a dedicated NVIDIA GPU, so it is not offered on this machine — installing it would put several GB into a backend that could never serve here. Ollama, above, is the path that works: local inference runs on the CPU."))}</p>`);
           } else {
-            installBox.style.display = "";
             installBox.innerHTML =
               `<p class="muted">vLLM is not installed. This downloads ${esc(s.estimated_size_note || "several GB")} ` +
               `(vLLM + torch + the CUDA runtime) into a dedicated venv — never the app's own environment.</p>` +
-              `<button data-on-click="installVllm(this)">Install vLLM (${esc(s.verified_version || "")})</button>` +
+              `<span id="vllm-install-btn"></span>` +
               ` <span id="vllm-install-cost" class="muted"></span>` +
               `<div id="vllm-install-progress" class="hint" style="margin-top:6px"></div>`;
+            _vllmInstallBtn = () => _vllmInstallBtnHtml(s);
+            ooLiveHtml($("vllm-install-btn"), _vllmInstallBtn);
+            const pr = $("vllm-install-progress");
+            if (pr && progress) ooLive(pr, progress);
             _vllmInstallCost();
           }
-        } else {
+        } else if (installBox) {
           installBox.style.display = "none";
         }
-        const btn = $("vllm-start-btn");
-        const canStart = !!(s.installed && s.gpu && s.gpu.available);
-        if (btn) {
-          btn.disabled = !canStart;
-          // A disabled control that does not say WHY is a dead end. The reason is
-          // carried in the #oo-tip hover (invariant #17) rather than as a fifth
-          // copy of the GPU sentence in the page body.
-          btn.title = canStart ? "" : (!s.installed
-            ? t("vLLM is not installed.")
-            : t("vLLM needs a dedicated NVIDIA GPU — see Hardware at the top of this tab."));
-        }
+        // (A `#vllm-start-btn` was given its disabled state and its reason here. No such element exists any more: it
+        // went with `startVllm`, retired 2026-09-07 (PRH-09, below), and the Local AI card starts the backend now.)
       } catch (e) {
-        box.innerHTML = `<p class="muted">Could not read vLLM status.</p>`;
+        ooLiveHtml(box, () => `<p class="muted">${esc(t("Could not read vLLM status."))}</p>`);
       }
+    }
+    function _vllmInstallBtnHtml(s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      // The pinned version is data, outside the translated words.
+      return _vllmInstalling
+        ? `<button disabled>${esc(t("Starting the install…"))}</button>`
+        : `<button data-on-click="installVllm(this)">${esc(t("Install vLLM"))}` +
+          (s.verified_version ? ` (<span translate="no">${esc(s.verified_version)}</span>)` : "") + `</button>`;
+    }
+    function _vllmStatusHtml(s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const parts = [];
+      parts.push(s.installed ? "installed" : "not installed");
+      if (s.installed) parts.push(s.running ? "running" : "not running");
+      // GPU presence is NOT restated here. It is one of the four repetitions the
+      // maintainer's 2026-07-31 review flagged, and the hardware block at the top
+      // of this tab already states it once with its consequence. What this
+      // section owes the operator is why ITS controls are unavailable, which the
+      // install box and the Start button's title say directly.
+      // The last start's own output, shown exactly when it is needed: installed but
+      // not running (field report 2026-07-29 — a start that failed on a bad model id
+      // or a CUDA OOM previously died with its reason discarded, leaving only a
+      // permanent "not running").
+      //
+      // BOTH ENDS are rendered, in reading order (field report 2026-08-02). Only the
+      // tail was shown, on the assumption that a CUDA OOM puts the numbers at the
+      // end — true when a running server dies, false for a startup failure, where
+      // vLLM's EngineCore child prints the reason FIRST and the parent then dumps
+      // ~20 KB ending in "See root cause above". The operator's log was 29,855 bytes
+      // and the reason sat in the 21,855 that were not shown.
+      const lg = s.server_log || {};
+      // What the log view does NOT show, said where it is read (the server states each one; the three that are
+      // plain facts about the view are translated here).
+      const notes = vllmLogNotes(s).map((n) => `<p class="muted">${esc(n)}</p>`).join("");
+      const gap = lg.elided_bytes > 0
+        ? `<p class="muted">${esc(OOI18N && OOI18N.tf
+            ? OOI18N.tf("… {n} bytes not shown …", {n: fmtNum(lg.elided_bytes, 0)})
+            : `… ${lg.elided_bytes} bytes not shown …`)}</p>`
+        : "";
+      const pre = (txt) => `<pre style="max-height:16em;overflow:auto;white-space:pre-wrap">${esc(txt)}</pre>`;
+      const logBlock = (s.installed && !s.running && lg.available && ((lg.head || "") + (lg.tail || "")).trim())
+        ? `<details style="margin-top:6px"><summary>${esc(t("Why it is not running — last server output"))}</summary>` +
+          (lg.head ? pre(lg.head) + gap : "") +
+          pre(lg.tail || "") +
+          (lg.truncated ? `<p class="muted">${esc(t("Truncated — full log:"))} ${esc(lg.path || "")}</p>` : "") +
+          notes +
+          `</details>`
+        : "";
+      // R688: a server that answers but is neither vLLM nor a known relay gets the text, and the app cannot see where
+      // that server sends it. Said here, only when such a server is the one configured; a known relay is named as
+      // refused before the first generation is.
+      const kindNote = s.server_kind === "other"
+        ? `<p class="muted">${esc(t("The server at this address does not say it is vLLM. This app cannot see whether it sends your text to another computer."))}</p>`
+        : s.server_kind === "relay"
+          ? `<p class="muted">${esc(t("The server at the vLLM address lists its models as owned by OpenAI or LiteLLM, which is how a proxy to an online service describes itself, so it is refused: the text you give it could leave the machine. Point the vLLM address at a model running on this computer."))}</p>`
+          : "";
+      // R762: an address on another computer is refused by the same rule as every local-AI call, and the app
+      // does not contact it; said here, where the address is shown, instead of a silent "not running".
+      // R767: a name that is local only if the hosts file says so (ip6-localhost, localhost.localdomain) is refused
+      // too, and the note names the address to use instead.
+      const occ = s.port_occupant || {};
+      const refusedNote = occ.state !== "refused" ? ""
+        : occ.use_instead
+          ? `<p class="card-caveat">${esc(t("This vLLM address uses a name that is on this computer only if its hosts file says so; otherwise it is looked up on the internet, so the app does not contact it. Use this address instead:"))} <code>${esc(occ.use_instead)}</code></p>`
+          : `<p class="card-caveat">${esc(t("This vLLM address is not on this computer, so the app does not contact it. The local AI only talks to this computer: set OO_VLLM_URL to 127.0.0.1, localhost or ::1."))}</p>`;
+      return `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + refusedNote + kindNote + logBlock;
     }
 
     // What the install would cost THIS machine, measured, beside the button BEFORE the click (#14e's spirit): one line,
@@ -2336,9 +2413,10 @@
       if (!el) return;
       try {
         const pf = await api("/api/llm/vllm/install/preflight");
-        el.textContent = vllmCostLine(pf, t, tf);
+        // held (row 367): the line's words follow a language switch; the hover is the server's own details
+        ooLive(el, () => vllmCostLine(pf, t, tf));
         el.title = [].concat(pf.blocking || [], pf.warnings || [], pf.notes || []).map((w) => w.detail || w.check).join("\n\n");
-      } catch (e) { el.textContent = ""; }
+      } catch (e) { ooLive(el, () => ""); }
     }
     /** The one cost line. Pure (preflight in, string out). A figure that was not measured is not shown. */
     function vllmCostLine(pf, t, tf) {
@@ -2413,9 +2491,11 @@
 
     async function installVllm(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (btn) { btn.disabled = true; btn.textContent = t("Starting the install…"); }
-      const prog = $("vllm-install-progress");
-      const say = (m) => { const el = $("vllm-install-progress") || prog; if (el) el.textContent = m; };
+      if (_vllmInstalling) return;
+      // The button sits in a held node: it is redrawn busy by its render, never written into (row 367). The progress
+      // line is a held render too, kept for the read that follows the install's end (`_vllmSay`).
+      _vllmInstalling = true; _vllmInstallRedraw();
+      let reread = false;
       try {
         // Was `await ensureOnline(...)` with the RESULT DISCARDED -- every sibling
         // call site does `if (!await ...) return;`, so declining the consent here
@@ -2423,24 +2503,28 @@
         // and the operator saw "I clicked Stay offline and it tried anyway".
         // Fixed while switching to the egress window (collector stays stopped).
         if (!await ensureAiEgress(t("Install vLLM (downloads several GB over the clear internet)"))) {
-          say(t("Install cancelled."));
+          _vllmSay(() => t("Install cancelled."));
           return;
         }
         const started = await _vllmInstallStart();
         if (started === null) {  // the operator declined the resource warning
-          say(t("Install cancelled."));
-          if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
+          _vllmSay(() => t("Install cancelled."));
           return;
         }
-        say(t("Installing — this can take several minutes…"));
-        await _followJob("/api/llm/vllm/install/status", say);
-        loadVllmStatusPanel();
-        loadModelCatalog();  // the download button unblocks once vLLM exists
+        _vllmSay(() => t("Installing — this can take several minutes…"));
+        await _followJob("/api/llm/vllm/install/status", (m) => _vllmSay(() => t(m)));   // as in installOneModel
+        reread = true;
       } catch (e) {
-        say("Install: " + e.message);
+        const msg = (e && e.message) || String(e);
+        _vllmSay(() => t("Failed:") + " " + msg);
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
+        _vllmInstalling = false;
+        if (!reread) _vllmProgress = null;
+        _vllmInstallRedraw();
       }
+      if (!reread) return;
+      loadVllmStatusPanel();
+      loadModelCatalog();  // the download button unblocks once vLLM exists
     }
 
     // RETIRED 2026-09-07 (PRH-09, resolved as RETIRE rather than the recorded

@@ -1,5 +1,6 @@
 """Settings -> AI tools and custody: the setup card, the hero card, the model store, the uninstall panel, the custody
-status and verify lines and the overlay merge line follow a language switch (row 367, app-ai-tools.js batch A).
+status and verify lines and the overlay merge line follow a language switch (row 367, app-ai-tools.js batch A), and so
+do the model catalogue, the backend panel with its Ollama buttons and the vLLM status and install boxes (batch B).
 
 These renderers wrote translated text once into ordinary nodes, so it stayed in the language that was active when it
 was drawn. They now draw through ooLive/ooLiveHtml from what they already hold; a click's state ("Starting…",

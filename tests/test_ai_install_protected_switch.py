@@ -502,7 +502,7 @@ def test_the_setup_chain_and_the_catalog_show_the_stop_note_instead_of_a_bare_ca
     js = _js("app-ai-tools.js")
     # a render since row 367, so the line follows a language switch
     assert js.count('say(() => (done.stopped_note ? t(done.stopped_note) : t("Cancelled.")))') == 2
-    assert "st.stopped_note ? t(st.stopped_note)" in js
+    assert "st.stopped_note ? () => t(st.stopped_note)" in js   # the catalogue status is a held render too
 
 
 def test_every_stop_sentence_is_translated():
