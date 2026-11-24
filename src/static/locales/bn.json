@@ -5707,6 +5707,7 @@
   "The app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} in the browser.": "অ্যাপ কিছুক্ষণ সাড়া দেয়নি, তাই প্যানেল বন্ধ হয়ে গেছে। Open Omniscience এখনও চললে ব্রাউজারে {url} খুলুন।",
   "The app is busy — retrying shortly…": "অ্যাপ ব্যস্ত — শীঘ্রই আবার চেষ্টা করা হচ্ছে…",
   "The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends.": "হঠাৎ থেমে যাওয়ার পর সংগ্রহ আবার লেখার আগে অ্যাপ আপনার ডেটা ফাইলগুলো যাচাই করছে: {total}টির মধ্যে {index} নম্বর টেবিল। যাচাই নিজে কিছু লেখে না, আর শেষ হলে বিরতি নিজে থেকেই শেষ হয়।",
+  "The app is closing itself now, so that the key leaves its memory. Open the app again to go on.": "অ্যাপটি এখন নিজে থেকেই বন্ধ হচ্ছে, যাতে কীটি এর মেমরি থেকে সরে যায়। চালিয়ে যেতে অ্যাপটি আবার খুলুন।",
   "The app is closing. Reconnect the drive, then start the app again.": "অ্যাপটি বন্ধ হচ্ছে। ড্রাইভ আবার সংযুক্ত করুন, তারপর অ্যাপটি আবার চালু করুন।",
   "The app is not answering for {duration}. It may be busy, stopping, or the computer slept; the panel keeps trying.": "অ্যাপ {duration} ধরে সাড়া দেয়নি। এটি ব্যস্ত, থামছে, বা কম্পিউটার ঘুমিয়ে পড়েছে হতে পারে; প্যানেল চেষ্টা চালিয়ে যায়।",
   "The app is not answering. It may be busy, stopping, or the computer slept; the panel keeps trying.": "অ্যাপ সাড়া দিচ্ছে না। এটি ব্যস্ত, থামছে, বা কম্পিউটার ঘুমিয়ে পড়েছে হতে পারে; প্যানেল চেষ্টা চালিয়ে যায়।",

@@ -5707,6 +5707,7 @@
   "The app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} in the browser.": "アプリがしばらく応答しなかったため、パネルを閉じました。Open Omniscience がまだ動いていれば、ブラウザで {url} を開いてください。",
   "The app is busy — retrying shortly…": "アプリがビジー状態です — まもなく再試行します…",
   "The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends.": "予期しない停止のあと、収集がデータファイルへ再び書き込む前に、アプリはデータファイルを確認しています（{total} 個のテーブルのうち {index} 個目）。確認自体は何も書き込まず、終わると一時停止は自動的に解除されます。",
+  "The app is closing itself now, so that the key leaves its memory. Open the app again to go on.": "アプリは今、自動的に終了します。鍵をメモリから消すためです。続けるにはアプリをもう一度開いてください。",
   "The app is closing. Reconnect the drive, then start the app again.": "アプリを終了しています。ドライブを再接続してから、アプリをもう一度起動してください。",
   "The app is not answering for {duration}. It may be busy, stopping, or the computer slept; the panel keeps trying.": "アプリが {duration} 応答していません。処理中か、停止中か、コンピューターがスリープしたのかもしれません。パネルは試し続けます。",
   "The app is not answering. It may be busy, stopping, or the computer slept; the panel keeps trying.": "アプリが応答していません。処理中か、停止中か、コンピューターがスリープしたのかもしれません。パネルは試し続けます。",

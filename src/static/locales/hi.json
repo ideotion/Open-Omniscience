@@ -5707,6 +5707,7 @@
   "The app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} in the browser.": "ऐप ने कुछ समय से जवाब नहीं दिया, इसलिए पैनल बंद हो गया। अगर Open Omniscience अभी भी चल रहा है, तो ब्राउज़र में {url} खोलें।",
   "The app is busy — retrying shortly…": "ऐप व्यस्त है — शीघ्र ही पुनः प्रयास…",
   "The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends.": "अचानक रुकने के बाद, संग्रह के दोबारा लिखने से पहले ऐप आपकी डेटा फ़ाइलों की जाँच कर रहा है: {total} में से तालिका {index}। जाँच अपनी ओर से कुछ नहीं लिखती, और ख़त्म होने पर रोक अपने आप हट जाती है।",
+  "The app is closing itself now, so that the key leaves its memory. Open the app again to go on.": "ऐप अब अपने-आप बंद हो रहा है, ताकि कुंजी उसकी मेमोरी से निकल जाए। आगे बढ़ने के लिए ऐप फिर से खोलें।",
   "The app is closing. Reconnect the drive, then start the app again.": "ऐप बंद हो रहा है। ड्राइव फिर से जोड़ें, फिर ऐप दोबारा शुरू करें।",
   "The app is not answering for {duration}. It may be busy, stopping, or the computer slept; the panel keeps trying.": "ऐप ने {duration} से जवाब नहीं दिया। वह व्यस्त हो सकता है, रुक रहा हो सकता है, या कंप्यूटर स्लीप में गया हो; पैनल कोशिश करता रहता है।",
   "The app is not answering. It may be busy, stopping, or the computer slept; the panel keeps trying.": "ऐप जवाब नहीं दे रहा। वह व्यस्त हो सकता है, रुक रहा हो सकता है, या कंप्यूटर स्लीप में गया हो; पैनल कोशिश करता रहता है।",

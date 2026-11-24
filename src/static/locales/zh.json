@@ -5707,6 +5707,7 @@
   "The app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} in the browser.": "应用已有一段时间没有响应，所以面板已关闭。如果 Open Omniscience 仍在运行，请在浏览器中打开 {url}。",
   "The app is busy — retrying shortly…": "应用繁忙——即将重试…",
   "The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends.": "应用正在检查你的数据文件（意外中断之后，采集再次写入之前）：第 {index} 张表，共 {total} 张。检查自身不写入任何内容，结束后暂停会自行解除。",
+  "The app is closing itself now, so that the key leaves its memory. Open the app again to go on.": "应用现在正在自行关闭，以便密钥离开其内存。请重新打开应用以继续。",
   "The app is closing. Reconnect the drive, then start the app again.": "应用正在关闭。请重新连接驱动器，然后再次启动应用。",
   "The app is not answering for {duration}. It may be busy, stopping, or the computer slept; the panel keeps trying.": "应用已 {duration} 没有响应。它可能正忙、正在停止，或电脑已休眠；面板会继续尝试。",
   "The app is not answering. It may be busy, stopping, or the computer slept; the panel keeps trying.": "应用没有响应。它可能正忙、正在停止，或电脑已休眠；面板会继续尝试。",

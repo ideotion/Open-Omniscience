@@ -161,6 +161,10 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
 # backup CREATION (POST /api/safety/backup/encrypted) stays.
 
 
+#: R813 row 389: said after S7 when the app closes itself after the panic result.
+APP_CLOSING_SENTENCE = "The app is closing itself now, so that the key leaves its memory. Open the app again to go on."
+
+
 @router.post("/panic")
 def panic(body: PanicBody) -> dict:
     """Irreversibly crypto-erase the local data dir (DB, keys, caches). Requires
@@ -179,6 +183,13 @@ def panic(body: PanicBody) -> dict:
 
     report = panic_wipe(confirm=True)
     _PANIC_DONE.set()
+    if report.get("drive_key_in_memory") is True:
+        # R813 row 389: the key to the drive's data stays in this process until it ends, so it ends now, once this answer is sent.
+        from src.safety.panic import exit_after_panic
+
+        exit_after_panic()
+        report["app_closing"] = True
+        report["limit"] = f"{report.get('limit') or ''} {APP_CLOSING_SENTENCE}".strip()
     return report
 
 

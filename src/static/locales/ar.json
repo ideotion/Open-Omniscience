@@ -5707,6 +5707,7 @@
   "The app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} in the browser.": "لم يستجب التطبيق منذ مدة، لذلك أُغلقت اللوحة. إن كان Open Omniscience لا يزال يعمل، فافتح {url} في المتصفح.",
   "The app is busy — retrying shortly…": "التطبيق مشغول — ستُعاد المحاولة قريبًا…",
   "The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends.": "يفحص التطبيق ملفات بياناتك بعد توقّف غير متوقع، قبل أن يعود الجمع إلى الكتابة فيها: الجدول {index} من {total}. الفحص لا يكتب شيئًا بنفسه، ويُرفع الإيقاف من تلقاء نفسه عند انتهائه.",
+  "The app is closing itself now, so that the key leaves its memory. Open the app again to go on.": "يُغلق التطبيق نفسه الآن، كي يخرج المفتاح من ذاكرته. افتح التطبيق مرة أخرى للمتابعة.",
   "The app is closing. Reconnect the drive, then start the app again.": "يُغلق التطبيق. أعد توصيل القرص ثم شغّل التطبيق من جديد.",
   "The app is not answering for {duration}. It may be busy, stopping, or the computer slept; the panel keeps trying.": "لم يستجب التطبيق منذ {duration}. ربما هو مشغول، أو يتوقف، أو دخل الحاسوب في السكون؛ تواصل اللوحة المحاولة.",
   "The app is not answering. It may be busy, stopping, or the computer slept; the panel keeps trying.": "التطبيق لا يستجيب. ربما هو مشغول، أو يتوقف، أو دخل الحاسوب في السكون؛ تواصل اللوحة المحاولة.",

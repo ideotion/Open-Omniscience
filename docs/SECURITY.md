@@ -876,7 +876,9 @@ imply a protection we cannot deliver.
   lost, the database connections on it are NEVER closed in this process (`src/database/drive_pin.py`): SQLite deletes
   `<db>-wal` and `<db>-shm` BY PATH when the last connection closes, which with another drive at the path are that drive's
   files. They are pinned out of every close and never freed, so only the process exit releases them, and the result says the
-  key to that drive's data stays in memory until the app is closed. SQLITE_FCNTL_PERSIST_WAL is not reachable from our drivers.
+  key to that drive's data stays in memory until the app is closed. The app then closes itself (row 389,
+  `src/safety/panic.py:exit_after_panic`): the power button's graceful stop a few seconds after the answer is sent, and the
+  process ends without it if it is still running 20 s later. SQLITE_FCNTL_PERSIST_WAL is not reachable from our drivers.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or

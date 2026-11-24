@@ -5707,6 +5707,7 @@
   "The app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} in the browser.": "The app has not answered for a while, so the panel closed. If Open Omniscience is still running, open {url} in the browser.",
   "The app is busy — retrying shortly…": "The app is busy — retrying shortly…",
   "The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends.": "The app is checking your data files after an unexpected stop, before collection writes to them again: table {index} of {total}. The check writes nothing of its own, and the pause ends by itself when it ends.",
+  "The app is closing itself now, so that the key leaves its memory. Open the app again to go on.": "The app is closing itself now, so that the key leaves its memory. Open the app again to go on.",
   "The app is closing. Reconnect the drive, then start the app again.": "The app is closing. Reconnect the drive, then start the app again.",
   "The app is not answering for {duration}. It may be busy, stopping, or the computer slept; the panel keeps trying.": "The app is not answering for {duration}. It may be busy, stopping, or the computer slept; the panel keeps trying.",
   "The app is not answering. It may be busy, stopping, or the computer slept; the panel keeps trying.": "The app is not answering. It may be busy, stopping, or the computer slept; the panel keeps trying.",
