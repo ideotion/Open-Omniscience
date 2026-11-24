@@ -422,6 +422,7 @@ def test_short_memory_keeps_the_marker_and_the_task_manager_says_why(tmp_path, m
 
     monkeypatch.setattr("src.database.session.engine", eng)
     monkeypatch.setitem(jobs_api._kw_index_cache, "at", 0.0)
+    monkeypatch.setitem(jobs_api._kw_index_cache, "value", None)
     monkeypatch.setattr(jobs_api, "_KW_INDEX_TTL_S", -1.0)
     rows = jobs_api._keyword_index_rows()
     assert len(rows) == 1 and rows[0]["kind"] == bb.HEAL_JOB_KIND and rows[0]["state"] == "paused"
