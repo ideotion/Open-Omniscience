@@ -318,3 +318,14 @@ def test_the_button_saves_the_three_files():
         "/api/diagnostics/field-import-reports",
         "/api/diagnostics/field-drain-status",
     ]
+
+
+def test_a_reason_keeps_only_the_apps_part_before_a_colon():
+    counts: dict[str, int] = {}
+    out = fi.projected(
+        {"reason": "verify failed: no such table jane doe files", "www_reason": "plain words"},
+        counts=counts,
+    )
+    assert out == {"reason": "verify failed", "www_reason": "plain words"}
+    assert counts == {"reason_tails": 1}
+    assert "jane" not in json.dumps(out)

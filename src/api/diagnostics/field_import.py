@@ -65,7 +65,7 @@ _FI_WORD = re.compile(r"\A[a-z][a-z0-9_:\-]{0,63}\Z")
 #: A stage as the app names it, which may hold a space ("merge_step:country codes"); lower case only.
 _FI_STAGE = re.compile(r"\A[a-z][a-z0-9_:\- ]{0,79}\Z")
 #: One of the app's own fixed reasons: a lower-case sentence with no punctuation that a path, an address or a quote needs.
-_FI_REASON = re.compile(r"\A[a-z][a-z0-9 ,:()\-]{0,159}\Z")
+_FI_REASON = re.compile(r"\A[a-z][a-z0-9 ,()\-]{0,159}\Z")
 #: An extraction engine's stamp (``e1-<hex>``, ``w1-<hex>``) and an import run's id (``imp-20261115T112935Z-476095``).
 _FI_ENGINE = re.compile(r"\A[a-z]\d-[0-9a-f]{8,64}\Z")
 _FI_RUN_ID = re.compile(r"\A[a-z]{2,12}-\d{8}T\d{6}Z-[0-9a-f]{4,12}(-\d{1,4})?\Z")
@@ -141,6 +141,11 @@ def projected(value: Any, *, key: str = "", counts: dict[str, int] | None = None
             return None
         if isinstance(v, str):
             shape = _FI_STRING_KEYS.get(k)
+            if shape is _FI_REASON and ":" in v:
+                # A reason may carry an exception's own text after a colon ("verify failed: no such table x"); only the
+                # app's part before it leaves (security re-read of row 414, residual 1).
+                v = v.split(":", 1)[0].rstrip()
+                withhold("reason_tails")
             if shape is None or not shape.match(v) or scrubbed_value(v) != v:
                 withhold("strings")
                 return None
