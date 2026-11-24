@@ -451,7 +451,10 @@ def test_bulk_qualification_wiring_composes_end_to_end():
     # the Settings -> Sources panel wires the button + status line, consent-gated
     assert 'data-on-click="qualifyBulkStart(this)"' in html_src
     assert 'id="qualify-bulk-status"' in html_src
-    assert "ensureOnline" in js_src.split("async function qualifyBulkStart", 1)[1][:1000]
+    # the consent gate comes before the request that starts the job (the held status line made the body longer, row 367)
+    start = js_src.split("async function qualifyBulkStart", 1)[1]
+    post = start.index('api("/api/sources/qualify-bulk", {method: "POST"})')
+    assert "ensureOnline(" in start[:post]
 
     # the worker is a cooperatively-cancellable, WRITER background job
     assert '"qualify-sources-bulk"' in api_src

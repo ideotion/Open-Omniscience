@@ -77,7 +77,7 @@ class El {
 
 const IDS = ["ai-setup-box", "ai-hero", "ai-store-box", "ai-uninstall-box", "custody-status", "cust-result", "cust-entries",
   "cust-gap-record", "cust-root", "cust-ots", "llm-catalog-box", "ai-backend-box", "ai-backend-select", "vllm-status-box",
-  "vllm-install-box"];
+  "vllm-install-box", "qualify-bulk-status", "qualify-bulk-cancel-btn", "qualify-bulk-btn"];
 // Batch B's module state, read from the shipped file so a rename fails here rather than drifting.
 const STATE_B = ["let _mcRows = null, _mcStatus = null, _mcFollowing = 0;", "const _mcStarting = new Set();",
   'let _abRender = null, _abFresh = false, _ollBusy = "";', "let _vllmInstalling = false, _vllmProgress = null, _vllmInstallBtn = null;",
@@ -123,9 +123,13 @@ function harness(answers, opts = {}) {
       "_abRedraw", "loadAiBackendPanel", "_aiBackendHtml", "launchOllama", "_ollamaAct", "releaseOllama",
       "_vllmInstallRedraw", "_vllmSay", "loadVllmStatusPanel", "_vllmInstallBtnHtml", "_vllmStatusHtml", "_vllmInstallCost",
       "vllmCostLine", "vllmLogNotes", "installVllm"].map(extract),
+    "let _qualifyBulkDone = null;",
+    ...["_qualTf", "_qualDeclinedText", "_jobLabel", "_framedText", "_jobStillRunning", "_qualifyBulkDeclined", "_qualifyBulkLine",
+      "loadQualifyBulk", "qualifyBulkStart"].map(extract),
     "return { loadAiSetup, runAiSetup, loadAiHero, aiStartNow, loadAiStore, migrateOllamaStore, loadAiUninstall, uninstallAi," +
     " renderCustodyStatus, verifyChain, viewChain, anchorRoot, ooLiveRepaint," +
-    " loadModelCatalog, installOneModel, loadAiBackendPanel, launchOllama, releaseOllama, loadVllmStatusPanel, installVllm };",
+    " loadModelCatalog, installOneModel, loadAiBackendPanel, launchOllama, releaseOllama, loadVllmStatusPanel, installVllm," +
+    " loadQualifyBulk, qualifyBulkStart };",
   ].join("\n");
   const fmtNum = (x) => String(x);
   const document = { createElement: (tag) => new El(tag.toUpperCase()), documentElement: { dir: "ltr" } };
@@ -148,6 +152,7 @@ function harness(answers, opts = {}) {
     _apiErrorMessage: (e) => (e && e.message) || String(e),
     custItem: () => "item-1", custodyEntriesPaint: (host, entries) => { host._ooCustEntries = entries; },
     _custT: (s) => OOI18N.t(s),
+    pollJobStatus: opts.poll || (async () => ({ state: "done", result: {} })),
   };
   const fns = new Function(...Object.keys(env), src)(...Object.values(env));
   return {
@@ -471,6 +476,49 @@ const frame = (L, label, text) => L["{prefix}: {text}"].replace("{prefix}", labe
     await h.fns.loadVllmStatusPanel();
     h.switchTo("ja");
     assert.ok(h.$("vllm-status-box").innerHTML.includes(esc(JA["Could not read vLLM status."])), h.$("vllm-status-box").innerHTML);
+  }
+
+  // 9. The source-qualification line (row 367): the status read's line follows a switch; a run's progress and its
+  //    tally follow it too, and the tally is still shown after the run, by the read that follows it, and only once.
+  {
+    const status = { running: false, backlog: { unqualified: 2, due_disqualified: 0 } };
+    const result = { qualified: 3, disqualified: 1, no_evidence: 0 };
+    const h = harness({ "/api/sources/qualify-bulk/status": status, "POST /api/sources/qualify-bulk": { started: true } }, {
+      poll: async (url, o) => {
+        o.onProgress({ progress: true, done: 1, total: 4 });
+        assert.strictEqual(h.$("qualify-bulk-status").textContent, "Working… 1/4");
+        h.switchTo("fr");
+        assert.strictEqual(h.$("qualify-bulk-status").textContent, FR["Working…"] + " 1/4", "the run's progress follows a switch");
+        return { state: "done", result };
+      },
+    });
+    const line = h.$("qualify-bulk-status");
+    await h.fns.loadQualifyBulk();
+    assert.strictEqual(line.textContent, "2 candidates awaiting qualification.");
+    h.switchTo("fr");
+    assert.strictEqual(line.textContent, FR["{n} candidates awaiting qualification."].replace("{n}", "2"), "the read's line follows a switch");
+    h.switchTo("en");
+    await h.fns.qualifyBulkStart(null);
+    await tick();
+    const tallyIn = (L) => [L["{n} sources qualified"].replace("{n}", "3"), L["{n} source disqualified"].replace("{n}", "1"),
+      L["{n} sources with no evidence yet"].replace("{n}", "0")].join(" · ");
+    assert.strictEqual(line.textContent, tallyIn(FR), "the read after the run shows its tally, not the backlog at once");
+    h.switchTo("de");
+    assert.strictEqual(line.textContent, tallyIn(DE), "the tally follows a switch");
+    await h.fns.loadQualifyBulk();
+    assert.strictEqual(line.textContent, DE["{n} candidates awaiting qualification."].replace("{n}", "2"), "a later read shows the backlog again");
+  }
+  {
+    // the read after the run fails: the run's line is still the news, not "Could not load"
+    let reads = 0;
+    const h = harness({
+      "/api/sources/qualify-bulk/status": () => (++reads === 1 ? { running: false, backlog: {} } : new Error("offline")),
+      "POST /api/sources/qualify-bulk": { started: true },
+    }, { poll: async () => ({ state: "error", error: "boom" }) });
+    const errs = console.error; console.error = () => {};
+    try { await h.fns.qualifyBulkStart(null); await tick(); } finally { console.error = errs; }
+    assert.strictEqual(reads, 2);
+    assert.strictEqual(h.$("qualify-bulk-status").textContent, "Qualification failed — see console");
   }
 
   console.log("ai_tools_live_node_test.js: OK");
