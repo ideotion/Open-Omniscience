@@ -747,7 +747,8 @@
       if (!d || d.measured !== true) return;
       // A failed older page: the list loaded so far stays, its button stays to try again, and the cap says why.
       if (_livingStreamMoreErr != null) {
-        if (cap) ooLiveHtml(cap, () => esc(ooLabelText(_livingT()("Could not load"), _livingStreamMoreErr)));
+        const why = _livingStreamMoreErr;   // this failure's own reason, never whatever the variable holds later
+        if (cap) ooLiveHtml(cap, () => esc(ooLabelText(_livingT()("Could not load"), why)));
         return;
       }
       // The window is stated, never implied: N of M, and a button while more exist.
@@ -755,19 +756,23 @@
       if (btn) btn.hidden = _livingStreamOffset >= d.total;
     }
 
-    let _livingStreamMoreErr = null;   // why the last "Show older changes" page failed, until one succeeds
+    let _livingStreamMoreErr = null, _livingStreamSeq = 0;   // why the last "Show older changes" page failed, until one succeeds
     async function loadLivingStream(more) {
       const t = _livingT(), tf = _livingTf();
       const box = $("living-stream");
       if (!box) return;
       _livingStreamMoreErr = null;
+      const seq = ++_livingStreamSeq;   // only the newest read draws: an older page never lands on a newer list
       if (!more) {
         _livingStreamOffset = 0;
         _livingStreamLast = null;
+        const cap = $("living-stream-cap");
+        if (cap) cap.textContent = "";   // an older page's failure never stays under a new list
         ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       }
       try {
         const d = await api(`/api/wiki/lane/changes?limit=${_LIVING_STREAM_PAGE}&offset=${_livingStreamOffset}`);
+        if (seq !== _livingStreamSeq) return;
         if (d.measured !== true) {
           _livingStreamLast = { measured: d.measured, reason: d.reason, changes: [], total: 0 };
           renderLivingStream();
@@ -786,6 +791,7 @@
         _livingStreamOffset += d.count;
         _livingStreamCap();
       } catch (e) {
+        if (seq !== _livingStreamSeq) return;
         if (more && _livingStreamLast) { _livingStreamMoreErr = e.message; _livingStreamCap(); return; }
         // The failure line replaces the whole list, so nothing is held to redraw over it.
         _livingStreamLast = null;

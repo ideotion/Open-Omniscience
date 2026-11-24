@@ -118,7 +118,7 @@ function harness(answers0) {
     "let _lawPitLast = null, _lawTopicLast = null, _wikiDivLast = null, _wikiDivCands = null, _wikiAttLast = null;",
     "let _lawWeekLast = null, _lawDocsLast = null, _lawFloorLast = null, _lawThesauriLast = null, _lawVelocityLast = null;",
     "let _lawMapLast = null, _livingMapsLast = null, _livingOverviewFailed = false, _wikiAttPending = false;",
-    "let _livingStreamMoreErr = null, _livingLawSeq = 0, _lawPitSeq = 0, _lawTopicSeq = 0, _wikiAttSeq = 0, _wikiAttWant = '';",
+    "let _livingStreamMoreErr = null, _livingStreamSeq = 0, _livingLawSeq = 0, _lawPitSeq = 0, _lawTopicSeq = 0, _wikiAttSeq = 0, _wikiAttWant = '';",
     "const _LIVING_STREAM_PAGE = 50; const _livingDiffs = new Map(); const _WIKI_LANE_STATES = {};",
     ...CORE.map(extract), ...FNS.map(extract),
     "return { fns: {" + FNS.join(",") + ", ooLiveRepaint}, state: () => ({ _lawPitLast, _lawTopicLast, _livingLawLast,"
@@ -298,6 +298,41 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     await h.fns.loadLivingStream(true);
     assert.strictEqual(h.state()._livingStreamLast.changes.length, 100, "a retry appends to the list");
     assert.ok(h.$("living-stream-cap").textContent.includes("100") && !has(h.$("living-stream-cap"), esc(FR["Could not load"])), "the cap counts again");
+  }
+  {
+    // A failed older page, then a full reload in flight and a switch: the cap is cleared, never redrawn with no reason;
+    // and an older page answering after the reload started never lands on the new list.
+    const rows = (n) => Array.from({ length: n }, (_, i) => ({ i }));
+    const h = harness({ "GET /api/wiki/lane/changes?limit=50&offset=0": { measured: true, changes: rows(50), total: 200, count: 50 },
+      "GET /api/wiki/lane/changes?limit=50&offset=50": new Error("gone") });
+    await h.fns.loadLivingStream(false);
+    await h.fns.loadLivingStream(true);
+    h.setAnswers({ "GET /api/wiki/lane/changes?limit=50&offset=50": "hold", "GET /api/wiki/lane/changes?limit=50&offset=0": "hold" });
+    const older = h.fns.loadLivingStream(true);
+    const reload = h.fns.loadLivingStream(false);
+    h.switchTo("fr");
+    assert.strictEqual(h.$("living-stream-cap").textContent, "", "a reload clears the older page's failure");
+    h.held[0].reject(new Error("late")); await older;
+    assert.ok(has(h.$("living-stream"), esc(FR["Loading…"])), "an older page's failure never lands on the reload's Loading line");
+    h.held[1].resolve({ measured: true, changes: rows(50), total: 200, count: 50 }); await reload;
+    assert.strictEqual(h.state()._livingStreamLast.changes.length, 50);
+  }
+  {
+    // A retry in flight keeps the earlier failure's own reason on a switch; an older page that ANSWERS after a reload
+    // started is dropped, never appended to the new list.
+    const rows = (n) => Array.from({ length: n }, (_, i) => ({ i }));
+    const h = harness({ "GET /api/wiki/lane/changes?limit=50&offset=0": { measured: true, changes: rows(50), total: 200, count: 50 },
+      "GET /api/wiki/lane/changes?limit=50&offset=50": new Error("gone") });
+    await h.fns.loadLivingStream(false);
+    await h.fns.loadLivingStream(true);
+    h.setAnswers({ "GET /api/wiki/lane/changes?limit=50&offset=50": "hold", "GET /api/wiki/lane/changes?limit=50&offset=0": "hold" });
+    const retry = h.fns.loadLivingStream(true);
+    h.switchTo("de");
+    assert.ok(has(h.$("living-stream-cap"), fail(DE, "gone")), "the failure keeps its own reason while a retry is in flight");
+    const reload = h.fns.loadLivingStream(false);
+    h.held[1].resolve({ measured: true, changes: rows(50), total: 200, count: 50 }); await reload;
+    h.held[0].resolve({ measured: true, changes: rows(50), total: 200, count: 50 }); await retry;
+    assert.strictEqual(h.state()._livingStreamLast.changes.length, 50, "the older page never lands on the reloaded list");
   }
   {
     const h = harness({ "GET /api/law/versions/search?q=a": "hold", "GET /api/law/topics?q=a": "hold", "GET /api/law/changes?limit=50": "hold",
