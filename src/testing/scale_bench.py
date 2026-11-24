@@ -256,6 +256,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
         ensure_source_qualification_columns,
+        ensure_stamp_provenance_columns,
         ensure_supergroup_ring_column,
         ensure_watch_filters_column,
         ensure_wiki_text_columns,
@@ -278,6 +279,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_article_newsletter_attach_column(engine)
     ensure_article_fetched_host_column(engine)
     ensure_source_catalog_baseline_column(engine)
+    ensure_stamp_provenance_columns(engine)
     ensure_article_detected_language_column(engine)
     ensure_article_top_keyword_columns(engine)
     ensure_article_keyword_indexed_column(engine)

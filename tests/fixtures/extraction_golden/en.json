@@ -1,0 +1,156 @@
+{
+ "sources": [
+  {
+   "name": "The Daily Test",
+   "domain": "dailytest.example",
+   "country": "gb",
+   "language": "en"
+  }
+ ],
+ "articles": [
+  {
+   "id": "en-001",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Budget talks resume",
+   "text": "Finance ministers met in London on 3 March 2024 to discuss the budget. The talks resumed yesterday after a short pause."
+  },
+  {
+   "id": "en-002",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Summit in Washington",
+   "text": "President Joe Biden hosted Chancellor Olaf Scholz in Washington on Tuesday. The two leaders spoke about trade and energy."
+  },
+  {
+   "id": "en-003",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "United Nations report",
+   "text": "The United Nations published a report on food prices on 2024-02-14. Secretary-General António Guterres called the findings worrying."
+  },
+  {
+   "id": "en-004",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Floods near Jakarta",
+   "text": "Heavy rain flooded several districts near Jakarta yesterday. Officials said schools would reopen on 12 January 2025."
+  },
+  {
+   "id": "en-005",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": null,
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Markets in Tokyo",
+   "text": "Shares rose in Tokyo on Monday as the yen weakened. The Bank of Japan kept its rate unchanged on 19 March 2024."
+  },
+  {
+   "id": "en-006",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Election in Mexico",
+   "text": "Voters in Mexico City went to the polls on 2 June 2024. Claudia Sheinbaum won the presidential election by a wide margin."
+  },
+  {
+   "id": "en-007",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Health agency warning",
+   "text": "The World Health Organization warned about measles cases in Nairobi and Lagos. The warning was issued on 2023-11-20."
+  },
+  {
+   "id": "en-008",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Rail strike in Paris",
+   "text": "Rail workers in Paris walked out on Thursday. Unions said the strike would end on 15 May 2024."
+  },
+  {
+   "id": "en-009",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Central bank decision",
+   "text": "The European Central Bank cut its main rate on 6 June 2024. President Christine Lagarde said further cuts were not decided."
+  },
+  {
+   "id": "en-010",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": null,
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Space launch",
+   "text": "NASA launched a weather satellite from Florida last week. The agency said the first images would arrive tomorrow."
+  },
+  {
+   "id": "en-011",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Trade fair in Toronto",
+   "text": "A technology fair opened in Toronto on 9 September 2024. Exhibitors from Sydney and São Paulo attended."
+  },
+  {
+   "id": "en-012",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Drought in Johannesburg",
+   "text": "Water restrictions started in Johannesburg on 1 October 2023. The city council said rationing could last until December."
+  },
+  {
+   "id": "en-013",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Daily Test editorial",
+   "text": "The Daily Test reports that readers asked for more science coverage. The Daily Test will publish a weekly science page from 4 April 2024."
+  },
+  {
+   "id": "en-014",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Heat in Delhi",
+   "text": "Temperatures in Delhi reached 46 degrees on 28 May 2024. Prime Minister Narendra Modi chaired a meeting on heat relief."
+  },
+  {
+   "id": "en-015",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": null,
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Talks in Istanbul",
+   "text": "Delegations met in Istanbul on 22 July 2023 to discuss grain exports. The agreement was extended until 18 November."
+  },
+  {
+   "id": "en-016",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Football final",
+   "text": "Real Madrid won the final in London on 1 June 2024. The club said celebrations would take place in Madrid on Sunday."
+  }
+ ]
+}

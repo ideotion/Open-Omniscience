@@ -89,15 +89,28 @@ def test_the_version_is_part_of_the_identity_and_the_code_digest_is_not(monkeypa
         ei.code_digest.cache_clear()
 
 
-def _scratch_run(tmp_path, *args):
-    """Run the script against COPIES of the pin and the module, so a test can never record a judgement in the real pin."""
+def _scratch_run(tmp_path, *args, environment: str = "here"):
+    """Run the script against COPIES of the pin and the module, so a test can never record a judgement in the real pin.
+
+    ``environment``: ``"here"`` makes the copied digests' recorded environment this interpreter's own (the real file records the
+    requirements.lock one, which a dev venv rarely is), ``"elsewhere"`` makes it differ, ``"as recorded"`` keeps it."""
     import os
     import shutil
+
+    from src.analytics.golden_output import environment as golden_environment
 
     pin = tmp_path / "indexer_pin.json"
     mod = tmp_path / "engine_identity.py"
     shutil.copy(PIN, pin)
     shutil.copy(ROOT / "src" / "analytics" / "engine_identity.py", mod)
+    # The script finds the output digests beside the pin it is pointed at (R824 step 1): a copy, never the real file.
+    digests = json.loads((ROOT / "configs" / "extraction_digests.json").read_text(encoding="utf-8"))
+    for stage, entry in digests.items():
+        if environment == "here":
+            entry["environment"] = golden_environment(stage)
+        elif environment == "elsewhere":
+            entry["environment"] = {**golden_environment(stage), "python": "2.7"}
+    (tmp_path / "extraction_digests.json").write_text(json.dumps(digests), encoding="utf-8")
     env = {**os.environ, "OO_INDEXER_PIN": str(pin), "OO_INDEXER_MODULE": str(mod)}
     out = subprocess.run([sys.executable, str(ROOT / "scripts" / "indexer_pin.py"), *args], capture_output=True, text=True, cwd=ROOT, env=env)
     return out, pin, mod
@@ -121,6 +134,15 @@ def test_a_bump_raises_the_version_in_both_places_and_logs_the_sentence(tmp_path
     assert new["version"] == _pin()["version"] + 1 and new["log"][-1]["kind"] == "bump"
     assert new["log"][-1]["note"] == "the places rows now carry a country code"
     assert f"INDEXER_VERSION = {new['version']}" in mod.read_text(encoding="utf-8")
+    digests = json.loads((tmp_path / "extraction_digests.json").read_text(encoding="utf-8"))
+    assert digests["kw"]["version"] == new["version"], "a bump re-records the output digest at the new version"
+
+
+def test_a_bump_is_refused_outside_the_environment_the_digest_is_recorded_in(tmp_path):
+    out, pin, mod = _scratch_run(tmp_path, "--bump", "the places rows now carry a country code", environment="elsewhere")
+    assert out.returncode != 0 and "requirements.lock" in (out.stderr + out.stdout), out.stdout + out.stderr
+    assert json.loads(pin.read_text(encoding="utf-8"))["version"] == _pin()["version"], "nothing is written before the refusal"
+    assert f"INDEXER_VERSION = {_pin()['version']}" in mod.read_text(encoding="utf-8")
 
 
 def test_the_pin_script_check_agrees_with_the_test():
@@ -133,7 +155,9 @@ def test_the_constant_is_one_plain_line_the_script_can_rewrite():
     assert len(re.findall(r"^INDEXER_VERSION = \d+$", text, re.M)) == 1
 
 
-@pytest.mark.parametrize("name", ["configs/indexer_pin.json", "scripts/indexer_pin.py"])
+@pytest.mark.parametrize(
+    "name", ["configs/indexer_pin.json", "scripts/indexer_pin.py", "configs/extraction_digests.json", "src/analytics/golden_output.py"]
+)
 def test_the_pin_files_are_not_part_of_the_engine(name):
     assert name not in ei.engine_files(), "the police must not hash itself"
 
