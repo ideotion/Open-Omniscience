@@ -118,13 +118,45 @@ def test_a_pair_that_fails_to_place_takes_its_marker_back(tmp_path, monkeypatch)
 
 
 def test_a_pair_raced_by_a_signer_takes_its_marker_back(tmp_path, monkeypatch):
-    def raced(local, data):
-        return False  # another caller made this file first: theirs wins
+    """The Ed25519 half is placed, then a signer makes the ML-DSA half itself: the restore takes its Ed25519 half back,
+    and then its marker, since no Ed25519 key is left at that name."""
+    real = merge._place_key_file
+    theirs = _FakeMldsa.generate_keypair()
 
-    monkeypatch.setattr(merge, "_place_key_file", raced)
+    def a_signer_makes_the_second_half(local, data):
+        if local.name.endswith("_ml_dsa_65.key"):
+            local.write_bytes(theirs[0] + theirs[1])
+            return False
+        return real(local, data)
+
+    monkeypatch.setattr(merge, "_place_key_file", a_signer_makes_the_second_half)
     out = _restore(tmp_path, _pair("annotations"))
-    assert out["restored"] == [] and out["kept_local"] == ["keys/annotations_ed25519.pem"], out
-    assert not (_keys(tmp_path) / f"annotations_ed25519.pem{SUFFIX}").exists()
+    keys = _keys(tmp_path)
+    assert out["restored"] == [] and out["kept_local"] == ["keys/annotations_ml_dsa_65.key"], out
+    assert not (keys / "annotations_ed25519.pem").exists()
+    assert not (keys / f"annotations_ed25519.pem{SUFFIX}").exists()
+
+
+def test_a_restored_half_that_could_not_be_taken_back_keeps_its_marker(tmp_path, monkeypatch):
+    """The marker outlives the key: when the Ed25519 half stays (another caller rewrapped it meanwhile, or its removal
+    failed), its marker stays with it, so it never reads as this installation's own."""
+    real = merge._place_key_file
+
+    def full_disk_on_the_second_half(local, data):
+        if local.name.endswith("_ml_dsa_65.key"):
+            raise OSError(28, "No space left on device")
+        return real(local, data)
+
+    def nothing_can_be_removed(made):
+        return None
+
+    monkeypatch.setattr(merge, "_place_key_file", full_disk_on_the_second_half)
+    monkeypatch.setattr(merge, "_take_back_key_files", nothing_can_be_removed)
+    with pytest.raises(OSError):
+        _restore(tmp_path, _pair("custody"))
+    keys = _keys(tmp_path)
+    assert (keys / "custody_ed25519.pem").exists()
+    assert (keys / f"custody_ed25519.pem{SUFFIX}").exists()
 
 
 def test_a_signer_that_makes_a_new_key_drops_a_left_over_marker(tmp_path):

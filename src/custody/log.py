@@ -1329,7 +1329,7 @@ _VERDICT_TEXT = {
 #: R816 (R801): said beside a bundle verified while this installation's custody key is one a restore placed.
 RESTORED_CUSTODY_KEY_NOTE = (
     "This installation's custody signing key was placed by a restore from a backup, so no entry is called this"
-    " installation's own: entries signed with that key were signed by the installation the backup came from."
+    " installation's own: that key is counted as another installation's."
 )
 
 
