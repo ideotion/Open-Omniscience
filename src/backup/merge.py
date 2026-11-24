@@ -5175,13 +5175,12 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         return out
     from src.analytics.engine_identity import STAGE_VERSIONS
 
-    def _provenance(table: str, stage: str) -> tuple[str, str, tuple]:
-        if _has_column(con, "main", table, "stage_version") and _has_column(con, "main", table, "carried_from_batch"):
-            return ", stage_version, carried_from_batch", ", ?, ?", (STAGE_VERSIONS[stage], int(batch_id))
-        return "", "", ()
+    def _has_provenance(table: str) -> bool:
+        return _has_column(con, "main", table, "stage_version") and _has_column(con, "main", table, "carried_from_batch")
 
-    kw_prov_cols, kw_prov_vals, kw_prov = _provenance("article_index_stamps", "kw")
-    www_prov_cols, www_prov_vals, www_prov = _provenance("article_www_stamps", "www")
+    # Each INSERT below is a LITERAL in both forms, so the column guard (tests/test_merge_carries_every_column.py) reads its column list.
+    kw_prov = _has_provenance("article_index_stamps")
+    www_prov = _has_provenance("article_www_stamps")
     _record_local_engines(con, engine, www_engine)
     # Every temp table below is declared with its key, never built with CREATE TABLE AS:
     # a CTAS table has NO index, and each is probed per row -- carry_win by range once per
@@ -5309,19 +5308,33 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         )
         # R824 (row 405): a carried stamp records this machine's stage version and the batch that carried it, so no surface counts the
         # rows as extracted here; a later re-index here rewrites both. A store without the columns (never migrated) gets the stamp alone.
-        con.execute(
-            "INSERT INTO main.article_index_stamps (article_id, engine, inputs, stamped_at" + kw_prov_cols + ")"  # noqa: S608  # nosec B608 # module-local literal clause
-            " SELECT w.new, ?, w.inputs, ?" + kw_prov_vals + " FROM temp.carry_win w WHERE w.kw = 1",
-            (engine, now, *kw_prov),
-        )
+        if kw_prov:
+            con.execute(
+                "INSERT INTO main.article_index_stamps (article_id, engine, inputs, stamped_at, stage_version, carried_from_batch)"
+                " SELECT w.new, ?, w.inputs, ?, ?, ? FROM temp.carry_win w WHERE w.kw = 1",
+                (engine, now, STAGE_VERSIONS["kw"], int(batch_id)),
+            )
+        else:
+            con.execute(
+                "INSERT INTO main.article_index_stamps (article_id, engine, inputs, stamped_at)"
+                " SELECT w.new, ?, w.inputs, ? FROM temp.carry_win w WHERE w.kw = 1",
+                (engine, now),
+            )
         if www_engine:
             # The places-and-entities stamp, in the SAME window as the rows it certifies and with the incoming row's own digest (the one the
             # plan verified), exactly as the keyword stamp above.
-            con.execute(
-                "INSERT INTO main.article_www_stamps (article_id, engine, inputs, stamped_at" + www_prov_cols + ")"  # noqa: S608  # nosec B608 # module-local literal clause
-                " SELECT w.new, ?, w.www_inputs, ?" + www_prov_vals + " FROM temp.carry_win w WHERE w.www = 1",
-                (www_engine, now, *www_prov),
-            )
+            if www_prov:
+                con.execute(
+                    "INSERT INTO main.article_www_stamps (article_id, engine, inputs, stamped_at, stage_version, carried_from_batch)"
+                    " SELECT w.new, ?, w.www_inputs, ?, ?, ? FROM temp.carry_win w WHERE w.www = 1",
+                    (www_engine, now, STAGE_VERSIONS["www"], int(batch_id)),
+                )
+            else:
+                con.execute(
+                    "INSERT INTO main.article_www_stamps (article_id, engine, inputs, stamped_at)"
+                    " SELECT w.new, ?, w.www_inputs, ? FROM temp.carry_win w WHERE w.www = 1",
+                    (www_engine, now),
+                )
         n_kw, n_www, n_both = con.execute(
             "SELECT COALESCE(SUM(kw), 0), COALESCE(SUM(www), 0), COALESCE(SUM(kw AND www), 0) FROM temp.carry_win"
         ).fetchone()
