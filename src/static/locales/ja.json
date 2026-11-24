@@ -5995,6 +5995,7 @@
   "The most recent attempt that did not complete, including one refused before any request. A failed attempt changes nothing that is stored.": "完了しなかった直近の試行です（リクエスト前に拒否されたものを含む）。失敗した試行は保存済みのデータを何も変えません。",
   "The name is the local date and time this export started, so the folders sort in the order you made them. A second export in the same minute gets _2, _3 and so on; an existing folder is never written into.": "名前はこのエクスポートを開始したローカルの日付と時刻なので、作成した順にフォルダーが並びます。同じ分に行った2回目のエクスポートには _2、_3 が付きます。既存のフォルダーに書き込むことは決してありません。",
   "The names and domains of the sources that contributed.": "寄与した情報源の名前とドメイン。",
+  "The network consent step did not complete, so nothing was started.": "ネットワーク接続の同意手順が完了しなかったため、何も開始されませんでした。",
   "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "ネットワークログには、既定の情報源・市場フィード・カレンダーのすべてのrobotsおよび到達性の判定が含まれます。共有すると既定インストールのリスト最適化に役立ちます。",
   "The network stays on, as you had set it before this start.": "ネットワークはオンのままです。この開始の前に設定したとおりです。",
   "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "新しいバージョンはアプリの依存関係を変更するため、ここではインストールされず、何も変更されていません。インストーラーを再実行して更新してください（git pull の後、install.sh または install.ps1）。",

@@ -258,7 +258,7 @@ def test_ensure_online_asks_the_confirmation_on_the_read_that_found_it_online():
     """First security read: two separate network reads let a state change skip both questions."""
     from tests.js_source_helper import function_body
 
-    body = function_body((_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8"), "ensureOnline")
+    body = function_body((_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8"), "_ensureOnlineAsk")
     assert "if (nm.online) return opts.confirmIfOnline ? window.confirm(opts.confirmIfOnline) : true;" in body
 
 

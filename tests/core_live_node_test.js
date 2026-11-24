@@ -108,7 +108,7 @@ let REGISTRY = null;
 const CORE = ["_ooLiveWatch", "_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml",
   "ooLiveRepaint"];
 const FNS = ["_paintHealth", "_paintCrashScreen", "_airplanePopup", "_renderNetLanes", "_laneState", "_transportKind",
-  "_storeUnreadable", "_transportHint", "_laneHostTitle", "_laneLine", "_gwT", "_gwRenderFinish", "ensureAiEgress",
+  "_storeUnreadable", "_transportHint", "_laneHostTitle", "_laneLine", "_gwT", "_gwRenderFinish", "ensureAiEgress", "_ensureAiEgressAsk",
   "repaintTaskManager", "_paintJobs", "_jobRow", "_renderSchedule", "_renderCoverage", "loadTagCoverage",
   "_renderEquilibrium", "_covBar", "_planNoteHtml", "_storagePausedText", "_resumeQueueLabel"];
 
@@ -236,7 +236,7 @@ const has = (el, s) => el.innerHTML.includes(s) || el.textContent.includes(s);
   {
     const h = harness({ "GET /api/system/network": { online: false }, "GET /api/system/egress-window": { open: false } });
     h.fns.ensureAiEgress("");
-    await tick(); await tick();
+    await tick(); await tick(); await tick();
     const slot = h.$("ai-egress-consent").querySelector("#ai-egress-reason b");
     assert.strictEqual(slot.textContent, "Install the local AI");
     h.switchTo("fr");

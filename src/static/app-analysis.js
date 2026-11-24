@@ -1115,10 +1115,22 @@
       const it = _anRelatedLinks[i]; if (!it) return;
       try {
         const d = await api("/api/links/articles-by-link?url=" + encodeURIComponent(it.normalized_url || it.sample_url));
-        const ids = (d.articles || []).map((a) => a.id);
+        const ids = _anCitingIds(d);
         if (!ids.length) { if (typeof toast === "function") toast(t("No articles cite this origin.")); return; }
-        openAnalysisForIds(ids, (it.domain || t("Shared origin")) + " · " + ids.length);
+        openAnalysisForIds(ids, (it.domain || t("Shared origin")) + " · " + ids.length + _anCitingCut(d, ids.length));
       } catch (e) { if (typeof toast === "function") toast(e.message); }
+    }
+    // Row 404: every article citing an origin, not the 200 the list endpoint shows -- the
+    // server's ``article_ids`` (newest first, up to the analysis window's 5000). An older
+    // payload falls back to the listed articles.
+    function _anCitingIds(d) {
+      if (!d) return [];
+      if (Array.isArray(d.article_ids)) return d.article_ids.slice();
+      return (d.articles || []).map((a) => a.id);
+    }
+    function _anCitingCut(d, shown) {
+      if (!d || d.ids_complete !== false || typeof d.count !== "number") return "";
+      return " · " + _tfn("{shown} of {total} shown.", { shown: fmtNum(shown, 0), total: fmtNum(d.count, 0) });
     }
     // Multi-select branch: union the SELECTED clusters' + origins' article sets into
     // ONE fresh corpus (associated research over a hand-picked combination).
@@ -1145,11 +1157,14 @@
           const it = _anRelatedLinks[i];
           return it ? api("/api/links/articles-by-link?url=" + encodeURIComponent(it.normalized_url || it.sample_url)).catch(() => null) : null;
         }));
-        for (const d of lists) (d && d.articles || []).forEach((a) => ids.add(a.id));
+        for (const d of lists) _anCitingIds(d).forEach((id) => ids.add(id));
       } catch (e) { /* origins are best-effort; cluster ids still branch */ }
       const arr = Array.from(ids);
       if (!arr.length) { if (typeof toast === "function") toast(t("No articles in the selected rows.")); return; }
-      openAnalysisForIds(arr, t("Selected related") + " · " + arr.length);
+      // The analysis window keeps at most 5000 ids; past that the label says so (row 404).
+      const cut = arr.length > 5000
+        ? " · " + _tfn("{shown} of {total} shown.", { shown: fmtNum(5000, 0), total: fmtNum(arr.length, 0) }) : "";
+      openAnalysisForIds(arr, t("Selected related") + " · " + fmtNum(Math.min(arr.length, 5000), 0) + cut);
     }
 
     // Self-contained radial mind-map for the analysis window. Distinct from the
@@ -2766,10 +2781,11 @@
             + `<th style="text-align:right" title="${esc(t("How many distinct matched articles cite this link — an exact count, never a score."))}">${esc(t("Cited by"))}</th>`
             + `<th style="text-align:right" title="${esc(t("How many distinct sources those citing articles come from. This is the ceiling on how many independent paths the citations could represent."))}">${esc(t("Citing sources"))}</th>`
             + `<th title="${esc(t("Whether the citations come from as many outlets as there are citations. Structure only — never a credibility judgement."))}">${esc(t("Independence"))}</th></tr></thead><tbody>${rows}</tbody></table>`
+            + _anLinksCutHtml((d.items || []).length, d.items_total)
           : `<div class="muted" style="margin-top:8px">${esc(t("No links shared by 2+ matched articles."))}</div>`)
         // Row 99: an outlet's own footer links (an app badge, a subscription page) are listed apart, with
         // the counts that put them there -- never dropped from the view without a word.
-        + _anFurnitureHtml(d.furniture_items || [], t)
+        + _anFurnitureHtml(d.furniture_items || [], t, d.furniture_total)
         // The WHOLE-corpus citation graph as a file (R684, Lane M): /api/links/export.graphml
         // and .json had no button. It sits under this table because that is where a reader
         // looks for links, and its caveat says loudly that it is NOT this analysis's set.
@@ -2782,15 +2798,23 @@
         + `<p class="card-caveat" style="margin:4px 0 0">${esc(t("This file covers your whole corpus, not only this analysis: each stored article and the sites it links to. It keeps the 2,000 most-cited sites and at most 2,000 of their articles. Links counted, never a credibility score."))}</p>`
         + `</div>`;
     }
-    function _anFurnitureHtml(items, t) {
+    // Row 404 (anti-capping): a Links list cut at its limit says how many there are in all.
+    // An older payload without the total says nothing.
+    function _anLinksCutHtml(shown, total) {
+      if (typeof total !== "number" || total <= shown) return "";
+      return `<div class="hint muted" style="margin-top:6px">`
+        + `${esc(_tfn("{shown} of {total} shown.", { shown: fmtNum(shown, 0), total: fmtNum(total, 0) }))}</div>`;
+    }
+    function _anFurnitureHtml(items, t, total) {
       if (!items.length) return "";
+      const all = (typeof total === "number" && total > items.length) ? total : items.length;
       const li = items.map((it) =>
         `<li>${extLink(it.sample_url || it.normalized_url, esc(it.domain || it.link_text || it.normalized_url), "", "")}`
         + ` <span class="muted">· ${esc(_tfn("carried by {n} articles", { n: String(it.carried_by) }))}</span></li>`).join("");
       return `<details class="an-furniture" style="margin-top:8px"><summary class="muted" style="cursor:pointer" `
         + `title="${esc(t("A link counts as an outlet's page furniture (a footer, app or subscription link) when at least half of the articles stored from that source carry it, and the source has at least 20 stored articles. Measured on your corpus."))}">`
-        + `${esc(_tfn("{n} link(s) that one outlet carries on most of its pages (its page furniture) are not counted as citations", { n: String(items.length) }))}</summary>`
-        + `<ul style="margin:6px 0 0">${li}</ul></details>`;
+        + `${esc(_tfn("{n} link(s) that one outlet carries on most of its pages (its page furniture) are not counted as citations", { n: String(all) }))}</summary>`
+        + `<ul style="margin:6px 0 0">${li}</ul>${_anLinksCutHtml(items.length, total)}</details>`;
     }
     function _anSentimentHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

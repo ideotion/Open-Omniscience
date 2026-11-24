@@ -709,7 +709,7 @@ def test_the_handlers_exist_gate_on_consent_and_drop_the_secret_from_the_dom():
     # The CONDITION that admits the gate, not a token that also survives in a disabled
     # branch (the recorded needle-inside-the-dead-branch lesson): a mutant that turned the
     # condition to `false` and kept the call text must redden here.
-    gate = re.compile(r'if \(typeof ensureOnline === "function"\s*&& !await ensureOnline\(')
+    gate = re.compile(r'if \(typeof ensureOnline !== "function"\s*\|\| !await ensureOnline\(')
     assert gate.search(start), "the run goes online: the press must pass the ONE consent popup"
     assert '$("rr-pass").value = ""' in start, "the passphrase leaves the DOM after the hand-off"
     assert '"/api/diagnostics/release-run"' in start
@@ -916,7 +916,7 @@ def test_the_resume_handler_gates_on_consent_and_asks_for_the_passphrase_only_wh
 
     js = _diag_js()
     src = function_source(js, "releaseRunResume")
-    assert re.search(r'if \(typeof ensureOnline === "function"\s*&& !await ensureOnline\(', src), \
+    assert re.search(r'if \(typeof ensureOnline !== "function"\s*\|\| !await ensureOnline\(', src), \
         "the resume goes online again, so it passes the ONE consent popup on the CONDITION line"
     assert 'plan.unlock_needed && !pass' in src, "the passphrase is demanded only when the plan says the backup/restore is owed"
     assert '"/api/diagnostics/release-run/resume"' in src

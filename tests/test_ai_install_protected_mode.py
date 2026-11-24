@@ -157,7 +157,7 @@ def test_the_egress_window_status_names_protected_mode_for_the_dialog(monkeypatc
 
 def test_the_dialog_is_shown_even_when_the_app_is_already_online_and_protected_mode_is_read_first():
     body = function_body(
-        (_ROOT / "src/static/app-core.js").read_text(encoding="utf-8"), "ensureAiEgress"
+        (_ROOT / "src/static/app-core.js").read_text(encoding="utf-8"), "_ensureAiEgressAsk"
     )
     # the old early return skipped the dialog that names the proxy whenever the app was online
     assert "if (nm.online) return true" not in body
@@ -178,7 +178,7 @@ def test_only_the_setup_chain_skips_its_later_asks_and_a_slow_click_rereads_the_
     """R763 asks every time, but the "Set up local AI" chain shows the dialog once for all its steps, as it promises; and an
     OK pressed after the window closed itself while the dialog was open reopens it rather than being refused as airplane mode."""
     core = (_ROOT / "src/static/app-core.js").read_text(encoding="utf-8")
-    body = function_body(core, "ensureAiEgress")
+    body = function_body(core, "_ensureAiEgressAsk")   # the dialog step; ensureAiEgress is its fail-closed gate (R822)
     assert "opts && opts.alreadyAsked && (online || windowOpen)" in body
     assert body.index('ai_install_blocked === "protected"') < body.index("opts.alreadyAsked"), (
         "a chain is refused too"

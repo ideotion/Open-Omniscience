@@ -586,8 +586,8 @@
     // network consent (invariant #14); the backend also refuses under airplane mode.
     async function enrichSourceTypes(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(t("Fill source types from Wikidata (egresses to Wikidata over your transport)"))) return;
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(t("Fill source types from Wikidata (egresses to Wikidata over your transport)"))) return;
       btn.disabled = true;
       ooLive(btn, () => t("Enriching in the background…"));
       try {
@@ -782,8 +782,8 @@
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const cc = (document.getElementById("discover-cc").value || "").trim();
       if (!cc) { toast(t("Enter country codes first, e.g. ke,ng,br"), "err"); return; }
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(t("Discover sources from Wikidata (egresses to Wikidata over your transport)"))) return;
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(t("Discover sources from Wikidata (egresses to Wikidata over your transport)"))) return;
       btn.disabled = true;
       ooLive(btn, () => t("Discovering…"));
       try {
@@ -809,8 +809,8 @@
       const out = document.getElementById("discover-world-status");
       // Row 361: the status line and the button follow a language switch (ooLive); every line is a render.
       const say = (render) => { if (out) ooLive(out, render); };
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(t("Discover sources worldwide from Wikidata — a long background job over every country (egresses to Wikidata over your transport)"))) return;
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(t("Discover sources worldwide from Wikidata — a long background job over every country (egresses to Wikidata over your transport)"))) return;
       btn.disabled = true;
       ooLive(btn, () => t("Discovering worldwide…"));
       try {
@@ -1435,8 +1435,8 @@
       // Invariant #14: the arming goes ONLINE (the server clears the kill switch), so the
       // press passes the ONE consent popup like every other offline->online transition.
       // Found while composing this button into the 0.4 release run (2026-09-18).
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(t("Start the unattended run (goes online: continuous collection and the qualification drain)"))) return;
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(t("Start the unattended run (goes online: continuous collection and the qualification drain)"))) return;
       if (btn) btn.disabled = true;
       set(() => t("Arming…"));
       try {
@@ -1718,8 +1718,8 @@
       const params = _rrParams(profile || "release-scale");
       if (!params.dest_dir || !params.passphrase) { set(() => t("Enter a destination directory and a backup passphrase first.")); return; }
       // The consent, at the press: the run goes online for the soak.
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(t("Run the 0.4 release run (goes online for the collection soak, the Wikipedia lane and the probes)"))) return;
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(t("Run the 0.4 release run (goes online for the collection soak, the Wikipedia lane and the probes)"))) return;
       if (btn) btn.disabled = true;
       ooLiveHtml(out, () => "");
       set(() => t("Starting…"));
@@ -1790,8 +1790,8 @@
       const pass = ($("rr-pass") && $("rr-pass").value) || "";
       if (plan.unlock_needed && !pass) { set(() => t("Enter the backup passphrase to resume: the backup or the restore is still owed.")); return; }
       // The consent, at the press: a resume goes online again for the soak.
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(t("Resume the 0.4 release run (goes online again for the collection soak, the Wikipedia lane and the probes)"))) return;
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(t("Resume the 0.4 release run (goes online again for the collection soak, the Wikipedia lane and the probes)"))) return;
       if (btn) btn.disabled = true;
       set(() => t("Resuming…"));
       try {

@@ -257,9 +257,10 @@ def test_the_export_s_brackets_are_keyed_frames():
     assert paint.count('tf("({text})"') == 2, "both checklist count brackets must be keyed frames"
     assert_absent(paint, '<span class="muted">(${')
     # The import checklist and the restore's progress line had the same welded brackets.
-    scan = function_body(app, "_uxImScan")
+    # Row 366: the checklist moved out of _uxImScan into _uxImPaintChecklist, which the language switch draws again.
+    scan = function_body(app, "_uxImPaintChecklist")
     assert_present(scan, 'esc(tfs("({text})", { text: "\\u0001" }))')
-    # The large-data row moved into _uxImBlobRow (row 293), which _uxImScan hands the same paren to.
+    # The large-data row moved into _uxImBlobRow (row 293), which the checklist hands the same paren to.
     row = function_body(app, "_uxImBlobRow")
     assert scan.count("${paren(") == 3 and row.count("${paren(") == 1 and scan.count('" " + paren(') == 1, "five checklist brackets"
     assert "_uxImBlobRow(" in scan and "paren)" in scan
