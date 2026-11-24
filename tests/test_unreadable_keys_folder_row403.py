@@ -129,3 +129,28 @@ def test_the_merge_withholds_trust_when_its_own_key_cannot_be_read(tmp_path, mon
     assert ann["imported_authors"] == 1 and ann["errors"] == []
     assert ann["trust_withheld"]["count"] == 1
     assert store.list_authors()[0]["trusted"] is False
+
+
+def test_a_keys_folder_that_links_to_nothing_promises_no_key(tmp_path, own_key):
+    """Export's mkdir cannot make a folder where a link to nothing stands, so the review never says "none" there."""
+    own_key.parent.symlink_to(tmp_path / "nowhere")
+    assert EV.is_this_installations_key("00" * 32) is False
+    assert EV.signing_key_state() == ("unreadable", None)
+    assert own_key.parent.is_symlink() and not (tmp_path / "nowhere").exists()  # the review wrote nothing
+
+
+def test_a_keys_folder_that_is_a_file_promises_no_key(tmp_path, own_key):
+    own_key.parent.write_text("x", encoding="utf-8")
+    assert EV.is_this_installations_key("00" * 32) is False
+    assert EV.signing_key_state() == ("unreadable", None)
+
+
+def test_a_missing_keys_folder_under_a_linked_real_folder_is_still_no_key(tmp_path, monkeypatch):
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "data").symlink_to(real)
+    key = tmp_path / "data" / "keys" / "evidence_ed25519.pem"
+    monkeypatch.setattr(EV, "_default_key_path", lambda: key)
+    assert EV.signing_key_state() == ("none", None)
+    EV.load_or_create_signing_key()  # the promise holds: export creates it there
+    assert EV.signing_key_state()[0] == "ok"

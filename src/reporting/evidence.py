@@ -323,14 +323,26 @@ def _key_file_state(path: Path) -> str:
 
 def _nothing_at_the_name(path: Path) -> bool:
     """True only when the key's name is plainly free for export to create it (row 403): not a dangling link there (lstat
-    finds it), and not a path whose folder is a file (ENOTDIR)."""
+    finds it), not a path whose folder is a file (ENOTDIR), and not under a keys folder that is a link to nothing."""
     try:
         os.lstat(path)
     except FileNotFoundError:
-        return True
+        pass
     except (OSError, ValueError):
         return False
-    return False  # stat said absent, yet something is at the name: a link to nothing
+    else:
+        return False  # stat said absent, yet something is at the name: a link to nothing
+    # export runs mkdir(parents=True) on the folder: the nearest thing that IS there above the name must be a real
+    # folder (or a link to one), else that mkdir fails (a keys folder that is a link to nothing, or a file)
+    for above in path.parents:
+        try:
+            os.lstat(above)
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            return False
+        return os.path.isdir(above)
+    return False
 
 
 def _marker_present(marker: Path) -> bool:
