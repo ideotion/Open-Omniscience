@@ -233,7 +233,7 @@ def test_sub_timings_are_recorded_but_never_pinged_as_phases(monkeypatch, tmp_pa
 
     monkeypatch.setattr(m, "prepare_staged_corpus", m.prepare_staged_corpus)
     monkeypatch.setattr(
-        "src.backup.sqlite_backup.validate_sqlite_file", lambda p: 1, raising=False
+        "src.backup.sqlite_backup.validate_sqlite_file", lambda p, **k: 1, raising=False
     )
     monkeypatch.setattr("src.database.migrate.file_revision", lambda p: "abc123", raising=False)
     monkeypatch.setattr("src.database.migrate.known_revisions", lambda: {"abc123"}, raising=False)

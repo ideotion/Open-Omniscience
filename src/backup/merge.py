@@ -811,8 +811,83 @@ def _sub_timer(timings: object):
     return _sub
 
 
+@contextmanager
+def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]:
+    """Run the staged copy's ``PRAGMA quick_check`` on its own thread while the body (the merge) runs.
+
+    R827 R3(a). The walk read every page of the staged copy BEFORE the merge, 32 minutes of the
+    field's largest import, on the critical path. The merge only READS the staged copy (it is
+    attached as ``inc`` and never written), so the two read it side by side: SQLite releases the
+    GIL while a statement runs.
+
+    Nothing reaches the live corpus without passing: on a normal exit the block WAITS for the walk
+    and raises :class:`MergeError` with the validator's own fixed words when it failed -- the same
+    refusal ``prepare_staged_corpus`` raised before, now raised before the verify stage and so
+    before any swap, and the import queue discards the checkpoint group on it as it does for any
+    raised failure. When the body raises instead, the walk is stopped (interrupted, and asked again
+    until its thread ends) and the body's own exception goes on unchanged.
+
+    Timed as two sub-stages, recorded on the caller's thread: ``merge:quick_check`` (the walk's own
+    time) and ``merge:quick_check_wait`` (how long the merge then waited for it)."""
+    from src.backup.sqlite_backup import BackupError, validate_sqlite_file
+
+    stop = threading.Event()
+    guard = threading.Lock()
+    state: dict[str, object] = {"conn": None, "error": None, "seconds": None}
+
+    def _connected(conn: sqlite3.Connection) -> None:
+        with guard:
+            state["conn"] = conn
+            if stop.is_set():
+                conn.interrupt()
+
+    def _walk() -> None:
+        t0 = time.monotonic()
+        try:
+            validate_sqlite_file(path, connection_cb=_connected, should_stop=stop.is_set)
+        except BackupError as exc:
+            state["error"] = str(exc)  # the validator's own fixed words, no driver text
+        except BaseException as exc:  # noqa: BLE001 - any other failure is a refusal too, never a pass
+            state["error"] = f"the integrity check could not run ({type(exc).__name__})"
+        finally:
+            state["seconds"] = time.monotonic() - t0
+            with guard:
+                state["conn"] = None
+
+    walker = threading.Thread(target=_walk, name="oo-import-quick-check", daemon=True)
+    walker.start()
+    finished = False
+    try:
+        yield
+        finished = True
+    finally:
+        if not finished:
+            stop.set()
+        t_wait = time.monotonic()
+        while walker.is_alive():
+            if not finished:
+                with guard:
+                    conn = state["conn"]
+                    if isinstance(conn, sqlite3.Connection):
+                        with suppress(Exception):
+                            conn.interrupt()
+            walker.join(timeout=0.5)
+        _record = getattr(timings, "record", None)
+        if _record is not None:
+            with suppress(Exception):
+                _record("merge:quick_check_wait", time.monotonic() - t_wait)
+                if isinstance(state["seconds"], float):
+                    _record("merge:quick_check", state["seconds"])
+    if state["error"] is not None:
+        raise MergeError(str(state["error"]))
+
+
 def prepare_staged_corpus(
-    staged: StagedArtifact, *, allow_unverified: bool = False, timings: object = None
+    staged: StagedArtifact,
+    *,
+    allow_unverified: bool = False,
+    timings: object = None,
+    defer_quick_check: bool = False,
 ) -> str:
     """Validate + upgrade the staged corpus to the running schema. Never touches
     the live DB; the staged copy is disposable. Returns the artifact's original
@@ -824,7 +899,12 @@ def prepare_staged_corpus(
     ``prepare_staged:upgrade`` (the alembic chain, which on an artifact several
     revisions behind runs real migrations over the whole corpus). Optional so every
     existing caller and test is untouched, and so a timing failure can never break a
-    restore."""
+    restore.
+
+    ``defer_quick_check`` (R827 R3(a)): the open and the required-tables look still run here, before
+    the upgrade, and the page walk is left to the caller, which runs it alongside the merge
+    (:func:`_quick_check_alongside`) and refuses before the swap when it fails. Nothing reaches the
+    live corpus without it."""
     from src.backup.sqlite_backup import BackupError, validate_sqlite_file
     from src.database.migrate import file_revision, known_revisions, upgrade_database_file
 
@@ -876,7 +956,7 @@ def prepare_staged_corpus(
 
     try:
         with _sub("prepare_staged:validate"):
-            validate_sqlite_file(staged.corpus_path)
+            validate_sqlite_file(staged.corpus_path, quick_check=not defer_quick_check)
     except BackupError as exc:
         raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text
 
@@ -9964,7 +10044,8 @@ def run_restore(
         # was several revisions behind). Optimising either without knowing which is
         # the guessing that already cost a night on this import.
         original_rev = prepare_staged_corpus(
-            staged, allow_unverified=allow_unverified, timings=timings
+            staged, allow_unverified=allow_unverified, timings=timings,
+            defer_quick_check=True,  # R827 R3(a): the page walk runs alongside the merge below
         )
 
     working = Path(working_copy) if working_copy is not None else staged.staging_dir / "working.db"
@@ -10111,7 +10192,9 @@ def run_restore(
             pass
 
     _abort_point("merge")
-    with timings.stage("merge"):
+    # R827 R3(a): the staged copy's quick_check runs beside the merge and is waited for at its end;
+    # a failure raises here, before the verify stage and any swap.
+    with timings.stage("merge"), _quick_check_alongside(staged.corpus_path, timings):
         _step_clock["t"] = time.monotonic()
         counts, batch_id = merge_corpus(
             staged.corpus_path, working, meta,
