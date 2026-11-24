@@ -101,13 +101,14 @@ class El {
   addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
   fire(ev, target) { (this.listeners[ev] || []).forEach((fn) => fn({ target: target || this, preventDefault() {} })); }
   focus() {}
+  remove() { this._connected = false; }
   getElementsByTagName() { return this._all().filter((k) => k.isConnected); }
   getBoundingClientRect() { return { left: 0, width: 100 }; }
 }
 let REGISTRY = null;
 
 const CORE = ["_ooLiveWatch", "_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml",
-  "ooLiveRepaint", "_tfn"];
+  "ooLiveRepaint", "_tfn", "ooKeywordUndoButton"];
 
 function harness(answers, opts) {
   opts = opts || {};
@@ -134,6 +135,7 @@ function harness(answers, opts) {
     extractConst("esc"),
     ...CORE.map(extract),
     "function fmtNum(x) { return String(x); }",
+    extract("_patT"),
     INSIGHTS_JS,
     "return { createWatch, evaluateWatches, loadWatches, loadKeywordExplorer, kxShowTag, kxRenderTags, kxHide, loadSuperGroups," +
     " renderConceptBrowse, repaintConceptBrowse, selectConceptBucket, loadRingGaps, ringLoadStart, loadConvergences, loadLunar," +
@@ -154,7 +156,7 @@ function harness(answers, opts) {
     uiLangCode: () => lang, tgtLangParam: () => "", lvlTitle: (l) => t("Super-group"), lvlBreadcrumb: () => "",
     kwLabelHtml: (m) => esc(m.term), _kwTf: (s, v) => OOI18N.tf(s, v), kwSensesAfterHtml: () => "", kwQidHtml: () => "",
     kwLabelParts: () => ({}), growthFallback: () => "", trendRateText: () => "", dashChartSvg: () => "",
-    basisChip: (c) => `<span>${esc(t("basis"))}</span>`, ooKeywordUndoButton: () => new El("BUTTON"),
+    basisChip: (c) => `<span>${esc(t("basis"))}</span>`,
     showTab() {}, _insSubtabsSelect() {},
   };
   const fns = new Function(...Object.keys(env), src)(...Object.values(env));
@@ -199,7 +201,7 @@ const has = (el, s) => el.innerHTML.includes(s) || el.textContent.includes(s);
       "GET /api/insights/keyword-tags/facets": { axes: ["type", "topic"], facets: { type: [{ tag: "person", keywords: 3 }], topic: [] } },
       "GET /api/insights/keyword-tags/keywords?axis=type&tag=person&limit=200": { total: 1,
         keywords: [{ term: "Ada", normalized: "ada", language: "en", articles: 2, mentions: 5, source: "baseline" }] },
-      "POST /api/insights/exclude": {},
+      "POST /api/insights/exclude": {}, "POST /api/insights/include": {},
       "GET /api/insights/keyword-tags?normalized=ada": { tags: { type: ["person"] }, sources: { "type:person": "user" } },
     });
     await h.fns.loadKeywordExplorer();
@@ -224,6 +226,13 @@ const has = (el, s) => el.innerHTML.includes(s) || el.textContent.includes(s);
     h.switchTo("de");
     assert.strictEqual(hideB.textContent, DE["hidden"], "a hidden keyword says so in the new language");
     assert.ok(hideB.disabled);
+    // the shipped Undo beside it: the button says Hide again, and that follows a switch too
+    const undo = hideB.nextElementSibling;
+    for (const fn of undo.listeners.click) await fn({ isTrusted: true });
+    assert.ok(!hideB.disabled);
+    h.switchTo("fr");
+    assert.strictEqual(hideB.textContent, FR["Hide"], "the label put back by Undo follows a switch");
+    h.switchTo("de");
     const tagbox = box.querySelector("kx-tagbox");
     await h.fns.kxRenderTags(tagbox, "ada");
     assert.ok(tagbox.hasAttribute("data-i18n-dyn"), "the editor is out of the walker's reach");
@@ -311,6 +320,11 @@ const has = (el, s) => el.innerHTML.includes(s) || el.textContent.includes(s);
     assert.strictEqual(h2.$("cs-promote-result").textContent, FR["Scanning citations…"], "the scan line follows");
     finish({ candidates: [], min_source_citers: 3 });
     await run;
+    // the result replaces the scan line for good: a switch does not bring the scan line back
+    const after = h2.$("cs-promote-result").textContent;
+    assert.ok(!after.includes(FR["Scanning citations…"]), after);
+    h2.switchTo("de");
+    assert.strictEqual(h2.$("cs-promote-result").textContent, after, "a later line is never reverted by a switch");
   }
 
   console.log("insights_live_node_test.js: OK");
