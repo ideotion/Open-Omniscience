@@ -41,6 +41,20 @@ const counters = ["let _aiBackendPicks = 0;", "let _aiBackendSaving = 0;"].map((
   return line;
 }).join("\n");
 
+// The panel draws through ooLiveHtml over the render `_aiBackendHtml` (row 367): both are part of what is driven.
+const PANEL_STATE = 'let _abRender = null, _abFresh = false, _ollBusy = "";';
+assert.ok(APP.includes(PANEL_STATE), "the shipped file must declare: " + PANEL_STATE);
+const RENDER = (() => {
+  const at = APP.indexOf("    function _aiBackendHtml(");
+  assert.ok(at >= 0, "no function named _aiBackendHtml");
+  const open = APP.indexOf("{", APP.indexOf(")", at));
+  let depth = 0;
+  for (let j = open; j < APP.length; j++) {
+    if (APP[j] === "{") depth++;
+    else if (APP[j] === "}") { depth--; if (depth === 0) return APP.slice(at, j + 1); }
+  }
+  throw new Error("unbalanced braces in _aiBackendHtml");
+})();
 const LOAD = functionSource(APP, "loadAiBackendPanel");
 const SET = functionSource(APP, "setAiBackend");
 
@@ -63,6 +77,7 @@ function harness() {
     _failMsg: (m) => m,
     loadLlmHealth: () => {},
     esc: (x) => String(x == null ? "" : x),
+    ooLiveHtml: (el, render) => { el.innerHTML = render(); },
     OOI18N: { t: (s) => s },
     window: { OOI18N: { t: (s) => s } },
     document: { getElementById: () => null, querySelector: () => null },
@@ -73,7 +88,7 @@ function harness() {
     has: () => true,
     get: (t, k) => (k in t ? t[k] : k in globalThis ? globalThis[k] : (k === Symbol.unscopables ? undefined : () => "")),
   });
-  const factory = new Function("sandbox", "with (sandbox) { " + counters + "\n" + LOAD + "\n" + SET +
+  const factory = new Function("sandbox", "with (sandbox) { " + counters + "\n" + PANEL_STATE + "\n" + RENDER + "\n" + LOAD + "\n" + SET +
     "\nreturn { loadAiBackendPanel, setAiBackend }; }");
   const fns = factory(sandbox);
   const payload = (stored) => ({ stored_override: stored, backend: stored, gpu: {}, vllm: {}, ollama: {} });
