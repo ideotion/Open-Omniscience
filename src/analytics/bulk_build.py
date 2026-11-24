@@ -420,7 +420,7 @@ DRAIN_KEEP: tuple[str, ...] = (ARTICLE_DELETE_INDEX,)
 #: empty one), where it measurably wins; below that the drain keeps the live indexes and claims no speed-up.
 DRAIN_WINDOW_MIN_FRACTION: float = 1.0
 
-#: The same share when the main store file is LARGER than the machine's physical RAM (row 407c), so the operating
+#: The same share when the main store file is LARGER than the machine's RAM or cgroup limit (row 407c), so the operating
 #: system cannot keep it cached and every live index update can become a random read. MEASURED (row 407b, the real
 #: encrypted drain, one worker, 2026-11-24) on 10.25M mention rows (2.8 GB) inside a 2 GB memory cgroup, page cache
 #: included: 6% 388.7 vs 407.4 s (window 4.8% SLOWER), 20% 1293.5 vs 1049.1 s (window 18.9% faster); break-even about
@@ -433,20 +433,26 @@ DRAIN_WINDOW_MIN_FRACTION_OVER_RAM: float = 0.15
 def drain_threshold(session: Session) -> dict:
     """Which break-even share applies to this drain run, and why (row 407c), read once at the run's start:
     ``{"min_fraction", "basis", "store_bytes", "ram_bytes"}``. :data:`DRAIN_WINDOW_MIN_FRACTION_OVER_RAM` only when
-    BOTH readings were made and the main store file is larger than physical RAM; otherwise
+    BOTH readings were made and the main store file is larger than the RAM that can cache it (physical, or a smaller
+    cgroup limit); otherwise
     :data:`DRAIN_WINDOW_MIN_FRACTION` (an unread figure declines the lower share: the window is optional)."""
     store_bytes: int | None = None
     ram_bytes: int | None = None
     try:
+        # The bind's own path (the app engine keeps its URL truthful beside its creator). A path with ``?`` or ``%`` that
+        # SQLAlchemy parses differently from ``session.DB_FILE`` stats no file and keeps the default share. Only the main
+        # file is measured: the write-ahead log is held small at rest (``wal_size_limit_bytes``).
         db_path = getattr(getattr(session.get_bind(), "url", None), "database", None)
         if db_path and db_path != ":memory:":
             store_bytes = int(os.stat(db_path).st_size)  # a stat, never an open of the live store (R789)
     except Exception:  # noqa: BLE001 - an unread size keeps the default share
         store_bytes = None
     try:
-        from src.config.memory_budget import total_ram_mb
+        # The machine's RAM, or a smaller cgroup memory limit (R302): a container's limit also caps the page cache, which is
+        # what the 407b measurement varied (a 2 GB cgroup on a 15 GB machine).
+        from src.config.memory_budget import budget_ram_mb
 
-        mb = total_ram_mb()
+        mb = budget_ram_mb()[0]
         ram_bytes = int(mb * 1024 * 1024) if mb else None
     except Exception:  # noqa: BLE001 - an unread RAM keeps the default share
         ram_bytes = None

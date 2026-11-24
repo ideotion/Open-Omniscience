@@ -121,7 +121,7 @@ def test_the_share_depends_on_whether_the_store_fits_in_ram(tmp_path, roomy, mon
     fits or when RAM is unread. A 20% backlog opens the window only in the first case. The choice is logged."""
     import logging
 
-    monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: ram_mb)
+    monkeypatch.setattr("src.config.memory_budget.budget_ram_mb", lambda: (ram_mb, "test"))
     eng = _file_engine(tmp_path / "r.db")
     s = sessionmaker(bind=eng, future=True)()
     try:
@@ -133,6 +133,7 @@ def test_the_share_depends_on_whether_the_store_fits_in_ram(tmp_path, roomy, mon
         assert plan["threshold"]["store_bytes"] and plan["threshold"]["store_bytes"] > 0
         assert abs(plan["fraction"] - 0.2) < 0.01
         assert plan["open"] is (share == "over"), plan["reason"]
+        assert plan["reason"] == ("open" if share == "over" else "below_break_even"), "declined by the share, not by the room"
         assert any(basis in r.getMessage() for r in caplog.records), "the chosen share and its reason are logged"
     finally:
         s.close()
@@ -143,7 +144,7 @@ def test_an_unreadable_store_size_keeps_the_default_share(monkeypatch):
     """An in-memory store (no file to stat) keeps 1.0 even when RAM reads tiny."""
     from sqlalchemy import create_engine
 
-    monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: 1e-6)
+    monkeypatch.setattr("src.config.memory_budget.budget_ram_mb", lambda: (1e-6, "test"))
     eng = create_engine("sqlite://")
     s = sessionmaker(bind=eng, future=True)()
     try:
