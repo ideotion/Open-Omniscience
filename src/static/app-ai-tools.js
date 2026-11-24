@@ -2959,21 +2959,40 @@
       }
     }
 
+    // Row 382 (R800): a chain verifies against the keys its own entries carry, which shows only that it is unchanged
+    // since they signed it. The one comparison the app can make is with its OWN custody key: "this installation" or
+    // "another installation", a plain fact, never a warning; "Signed by key" when this installation's key is unread.
+    // Plain text: the caller escapes it.
+    function custodySignerWords(signedBy, key) {
+      const k = String(key || "");
+      if (!/^[0-9a-f]{64}$/i.test(k)) return "";
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, n) => (v && v[n] != null) ? String(v[n]) : m));
+      const FP_HEX = 16;  // a key fingerprint's first hex digits, not a date (the raw-date ratchet counts literal 0,16 slices)
+      const fp = "\u2068" + k.slice(0, FP_HEX) + "\u2069";
+      if (signedBy === "this-installation") return tf("Signed by this installation, key {fp}", { fp });
+      if (signedBy === "another-installation") return tf("Signed by another installation, key {fp}", { fp });
+      return tf("Signed by key {fp}", { fp });
+    }
+
     async function verifyChain() {
       const id = custItem(); if (!id) return;
       try {
         const d = await api("/api/custody/" + encodeURIComponent(id) + "/verify");
         // R716: a chain that verifies only by accepting a key change nothing vouches for never reads as a plain "verified".
         // Drawn through ooLiveHtml (row 367). "verified" is checked against the keys the log itself records, so it
-        // proves the log unchanged, never who signed it: the hover says so (R800; row 382 adds the two states).
+        // proves the log unchanged, never who signed it: the hover says so (R800); row 382 adds whose key signed it, in the
+        // closure so a language switch redraws it too.
         ooLiveHtml($("cust-result"), () => {
           const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+          const signer = d.verified ? custodySignerWords(d.signed_by, d.signer_key) : "";
+          const by = signer ? ' <span class="cust-signer">' + esc(signer) + '</span>' : "";
           return d.verified && d.accepted_unendorsed
             ? '<span class="pill warn">' + esc(_custT(CUST_ACCEPTED_UNENDORSED)) + '</span> '
-              + esc((d.notes||[]).join("; "))
+              + esc((d.notes||[]).join("; ")) + by
             : d.verified
             ? `<span class="pill ok" title="${esc(t("Checked against the keys recorded in the log itself: this shows the log has not changed since it was signed, not who signed it."))}">`
-              + esc(t("verified")) + "</span> " + esc(t("chain intact, signatures valid."))
+              + esc(t("verified")) + "</span> " + esc(t("chain intact, signatures valid.")) + by
               + ((d.notes||[]).length ? " " + esc(d.notes.join("; ")) : "")
             : '<span class="pill err">' + esc(t("FAILED")) + "</span> " + esc((d.issues||[]).join("; "));
         });
