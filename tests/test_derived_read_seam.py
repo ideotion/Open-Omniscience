@@ -230,6 +230,9 @@ _RAW_CEILING: dict[str, int] = {
     # R625: the two triggers that mark a day stale (a trigger must name its table, never the view) and the install
     # that checks the table and its triggers in sqlite_master; every read goes through the view.
     "src/analytics/day_counts.py": 7,
+    # R824 (row 405): the golden-output pass reads the PHYSICAL rows it just wrote into a throwaway database built by create_all (no read
+    # seam view exists there), to digest exactly what index_article writes: the canonical-rows key and its one SELECT.
+    "src/analytics/golden_output.py": 2,
     "src/analytics/group_stats.py": 1,
     "src/analytics/keyword_fold.py": 1,
     "src/analytics/keyword_growth.py": 3,

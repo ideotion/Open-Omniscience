@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import hashlib
 import logging
 import os
 import shutil
@@ -1752,7 +1753,9 @@ class StoreCopyRefused(OSError):
     """A byte copy of the store was refused before or during the copy; the reason is the message, the partial is gone."""
 
 
-def _copy_from_held(src_p: Path, dest_p: Path, *, chunk: int = 8 * 1024 * 1024, use_sendfile: bool = True) -> None:
+def _copy_from_held(
+    src_p: Path, dest_p: Path, *, chunk: int = 8 * 1024 * 1024, use_sendfile: bool = True, digest: object = None
+) -> None:
     """Byte-copy the live store from the descriptor kept for it (R789): ``shutil.copyfile`` opened and CLOSED the store,
     and on POSIX that close dropped every lock this process held on it, so after every restore and stream backup another
     process could take or write the store under the running app.
@@ -1766,7 +1769,7 @@ def _copy_from_held(src_p: Path, dest_p: Path, *, chunk: int = 8 * 1024 * 1024, 
     except OSError as exc:
         raise StoreCopyRefused(f"the store could not be found at its path ({type(exc).__name__})") from None
     with store_reader(src_p) as fd:  # in use for the whole copy: no other read of ours closes it meanwhile
-        _copy_fd(src_p, fd, dest_p, chunk=chunk, use_sendfile=use_sendfile)
+        _copy_fd(src_p, fd, dest_p, chunk=chunk, use_sendfile=use_sendfile, digest=digest)
 
 
 def _copy_chunk(fd: int, out: int, done: int, want: int, size: int, state: dict) -> int:
@@ -1785,13 +1788,58 @@ def _copy_chunk(fd: int, out: int, done: int, want: int, size: int, state: dict)
     data = read_at(fd, want, done)
     if not data:
         raise StoreCopyRefused(f"the store ended after {done} of {size} bytes during the copy")
+    digest = state.get("digest")
+    if digest is not None:
+        digest.update(data)  # the source's bytes as read, in order: the pread loop only (sendfile never surfaces them)
     view = memoryview(data)
     while view:
         view = view[os.write(out, view) :]
     return len(data)
 
 
-def _copy_fd(src_p: Path, fd: int, dest_p: Path, *, chunk: int, use_sendfile: bool) -> None:
+class _DigestBeside:
+    """Feed a hash on its own thread while the copy loop goes on reading and writing (R830: the safety net's sha256 is
+    taken while copying, and on one thread it nearly doubled the copy's time on ext4). ``hashlib`` releases the GIL
+    for large updates, as ``pread``/``write`` do, so the two overlap. Chunks are handed over in order through a
+    bounded queue (at most ``depth`` chunks held), so the hash is of exactly the bytes read, in the order written.
+    :meth:`close` waits for the hash to take every chunk and raises :class:`StoreCopyRefused` when the hash failed on its
+    thread (fixed words: the hash's own error is never carried)."""
+
+    def __init__(self, digest: object, depth: int = 4) -> None:
+        import queue
+
+        self._digest = digest
+        self._q: queue.Queue = queue.Queue(maxsize=depth)
+        self._failed = False
+        self._thread = threading.Thread(target=self._run, name="oo-copy-digest", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while True:  # the guard-clause form (R163)
+            data = self._q.get()
+            if data is None:
+                return
+            if not self._failed:
+                try:
+                    self._digest.update(data)  # type: ignore[attr-defined]
+                except BaseException:  # noqa: BLE001 - said on the copying thread by update()/close()
+                    self._failed = True
+
+    def _raise_if_failed(self) -> None:
+        if self._failed:
+            raise StoreCopyRefused("the sha256 of the copy could not be taken; the copy was discarded")
+
+    def update(self, data: bytes) -> None:
+        self._raise_if_failed()
+        self._q.put(data)
+
+    def close(self) -> None:
+        self._q.put(None)
+        self._thread.join()
+        self._raise_if_failed()
+
+
+def _copy_fd(src_p: Path, fd: int, dest_p: Path, *, chunk: int, use_sendfile: bool, digest: object = None) -> None:
     def _same_file_at_path() -> bool:
         try:
             now = os.stat(src_p, follow_symlinks=False)
@@ -1807,12 +1855,20 @@ def _copy_fd(src_p: Path, fd: int, dest_p: Path, *, chunk: int, use_sendfile: bo
     out = os.open(dest_p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o666)
     try:
         try:
-            state = {"sendfile": getattr(os, "sendfile", None) if use_sendfile else None}
+            beside = _DigestBeside(digest) if digest is not None else None
+            state = {
+                "sendfile": getattr(os, "sendfile", None) if use_sendfile and digest is None else None,
+                "digest": beside,
+            }
             done = 0
-            while True:  # the guard-clause form: the back-edge stays inside the try (R163)
-                if done >= size:
-                    break
-                done += _copy_chunk(fd, out, done, min(chunk, size - done), size, state)
+            try:
+                while True:  # the guard-clause form: the back-edge stays inside the try (R163)
+                    if done >= size:
+                        break
+                    done += _copy_chunk(fd, out, done, min(chunk, size - done), size, state)
+            finally:
+                if beside is not None:
+                    beside.close()  # every chunk hashed before the copy is reported done (or its failure raised)
             if os.fstat(fd).st_size != size:
                 raise StoreCopyRefused("the store changed size during the copy; the copy was discarded")
             if not _same_file_at_path():
@@ -1822,6 +1878,172 @@ def _copy_fd(src_p: Path, fd: int, dest_p: Path, *, chunk: int, use_sendfile: bo
     except BaseException:
         dest_p.unlink(missing_ok=True)
         raise
+
+
+def _sha256_of_file(path: Path, *, chunk: int = 8 * 1024 * 1024, should_stop=None) -> tuple[int, str]:
+    """``(bytes read, sha256 hex)`` of a file this process just wrote, read back from disk, never through a link.
+
+    ``should_stop`` (optional, checked between chunks) ends the read early with :class:`StoreCopyRefused`."""
+    h = hashlib.sha256()
+    n = 0
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+    try:
+        while True:  # the guard-clause form: the back-edge stays inside the try (R163)
+            if should_stop is not None and should_stop():
+                raise StoreCopyRefused("the read-back of the safety copy was stopped before it finished")
+            data = os.read(fd, chunk)
+            if not data:
+                break
+            h.update(data)
+            n += len(data)
+    finally:
+        os.close(fd)
+    return n, h.hexdigest()
+
+
+def verified_store_copy(src_p: Path, dest_p: Path, *, read_back: bool = True) -> dict | None:
+    """A byte copy of the encrypted store, VERIFIED WHOLE before it is trusted: R827 R5/R6(a), R830.
+
+    The import's safety net, the copy that is never written to. Same proof as
+    :func:`_quiesced_file_copy` (the write gate held, the checkpoint drained, an empty ``-wal``) and, under
+    that SAME gate hold, the source's sha256 is taken from the bytes as they are copied. The copy is then
+    flushed to disk (fsync), its size compared with the source's, and it is opened under the same key: the
+    cheap checks. With ``read_back`` (the default) the copy is also read back from disk and hashed here, and
+    kept only when the hash equals the source's. A mismatch removes it and raises :class:`StoreCopyRefused`;
+    nothing is written to the source either way.
+
+    ``read_back=False`` is for a caller that runs :func:`store_copy_reads_back` itself, off the critical path,
+    and refuses before using the copy for anything that cannot be undone (R830: the import runs it beside the
+    merge and refuses before the swap). The returned dict then says ``"read_back": False`` -- the copy is not
+    yet verified whole, and must not be reported as verified until that check has passed.
+
+    Returns ``{"bytes": n, "sha256": hex, "read_back": bool}``, or None when the store is plaintext or the proof
+    cannot be made (the caller then takes its copies the way it did before)."""
+    from src.database.writer import gate_enabled, write_lock
+
+    src_p, dest_p = Path(src_p), Path(dest_p)
+    if not is_encrypted_file(src_p) or not gate_enabled():
+        return None
+    if not get_passphrase():
+        raise DatabaseLockedError(f"{src_p.name} is encrypted: cannot snapshot while locked")
+    dest_p.parent.mkdir(parents=True, exist_ok=True)
+    dest_p.unlink(missing_ok=True)
+    with write_lock():
+        conn = connect(src_p, check_same_thread=False)
+        try:
+            began = time.monotonic()
+            row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            _note_snapshot_checkpoint(row, time.monotonic() - began)
+        finally:
+            conn.close()
+        if not row or int(row[0]) != 0:
+            return None
+        wal = src_p.with_name(src_p.name + "-wal")
+        if wal.exists() and wal.stat().st_size > 0:
+            return None
+        source = hashlib.sha256()
+        _copy_from_held(src_p, dest_p, use_sendfile=False, digest=source)
+        for suffix in ("-wal", "-shm"):
+            dest_p.with_name(dest_p.name + suffix).unlink(missing_ok=True)
+        try:
+            with store_reader(src_p) as fd:
+                src_bytes = os.fstat(fd).st_size
+            _fsync_file(dest_p)  # on disk before anything relies on it (R830)
+            _fsync_dir(dest_p.parent)  # and its name too, so a power cut after the swap cannot lose the net's entry
+            copy_bytes = os.stat(dest_p, follow_symlinks=False).st_size
+            if copy_bytes != src_bytes:
+                raise StoreCopyRefused(
+                    "the safety copy does not match the corpus it was copied from (size); it was removed"
+                )
+            if read_back:
+                store_copy_reads_back(dest_p, {"bytes": src_bytes, "sha256": source.hexdigest()})
+        except BaseException:
+            dest_p.unlink(missing_ok=True)
+            raise
+    try:
+        connect(dest_p, check_same_thread=False).close()  # opens under the same key (page-1 HMAC)
+    except BaseException:
+        dest_p.unlink(missing_ok=True)
+        raise
+    return {"bytes": copy_bytes, "sha256": source.hexdigest(), "read_back": bool(read_back)}
+
+
+def _fsync_file(path: Path) -> None:
+    """Flush a file this process just wrote to the disk, opened without following a link."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _fsync_dir(path: Path) -> None:
+    """Flush a directory's entries (POSIX); where a directory cannot be opened for that (Windows), nothing is done."""
+    if os.name != "posix":
+        return
+    with contextlib.suppress(OSError):
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0))
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
+def store_copy_reads_back(dest_p: Path, facts: dict, *, should_stop=None) -> None:
+    """Read a copy made by :func:`verified_store_copy` back from disk and compare it with the source's size and
+    sha256 (``facts``, as that call returned them). Raises :class:`StoreCopyRefused` when they differ, or when
+    ``should_stop`` ends the read first; never removes or changes the copy itself (the caller decides)."""
+    n, h = _sha256_of_file(Path(dest_p), should_stop=should_stop)
+    if n != int(facts["bytes"]) or h != str(facts["sha256"]):
+        raise StoreCopyRefused("the safety copy does not match the corpus it was copied from (size or sha256)")
+
+
+def clone_file(src_p: Path, dest_p: Path, *, chunk: int = 64 * 1024 * 1024) -> None:
+    """Copy a file this process owns (never the live store) to a NEW file, sharing extents where the
+    filesystem can (``copy_file_range`` reflinks on Btrfs and XFS; elsewhere it is an in-kernel copy).
+    A short copy removes the partial and raises :class:`StoreCopyRefused`."""
+    src_p, dest_p = Path(src_p), Path(dest_p)
+    dest_p.unlink(missing_ok=True)
+    flags = getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    fd = os.open(src_p, os.O_RDONLY | getattr(os, "O_BINARY", 0) | flags)
+    try:
+        size = os.fstat(fd).st_size
+        out = os.open(dest_p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0) | flags, 0o666)
+        try:
+            try:
+                cfr = getattr(os, "copy_file_range", None)
+                done = 0
+                while True:  # the guard-clause form: the back-edge stays inside the try (R163)
+                    if done >= size:
+                        break
+                    want = min(chunk, size - done)
+                    n = 0
+                    if cfr is not None:
+                        try:
+                            n = cfr(fd, out, want, done, done)
+                        except OSError:
+                            cfr = None
+                    if cfr is None:
+                        data = read_at(fd, want, done)
+                        n = _write_all(out, data)
+                    if n == 0:
+                        raise StoreCopyRefused(f"the copy ended after {done} of {size} bytes")
+                    done += n
+            finally:
+                os.close(out)
+        except BaseException:
+            dest_p.unlink(missing_ok=True)
+            raise
+    finally:
+        os.close(fd)
+
+
+def _write_all(out: int, data: bytes) -> int:
+    """Write all of ``data`` to ``out``; returns its length. Its own scope, outside the caller's ``try`` (R163)."""
+    view = memoryview(data)
+    while view:
+        view = view[os.write(out, view) :]
+    return len(data)
 
 
 def snapshot_open_connection(conn, dest: Path | str) -> Path:

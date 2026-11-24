@@ -811,8 +811,171 @@ def _sub_timer(timings: object):
     return _sub
 
 
+@contextmanager
+def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]:
+    """Run the staged copy's ``PRAGMA quick_check`` on its own thread while the body (the merge) runs.
+
+    R827 R3(a). The walk read every page of the staged copy BEFORE the merge, 32 minutes of the
+    field's largest import, on the critical path. The merge only READS the staged copy (it is
+    attached as ``inc`` and never written), so the two read it side by side: SQLite releases the
+    GIL while a statement runs.
+
+    Nothing reaches the live corpus without passing: on a normal exit the block WAITS for the walk
+    and raises :class:`MergeError` with the validator's own fixed words when it failed -- the same
+    refusal ``prepare_staged_corpus`` raised before, now raised before the verify stage and so
+    before any swap, and the import queue discards the checkpoint group on it as it does for any
+    raised failure. When the body raises instead, the walk is stopped (interrupted, and asked again
+    until its thread ends) and the body's own exception goes on unchanged.
+
+    Timed as two sub-stages, recorded on the caller's thread: ``merge:quick_check`` (the walk's own
+    time) and ``merge:quick_check_wait`` (how long the merge then waited for it)."""
+    from src.backup.sqlite_backup import BackupError, validate_sqlite_file
+
+    stop = threading.Event()
+    guard = threading.Lock()
+    state: dict[str, object] = {"conn": None, "error": None, "seconds": None}
+
+    def _connected(conn: sqlite3.Connection) -> None:
+        with guard:
+            state["conn"] = conn
+            if stop.is_set():
+                conn.interrupt()
+
+    def _walk() -> None:
+        t0 = time.monotonic()
+        try:
+            validate_sqlite_file(path, connection_cb=_connected, should_stop=stop.is_set)
+        except BackupError as exc:
+            from src.monitoring.secret_scrub import record_text
+
+            state["error"] = record_text(exc)  # the validator's own fixed words; a driver's text is withheld
+        except BaseException:  # noqa: BLE001 - any other failure is a refusal too, never a pass
+            state["error"] = "the integrity check could not run, so the backup was not merged"
+        finally:
+            state["seconds"] = time.monotonic() - t0
+            with guard:
+                state["conn"] = None
+
+    walker = threading.Thread(target=_walk, name="oo-import-quick-check", daemon=True)
+    finished = False
+    try:
+        walker.start()  # inside the try: the finally below stops and joins whatever it started
+        yield
+        finished = True
+    finally:
+        if not finished:
+            stop.set()
+        t_wait = time.monotonic()
+        while walker.is_alive():
+            if not finished:
+                with guard:
+                    conn = state["conn"]
+                    if isinstance(conn, sqlite3.Connection):
+                        with suppress(Exception):
+                            conn.interrupt()
+            walker.join(timeout=0.5)
+        _record = getattr(timings, "record", None)
+        if _record is not None:
+            with suppress(Exception):
+                _record("merge:quick_check_wait", time.monotonic() - t_wait)
+                if isinstance(state["seconds"], float):
+                    _record("merge:quick_check", state["seconds"])
+    if state["error"] is not None:
+        raise MergeError(str(state["error"]))
+
+
+#: R830: the words an import refused on a safety copy that did not read back as the corpus it was copied from.
+_NET_NOT_VERIFIED = (
+    "the safety copy of your corpus could not be verified against the corpus it was copied from, so the backup "
+    "was not merged; your corpus was not changed"
+)
+
+
+@contextmanager
+def _net_read_back_alongside(net: tuple[Path, dict] | None, timings: object = None) -> Iterator[None]:
+    """R830 (amends R827 R5/R6): read the run's safety net back from disk and hash it on its own thread while the body
+    (the merge) runs, and refuse before the swap when it does not match.
+
+    :func:`_take_safety_net_with_the_copy` copies the live corpus with its sha256 taken from the bytes as they are
+    read, flushes the copy and checks its size and that it opens under the key -- the cheap checks, on the critical
+    path. The read-back of the whole copy, compared with that hash, is the part that costs a full read; it runs here
+    beside the merge instead (the merge never reads or writes the net: it works on a clone of it).
+
+    Nothing reaches the live corpus without passing: on a normal exit the block WAITS for the read-back, and a
+    mismatch (or a read-back that could not run) removes the net, forgets it as the run's safety net and raises
+    :class:`MergeError` -- before the verify stage and so before any swap, with the live corpus untouched. When the
+    body raises instead, the read-back is stopped and the body's own exception goes on unchanged; a net whose
+    read-back had not passed by then is removed and forgotten the same way, because nothing later in the run
+    re-verifies the net it reuses. ``net`` None (no net taken in this call) does nothing.
+
+    Timed as ``merge:net_read_back`` (its own time) and ``merge:net_read_back_wait`` (how long the merge waited)."""
+    if net is None:
+        yield
+        return
+    from src.database.connect import store_copy_reads_back
+
+    path, facts = net
+    stop = threading.Event()
+    state: dict[str, object] = {"ok": False, "error": None, "seconds": None}
+
+    def _read() -> None:
+        t0 = time.monotonic()
+        try:
+            store_copy_reads_back(path, facts, should_stop=stop.is_set)
+            state["ok"] = True
+        except BaseException:  # noqa: BLE001 - a mismatch or a read that could not run is a refusal, never a pass
+            state["error"] = _NET_NOT_VERIFIED
+        finally:
+            state["seconds"] = time.monotonic() - t0
+
+    reader = threading.Thread(target=_read, name="oo-import-net-read-back", daemon=True)
+    reader.start()
+    finished = False
+    try:
+        yield
+        finished = True
+    finally:
+        if not finished:
+            stop.set()
+        t_wait = time.monotonic()
+        reader.join()
+        _record = getattr(timings, "record", None)
+        if _record is not None:
+            with suppress(Exception):
+                _record("merge:net_read_back_wait", time.monotonic() - t_wait)
+                if isinstance(state["seconds"], float):
+                    _record("merge:net_read_back", state["seconds"])
+        if not state["ok"]:
+            _drop_unverified_net(path)
+    if not state["ok"]:
+        raise MergeError(str(state["error"] or _NET_NOT_VERIFIED))
+    facts["read_back"] = True
+    # Only now is it the run's safety net: a later item of the run reuses it without reading it again, so it is
+    # recorded as the run's net only once it has read back whole (security read of #2379).
+    _remember_run_snapshot(path)
+
+
+def _drop_unverified_net(path: Path) -> None:
+    """Remove a safety net whose read-back did not pass (or never finished), so nothing later trusts it: forgotten as
+    the run's net, its staging registration released, the file removed. The live corpus is not touched."""
+    from src.backup.stream_backup import unregister_active_staging
+
+    global _RUN_SNAPSHOT
+    with _RUN_SNAPSHOT_LOCK:
+        if _RUN_SNAPSHOT is not None and _RUN_SNAPSHOT[1] == path:
+            _RUN_SNAPSHOT = None
+    with suppress(Exception):
+        unregister_active_staging(path)
+    with suppress(OSError):
+        path.unlink(missing_ok=True)
+
+
 def prepare_staged_corpus(
-    staged: StagedArtifact, *, allow_unverified: bool = False, timings: object = None
+    staged: StagedArtifact,
+    *,
+    allow_unverified: bool = False,
+    timings: object = None,
+    defer_quick_check: bool = False,
 ) -> str:
     """Validate + upgrade the staged corpus to the running schema. Never touches
     the live DB; the staged copy is disposable. Returns the artifact's original
@@ -824,7 +987,12 @@ def prepare_staged_corpus(
     ``prepare_staged:upgrade`` (the alembic chain, which on an artifact several
     revisions behind runs real migrations over the whole corpus). Optional so every
     existing caller and test is untouched, and so a timing failure can never break a
-    restore."""
+    restore.
+
+    ``defer_quick_check`` (R827 R3(a)): the open and the required-tables look still run here, before
+    the upgrade, and the page walk is left to the caller, which runs it alongside the merge
+    (:func:`_quick_check_alongside`) and refuses before the swap when it fails. Nothing reaches the
+    live corpus without it."""
     from src.backup.sqlite_backup import BackupError, validate_sqlite_file
     from src.database.migrate import file_revision, known_revisions, upgrade_database_file
 
@@ -876,7 +1044,7 @@ def prepare_staged_corpus(
 
     try:
         with _sub("prepare_staged:validate"):
-            validate_sqlite_file(staged.corpus_path)
+            validate_sqlite_file(staged.corpus_path, quick_check=not defer_quick_check)
     except BackupError as exc:
         raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text
 
@@ -2536,6 +2704,9 @@ _MERGE_HANDLED = {
     # R415: the places-and-entities stamp, the second of the two. Written (never copied) for the places and entities the carry itself wrote,
     # under the same rule as the keyword stamp; it left _MERGE_NOT_CARRIED for it.
     "article_www_stamps",
+    # R824 (row 405): what each engine id is a hash of. READ by the carry plan to name the component an incoming stamp differs in, never
+    # copied: a carried stamp names THIS machine's engine, whose row index_article writes here.
+    "index_engines",
     # 2026-09-30, R61 (item 12): the ≈ titles are deduced metadata and ride the backup; they
     # left _MERGE_NOT_CARRIED for it. See `_merge_ai_layer`.
     "article_title_translations",
@@ -4537,6 +4708,11 @@ def _inc_has_table(con: sqlite3.Connection, name: str) -> bool:
     )
 
 
+def _has_column(con: sqlite3.Connection, schema: str, table: str, column: str) -> bool:
+    """Does ``schema.table`` (``inc`` or ``main``) have ``column``? ``schema`` and ``table`` are always module literals, never input."""
+    return any(r[1] == column for r in con.execute(f'PRAGMA {schema}.table_info("{table}")'))  # noqa: S608  # nosec B608 # module-local literals
+
+
 def _inc_has_leading_index(con: sqlite3.Connection, table: str, column: str) -> bool:
     """Does the INCOMING table have a full (non-partial) index whose first column is
     ``column``? ``table`` is always a module literal below, never input."""
@@ -4569,7 +4745,7 @@ def _carried_country(code: str | None, form: str, canonical) -> str | None:
     return converted if converted is not None else code
 
 
-def _stamp_pages(con, table: str, engines: tuple[str, ...]) -> Iterator[tuple]:
+def _stamp_pages(con, table: str, engines: tuple[str, ...], version: int | None = None) -> Iterator[tuple]:
     """``(article_id, inputs)`` of every incoming stamp in ``table`` that names one of ``engines`` (R758: the canonical id and the
     pre-R758 Windows id of the same engine), by ascending article id, one page of
     ``_CARRY_PLAN_CHUNK`` at a time. ``table`` is always a module literal below, never input. The walk is over the STAMPS and not over the
@@ -4578,11 +4754,16 @@ def _stamp_pages(con, table: str, engines: tuple[str, ...]) -> Iterator[tuple]:
     row it returned, which the staged copy -- it has no planner statistics -- turned into a scan of the longer table per page)."""
     last = -(2**63)
     marks = ",".join("?" * len(engines))
+    # R824 (row 405): when the backup records the stage version, a stamp is a candidate only if that version is this machine's or was never
+    # recorded (a stamp written before the column, read through its engine id, which hashes the version). Anything else -- another number,
+    # or a value that is not a number -- is not matching, and the article is re-extracted.
+    by_version = "" if version is None else " AND (stage_version IS NULL OR stage_version = ?)"
+    extra = () if version is None else (version,)
     while True:
         rows = _q(
             con,
-            f"SELECT article_id, inputs FROM inc.{table} WHERE engine IN ({marks}) AND article_id > ? ORDER BY article_id LIMIT ?",  # noqa: S608  # nosec B608 # module-local literal table names; one "?" per engine
-            (*engines, last, _CARRY_PLAN_CHUNK),
+            f"SELECT article_id, inputs FROM inc.{table} WHERE engine IN ({marks}){by_version} AND article_id > ? ORDER BY article_id LIMIT ?",  # noqa: S608  # nosec B608 # module-local literal table names and clause; one "?" per engine
+            (*engines, *extra, last, _CARRY_PLAN_CHUNK),
         )
         yield from rows
         if len(rows) < _CARRY_PLAN_CHUNK:
@@ -4590,13 +4771,16 @@ def _stamp_pages(con, table: str, engines: tuple[str, ...]) -> Iterator[tuple]:
         last = int(rows[-1][0])
 
 
-def _stamped_candidates(con, kw_engines: tuple[str, ...], www_engine: str | None) -> Iterator[tuple]:
+def _stamped_candidates(
+    con, kw_engines: tuple[str, ...], www_engine: str | None, versions: dict[str, int | None] | None = None
+) -> Iterator[tuple]:
     """``(article_id, keyword_inputs, www_inputs)`` for every incoming article holding EITHER stamp from this machine's engines, once each,
     by ascending article id. ``keyword_inputs`` / ``www_inputs`` are None for the half the article does not hold. The two stamp tables are
     read by one cursor each and merged here."""
-    streams = [((int(a), 0, i) for a, i in _stamp_pages(con, "article_index_stamps", kw_engines))]
+    versions = versions or {}
+    streams = [((int(a), 0, i) for a, i in _stamp_pages(con, "article_index_stamps", kw_engines, versions.get("kw")))]
     if www_engine is not None:
-        streams.append(((int(a), 1, i) for a, i in _stamp_pages(con, "article_www_stamps", (www_engine,))))
+        streams.append(((int(a), 1, i) for a, i in _stamp_pages(con, "article_www_stamps", (www_engine,), versions.get("www"))))
     for aid, group in groupby(heapq.merge(*streams), key=lambda t: t[0]):
         by_half = {which: inputs for _a, which, inputs in group}
         yield aid, by_half.get(0), by_half.get(1)
@@ -4604,6 +4788,21 @@ def _stamped_candidates(con, kw_engines: tuple[str, ...], www_engine: str | None
 
 #: How many distinct incoming engine stamps the carry report lists by name (the rest are summed).
 _ENGINE_MIX_TOP = 10
+#: The longest incoming stamp engine the carry plan reads as an id (R824): a real one is 35 characters and the column is String(40).
+_ENGINE_ID_MAX_BYTES = 64
+_ENGINE_ID_SHAPE = re.compile(r"[A-Za-z0-9._:-]{1,64}")
+
+
+def _plain_engine_id(raw) -> str | None:
+    """An incoming stamp's engine as a plain id, or None when it is not one (NULL, too long, not UTF-8, any other character)."""
+    if raw is None:
+        return None
+    try:
+        text = bytes(raw).decode("utf-8")
+    except (TypeError, UnicodeDecodeError):
+        return None
+    return text if _ENGINE_ID_SHAPE.fullmatch(text) else None
+
 
 
 def _engine_mix(con, plan: dict, key: str, table: str) -> None:
@@ -4613,12 +4812,124 @@ def _engine_mix(con, plan: dict, key: str, table: str) -> None:
     cols = {r[1] for r in _q(con, f"PRAGMA inc.table_info({table})")}  # nosec B608 # two module-local literal table names
     if "engine" not in cols:
         return  # a stamps table without its engine column: nothing to name
-    # No try: an error here (the operator's Stop included) is the merge's own, as for any other statement it runs.
-    rows = _q(con, f"SELECT engine, COUNT(*) FROM inc.{table} GROUP BY engine ORDER BY 2 DESC")  # noqa: S608  # nosec B608 # two module-local literal table names
-    plan[key] = [[str(e), int(n)] for e, n in rows[:_ENGINE_MIX_TOP]]
-    other = sum(int(n) for _, n in rows[_ENGINE_MIX_TOP:])
+    # No try: an error here (the operator's Stop included) is the merge's own, as for any other statement it runs. The engine is the
+    # BACKUP's text, so it is read as bytes and only when it is short (a real id is 35 characters): text that is not UTF-8 once stopped
+    # the restore here (row 405's delta read), and a long one was copied whole into the plan. Anything that is not a plain id is
+    # counted as unreadable and never named.
+    rows = _q(
+        con,
+        f"SELECT CASE WHEN length(CAST(engine AS BLOB)) <= {_ENGINE_ID_MAX_BYTES} THEN CAST(engine AS BLOB) END AS e,"  # noqa: S608  # nosec B608 # two module-local literal table names and an int constant
+        f" COUNT(*) FROM inc.{table} GROUP BY e ORDER BY 2 DESC",
+    )
+    named: list[list] = []
+    unreadable = 0
+    for raw, n in rows:
+        engine = _plain_engine_id(raw)
+        if engine is None:
+            unreadable += int(n)
+        else:
+            named.append([engine, int(n)])
+    plan[key] = named[:_ENGINE_MIX_TOP]
+    other = sum(n for _e, n in named[_ENGINE_MIX_TOP:])
     if other:
         plan[key + "_other"] = other
+    if unreadable:
+        plan[key + "_unreadable"] = unreadable
+
+
+#: The largest ``index_engines.components`` text the carry plan reads (R824): a real record is under 1 KB. A longer one is not read
+#: (it counts as could not be read), so a crafted backup cannot make the plan hold megabytes per engine.
+_ENGINE_RECORD_MAX_BYTES = 16_384
+#: The most distinct foreign engines the plan looks up a record for; the articles of the rest count as could not be read.
+_ENGINE_RECORDS_MAX = 1_000
+
+
+def _engine_differences(con, plan: dict, key: str, table: str, accepted: tuple[str, ...] | None, stage: str) -> None:
+    """``plan[key]``: for the incoming stamps in ``table`` that do NOT name this machine's engine for ``stage``, which components differ,
+    each by name with the number of articles whose stamp differs in it (R824, row 405; Plan: name every component, never guess one).
+
+    The incoming store's ``index_engines`` row says what each id is a hash of; a row is believed only when it recomputes to its own id
+    (``recorded_components``). A stamp with no such row -- a backup made before the record existed, a row that does not recompute, one
+    that is not UTF-8 text or is over :data:`_ENGINE_RECORD_MAX_BYTES` -- counts under ``could_not_be_read``, never under a component.
+    An article whose engine differs in two components counts under both, so the component counts do not add up to ``articles``. Counts
+    and component names only: a component VALUE (a dictionary version, a digest) is never copied into the report.
+
+    A DIAGNOSTIC: it decides nothing the carry does, so any failure here (a hostile or damaged backup table included, the operator's
+    Stop excepted) leaves ``{"available": False}`` and the merge goes on."""
+    # Only Python-side failures are caught (a value the parse or the comparison could not take): every SQL statement here reads
+    # capped bytes from columns checked first, so a database error is the merge's own, as for any other statement, and the
+    # operator's Stop -- which aborts the statement with a driver error, sqlcipher's own class on an encrypted store -- stays a Stop
+    # (_step_watch decides that by its own flag, never by the error's words).
+    try:
+        _engine_differences_read(con, plan, key, table, accepted, stage)
+    except (ValueError, TypeError, KeyError, IndexError, RecursionError) as exc:
+        log_failure(_LOG, "could not name what differs in the incoming engines; carry unaffected", exc, level=logging.WARNING)
+        plan[key] = {"available": False}
+
+
+def _engine_differences_read(con, plan: dict, key: str, table: str, accepted: tuple[str, ...] | None, stage: str) -> None:
+    from src.analytics.engine_identity import (
+        STAMP_PREFIX,
+        WWW_STAMP_PREFIX,
+        component_differences,
+        engine_record,
+        recorded_components,
+        www_engine_record,
+    )
+
+    plan[key] = {"available": False}
+    if not any(r[1] == "engine" for r in _q(con, f"PRAGMA inc.table_info({table})")):  # nosec B608 # two module-local literal table names
+        return
+    own_id, own_blob = engine_record(extractor_name="baseline") if stage == "kw" else www_engine_record()
+    own = json.loads(own_blob)
+    prefix = STAMP_PREFIX if stage == "kw" else WWW_STAMP_PREFIX
+    mine = set(accepted or (own_id,))
+    # The engine read as bytes: a stamp's engine is the backup's text, and one that is not UTF-8 must not stop the read.
+    # Only a short value is fetched at all (the rest group as one NULL, counted as could not be read), so a backup of a million distinct
+    # megabyte-long engines costs one row here, not its size in memory.
+    rows = _q(
+        con,
+        f"SELECT CASE WHEN length(CAST(engine AS BLOB)) <= {_ENGINE_ID_MAX_BYTES} THEN CAST(engine AS BLOB) END AS e,"  # noqa: S608  # nosec B608 # two module-local literal table names and an int constant
+        f" COUNT(*) FROM inc.{table} GROUP BY e",
+    )
+    others: list[tuple[str | None, int]] = []
+    for raw, n in rows:
+        engine = _plain_engine_id(raw)
+        if engine not in mine:
+            others.append((engine, int(n)))
+    out: dict = {"available": True, "articles": sum(n for _e, n in others), "components": {}, "could_not_be_read": 0}
+    plan[key] = out
+    named = [(e, n) for e, n in others if e is not None and e.startswith(prefix)]
+    out["could_not_be_read"] += sum(n for e, n in others if e is None or not e.startswith(prefix))
+    out["could_not_be_read"] += sum(n for _e, n in named[_ENGINE_RECORDS_MAX:])
+    named = named[:_ENGINE_RECORDS_MAX]
+    has_records = _inc_has_table(con, "index_engines") and all(
+        _has_column(con, "inc", "index_engines", c) for c in ("engine", "components")
+    )
+    counts = out["components"]
+    for i in range(0, len(named), 200):
+        part = named[i:i + 200]
+        records: dict[str, str] = {}
+        if has_records:
+            for e, blob in _q(
+                con,
+                "SELECT engine, CAST(components AS BLOB) FROM inc.index_engines"  # noqa: S608  # nosec B608 # one "?" per id
+                f" WHERE engine IN ({','.join('?' * len(part))}) AND typeof(components) = 'text'"
+                f" AND length(CAST(components AS BLOB)) <= {_ENGINE_RECORD_MAX_BYTES}",
+                tuple(e for e, _n in part),
+            ):
+                try:
+                    records[str(e)] = bytes(blob).decode("utf-8")
+                except (TypeError, UnicodeDecodeError):
+                    continue
+        for engine, n in part:
+            theirs = recorded_components(engine, records.get(engine))
+            differing = component_differences(theirs, own) if theirs is not None else []
+            if not differing:  # no record it can recompute, or equal components (an id this machine accepts): never a guess
+                out["could_not_be_read"] += n
+                continue
+            for name in differing:
+                counts[name] = counts.get(name, 0) + n
 
 
 def _plan_derived_carry(con, batch_id, results) -> None:
@@ -4655,6 +4966,8 @@ def _plan_derived_carry(con, batch_id, results) -> None:
             "already_present": 0, "source_unmapped": 0, "inputs_changed": 0,
             "keyword_unmapped": 0, "entity_upgrade": 0, "keyword_collision": 0,
             "www_inputs_changed": 0, "article_missing": 0, "language_unresolved": 0,
+            # R824 (row 405): a stamp naming this engine whose recorded stage version is another one, or cannot be read as one.
+            "stage_version": 0, "www_stage_version": 0,
         },
         "method": (
             "an incoming article's keywords are carried only when its keyword stamp names this engine AND its "
@@ -4692,6 +5005,10 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     _engine_mix(con, plan, "incoming_engines", "article_index_stamps")
     if _inc_has_table(con, "article_www_stamps"):
         _engine_mix(con, plan, "incoming_www_engines", "article_www_stamps")
+    # R824 (row 405): and for the stamps that are NOT this machine's, which part of the engine differs, by name and article count.
+    _engine_differences(con, plan, "differences", "article_index_stamps", accepted, "kw")
+    if _inc_has_table(con, "article_www_stamps"):
+        _engine_differences(con, plan, "www_differences", "article_www_stamps", None, "www")
     # Every carry statement reaches the incoming rows of ONE article through an index led
     # by article_id (the join order is pinned; see the write loop). A backup without one
     # -- taken while a bulk build had its indexes dropped, or damaged -- would turn each
@@ -4712,6 +5029,17 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         f"SELECT COUNT(*) FROM inc.article_index_stamps WHERE engine IN ({','.join('?' * len(accepted))})",  # noqa: S608  # nosec B608 # one "?" per accepted id, never input
         accepted,
     )
+    from src.analytics.engine_identity import STAGE_VERSIONS
+
+    versions: dict[str, int | None] = {"kw": None, "www": None}
+    if _has_column(con, "inc", "article_index_stamps", "stage_version"):
+        versions["kw"] = STAGE_VERSIONS["kw"]
+        plan["refused"]["stage_version"] = _count(
+            con,
+            f"SELECT COUNT(*) FROM inc.article_index_stamps WHERE engine IN ({','.join('?' * len(accepted))})"  # noqa: S608  # nosec B608 # one "?" per accepted id, never input
+            " AND stage_version IS NOT NULL AND NOT (stage_version = ?)",
+            (*accepted, versions["kw"]),
+        )
     # The places and entities (R415). The carry needs both tables and a www identity this machine can compute; without any of them the
     # keywords still carry on their own stamp and the places and entities are left to the post-swap re-index, said in ``www_reason``.
     www_engine: str | None = None
@@ -4734,6 +5062,14 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         )
         if not plan["www_stamped"]:
             plan["www_reason"] = "no incoming article has a places-and-entities stamp from this engine"
+        elif _has_column(con, "inc", "article_www_stamps", "stage_version"):
+            versions["www"] = STAGE_VERSIONS["www"]
+            plan["refused"]["www_stage_version"] = _count(
+                con,
+                "SELECT COUNT(*) FROM inc.article_www_stamps WHERE engine = ?"
+                " AND stage_version IS NOT NULL AND NOT (stage_version = ?)",
+                (www_engine, versions["www"]),
+            )
     if not plan["stamped"] and not plan["www_stamped"]:
         plan["reason"] = "no incoming article is stamped by this engine"
         return
@@ -4862,7 +5198,7 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         )
 
     slice_: list = []
-    for cand in _stamped_candidates(con, accepted, www_engine):
+    for cand in _stamped_candidates(con, accepted, www_engine, versions):
         plan["candidates"] += 1
         slice_.append(cand)
         if len(slice_) >= _CARRY_PLAN_CHUNK:
@@ -4953,6 +5289,34 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         plan["reason"] = "every verified article was refused by a keyword guard"
 
 
+def _record_local_engines(con, engine: str, www_engine: str | None) -> None:
+    """The carried stamps name this machine's engines, so this store's ``index_engines`` gets their records (R824, row 405): a later
+    restore of a backup of THIS store can then name what differs, even when no pass has run here yet. Insert-or-ignore, only for the
+    record whose id IS the stamped one, and only when the table exists (an old-schema working copy is left as it is)."""
+    if not _has_column(con, "main", "index_engines", "components"):
+        return
+    from datetime import UTC, datetime
+
+    from src.analytics.engine_identity import engine_record, www_engine_record
+
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ")
+    rows: list[tuple[str, str, str]] = []
+    try:  # computing the records is Python only (no statement runs here), so nothing caught can be the operator's Stop
+        for stage, stamped, record in (("kw", engine, lambda: engine_record(extractor_name="baseline")), ("www", www_engine, www_engine_record)):
+            if stamped:
+                own_id, blob = record()
+                if own_id == stamped:
+                    rows.append((own_id, stage, blob))
+    except (OSError, ValueError, TypeError) as exc:  # a record for a later diagnostic never decides whether the carry runs
+        log_failure(_LOG, "could not record this machine's engines; carry unaffected", exc, level=logging.WARNING)
+        return
+    for own_id, stage, blob in rows:
+        con.execute(
+            "INSERT OR IGNORE INTO main.index_engines (engine, stage, components, recorded_at) VALUES (?, ?, ?, ?)",
+            (own_id, stage, blob, now),
+        )
+
+
 def _carry_derived_rows(con, batch_id, results) -> dict:
     """Write the planned articles' derived rows, stamps and counter deltas (R24).
 
@@ -4977,6 +5341,15 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
     www_engine = plan.get("www_engine")
     if not engine or not _count(con, "SELECT COUNT(*) FROM temp.carry_plan"):
         return out
+    from src.analytics.engine_identity import STAGE_VERSIONS
+
+    def _has_provenance(table: str) -> bool:
+        return _has_column(con, "main", table, "stage_version") and _has_column(con, "main", table, "carried_from_batch")
+
+    # Each INSERT below is a LITERAL in both forms, so the column guard (tests/test_merge_carries_every_column.py) reads its column list.
+    kw_prov = _has_provenance("article_index_stamps")
+    www_prov = _has_provenance("article_www_stamps")
+    _record_local_engines(con, engine, www_engine)
     # Every temp table below is declared with its key, never built with CREATE TABLE AS:
     # a CTAS table has NO index, and each is probed per row -- carry_win by range once per
     # window, carry_delta once per touched keyword by the counter UPDATE. Unindexed, the
@@ -5101,19 +5474,35 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
             "  + (SELECT d.a FROM temp.carry_delta d WHERE d.kid = keywords.id)"
             " WHERE id IN (SELECT kid FROM temp.carry_delta)"
         )
-        con.execute(
-            "INSERT INTO main.article_index_stamps (article_id, engine, inputs, stamped_at)"
-            " SELECT w.new, ?, w.inputs, ? FROM temp.carry_win w WHERE w.kw = 1",
-            (engine, now),
-        )
+        # R824 (row 405): a carried stamp records this machine's stage version and the batch that carried it, so no surface counts the
+        # rows as extracted here; a later re-index here rewrites both. A store without the columns (never migrated) gets the stamp alone.
+        if kw_prov:
+            con.execute(
+                "INSERT INTO main.article_index_stamps (article_id, engine, inputs, stamped_at, stage_version, carried_from_batch)"
+                " SELECT w.new, ?, w.inputs, ?, ?, ? FROM temp.carry_win w WHERE w.kw = 1",
+                (engine, now, STAGE_VERSIONS["kw"], int(batch_id)),
+            )
+        else:
+            con.execute(
+                "INSERT INTO main.article_index_stamps (article_id, engine, inputs, stamped_at)"
+                " SELECT w.new, ?, w.inputs, ? FROM temp.carry_win w WHERE w.kw = 1",
+                (engine, now),
+            )
         if www_engine:
             # The places-and-entities stamp, in the SAME window as the rows it certifies and with the incoming row's own digest (the one the
             # plan verified), exactly as the keyword stamp above.
-            con.execute(
-                "INSERT INTO main.article_www_stamps (article_id, engine, inputs, stamped_at)"
-                " SELECT w.new, ?, w.www_inputs, ? FROM temp.carry_win w WHERE w.www = 1",
-                (www_engine, now),
-            )
+            if www_prov:
+                con.execute(
+                    "INSERT INTO main.article_www_stamps (article_id, engine, inputs, stamped_at, stage_version, carried_from_batch)"
+                    " SELECT w.new, ?, w.www_inputs, ?, ?, ? FROM temp.carry_win w WHERE w.www = 1",
+                    (www_engine, now, STAGE_VERSIONS["www"], int(batch_id)),
+                )
+            else:
+                con.execute(
+                    "INSERT INTO main.article_www_stamps (article_id, engine, inputs, stamped_at)"
+                    " SELECT w.new, ?, w.www_inputs, ? FROM temp.carry_win w WHERE w.www = 1",
+                    (www_engine, now),
+                )
         n_kw, n_www, n_both = con.execute(
             "SELECT COALESCE(SUM(kw), 0), COALESCE(SUM(www), 0), COALESCE(SUM(kw AND www), 0) FROM temp.carry_win"
         ).fetchone()
@@ -6693,6 +7082,13 @@ def _run_scoped_snapshot() -> Path | None:
     return prior[1] if prior[1].exists() else None
 
 
+def _run_token() -> int:
+    """This import run's exclusive-window token (0 for a lone restore)."""
+    from src.scheduler.runner import exclusive_window_token
+
+    return int(exclusive_window_token() or 0)
+
+
 def _remember_run_snapshot(path: Path) -> None:
     """Record a freshly-written safety net as THIS run's, so later items reuse it."""
     from src.scheduler.runner import exclusive_window_token
@@ -6703,6 +7099,98 @@ def _remember_run_snapshot(path: Path) -> None:
     global _RUN_SNAPSHOT
     with _RUN_SNAPSHOT_LOCK:
         _RUN_SNAPSHOT = (token, path)
+
+
+#: The safety net THIS thread's run_restore took and has not yet handed to its commit (R830; security read of #2379).
+_NET_PENDING = threading.local()
+
+
+def _release_pending_net(net: Path) -> None:
+    """A run_restore that took a safety net ended without its commit taking it (a refusal, a preview, a held item, an
+    exception): nothing was done to the live corpus with it. A net this run recorded as its own (read back whole, an
+    import run that will reuse it) is kept and only its staging registration released, so the ordinary snapshot
+    pruning sees it; any other (not read back, or a lone restore that will not reuse it) is removed."""
+    try:
+        kept = _run_scoped_snapshot() == net
+    except Exception:  # noqa: BLE001 - in a finally: never replace the restore's own outcome; unknown means remove
+        kept = False
+    if kept:
+        from src.backup.stream_backup import unregister_active_staging
+
+        with suppress(Exception):
+            unregister_active_staging(net)
+        return
+    _drop_unverified_net(net)
+
+
+def _settle_pending_net(fn: Any) -> Any:
+    """Wrap :func:`run_restore` so that every way out of it settles the safety net it took (see
+    :func:`_release_pending_net`); one place, instead of one per return and per exception path."""
+
+    @functools.wraps(fn)
+    def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        _NET_PENDING.net = None
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            net = getattr(_NET_PENDING, "net", None)
+            _NET_PENDING.net = None
+            if net is not None:
+                _release_pending_net(net)
+
+    return _wrapped
+
+
+def _take_safety_net_with_the_copy(working: Path, timings: object = None) -> tuple[Path, dict] | None:
+    """R827 R5/R6(a): the run's pre-restore safety net, taken BEFORE the merge, from which the working copy is cloned.
+
+    The import used to copy the whole live corpus twice: the working copy here, and the safety net at the commit
+    (``pre_restore_snapshot``). Now the safety net is copied from the live corpus once, verified WHOLE (its size and
+    sha256 against the source's, taken under the same write-gate hold: :func:`verified_store_copy`), and the working
+    copy is cloned from it (extents shared where the filesystem can, so on Btrfs/XFS/APFS-class storage the second
+    copy is nearly free; on ext4/NTFS it is still a full copy). The safety net is never written to; the commit
+    reuses it instead of copying the live corpus a second time.
+
+    Free space for both copies is checked first, before anything is written. Every failure leaves the live corpus
+    byte-identical: nothing here writes to it. Returns ``(path, {"bytes", "sha256"})``, or None when the verified
+    byte copy cannot be made (a plaintext store, the write gate off, a busy checkpoint): the caller then copies the
+    way it did before."""
+    from src.backup.artifact import preflight_free_space
+    from src.backup.sqlite_backup import live_db_path
+    from src.backup.stream_backup import register_active_staging, unregister_active_staging
+    from src.database.connect import is_encrypted_file, verified_store_copy
+    from src.database.writer import gate_enabled
+
+    live = live_db_path()
+    if not live.is_file() or not is_encrypted_file(live) or not gate_enabled():
+        return None  # the verified byte copy is for the encrypted store under the write gate; else the old path
+    need = live.stat().st_size
+    with suppress(OSError):
+        need += live.with_name(live.name + "-wal").stat().st_size
+    net_dir = data_dir()
+    working.parent.mkdir(parents=True, exist_ok=True)
+    same_device = net_dir.stat().st_dev == working.parent.stat().st_dev
+    preflight_free_space(net_dir, need * (2 if same_device else 1), what="restore")
+    if not same_device:
+        preflight_free_space(working.parent, need, what="restore")
+    net = net_dir / f"pre-restore-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.db"
+    if net.exists() or net.is_symlink():
+        return None  # never replace a snapshot already there (same second): the old path names its own
+    register_active_staging(net)  # the age sweep never takes it; released by the commit tail's guard
+    try:
+        with _sub_timer(timings)("snapshot_working_copy:safety_net"):
+            facts = verified_store_copy(live, net, read_back=False)  # R830: the read-back runs beside the merge
+    except BaseException:
+        unregister_active_staging(net)
+        raise
+    if facts is None:
+        unregister_active_staging(net)
+        return None
+    # NOT yet the run's net: that is recorded by _net_read_back_alongside once the copy has read back whole. Until the
+    # commit takes it as its safety net, a run_restore that ends any other way removes or releases it
+    # (:func:`_settle_pending_net`).
+    _NET_PENDING.net = net
+    return net, facts
 
 
 def _verify_fts(con, has_fts: bool, articles: int) -> dict:
@@ -8902,15 +9390,26 @@ def mark_reindex_complete(batch_id: int) -> None:
 #: both; an article with one of them still owes the other half. The join is on three narrow tables
 #: (merged_rows, article_index_stamps, article_www_stamps) and never touches an article row (the stand-in question below reads the
 #: article hash index only: a covering range, no row page).
+#:
+#: R824 (row 405): the per-stage columns after ``certified`` -- keyword stamps current, of them carried at an import (``carried_from_batch``
+#: set), and the same two for the places-and-entities stamp -- give the three counts per stage (carried, extracted here, awaiting). For that
+#: the www stamp is joined on the article itself rather than through the keyword stamp, and ``certified`` (both stamps) is counted from the
+#: two joins. A current stamp with no recorded ``stage_version`` was written before stamps recorded where they came from (an import or a
+#: pass of an older build): it is counted apart as ``not_recorded``, never claimed as "extracted on this computer".
 _BACKLOG_SQL = (
-    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n, COUNT(ws.article_id) AS certified"
+    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n,"
+    " COUNT(CASE WHEN st.article_id IS NOT NULL AND ws.article_id IS NOT NULL THEN 1 END) AS certified,"
+    " COUNT(st.article_id) AS kw_current, COUNT(st.carried_from_batch) AS kw_carried,"
+    " COUNT(ws.article_id) AS www_current, COUNT(ws.carried_from_batch) AS www_carried,"
+    " COUNT(CASE WHEN st.article_id IS NOT NULL AND st.stage_version IS NULL THEN 1 END) AS kw_not_recorded,"
+    " COUNT(CASE WHEN ws.article_id IS NOT NULL AND ws.stage_version IS NULL THEN 1 END) AS www_not_recorded"
     " FROM merge_batches b"
     " LEFT JOIN merged_rows m"
     "   ON m.batch_id = b.id AND m.table_name = 'articles'"
     " LEFT JOIN article_index_stamps st"
     "   ON st.article_id = m.row_id AND st.engine IN (:engine, :kw_legacy)"
     " LEFT JOIN article_www_stamps ws"
-    "   ON ws.article_id = st.article_id AND ws.engine = :www_engine"
+    "   ON ws.article_id = m.row_id AND ws.engine = :www_engine"
     " WHERE b.status = :s"
     " GROUP BY b.id, b.imported_at"
     " HAVING COUNT(m.row_id) > 0"
@@ -8990,7 +9489,29 @@ def _backlog_rows(session) -> list[tuple]:
     # between them can make a batch owe less than it does for one poll, never a negative number. The one race found is a stamp deleted between
     # the reads (a stand-in is never stamped and a merged batch gets no new rows): the first statement counted that article as certified, the
     # second counts it as unstamped, and the raw figure would take it off the owed count twice.
-    return [(*r, min(lost.get(int(r[0]), 0), max(0, int(r[2]) - int(r[3])))) for r in rows]
+    out = []
+    for r in rows:
+        held = min(lost.get(int(r[0]), 0), max(0, int(r[2]) - int(r[3])))
+        out.append((*r[:4], held, _stage_counts(r, held)))
+    return out
+
+
+def _stage_counts(row, lost: int = 0) -> dict:
+    """The counts per stage for one backlog row (R824, row 405): ``carried`` at an import, ``extracted_here`` (a current stamp a pass on
+    this machine wrote and recorded), ``not_recorded`` (a current stamp written before stamps recorded where they came from: carried or
+    extracted, nobody can now say which) and ``awaiting`` (no current stamp for that stage). Measured from the stamps, never estimated;
+    ``lost`` (the batch's stand-ins, never stamped and never re-indexed) is left out of ``awaiting`` as it is out of the owed count."""
+    n = int(row[2])
+    out = {}
+    for stage, current, carried, unknown in (("kw", row[4], row[5], row[8]), ("www", row[6], row[7], row[9])):
+        cur, car, unk = int(current or 0), int(carried or 0), int(unknown or 0)
+        out[stage] = {
+            "carried": car,
+            "extracted_here": max(0, cur - car - unk),
+            "not_recorded": unk,
+            "awaiting": max(0, n - cur - int(lost or 0)),
+        }
+    return out
 
 
 def pending_reindex_batches() -> list[dict]:
@@ -9052,9 +9573,13 @@ def reindex_backlog() -> dict:
     certified = [int(r[3]) for r in rows]
     batches = [
         {"batch_id": int(r[0]), "created_at": str(r[1]) if r[1] is not None else None,
-         "articles": o, "certified": c}
+         "articles": o, "certified": c, "stages": r[5]}
         for r, o, c in zip(rows, owed, certified, strict=True)
     ]
+    stages = {
+        stage: {k: sum(int(r[5][stage][k]) for r in rows) for k in ("carried", "extracted_here", "not_recorded", "awaiting")}
+        for stage in ("kw", "www")
+    }
     return {
         "available": True,
         # Every 'merged' batch stays listed, a zero-owed one included, so the drain still
@@ -9063,6 +9588,9 @@ def reindex_backlog() -> dict:
         "batches_pending": sum(1 for o in owed if o > 0),
         "articles_pending": sum(owed),
         "articles_certified": sum(certified),
+        # R824 (row 405): per stage (kw = keywords and dates, www = places and entities), the imported articles whose rows were carried
+        # from the backup, extracted on this machine, and still awaiting extraction. Over every listed import, finished or not.
+        "stages": stages,
         "method": (
             "imports whose articles were merged but whose re-index has not been "
             "confirmed complete; counts read from merged_rows, never estimated. An "
@@ -9766,6 +10294,7 @@ def refuse_half_migrated_store() -> None:
         raise HalfMigratedStoreRefused(f"nothing was restored: {unfinished_message(journal.get('state'), path)}")
 
 
+@_settle_pending_net
 def run_restore(
     staged: StagedArtifact,
     *,
@@ -9971,7 +10500,8 @@ def run_restore(
         # was several revisions behind). Optimising either without knowing which is
         # the guessing that already cost a night on this import.
         original_rev = prepare_staged_corpus(
-            staged, allow_unverified=allow_unverified, timings=timings
+            staged, allow_unverified=allow_unverified, timings=timings,
+            defer_quick_check=True,  # R827 R3(a): the page walk runs alongside the merge below
         )
 
     working = Path(working_copy) if working_copy is not None else staged.staging_dir / "working.db"
@@ -10024,12 +10554,27 @@ def run_restore(
     # after the snapshot, or in a CARRIED working copy that takes none, is carried
     # forward by ``_carry_live_settings`` just before the swap.
     _trust_history = resolve_trust_fetch_history(trust_fetch_history)
+    # R827 R5/R6(a): the run's safety net is taken HERE, verified whole, and the working copy is cloned from it, so
+    # the commit below reuses it instead of copying the live corpus a second time. Only where the commit will need one
+    # (a committing restore on a machine it owns, with no net yet this run) and where a later commit can find it (a
+    # held item's commit comes in a later call, through the run's token).
+    _net_here: tuple[Path, dict] | None = None
     with timings.stage("snapshot_working_copy"):
         if not carried:
             if working.exists():
                 working.unlink()
             working.parent.mkdir(parents=True, exist_ok=True)
-            snapshot_preserving(live_db_path(), working, allow_file_copy=exclusive)
+            if commit and exclusive and _run_scoped_snapshot() is None and (
+                not hold_after_merge or _run_token()
+            ):
+                _net_here = _take_safety_net_with_the_copy(working, timings)
+            if _net_here is not None:
+                from src.database.connect import clone_file
+
+                with _sub_timer(timings)("snapshot_working_copy:clone"):
+                    clone_file(_net_here[0], working)
+            else:
+                snapshot_preserving(live_db_path(), working, allow_file_copy=exclusive)
 
     meta = {
         "artifact_kind": staged.kind,
@@ -10118,7 +10663,14 @@ def run_restore(
             pass
 
     _abort_point("merge")
-    with timings.stage("merge"):
+    # R827 R3(a): the staged copy's quick_check runs beside the merge and is waited for at its end;
+    # a failure raises here, before the verify stage and any swap.
+    # R830: the safety net's read-back runs beside it too, and is waited for there; a mismatch refuses before the swap.
+    with (
+        timings.stage("merge"),
+        _quick_check_alongside(staged.corpus_path, timings),
+        _net_read_back_alongside(_net_here, timings),
+    ):
         _step_clock["t"] = time.monotonic()
         counts, batch_id = merge_corpus(
             staged.corpus_path, working, meta,
@@ -10235,6 +10787,12 @@ def run_restore(
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = data_dir() / f"pre-restore-{ts}.db"
+    for _ in range(3):  # never overwrite a snapshot of the same second (the pruner reads only this exact name shape)
+        if not (snapshot.exists() or snapshot.is_symlink()):
+            break
+        time.sleep(1.0)
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        snapshot = data_dir() / f"pre-restore-{ts}.db"
     # W5 (2026-07-26 hardware diagnostics) + skeptic fix (2026-07-27): register
     # this snapshot as an ACTIVE staging path BEFORE writing it starts, not
     # after -- a data-loss-lens LIVE repro (real snapshot_preserving() against
@@ -10257,7 +10815,9 @@ def run_restore(
 
     from src.backup.stream_backup import active_staging
 
-    _reuse = _run_scoped_snapshot()
+    _reuse = _net_here[0] if _net_here is not None else _run_scoped_snapshot()
+    # From here the net is the commit's safety net, released by the guard below: the run's cleanup never touches it.
+    _NET_PENDING.net = None
     _snapshot_guard = ExitStack()
     # Registered whether it is being WRITTEN now or REUSED from an earlier item of this
     # run: the age-based sweep never touches a registered path, so the run's one safety
@@ -10273,6 +10833,16 @@ def run_restore(
                 snapshot_preserving(live_db_path(), snapshot, allow_file_copy=exclusive)
                 _remember_run_snapshot(snapshot)
                 report["pre_restore_snapshot"] = str(snapshot)
+            elif _net_here is not None:
+                report["pre_restore_snapshot"] = str(_reuse)
+                report["pre_restore_snapshot_verified"] = {
+                    "bytes": _net_here[1]["bytes"],
+                    "sha256": _net_here[1]["sha256"],
+                    "note": (
+                        "taken before the merge, from the corpus as it was, and checked whole against it "
+                        "(size and sha256); the merge worked on a copy of it, never on it"
+                    ),
+                }
             else:
                 report["pre_restore_snapshot"] = str(_reuse)
                 report["pre_restore_snapshot_reused"] = (
