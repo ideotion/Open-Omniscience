@@ -12,7 +12,7 @@ import pathlib
 import re
 import subprocess
 
-from tests.js_source_helper import function_body
+from tests.js_source_helper import function_body, strip_comments
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
@@ -66,9 +66,9 @@ def test_a_text_render_has_no_path_to_innerhtml():
     core = (_STATIC / "app-core.js").read_text(encoding="utf-8")
     assert "function ooLive(el, render) { _ooLiveTake(el, render, null); }" in core
     assert "function ooLiveHtml(el, render) { _ooLiveTake(el, null, render); }" in core
-    draw = function_body(core, "_ooLiveDraw")
-    text_branch = draw[
-        draw.index("const v = s.text();") : draw.index("// The TEXT is the fingerprint")
-    ]
-    assert "innerHTML" not in text_branch, "the text branch must never write HTML"
+    draw = strip_comments(function_body(core, "_ooLiveDraw"))
+    # ONE innerHTML write, on the markup branch: it sits after s.markup() and before the text branch begins.
+    assert draw.count("innerHTML") == 1, "the text branch must never write HTML"
+    assert draw.index("s.markup()") < draw.index("el.innerHTML = ") < draw.index("s.text()")
+    assert "s.span.textContent = " in draw
     assert "s.render" not in draw
