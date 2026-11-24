@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "c37249c71f10e3dab309b91ef0d9c0321540b13c819a01942e348d9d3e662d52",
+  "digest": "4a6e442bff265f1d0b8ed1386d3d6dd404949a71b4c9d95e16dcad38f3b4c700",
   "log": [
     {
       "version": 1,
@@ -67,6 +67,12 @@
       "digest": "c37249c71f10e3dab309b91ef0d9c0321540b13c819a01942e348d9d3e662d52",
       "kind": "same",
       "note": "Row 416 changes only reindex_parallel.py's pool lifetime and worker count (one kept pool per drain, recycled, memory-bounded); the www extraction a worker runs is the same function in the same worker, and the store half is untouched"
+    },
+    {
+      "version": 1,
+      "digest": "4a6e442bff265f1d0b8ed1386d3d6dd404949a71b4c9d95e16dcad38f3b4c700",
+      "kind": "same",
+      "note": "Row 419 changes only how locextract finds the case-insensitive candidates (one prefilter pass with the patterns' own flags, then each pattern's own rx.match at those positions); the candidate list is identical to the per-pattern finditer loop, pinned over the whole pattern table by tests/test_locextract_prefilter.py, so extract_locations returns the same places"
     }
   ]
 }
