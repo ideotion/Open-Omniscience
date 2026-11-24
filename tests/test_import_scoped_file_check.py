@@ -577,6 +577,90 @@ def test_a_check_that_read_an_older_record_never_clears_a_newer_one(data, monkey
     assert real() is not None
 
 
+def _activate_after_first_read(monkeypatch, merge):
+    real = merge.unverified_activation
+    calls = {"n": 0}
+
+    def _read_then_activate():
+        calls["n"] += 1
+        got = real()
+        if calls["n"] == 1:
+            merge._note_unverified_activation(None)
+        return got
+
+    monkeypatch.setattr(merge, "unverified_activation", _read_then_activate)
+    return real
+
+
+def test_a_failing_check_that_read_an_older_record_writes_and_latches_nothing(data, monkeypatch):
+    """Final-head read 2026-11-24: findings and a latch belong to the file the check read; a newer activation means
+    that file may no longer be the live one, so the newer record stays exactly as written."""
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.backup import merge
+
+    live = _schema(data / "live.db")
+    con = sqlite3.connect(live)
+    con.execute("DELETE FROM sources WHERE id = 2")
+    con.commit()
+    con.close()
+    _live(monkeypatch, live)
+    merge._note_unverified_activation(None)
+    real = _activate_after_first_read(monkeypatch, merge)
+    monkeypatch.setattr(merge, "_latch_live_damage", lambda _p: pytest.fail("nothing is latched for a superseded check"))
+    got = merge.check_live_after_scoped_activation()
+    assert got == {"state": "unchecked", "reason": "superseded"}
+    after = real()
+    assert after is not None and "findings" not in after and "failed_at" not in after
+
+
+def test_a_corrupt_read_against_an_older_record_latches_nothing(data, monkeypatch):
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.backup import merge
+    from src.database import damage
+
+    _live(monkeypatch, _schema(data / "live.db"))
+    merge._note_unverified_activation(None)
+    _activate_after_first_read(monkeypatch, merge)
+    monkeypatch.setattr(damage, "is_corruption", lambda _e: True)
+    monkeypatch.setattr(damage.registry, "note", lambda *a, **k: pytest.fail("nothing is latched for a superseded check"))
+
+    class _Con:
+        def execute(self, sql):
+            raise sqlite3.DatabaseError("database disk image is malformed")
+
+        def close(self):
+            pass
+
+        def interrupt(self):
+            pass
+
+    import src.database.connect as c
+
+    monkeypatch.setattr(c, "connect", lambda *a, **k: _Con())
+    assert merge.check_live_after_scoped_activation() == {"state": "unchecked", "reason": "superseded"}
+
+
+def test_a_record_already_removed_by_a_passing_twin_reads_as_ok(data, monkeypatch):
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.backup import merge
+
+    _live(monkeypatch, _schema(data / "live.db"))
+    merge._note_unverified_activation(None)
+    real = merge.unverified_activation
+    calls = {"n": 0}
+
+    def _read_then_clear():
+        calls["n"] += 1
+        got = real()
+        if calls["n"] == 1:
+            merge._clear_unverified_activation()
+        return got
+
+    monkeypatch.setattr(merge, "unverified_activation", _read_then_clear)
+    assert merge.check_live_after_scoped_activation() == {"state": "ok"}
+    assert real() is None
+
+
 def test_the_boot_check_gives_way_to_a_run_started_meanwhile(tmp_path, monkeypatch):
     from src.backup import import_queue as iq
     from src.backup import merge

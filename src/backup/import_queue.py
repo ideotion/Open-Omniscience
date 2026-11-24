@@ -1089,8 +1089,10 @@ class ImportQueueManager:
             return None
         got = _corpus_check_for_status(got)
         with self._lock:
-            if at_start and self._state == "running":
-                return got  # the run's own end reports the check; this one never overwrites its status
+            if at_start and (self._state == "running" or got.get("reason") == "superseded"):
+                # the run's own end reports the check; and a check superseded by a newer activation is no verdict on the
+                # corpus now live, so it never overwrites a status (final-head read, 2026-11-24)
+                return got
             self._corpus_check = got
             self._save()
         return got
@@ -1106,7 +1108,7 @@ class ImportQueueManager:
             if self._state == "running":
                 return
         got = self._check_owed_corpus(at_start=True)
-        if got is not None and got.get("state") != "ok":
+        if got is not None and got.get("state") != "ok" and got.get("reason") != "superseded":
             with self._lock:
                 if self._state != "running":
                     self._state = "error"

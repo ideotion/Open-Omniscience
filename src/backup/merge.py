@@ -1024,7 +1024,10 @@ def _clear_unverified_activation(*, owed: dict | None = None) -> bool:
     path = _unverified_activation_path()
     try:
         with file_lock(path):
-            if owed is not None and (unverified_activation() or {}).get("token") != owed.get("token"):
+            current = unverified_activation()
+            if current is None:
+                return True  # already gone: a passing whole-file check (this one's twin, or a full activation) removed it
+            if owed is not None and current.get("token") != owed.get("token"):
                 return False
             with suppress(FileNotFoundError):
                 path.unlink()
@@ -1075,7 +1078,16 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
             return {"state": "unchecked", "reason": "not-finished"}
         from src.database import damage
 
-        damage.registry.note(damage.FILE_CORPUS, exc, statement="PRAGMA quick_check", path=live_db_path())
+        # Latched only while the record is still the one this check read, under its lock: after a swap the live path names
+        # another file, which this connection never read (final-head read, 2026-11-24).
+        try:
+            with _owed_record_held(owed) as still:
+                if still:
+                    damage.registry.note(damage.FILE_CORPUS, exc, statement="PRAGMA quick_check", path=live_db_path())
+        except OSError:
+            return {"state": "unchecked", "reason": "not-finished"}
+        if not still:
+            return {"state": "unchecked", "reason": "superseded"}
         qc, fk = "latched", []  # the registry has it already
     finally:
         done.set()
@@ -1093,30 +1105,43 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
     # and latch nothing, but they are never dropped: they are counted here, and the run's final whole-file check (which
     # always runs ``foreign_key_check`` over the whole file) counts them again.
     findings = {"quick_check": "ok" if qc == "ok" else ("damaged" if qc != "latched" else "latched"), "foreign_key_violations": len(fk)}
-    if not _record_findings(owed, findings):
-        # another activation was noted while this ran: the file read is not the one now live, so nothing is latched
-        # against it and the newer record stays owed (security read, 2026-11-24)
+    latch = qc not in ("ok", "latched")
+
+    def _record_and_latch() -> None:
+        with suppress(OSError):  # a write that fails keeps the record as it was: still owed
+            _write_unverified_activation({**owed, "failed_at": datetime.now(UTC).isoformat(), "findings": findings})
+        if latch:
+            _latch_live_damage(live_db_path())
+
+    # Both under the record's lock and only while it is still the one this check read: a newer activation means the file
+    # read is not the one now live, so nothing is written or latched against it and the newer record stays owed.
+    if not _under_owed_record(owed, _record_and_latch):
         return {"state": "unchecked", "reason": "superseded"}
-    if qc not in ("ok", "latched"):
-        _latch_live_damage(live_db_path())
     return {"state": "failed", "safety_net": net, "findings": findings}
 
 
-def _record_findings(owed: dict, findings: dict) -> bool:
-    """Write the failed check's findings into the record, under its lock, only if the record is still the one the check
-    read. False when a newer activation replaced it. A write that fails keeps the record as it was (still owed)."""
+@contextmanager
+def _owed_record_held(owed: dict) -> Iterator[bool]:
+    """Hold the record's lock and say whether the record is still the one a check read (same token); a scoped
+    activation takes the same lock to write a new token, so none can land while this is held. False when the record
+    is gone or newer. Raises ``OSError`` when the lock cannot be taken."""
     from src.safety.file_lock import file_lock
 
-    path = _unverified_activation_path()
+    with file_lock(_unverified_activation_path()):
+        current = unverified_activation()
+        yield current is not None and current.get("token") == owed.get("token")
+
+
+def _under_owed_record(owed: dict, action: Callable[[], None]) -> bool:
+    """Run ``action`` under the record's lock, only if the record is still the one a check read. False, and nothing
+    run, when the record is gone or newer, or the lock could not be taken (the record stays owed)."""
     try:
-        with file_lock(path):
-            current = unverified_activation()
-            if current is None or current.get("token") != owed.get("token"):
-                return False
-            _write_unverified_activation({**current, "failed_at": datetime.now(UTC).isoformat(), "findings": findings})
+        with _owed_record_held(owed) as still:
+            if still:
+                action()
     except OSError:
-        pass
-    return True
+        return False
+    return still
 
 
 def _latch_live_damage(live: Path) -> None:
