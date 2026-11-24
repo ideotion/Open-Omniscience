@@ -80,13 +80,15 @@ COMMON_NAMES: frozenset[str] = frozenset({"cache", "keys", "leases", "models", "
 #: its name: a real folder (not a link) holding only these. Each is listed where the app writes it:
 #: the custody signer, src/custody/signing.py:432-433; the annotation signer, src/annotations/bundle.py:125-126; the evidence key,
 #: src/reporting/evidence.py:47; the restore places exactly these less the marker, src/backup/merge.py (_APP_KEY_FILES, derived from this set, R808);
-#: the restore marker beside the evidence key, src/reporting/evidence.py:259 and :265; the private-copy folder, src/custody/keyfile.py:108.
+#: the restore marker beside each signer's Ed25519 key (R801/R816), src/reporting/evidence.py restored_key_marker; the private-copy folder, src/custody/keyfile.py:108.
 APP_KEY_NAMES: frozenset[str] = frozenset({
     *(f"{who}{form}" for who in ("custody", "annotations") for form in ("_ed25519.pem", "_ml_dsa_65.key")),
     # the evidence signer has an Ed25519 key only: no version of the app ever wrote an evidence_ml_dsa_65.key (git log -S
     # over every ref, 2026-11-24), so that name is not the app's and neither an erase nor a restore treats it as such (row 385)
     "evidence_ed25519.pem",
-    "evidence_ed25519.pem.restored-from-backup",
+    # R801 / R816: the restored-key marker the app writes beside each Ed25519 key a restore places (src/reporting/evidence.py
+    # restored_key_marker; written by src/backup/merge.py _restore_key_files)
+    *(f"{who}_ed25519.pem.restored-from-backup" for who in ("custody", "annotations", "evidence")),
 })
 #: The private-copy folder inside ``keys`` (src/custody/keyfile.py:108), and the one name the app gives a file in it:
 #: ``<key file>.<pid>.<thread>.<token>.<kind>`` (src/custody/keyfile.py:111-128, private_name), where ``<key file>`` is one of the

@@ -361,6 +361,19 @@ def _held_ml_dsa_pub() -> str | None:
         return None
 
 
+def _custody_key_is_restored(local) -> bool:
+    """R816 (R801): whether this installation's custody key reads as another installation's, asked through the one
+    comparison point (``evidence.is_this_installations_key``): True while a restore's marker is beside the key, or when its
+    state cannot be read (fail closed, never "yours")."""
+    from src.paths import data_dir
+    from src.reporting.evidence import is_this_installations_key
+
+    if not local.ed25519_pub:
+        return False
+    own = is_this_installations_key(local.ed25519_pub, data_dir() / "keys" / "custody_ed25519.pem", own=local.ed25519_pub)
+    return own is not True
+
+
 def _local_identity():
     """This installation's custody signing identity, or ``None`` when it has none yet or it cannot
     be read (sealed keys with no passphrase). Creates no key, since a verify is a read: it answers
@@ -398,6 +411,7 @@ def verify_bundle(req: VerifyBundleRequest) -> dict:
         req.bundle,
         local=local,
         held_ml_dsa_pub=_held_ml_dsa_pub() if local is not None and not local.ml_dsa_pub else None,
+        local_restored=local is not None and _custody_key_is_restored(local),
         require_signer=req.require_signer,
         accept_unendorsed_rotation=req.accept_unendorsed_rotation,
     )

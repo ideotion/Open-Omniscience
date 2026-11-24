@@ -1326,6 +1326,13 @@ _VERDICT_TEXT = {
 }
 
 
+#: R816 (R801): said beside a bundle verified while this installation's custody key is one a restore placed.
+RESTORED_CUSTODY_KEY_NOTE = (
+    "This installation's custody signing key was placed by a restore from a backup, so no entry is called this"
+    " installation's own: entries signed with that key were signed by the installation the backup came from."
+)
+
+
 #: Said beside a one-item bundle that crosses a key rotation: why its earlier keys are not called this installation's.
 ONE_ITEM_EARLIER_KEY_NOTE = (
     "This one-item bundle crosses a change of signing key. Its entries signed before the change are not tied to the"
@@ -1497,6 +1504,7 @@ def describe_export(
     require_signer: bool = False,
     accept_unendorsed_rotation: bool = False,
     held_ml_dsa_pub: str | None = None,
+    local_restored: bool = False,
 ) -> dict:
     """Verify a posted custody bundle and say BY WHOM it is signed (R681).
 
@@ -1510,7 +1518,10 @@ def describe_export(
     Across a key rotation a bundle has several signers by design. A signer older than this installation's key is
     called this installation's only for the stretch it signed before an unbroken run of ENDORSED rotations led from it
     to that key (see ``_own_positions``); ``earlier_key`` marks it, and ``notes`` names every change of key, as
-    :func:`verify_export_report` does."""
+    :func:`verify_export_report` does.
+
+    ``local_restored`` (R816, R801): this installation's custody key was placed by a restore (its marker is beside it), so
+    no signer is called this installation's: every proven signer reads as not yours and a note says why."""
     report = verify_export_report(
         bundle, require_signer=require_signer, accept_unendorsed_rotation=accept_unendorsed_rotation
     )
@@ -1564,7 +1575,10 @@ def describe_export(
     def yours(ed: str, ml: str | None) -> bool | None:
         if local is None or not proven[(ed, ml)]:
             return None
-        return own_everywhere.get((ed, ml), False)
+        return not local_restored and own_everywhere.get((ed, ml), False)
+
+    if ok and local is not None and local_restored:
+        notes = [*notes, RESTORED_CUSTODY_KEY_NOTE]
 
     signed_by = [
         {

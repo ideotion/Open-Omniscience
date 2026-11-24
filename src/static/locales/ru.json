@@ -8209,6 +8209,7 @@
   "the name of the signature scheme, ed25519": "название схемы подписи, ed25519",
   "the newest held version": "самая новая имеющаяся версия",
   "the next one rejoins the line on {when}": "следующий вернётся в очередь {when}",
+  "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup": "не удалось записать рядом с этим ключом пометку о том, что он восстановлен из резервной копии, а восстановленный ключ без этой пометки считался бы собственным ключом этой установки; он не записывается и остаётся в резервной копии",
   "the operator's population table ({name})": "таблица населения оператора ({name})",
   "the pass journal could not be read ({error})": "не удалось прочитать журнал проходов ({error})",
   "the passphrase has a character that cannot be written as UTF-8": "в парольной фразе есть символ, который нельзя записать в UTF-8",

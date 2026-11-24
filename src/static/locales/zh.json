@@ -8209,6 +8209,7 @@
   "the name of the signature scheme, ed25519": "签名方案的名称，ed25519",
   "the newest held version": "所存最新版本",
   "the next one rejoins the line on {when}": "下一个将于 {when} 重新排入队列",
+  "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup": "无法在此密钥旁写入将其标记为从备份恢复的说明，而没有该说明的恢复密钥会被算作本安装实例自己的密钥；因此它不会被写入，并保留在备份中",
   "the operator's population table ({name})": "运营者的人口表({name})",
   "the pass journal could not be read ({error})": "无法读取轮次日志（{error}）",
   "the passphrase has a character that cannot be written as UTF-8": "口令短语中有无法用 UTF-8 写出的字符",

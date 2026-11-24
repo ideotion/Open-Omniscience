@@ -8209,6 +8209,7 @@
   "the name of the signature scheme, ed25519": "স্বাক্ষর পদ্ধতির নাম, ed25519",
   "the newest held version": "সবচেয়ে নতুন সংরক্ষিত সংস্করণ",
   "the next one rejoins the line on {when}": "পরেরটি {when} তারিখে সারিতে ফিরবে",
+  "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup": "এই কী-টিকে ব্যাকআপ থেকে পুনরুদ্ধার করা হিসেবে চিহ্নিত করার নোটটি এর পাশে লেখা যায়নি, এবং এই নোট ছাড়া পুনরুদ্ধার করা কী এই ইনস্টলেশনের নিজের কী হিসেবে গণ্য হত; তাই এটি লেখা হয় না এবং ব্যাকআপেই থাকে",
   "the operator's population table ({name})": "অপারেটরের জনসংখ্যা সারণি ({name})",
   "the pass journal could not be read ({error})": "পাস জার্নাল পড়া যায়নি ({error})",
   "the passphrase has a character that cannot be written as UTF-8": "পাসফ্রেজে এমন একটি অক্ষর আছে যা UTF-8-এ লেখা যায় না",

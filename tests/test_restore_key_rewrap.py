@@ -810,6 +810,8 @@ def test_a_pair_the_disk_refuses_halfway_leaves_neither_half(tmp_path, monkeypat
     calls: list[str] = []
 
     def the_second_create_meets_a_full_disk(path, data):
+        if path.name.endswith(".restored-from-backup"):
+            return real(path, data)  # R816: the restored-key marker written before the pair, not a key half
         calls.append(path.name)
         if len(calls) == 2:
             raise OSError(28, "No space left on device")
@@ -821,6 +823,7 @@ def test_a_pair_the_disk_refuses_halfway_leaves_neither_half(tmp_path, monkeypat
     assert len(calls) == 2, calls
     assert not (live / CUSTODY_ED).exists() and not (live / CUSTODY_ML).exists()
     assert not list((live / "keys").glob(".pending/*"))
+    assert not (live / "keys" / "custody_ed25519.pem.restored-from-backup").exists()  # R816: taken back with the pair
 
 
 def test_a_half_another_caller_replaced_meanwhile_is_not_taken_back(tmp_path, monkeypatch):
@@ -838,6 +841,8 @@ def test_a_half_another_caller_replaced_meanwhile_is_not_taken_back(tmp_path, mo
     calls: list[str] = []
 
     def a_signer_rewraps_the_first_half_then_the_disk_fills(path, data):
+        if path.name.endswith(".restored-from-backup"):
+            return real(path, data)  # R816: the restored-key marker written before the pair, not a key half
         calls.append(path.name)
         if len(calls) == 2:
             fresh = live / "keys" / "rewrap.tmp"

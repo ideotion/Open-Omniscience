@@ -8209,6 +8209,7 @@
   "the name of the signature scheme, ed25519": "nama skema tanda tangan, ed25519",
   "the newest held version": "versi terbaru yang dimiliki",
   "the next one rejoins the line on {when}": "yang berikutnya kembali ke antrean pada {when}",
+  "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup": "catatan yang menandai kunci ini sebagai dipulihkan dari cadangan tidak dapat ditulis di sampingnya, dan kunci yang dipulihkan tanpa catatan itu akan dihitung sebagai milik instalasi ini; kunci ini tidak ditulis dan tetap berada di cadangan",
   "the operator's population table ({name})": "tabel penduduk milik operator ({name})",
   "the pass journal could not be read ({error})": "jurnal putaran tidak dapat dibaca ({error})",
   "the passphrase has a character that cannot be written as UTF-8": "frasa sandi memuat karakter yang tidak dapat ditulis dalam UTF-8",
