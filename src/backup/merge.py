@@ -7551,7 +7551,7 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
     from src.custody.signing import _passphrase as held_key_passphrase
     from src.database.connect import get_passphrase
     from src.reporting.evidence import RESTORED_KEY_MARKER_SUFFIX as _RESTORED_MARKER_SUFFIX
-    from src.reporting.evidence import mark_key_as_restored
+    from src.reporting.evidence import mark_key_as_restored, restored_marker_lock
     from src.shared_text import said
 
     out: dict = {
@@ -7616,9 +7616,10 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
     # end by which file sits at the evidence key's name (_settle_restore_marker): never a restored key without it
     made_marker: tuple[Path, tuple[int, int, int, int]] | None = None
     placed_names: list[str] = []  # every key file this restore placed, by name (the marker is settled on whether any was)
-    # the look and the write under the key-file lock, the one load_or_create_signing_key makes its key and drops the
-    # marker under: a key an export makes is either seen here (no marker) or made after (and drops this marker)
-    with keyfile.KEY_FILES_LOCK:
+    # the look and the write under the marker lock, the one load_or_create_signing_key makes its key and drops the
+    # marker under (row 370: across processes on this data folder too): a key an export makes, in this process or
+    # another, is either seen here (no marker) or made after (and drops this marker)
+    with restored_marker_lock(keys_dir / _EVIDENCE_KEY_FILE):
         if not os.path.lexists(keys_dir / _EVIDENCE_KEY_FILE):
             marker = mark_key_as_restored(keys_dir / _EVIDENCE_KEY_FILE, backup_key=staged.origin_fingerprint)
             if marker is not None:
@@ -7719,10 +7720,13 @@ def _settle_restore_marker(
     when no evidence key exists, or when this restore placed nothing, so an export's own key made meanwhile keeps no
     marker. A key of this install's own that an export made while the restore placed another key keeps it: that costs
     a click, never a trust decision."""
+    from src.reporting.evidence import restored_marker_lock
+
     if made_marker is None:
         return
-    if not placed_any or not os.path.lexists(evidence):
-        _take_back_key_files([made_marker])
+    with restored_marker_lock(evidence):  # row 370: the look at the key and the take-back as one step, across processes
+        if not placed_any or not os.path.lexists(evidence):
+            _take_back_key_files([made_marker])
 
 
 def _take_back_key_files(made: list[tuple[Path, tuple[int, int, int, int]]]) -> None:

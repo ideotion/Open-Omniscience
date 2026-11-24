@@ -142,7 +142,7 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   request target (the signature of a signed storage download) and anything else a record carries out of urllib3's own log lines:
   it withholds a line it does not know, and in a line it knows it reduces every argument that is not a number or text to its
   class name and drops the exception, the stack and the extra attributes. It is built on a table of the library's log calls read
-  from 2.7.0 and 2.8.0. `pyproject.toml` carries `urllib3>=2.7.0,<2.8.1` (the ceiling is the first release not read, a patch
+  from 2.7.0 and 2.8.0. `pyproject.toml` carries `urllib3>=2.8.0,<2.8.1` (the floor moved from 2.7.0 in Audit 17 row 373, for three advisories 2.8.0 fixes; the table keeps the 2.7.0 reading) (the ceiling is the first release not read, a patch
   release included, as for `sqlcipher3`) and the registry carries the same floor and ceiling. A new release is qualified by
   running `tests/test_urllib3_log_withholds_the_path.py` on it (for the second release on hand, put its unpacked wheel first on
   `PYTHONPATH`): a log call that is new, changed or gone, a keyword added, a second call with a template the table has, or a

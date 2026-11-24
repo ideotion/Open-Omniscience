@@ -382,12 +382,14 @@ _PRELUDE_KEYS = _PRELUDE_SEARCH.replace('== "locked"', '== "keys"')
 def test_the_watcher_names_key_files_in_an_unsearchable_keys_folder_of_a_shared_folder(tmp_path):
     data = tmp_path / "shared"
     (data / "keys").mkdir(parents=True)
-    (data / "keys" / "signing_ed25519.pem").write_bytes(b"PRIVATE")
+    (data / "keys" / "custody_ed25519.pem").write_bytes(b"PRIVATE")
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)
-    only = {"names": ["open_omniscience.db"], "prefixes": [], "suffixes": [], "strip": "^$", "reason": "test",
-            "key_suffixes": ["_ed25519.pem"]}
-    text = _watch_with(tmp_path, {"wipe_data_dir": str(data), "app_only": only, "audit_log": str(tmp_path / "audit.log")},
-                       _PRELUDE_KEYS)
+    only = {"names": ["open_omniscience.db"], "prefixes": [], "suffixes": [], "strip": "^$", "reason": "test"}
+    # R807 (3): the app's key files by their exact names, never a suffix
+    from src.safety.uninstall import _keys_spec
+
+    text = _watch_with(tmp_path, {"wipe_data_dir": str(data), "app_only": only, "keys_spec": _keys_spec(),
+                                  "audit_log": str(tmp_path / "audit.log")}, _PRELUDE_KEYS)
     assert "salt pages destroyed" not in text and "could not check 1 folder(s)" in text, text
 
 

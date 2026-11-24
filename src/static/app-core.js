@@ -240,42 +240,46 @@
     function _ooLiveDraw(el) {
       const s = el.__ooLive;
       const gen = s.gen;
-      const v = s.render();
-      // the render released or re-took its own node: what it returned is no longer the one to keep
-      if (el.__ooLive !== s || s.gen !== gen) return;
-      const str = v == null ? "" : String(v);
-      if (s.html) el.innerHTML = str;
-      else {
+      // A text render and an HTML render are kept under different names and called on different paths, so what an
+      // ooLive render returns can only ever reach textContent (a static reader then sees that too, not one merged path).
+      if (s.html) {
+        const v = s.markup();
+        // the render released or re-took its own node: what it returned is no longer the one to keep
+        if (el.__ooLive !== s || s.gen !== gen) return;
+        el.innerHTML = v == null ? "" : String(v);
+      } else {
+        const v = s.text();
+        if (el.__ooLive !== s || s.gen !== gen) return;
         if (s.span.parentNode !== el || el.childNodes.length !== 1) el.replaceChildren(s.span);
-        s.span.textContent = str;
+        s.span.textContent = v == null ? "" : String(v);
       }
       // The TEXT is the fingerprint, also for HTML: the hover convention (app-boot.js) adds a class, and on SVG a role
       // and an aria-label, to every [title] it finds after the write, so comparing innerHTML would take that for a
       // foreign write and drop every titled node at the first switch. Nothing of ours changes the text.
       s.drawn = el.textContent;
     }
-    function _ooLiveTake(el, render, html) {
+    function _ooLiveTake(el, text, markup) {   // one of the two renders is given, or neither to release
       if (!el) return;
       for (const n of Array.from(_ooLiveNodes)) {
         if (n === el || !n.__ooLive) continue;
         if (n.isConnected) n.__ooLive.seen = true;
         else if (n.__ooLive.seen) _ooLiveDrop(n, false);
       }
-      if (render == null) { if (el.__ooLive) _ooLiveDrop(el, true); return; }
+      if (text == null && markup == null) { if (el.__ooLive) _ooLiveDrop(el, true); return; }
       if (!el.__ooLive) {
         const span = document.createElement("span");
         span.setAttribute("data-i18n-dyn", "");
         el.__ooLive = {saved: Array.from(el.childNodes), hadMarker: el.hasAttribute("data-i18n-dyn"), span};
       }
       const s = el.__ooLive;
-      Object.assign(s, {render, html: !!html, gen: (s.gen || 0) + 1});
+      Object.assign(s, {text: markup == null ? text : null, markup: markup == null ? null : markup, html: markup != null, gen: (s.gen || 0) + 1});
       _ooLiveMark(el, s);
       _ooLiveNodes.add(el);
       _ooLiveDraw(el);
       if (el.isConnected) s.seen = true;
     }
-    function ooLive(el, render) { _ooLiveTake(el, render, false); }
-    function ooLiveHtml(el, render) { _ooLiveTake(el, render, true); }
+    function ooLive(el, render) { _ooLiveTake(el, render, null); }
+    function ooLiveHtml(el, render) { _ooLiveTake(el, null, render); }
     function ooLiveRepaint() {
       for (const el of Array.from(_ooLiveNodes)) {
         const s = el.__ooLive;

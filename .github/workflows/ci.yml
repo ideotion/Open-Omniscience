@@ -431,7 +431,7 @@ jobs:
         # ruff CI installs, before merging, never from this comment. (This comment must not spell
         # out the script's command line: guards_for_diff.py refuses a ci.yml with a second such
         # line, and test_ruff_ratchet.py reads the number from the first one.)
-        run: python scripts/ruff_ratchet.py --max 411
+        run: python scripts/ruff_ratchet.py --max 391
 
       # THE PLANNED-WORK REVERSE INDEX (maintainer-asked 2026-09-22): "find a way so that
       # future bug discovery would not contradict what has been planned ... to help future
@@ -758,8 +758,10 @@ jobs:
 
       # THE urllib3 LOG TABLE ON THE FLOOR RELEASE, in a second environment of this job (folded in from the former `urllib3-floor` job on
       # 2026-11-14, PR #1988, so a run takes one runner fewer). The table of urllib3 log calls (src/ingest/urllib3_log.py) was read from two
-      # releases, and the `test` job resolves the newest one the pyproject range admits, so the OLDEST is exercised here: "verified on 2.7.0"
-      # is a sentence that nothing else keeps true. Core + dev only, then the floor release forced, in its own venv so the [pqc] install
+      # releases, and the `test` job resolves the newest one the pyproject range admits, so the OLDEST is exercised here: "verified on the floor"
+      # is a sentence that nothing else keeps true. Since Audit 17 row 373 the floor is 2.8.0, the same release the `test` job resolves, so
+      # this step proves nothing extra until the range widens again; it stays so that widening needs no new step. Core + dev only, then the
+      # floor release forced, in its own venv so the [pqc] install
       # above neither helps nor hides anything. After the steps above, so a red step there stops these: fix it and the next run reads them.
       - name: Install (core + dev), then force the urllib3 floor release
         run: |
@@ -767,7 +769,7 @@ jobs:
           . "$RUNNER_TEMP/urllib3-floor/bin/activate"
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
-          python -m pip install --no-deps "urllib3==2.7.0"
+          python -m pip install --no-deps "urllib3==2.8.0"
           python -c "import urllib3; print('urllib3', urllib3.__version__)"
 
       - name: Test (the urllib3 log-shape table against the floor release)
