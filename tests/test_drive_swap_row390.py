@@ -382,3 +382,13 @@ def test_another_drive_at_the_path_keeps_its_files_through_an_ordinary_shutdown(
     for name, body in _FOREIGN.items():
         assert files.get(name) == body, f"{name} on the other drive is byte-identical after the shutdown and the process exit"
     assert step["outcome"] == "skipped" and step["why"] == "drive-changed", step
+
+
+def test_no_in_memory_build_reads_a_gone_drive(drive):
+    from src.analytics import rollup_serve
+
+    _folder, state = drive
+    state["now"] = "missing"
+    stopped = rollup_serve._build_inmemory_and_swap()
+    assert stopped is not None and stopped["reason"] == rollup_serve.DRIVE_CHANGED
+    assert isinstance(drive_pin._LOCK, type(__import__("threading").RLock())), "re-entrant: a collection inside it can close a connection"

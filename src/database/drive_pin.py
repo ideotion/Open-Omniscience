@@ -73,7 +73,8 @@ from sqlalchemy.pool import Pool
 
 _LOG = logging.getLogger("database.drive_pin")
 
-_LOCK = threading.Lock()
+#: Re-entrant: a garbage collection inside a section that holds it can free a pool connection, whose close comes back here (row 390).
+_LOCK = threading.RLock()
 #: id(dbapi connection) -> (a WEAK reference to its pool record, its database files at connect: the main one and any ATTACHed, "" in
 #: memory, None when they could not be read). Pool connections only. Weak, so tracking never keeps alive a connection its engine let go of: a pool's record is
 #: freed with the engine, and its connection closed by its own deallocation as before (a sqlite3 connection takes no weak reference).

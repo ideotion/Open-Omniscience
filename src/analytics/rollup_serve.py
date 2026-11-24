@@ -419,6 +419,9 @@ def _build_inmemory_and_swap() -> dict | None:
     from src.database import library_generation
     from src.database.session import session_scope
 
+    if _on_frozen_drive(True):
+        # Row 390: the data folder's drive is not the marked one: a build would read the other drive's library. Not a stop: no hold.
+        return {"reason": DRIVE_CHANGED, "at": time.time()}
     # No passphrase -> in-memory (never a file); the offload folder follows the corpus (see the module note).
     spill = _spill_setting()
     # R147: the budget is read ONCE, here, and this build (its connection, its shard size, its stop record) lives on

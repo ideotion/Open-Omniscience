@@ -156,6 +156,12 @@ def _build_and_swap() -> None:
         # working directory, which it writes in plaintext whatever the corpus (OPEN_QUEUE, the rollup memory fix (1)).
         from src.analytics import rollup_serve
 
+        if rollup_serve._on_frozen_drive(True):
+            # Row 390: the data folder's drive is not the marked one: a build would read the other drive's library.
+            with _LOCK:
+                _STATE["pending"] = True
+            _LOG.info("map serve: the data drive is not the marked one; not built")
+            return
         spill = rollup_serve._spill_setting()
         con = None
         served = False

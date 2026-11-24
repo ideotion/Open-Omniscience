@@ -886,7 +886,7 @@ imply a protection we cannot deliver.
   out or not, is also pinned when the watchdog finds the drive gone, at every engine disposal and at exit, since one a disposal
   leaves checked out is later freed with its pool, a close no patched close sees. A DuckDB serve on it is kept and its offload folder left, the write-back
   before the shutdown disposal does not open the file there (`drive-changed`), no offload folder is made or swept and the
-  persisted rollup store is not opened there, and a build or refresh refused for it says so (`drive-changed`, never an encryption
+  persisted rollup store is not opened there, no in-memory rollup or map is built from the library there, and a build or refresh refused for it says so (`drive-changed`, never an encryption
   or a missing passphrase). The question is asked again at each close, so a marker read
   that fails for a moment pins what was open in that moment (and a process out of descriptors reads the marker as missing, so it
   pins until the watchdog's countdown closes the app). LIMITS: a connection freed between the swap and the next of those moments
