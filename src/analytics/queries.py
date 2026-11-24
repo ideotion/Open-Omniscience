@@ -2116,7 +2116,8 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
     a source that was actually read. Two-class honesty is unchanged -- every field
     here is catalog/source-ASSERTED, never text-deduced."""
     if not article_ids:
-        return {"count": 0, "sources": []}
+        return {"count": 0, "sources": [], "sources_total": 0, "truncated": False,
+                "corpus_first": None, "corpus_last": None}
     rows = (
         session.query(
             Source.name, Source.domain,
@@ -2152,9 +2153,29 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
         }
         for name, dom, n, avg, fp, lp, country, region, language, stype, tags in rows
     ]
+    # Row 395 (anti-capping): ``limit`` keeps the table readable, and it
+    # is NOT the corpus. The number of sources the set holds, and its publication span,
+    # are read over EVERY matched article on the same join -- so a table cut at 40 can
+    # say "40 of 120 shown", and the span is the corpus's own rather than the span of
+    # whichever sources happened to make the cut. One aggregate row, no content read.
+    total_sources, corpus_first, corpus_last = (
+        session.query(
+            func.count(func.distinct(Article.source_id)),
+            func.min(Article.published_at),
+            func.max(Article.published_at),
+        )
+        .join(Source, Source.id == Article.source_id)
+        .filter(Article.id.in_(article_ids))
+        .one()
+    )
+    sources_total = int(total_sources or 0)
     return {
         "count": len(sources),
         "sources": sources,
+        "sources_total": sources_total,
+        "truncated": sources_total > len(sources),
+        "corpus_first": corpus_first.isoformat() if corpus_first else None,
+        "corpus_last": corpus_last.isoformat() if corpus_last else None,
         "method": "Matched articles grouped by source: exact volume + publication span; mean tone is VADER.",
         "caveat": (
             "Volume and timing are exact counts; mean tone is VADER (English-lexicon, "

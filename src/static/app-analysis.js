@@ -2807,6 +2807,17 @@
         + ` · n=${d.n_scored}/${d.n_articles} · `
         + `${ooLabelHtml(esc(t("English-scored (reliable)")), `${d.english_scored} (${ooLtrIsolate(engPct + "%")})`)}</div>`;
     }
+    // Row 395 (anti-capping): the sources table is cut to its biggest rows (40 here, 200
+    // in Competitive), and a cut table that says nothing reads as the corpus's whole
+    // coverage. The server counts every source in the set; when it holds more than the
+    // table shows, one line says so. Nothing when the table is whole, or when the payload
+    // predates the count.
+    function _anSourcesCutHtml(d) {
+      if (!d || !d.truncated || d.sources_total == null) return "";
+      const shown = (d.sources || []).length;
+      return `<div class="hint muted" style="margin-top:6px">`
+        + `${esc(_tfn("{shown} of {total} shown.", { shown: fmtNum(shown, 0), total: fmtNum(d.sources_total, 0) }))}</div>`;
+    }
     function _anSourcesHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (d.sources || []).map((s) => {
@@ -2824,7 +2835,7 @@
             + `<th style="text-align:right">${esc(t("Articles"))}</th>`
             + `<th style="text-align:right">${esc(t("Mean tone"))}</th><th>${esc(t("Span"))}</th>`
             + `<th title="${esc(t("Stated by the source catalog (asserted, not deduced from text)."))}">${esc(t("Catalog"))}</th></tr></thead>`
-            + `<tbody>${rows}</tbody></table>`
+            + `<tbody>${rows}</tbody></table>` + _anSourcesCutHtml(d)
           : `<div class="muted" style="margin-top:8px">${esc(t("No sources in this set."))}</div>`);
     }
     // Registered in app-boot's ONE `oo:langchange` listener, beside `_anRepaintXLang`.
@@ -2912,9 +2923,14 @@
       if (rows.length === 1) return `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`;
       const byName = {}; ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
       const fmt = (n) => fmtNum(n || 0, 0);
+      // Row 395: the corpus span is the server's, read over EVERY matched article. Taken
+      // from the rows it was the span of the sources that made the cut, under a label that
+      // says corpus. The rows are only a fallback for a payload that predates the field.
       const firsts = rows.map(r => r.first).filter(Boolean).sort();
       const lasts = rows.map(r => r.last).filter(Boolean).sort();
-      const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;
+      const hasSpan = cs && ("corpus_first" in cs);
+      const corpusFirst = hasSpan ? cs.corpus_first : (firsts[0] || null);
+      const corpusLast = hasSpan ? cs.corpus_last : (lasts[lasts.length - 1] || null);
       const day = (s) => ooIsoDate(s);
       const tonePill = (label, val) => {
         if (val == null) return `<span class="muted">—</span>`;
@@ -2957,7 +2973,7 @@
              <th style="text-align:start;padding:5px 8px" title="${esc(t("This outlet's most distinctive terms when covering the concept (from framing). Descriptive emphasis, not a judgement."))}">${esc(t("Emphasis"))}</th>
            </tr></thead>
            <tbody>${body}</tbody>
-         </table>` +
+         </table>` + _anSourcesCutHtml(cs) +
         `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}` +
           `${(corpusFirst && corpusLast) ? ` · ${esc(day(corpusFirst))} → ${esc(day(corpusLast))}` : ""}` +
           `${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ` +
