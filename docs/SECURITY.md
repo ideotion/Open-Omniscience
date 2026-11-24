@@ -967,14 +967,23 @@ imply a protection we cannot deliver.
   /api/system/doctor`, `GET /api/system/lock-state` (`at_rest_claim` and `at_rest_evidence` beside the lock word), the
   terminal panel, the benchmark and performance reports, the encrypt tool and `scripts/encrypt_db.py`, and the click-through
   harness. Evidence is a keyed open in this process, or this installation's record naming the very file: its (device,
-  inode) AND its first 16 bytes (its SQLCipher salt, random per file and not a secret, read from the same descriptor as the
-  identity, R789), so a file that later takes the same inode is never named by an older record; the erase checks the same
-  bytes through its kept handle. A record without them (older builds) is no evidence. A header that is not SQLite's, alone,
+  inode) AND an HMAC-SHA-256 of its first 16 bytes (its SQLCipher salt, read from the same descriptor as the identity, R789),
+  keyed by a random 32-byte value kept in the same record (R828 (1)), so a file that later takes the same inode is never named
+  by an older record; the erase checks the same MAC over the bytes it reads through its kept handle. The record never holds
+  the salt or any byte of page 1: the MAC only lets a file that is present be matched, and a MAC of a random 16-byte value
+  cannot give the value back. A record without the MAC (older builds, or one that kept the bytes) is no evidence. The record
+  is destroyed in the erase's key-material pass on every path (CLI, HTTP, the locked app): read bounded and no-follow,
+  overwritten in place, fsynced and unlinked right after the store's first page and before the key files and every bulk step;
+  a failure is said as "key material may remain", never as destroyed, and the result is never clean (R828 (2)). It and its
+  lock are never carried by a backup, export, field-data file or diagnostic bundle (R828 (3); every writer takes named files
+  and none names it; a bundle's folder inventory may list its name and size, never its content). An entry goes when its file
+  is replaced (the corpus swap of a restore, repair or rebuild, a lane switch) or opened as plaintext (decrypted, or another
+  file at the name) (R828 (4)). A header that is not SQLite's, alone,
   is "looks encrypted; not yet checked with your key"; SQLite's own header is "not encrypted", whatever the record says.
   The lock word ("unlocked-encrypted", "locked") stays a control word, never a claim: reports say
   "unlocked-looks-encrypted" without evidence. Nothing is encrypted, skipped as "already encrypted", recorded or finished on
   a header: the finish of pending stores and the encrypt route first prove the library with the held key (a read-only,
-  cache-bypassing probe under the probe lock, recorded with the identity and salt taken before it only when they are
+  cache-bypassing probe under the probe lock, recorded with the identity and first bytes taken before it only when they are
   unchanged after it), and `encrypt_db.py` without evidence changes nothing and says to unlock once and rerun.
   `--require-encrypted` needs the doctor's keyed reading after the walk, else it refuses as not verified. Every read of the
   record is no-follow, non-blocking, a regular file only and at most 64 KiB. LIMITS: the probe's before-and-after check does

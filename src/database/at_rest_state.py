@@ -112,6 +112,9 @@ def record_encrypted(name: str, main: Path | None = None) -> None:
 _IDENT_KEYS = ("dev", "ino", "mac")
 #: R820 (3): the most of the record the erase reads; a longer file is not the app's record.
 RECORD_MAX_BYTES = 64 * 1024
+#: R828 (3): the record and its lock are never carried by a backup, an export, a field-data file or a diagnostic bundle: every
+#: writer of those takes named files only, and none names these (tests/test_at_rest_record_r828.py holds them to that).
+NEVER_CARRIED = frozenset({RECORD_NAME, RECORD_NAME + ".lock"})
 _NOTE_LOCK = threading.Lock()
 #: The identities this process already wrote into the record (keyed) or checked against it (plaintext), so the hook on every new
 #: pooled connection costs one ``stat`` and a set lookup after the first.
@@ -212,11 +215,12 @@ def _write_identity(name: str, path: Path, ident: tuple[int, int, bytes] | None)
             doc = _read_record_at(path)
             entry = dict(doc["stores"].get(name) or {})
             if ident is None:
-                if "dev" not in entry and "ino" not in entry:
+                # R828 (4): a file opened as plaintext (decrypted, or another file at the name) loses its entry whole
+                if name not in doc["stores"]:
                     return
-                for k in _IDENT_KEYS:
-                    entry.pop(k, None)
-                entry["read_back_with_key"] = False
+                doc["stores"].pop(name, None)
+                atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
+                return
             else:
                 entry.setdefault("encrypted_at", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
                 entry.pop("head", None)
@@ -225,6 +229,18 @@ def _write_identity(name: str, path: Path, ident: tuple[int, int, bytes] | None)
             atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
     except OSError as exc:
         log_failure(_LOG, "the at-rest record could not be written (the files still say which stores are encrypted)", exc)
+
+
+def forget(name: str, store: Path) -> None:
+    """R828 (4): remove ``name``'s entry from the record beside its store ``store`` (the corpus or a lane, whose record is the
+    corpus's: :func:`stores`), when that file was replaced (a restore, a repair, a rebuild switch) or erased. Its next keyed read
+    records the new file again (:func:`note_main_open`, :func:`record_encrypted`); until then the store only LOOKS encrypted, which
+    fails closed. Never creates the record or its folder (an erased folder stays erased: R802/R806); never opens a store file
+    (R789); never raises."""
+    path = _record_path(store)
+    if _record_bytes(path) is None:
+        return  # no record (or not the app's): nothing to remove, and nothing is made
+    _write_identity(name, path, None)
 
 
 def _record_bytes(path: Path) -> bytes | None:

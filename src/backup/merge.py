@@ -465,9 +465,16 @@ def swap_in_corpus(working: Path, target: Path, *, check: Callable[[], None] | N
         swap_deadline = time.monotonic() + _SWAP_HANDLE_WAIT_S
         library_generation.disk_changing()  # from here a failed replace does not give the earlier connections their validity back
         _clear_stale_side_files(target, wait_s=max(0.0, swap_deadline - time.monotonic()))
-        _replace_live_corpus(
-            working, target, wait_s=max(0.0, swap_deadline - time.monotonic()), own_holder_check=True
-        )  # atomic on the same filesystem
+        try:
+            _replace_live_corpus(
+                working, target, wait_s=max(0.0, swap_deadline - time.monotonic()), own_holder_check=True
+            )  # atomic on the same filesystem
+        finally:
+            # R828 (4): the file the record named is no longer the library (a replace that raised may still have happened, and
+            # forgetting fails closed: the new file is recorded again at its next keyed read).
+            from src.database import at_rest_state
+
+            at_rest_state.forget("corpus", target)
 
 
 def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = None, own_holder_check: bool = False) -> None:

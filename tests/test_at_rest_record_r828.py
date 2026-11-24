@@ -215,3 +215,119 @@ def test_the_record_left_sentence_is_in_every_locale():
            "incomplete.")
     for f in (_ROOT / "src" / "static" / "locales").glob("*.json"):
         assert json.loads(f.read_text(encoding="utf-8")).get(key), f.name
+
+
+# ---------------------------------------------------------------- (3) never carried
+
+
+def test_no_writer_of_a_backup_export_field_file_or_bundle_names_the_record():
+    """Every backup, export, field-data and diagnostic writer takes named files; none may name the record. Only the module that
+    keeps it, the erase that destroys it and the scope list of the app's own names (which lets the erase remove it) may."""
+    allowed = {"src/database/at_rest_state.py", "src/safety/crypto_erase.py", "src/safety/data_scope.py"}
+    hits = []
+    for path in sorted((_ROOT / "src").rglob("*")):
+        if path.suffix not in (".py", ".js", ".html") or "__pycache__" in path.parts:
+            continue
+        rel = path.relative_to(_ROOT).as_posix()
+        text = path.read_text(encoding="utf-8", errors="replace")
+        named = at_rest_state.RECORD_NAME in text or "at_rest_state import RECORD_NAME" in text \
+            or "at_rest_state.RECORD_NAME" in text or "_read_record_at(" in text or "_record_bytes(" in text
+        if named and rel not in allowed:
+            hits.append(rel)
+    assert hits == []
+    from src.backup import artifact
+
+    for names in (artifact._STATE_FILES, artifact._LOG_FILES):
+        assert not set(names) & at_rest_state.NEVER_CARRIED
+
+
+def test_the_status_carries_no_field_of_the_record_but_its_time(tmp_path):
+    main = tmp_path / "open_omniscience.db"
+    main.write_bytes(os.urandom(8192))
+    rec = _record(main)
+    secret = json.loads(rec.read_text(encoding="utf-8"))["binding_key"]
+    st = at_rest_state.status(main)
+    flat = json.dumps(st, default=str)
+    assert secret not in flat and '"mac"' not in flat and '"ino"' not in flat
+
+
+def test_a_backup_never_carries_the_record(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.backup.artifact import write_backup_v2
+    from src.paths import data_dir
+
+    with TestClient(app):
+        rec = data_dir() / at_rest_state.RECORD_NAME
+        planted = not rec.exists()
+        marker = os.urandom(32).hex()
+        if planted:
+            rec.write_text(json.dumps({"version": 1, "binding_key": marker, "stores": {}}), encoding="utf-8")
+        else:
+            marker = json.loads(rec.read_text(encoding="utf-8")).get("binding_key") or marker
+        try:
+            dest = tmp_path / "b.oobak"
+            write_backup_v2(dest)
+            import zipfile
+
+            with zipfile.ZipFile(dest) as zf:
+                for info in zf.infolist():
+                    assert Path(info.filename).name not in at_rest_state.NEVER_CARRIED
+                    assert marker.encode() not in zf.read(info.filename)
+        finally:
+            if planted:
+                rec.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------- (4) an entry goes with its file
+
+
+def test_forget_removes_the_entry_and_never_makes_a_record(tmp_path):
+    main = tmp_path / "open_omniscience.db"
+    main.write_bytes(os.urandom(8192))
+    at_rest_state.forget("corpus", main)
+    assert not (tmp_path / at_rest_state.RECORD_NAME).exists(), "no record: nothing is made"
+    rec = _record(main)
+    at_rest_state.forget("corpus", main)
+    doc = json.loads(rec.read_text(encoding="utf-8"))
+    assert "corpus" not in doc["stores"] and doc["binding_key"]
+
+
+def test_a_plaintext_open_removes_the_entry_whole(tmp_path):
+    db = tmp_path / "open_omniscience.db"
+    db.write_bytes(os.urandom(8192))
+    rec = _record(db)
+    connect_module._note_open(db, keyed=False)  # what a plaintext open of the same file does (a decrypted store)
+    at_rest_state.note_main_open(db)
+    assert "corpus" not in json.loads(rec.read_text(encoding="utf-8"))["stores"]
+
+
+def test_the_corpus_swap_and_the_lane_switch_forget_the_entry():
+    import inspect
+
+    from src.backup import merge
+    from src.database import rebuild
+
+    swap = inspect.getsource(merge.swap_in_corpus)
+    assert 'at_rest_state.forget("corpus", target)' in swap and swap.index("finally:") < swap.index("at_rest_state.forget")
+    lane = inspect.getsource(rebuild._switch_lane_held)
+    assert 'at_rest_state.forget(f"lane:{kind}", target)' in lane
+
+
+def test_a_replaced_corpus_loses_its_entry(tmp_path, monkeypatch):
+    from src.backup import merge
+    from src.database import library_generation
+
+    target = tmp_path / "open_omniscience.db"
+    target.write_bytes(os.urandom(8192))
+    rec = _record(target)
+    working = tmp_path / "working.db"
+    working.write_bytes(os.urandom(8192))
+    import contextlib as _cl
+
+    monkeypatch.setattr(library_generation, "swap_window", lambda w: _cl.nullcontext())
+    monkeypatch.setattr(library_generation, "disk_changing", lambda: None)
+    monkeypatch.setattr(merge, "_clear_stale_side_files", lambda *a, **k: None)
+    merge.swap_in_corpus(working, target)
+    assert "corpus" not in json.loads(rec.read_text(encoding="utf-8"))["stores"]
