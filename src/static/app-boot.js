@@ -140,6 +140,10 @@
       // English beside chips that translated, while booting straight into `ar` rendered
       // it correctly. Repaints from the CACHED payload, so a switch costs no request.
       try { if (typeof _renderHomeChannels === "function") _renderHomeChannels(); } catch (_e) {}
+      // Row 367: Home's alert strip and the Leads carousel draw their words with t() at render time. Each redraws
+      // from what it last drew (the alerts payload; the cards, position and pause state) -- never a fetch.
+      try { if (typeof repaintHomeAlerts === "function") repaintHomeAlerts(); } catch (_e) {}
+      try { if (typeof repaintLeadsCarousel === "function") repaintLeadsCarousel(); } catch (_e) {}
       // Home's "Most recent" and "Latest in your corpus" panels and the Settings
       // Collection toggle are the same class, seen only on a switch that STARTS in a
       // non-English locale: the walker had recorded their French text as "the English",
@@ -246,6 +250,10 @@
       } catch (_e) {}
       // Markets -> coverage that moves with a commodity: redrawn from the payload it kept.
       try { if (typeof paintMktRipple === "function") paintMktRipple(); } catch (_e) {}
+      // Markets -> the commodities and indices boards (row 367): drawn again from the prices they hold, never read.
+      try { if (typeof repaintMarketBoards === "function") repaintMarketBoards(); } catch (_e) {}
+      // Insights -> Groups: the two-tier concept browse (row 367), drawn again from what it holds, never read.
+      try { if (typeof repaintConceptBrowse === "function") repaintConceptBrowse(); } catch (_e) {}
       // Settings -> Statistics: the figures and revision-anomalies tables draw their
       // count lines and headers in the reader's language (B18 R7/R8). Redrawn from the
       // payload each last drew -- never a fetch, and nothing for a table never opened.

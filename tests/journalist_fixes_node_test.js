@@ -132,6 +132,9 @@ const ok = (name, fn) => {
     extractConst("_TS_DAY"), extractConst("_TS_PRESETS"), extractConst("_TS_SCALE_LABEL"),
     extractConst("TS_SCALES"), extractConst("esc"),
     ...["_tsSnap", "_tsStep", "_tsParse", "_tsIso", "ooTimeScope"].map(extractFn),
+    // row 367: the control's words are held renders
+    "function ooLive(el, render) { if (el && render) el.textContent = render(); }",
+    "function ooLiveHtml(el, render) { if (el && render) el.innerHTML = render(); }",
     "return ooTimeScope;",
   ].join("\n");
   const I18N = { t: (s) => s };
@@ -140,6 +143,7 @@ const ok = (name, fn) => {
     const els = {};
     const container = {
       classList: { add() {} },
+      setAttribute() {},
       set innerHTML(v) { this._html = v; },
       querySelector(sel) { return els[sel] || (els[sel] = new El(sel)); },
     };
