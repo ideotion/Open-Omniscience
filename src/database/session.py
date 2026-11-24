@@ -49,6 +49,7 @@ from sqlalchemy.orm import sessionmaker
 # editable install under $HOME, and a wheel install into a read-only location all
 # behave correctly (see that module's docstring). OO_DATA_DIR still wins.
 from src.database import damage as _damage
+from src.database import drive_pin as _drive_pin  # noqa: F401 - R812: tracks every pool connection from the first
 
 # Before any engine exists: every pool's new connections get the search index's transform
 # functions, which its sync triggers call (Q506/Q507, src/database/fts_norm.py).
