@@ -135,6 +135,43 @@ def _generated_data_digest() -> str | None:
     return h.hexdigest()
 
 
+def _letter_script(ch: str) -> str:
+    import unicodedata
+
+    name = unicodedata.name(ch, "")
+    for prefix, script in SCRIPT_PREFIXES.items():
+        if name.startswith(prefix):
+            return script
+    return "other:" + (name.split(" ")[0] if name else "unnamed")
+
+
+def www_rule_scripts() -> list[str]:
+    """The scripts the places-and-entities stage's SHIPPED rules can match (R824 addition 2): the letters of every place pattern the
+    locator builds, and every non-ASCII letter in the two extractors' sources (the entity rules are character classes there). On
+    2026-11-24 this is ``["Latin"]``: the 161 place patterns and the entity rules are Latin-script only, so a Cyrillic, Arabic or Han
+    text yields no www row, and the golden corpus, which holds texts in every UI script, covers the stage only as far as these
+    scripts go. Run without an install-generated gazetteer (that is the environment, judged separately)."""
+    import inspect
+
+    from src.timemap import entextract, locextract
+
+    seen: set[str] = set()
+    for _i, _rx, name, _kind in locextract._dispatch()[0]:
+        seen |= {_letter_script(ch) for ch in name if ch.isalpha()}
+    for mod in (entextract, locextract):
+        seen |= {_letter_script(ch) for ch in inspect.getsource(mod) if ch.isalpha() and ord(ch) > 127}
+    return sorted(seen)
+
+
+def www_golden_scripts(rows: dict[str, list]) -> list[str]:
+    """The scripts the golden www rows themselves hold names in: what the golden corpus actually exercises for that stage."""
+    seen: set[str] = set()
+    for table in ("article_mentioned_places", "article_entities"):
+        for row in rows.get(table, []):
+            seen |= {_letter_script(ch) for ch in str(row[1]) if ch.isalpha()}
+    return sorted(seen)
+
+
 def environment(stage: str) -> dict:
     """What the stage's rows depend on besides the code and the repository's own data files: the dictionaries, switches,
     interpreter and Unicode tables, and the gazetteer files this install generated (:data:`INSTALL_GENERATED_DATA`). Two digests

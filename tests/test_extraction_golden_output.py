@@ -180,6 +180,39 @@ def test_the_pass_writes_alpha2_whatever_the_live_store_holds():
     assert go.digest_of(under_alpha3["kw"]) == go.digest_of(plain["kw"])
 
 
+def test_the_www_golden_rows_cover_every_script_the_www_rules_handle():
+    """R824 addition 2: no ACK path for a stage without golden coverage of the scripts it handles. The www rules are Latin-script only
+    (161 place patterns and the entity character classes), the golden www rows are Latin, and the corpus holds texts in every other UI
+    script that today yield no www row -- so a rule that starts matching one of them moves the digest, and indexer_pin.py --same
+    --engine www refuses until the golden rows hold that script."""
+    rows = go.run_pass()["www"]
+    handled, covered = go.www_rule_scripts(), go.www_golden_scripts(rows)
+    assert handled == ["Latin"], f"the www rules now match {handled}: extend the golden corpus's www coverage, then update this test"
+    assert set(handled) <= set(covered)
+    fx = go.load_fixture()
+    non_latin = {go.main_script(a["text"]) for a in fx["articles"] if a.get("text")} - {"Latin", None}
+    assert {"Arabic", "Bengali", "Cyrillic", "Devanagari", "Han"} <= non_latin, non_latin
+
+
+def test_same_for_www_is_refused_when_its_rules_reach_an_uncovered_script(tmp_path, monkeypatch):
+    """The refusal itself: the script runs with a stand-in rule set that also matches Cyrillic."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("indexer_pin_under_test", ROOT / "scripts" / "indexer_pin.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    dig = _recorded()
+    for stage in dig:
+        dig[stage]["environment"] = go.environment(stage)
+    (tmp_path / "extraction_digests.json").write_text(json.dumps(dig), encoding="utf-8")
+    monkeypatch.setenv("OO_EXTRACTION_DIGESTS", str(tmp_path / "extraction_digests.json"))
+    monkeypatch.setattr(go, "www_rule_scripts", lambda: ["Cyrillic", "Latin"])
+    with pytest.raises(SystemExit, match="Cyrillic"):
+        mod._refuse_same_on_output("www")
+    monkeypatch.setattr(go, "www_rule_scripts", lambda: ["Latin"])
+    mod._refuse_same_on_output("www")  # covered, unchanged output: no refusal
+
+
 def test_the_police_module_is_not_part_of_the_engine():
     assert "src/analytics/golden_output.py" not in ei.engine_files()
     assert "src/analytics/golden_output.py" not in ei.NOT_OUTPUT_AFFECTING

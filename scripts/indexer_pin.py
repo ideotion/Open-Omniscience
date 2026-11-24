@@ -23,7 +23,9 @@ THE OUTPUT DIGEST (R824 step 1, row 405) is the guard on that sentence. ``config
 engine, the digest of the rows a real baseline pass writes over the golden corpus (``tests/fixtures/extraction_golden/``,
 computed by ``src/analytics/golden_output.py``) and the environment it was computed in. ``--same`` REFUSES unless the
 output digest computed here equals the recorded one, and refuses as well when this environment differs from the recorded
-one (it cannot judge here). ``--bump`` re-records the output digest at the new version.
+one (it cannot judge here). ``--same --engine www`` also refuses while the www rules can match a script the golden www rows do not
+hold (R824 addition 2: no ACK without golden coverage of the scripts a stage handles). ``--bump`` re-records the output digest at
+the new version.
 
     python scripts/indexer_pin.py --record-output   # first stamping only: version unchanged, no digest recorded yet
 """
@@ -109,6 +111,20 @@ def _refuse_same_on_output(engine: str) -> None:
             "(pip install --require-hashes -r requirements.lock; pip install -e . --no-deps), the environment CI's "
             "lockfile-install job checks the digest in"
         )
+    if engine == "www":
+        # R824 addition 2: an ACK needs golden coverage of every script the stage handles. The golden corpus holds texts in all twelve
+        # UI scripts, but it exercises the www stage only in the scripts its rows come out in, so a stage that can match a script the
+        # golden rows never hold cannot be judged unchanged here.
+        from src.analytics import golden_output
+
+        handled = golden_output.www_rule_scripts()
+        covered = golden_output.www_golden_scripts(golden_output._cached_pass()["www"])
+        missing = sorted(set(handled) - set(covered))
+        if missing:
+            raise SystemExit(
+                f"--same refused: the places-and-entities rules now match {', '.join(missing)}, which the golden corpus's www rows do "
+                "not cover; add golden articles whose places or entities are in that script (and re-record with --bump), or --bump"
+            )
     if golden["output_digest"] != rec["output_digest"]:
         raise SystemExit(
             f"--same refused: the output changed (golden corpus digest {golden['output_digest'][:12]}, recorded "
