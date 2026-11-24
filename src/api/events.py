@@ -208,7 +208,10 @@ def imported_events(
 def deduced_events(
     days_ahead: int = Query(120, ge=1, le=3650),
     min_articles: int = Query(2, ge=1, le=50),
-    limit: int = Query(80, ge=1, le=365),
+    limit: int | None = Query(
+        None, ge=1, le=3651,
+        description="at most this many dates; default every date the window holds (row 399)",
+    ),
 ) -> dict:
     """Upcoming dates DEDUCED from article text — the agenda's article-extracted
     events layer. Groups future mentioned-dates with distinct article + source
@@ -222,6 +225,24 @@ def deduced_events(
         return datestore.upcoming_deduced(
             db, days_ahead=days_ahead, min_articles=min_articles, limit=limit
         )
+
+
+@router.get("/deduced/ids")
+def deduced_event_ids(date: str = Query(..., description="YYYY-MM-DD")) -> dict:
+    """Every article id behind ONE deduced date, up to the analysis window's own cap
+    (5000), so the agenda opens the exact set its title counts (row 399, invariant 13b).
+    Read-only and local: the same rows ``/deduced`` counts."""
+    from datetime import date as _date
+
+    from src.database.session import session_scope
+    from src.timemap import datestore
+
+    try:
+        on = _date.fromisoformat(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD") from exc
+    with session_scope() as db:
+        return datestore.deduced_date_article_ids(db, on)
 
 
 @router.post("/feeds/verify-batch")

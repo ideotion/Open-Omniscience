@@ -227,12 +227,57 @@ def articles_for_date(
     return out
 
 
+DEDUCED_INLINE_IDS = 200
+"""Ids carried inline per deduced date on every agenda load (row 399: the payload
+stays small; a date with more fetches its own set with ``deduced_date_article_ids``)."""
+DEDUCED_OPEN_IDS = 5000
+"""The most ids one date opens with -- the analysis window's own cap
+(``openAnalysisForIds`` slices to 5000), so what opens is what is counted up to it."""
+
+
+def _deduced_ids_query(db: Session, dates):
+    return (
+        db.query(ArticleMentionedDate.mentioned_on, ArticleMentionedDate.article_id)
+        .join(Article, Article.id == ArticleMentionedDate.article_id)
+        .filter(
+            ArticleMentionedDate.mentioned_on.in_(dates),
+            ArticleMentionedDate.status != "rejected",
+            not_a_stand_in_article(),
+        )
+        .distinct()
+        .order_by(ArticleMentionedDate.mentioned_on, ArticleMentionedDate.article_id)
+    )
+
+
+def deduced_date_article_ids(db: Session, on: date, *, cap: int = DEDUCED_OPEN_IDS) -> dict:
+    """Every article id behind ONE deduced date, up to ``cap`` (row 399).
+
+    The same rows ``upcoming_deduced`` counts (rejected tags and stand-ins out), so the
+    agenda opens the exact set its title counts. ``total`` is the full count and
+    ``complete`` says whether ``article_ids`` holds all of it."""
+    from sqlalchemy import func
+
+    total = (
+        db.query(func.count(func.distinct(ArticleMentionedDate.article_id)))
+        .join(Article, Article.id == ArticleMentionedDate.article_id)
+        .filter(
+            ArticleMentionedDate.mentioned_on == on,
+            ArticleMentionedDate.status != "rejected",
+            not_a_stand_in_article(),
+        )
+        .scalar()
+        or 0
+    )
+    ids = [a for _, a in _deduced_ids_query(db, [on]).limit(cap).all()]
+    return {"date": on.isoformat(), "article_ids": ids, "total": int(total), "complete": len(ids) >= total}
+
+
 def upcoming_deduced(
     db: Session,
     *,
     days_ahead: int = 120,
     min_articles: int = 2,
-    limit: int = 80,
+    limit: int | None = None,
     today: date | None = None,
 ) -> dict:
     """Future dates DEDUCED from article text — the agenda's article-extracted
@@ -243,14 +288,21 @@ def upcoming_deduced(
     surfacing gate (``>= min_articles``) keeps single-mention noise out; rejected
     tags are excluded. Each event carries the article-id set so the agenda can open
     that exact corpus. Counts only — NO score. Deduced from text, never a confirmed
-    event (a date an article MENTIONS, not proof anything will happen)."""
+    event (a date an article MENTIONS, not proof anything will happen).
+
+    Row 399: ``limit`` defaults to every date the window can hold, so the list is never
+    cut inside it (it was 80 against a 121-date window: later weeks read as empty);
+    ``truncated`` says when a caller's smaller ``limit`` cut it. Each date carries at
+    most ``DEDUCED_INLINE_IDS`` ids inline, and ``ids_complete`` says whether that is
+    all of them -- the agenda fetches the rest before it opens the date."""
     from datetime import timedelta
 
     from sqlalchemy import func
 
     t0 = today or date.today()
     horizon = t0 + timedelta(days=days_ahead)
-    rows = (
+    cap = days_ahead + 1 if limit is None else limit
+    grouped = (
         db.query(
             ArticleMentionedDate.mentioned_on,
             func.count(func.distinct(ArticleMentionedDate.article_id)),
@@ -266,35 +318,44 @@ def upcoming_deduced(
         .group_by(ArticleMentionedDate.mentioned_on)
         .having(func.count(func.distinct(ArticleMentionedDate.article_id)) >= min_articles)
         .order_by(ArticleMentionedDate.mentioned_on)
-        .limit(limit)
-        .all()
     )
+    rows = grouped.limit(cap + 1).all()
+    truncated = len(rows) > cap
+    rows = rows[:cap]
+    # One query for every date's ids (it was one query per date), at most
+    # DEDUCED_INLINE_IDS per date, numbered in SQL so a busy window is never read whole.
+    by_date: dict = {}
+    if rows:
+        pairs = _deduced_ids_query(db, [r[0] for r in rows]).order_by(None).subquery()
+        rn = (
+            func.row_number()
+            .over(partition_by=pairs.c.mentioned_on, order_by=pairs.c.article_id)
+            .label("rn")
+        )
+        numbered = db.query(pairs.c.mentioned_on, pairs.c.article_id, rn).subquery()
+        for on, aid in (
+            db.query(numbered.c.mentioned_on, numbered.c.article_id)
+            .filter(numbered.c.rn <= DEDUCED_INLINE_IDS)
+            .order_by(numbered.c.mentioned_on, numbered.c.article_id)
+            .all()
+        ):
+            by_date.setdefault(on, []).append(aid)
     events = []
     for on, n_arts, n_srcs in rows:
-        aids = [
-            a
-            for (a,) in db.query(ArticleMentionedDate.article_id)
-            .join(Article, Article.id == ArticleMentionedDate.article_id)
-            .filter(
-                ArticleMentionedDate.mentioned_on == on,
-                ArticleMentionedDate.status != "rejected",
-                not_a_stand_in_article(),
-            )
-            .distinct()
-            .limit(200)
-            .all()
-        ]
+        aids = by_date.get(on, [])
         events.append(
             {
                 "date": on.isoformat(),
                 "n_articles": int(n_arts),
                 "n_sources": int(n_srcs),
                 "article_ids": aids,
+                "ids_complete": len(aids) >= int(n_arts),
             }
         )
     return {
         "events": events,
         "count": len(events),
+        "truncated": truncated,
         "method": (
             "Future dates MENTIONED in your articles, grouped by date (distinct "
             f"articles + distinct sources); surfacing gate ≥ {min_articles} articles. " + FEEDS_NOT_OUTLETS
