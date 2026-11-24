@@ -686,6 +686,7 @@
       else if (kind === "osm") loadLivingMaps();
     }
 
+    let _livingOverviewFailed = false;
     function renderLivingOverview() {
       const t = _livingT(), tf = _livingTf();
       const d = _livingOverview;
@@ -695,7 +696,8 @@
         if (el) el.innerHTML = livingGroupsHtml(livingGroupsFor(src, t, tf));
       });
       const st = $("living-status");
-      if (st) {
+      // A failed re-read keeps its own held line: the read before it is never shown as current.
+      if (st && !_livingOverviewFailed) {
         st.textContent = tf("Read {when}. Counts cover the last {days} days.", { when: livingWhen(d.read_at, t), days: d.window_days });
         st.title = t("Counts of what this machine recorded, read now. Nothing is sent anywhere.");
       }
@@ -712,10 +714,12 @@
       const t = _livingT();
       try {
         _livingOverview = await api("/api/living/overview");
+        _livingOverviewFailed = false;
         renderLivingOverview();
       } catch (e) {
+        _livingOverviewFailed = true;
         const st = $("living-status");
-        if (st) st.textContent = ooLabelText(t("Could not load"), e.message);
+        if (st) ooLive(st, () => ooLabelText(t("Could not load"), e.message));   // held (row 367)
       }
     }
 
@@ -741,22 +745,34 @@
       const btn = $("living-stream-more"), cap = $("living-stream-cap");
       const d = _livingStreamLast;
       if (!d || d.measured !== true) return;
+      // A failed older page: the list loaded so far stays, its button stays to try again, and the cap says why.
+      if (_livingStreamMoreErr != null) {
+        const why = _livingStreamMoreErr;   // this failure's own reason, never whatever the variable holds later
+        if (cap) ooLiveHtml(cap, () => esc(ooLabelText(_livingT()("Could not load"), why)));
+        return;
+      }
       // The window is stated, never implied: N of M, and a button while more exist.
       if (cap) cap.textContent = d.total ? tf("Showing {n} of {m} changes, newest first.", { n: _livingStreamOffset, m: d.total }) : "";
       if (btn) btn.hidden = _livingStreamOffset >= d.total;
     }
 
+    let _livingStreamMoreErr = null, _livingStreamSeq = 0;   // why the last "Show older changes" page failed, until one succeeds
     async function loadLivingStream(more) {
       const t = _livingT(), tf = _livingTf();
       const box = $("living-stream");
       if (!box) return;
+      _livingStreamMoreErr = null;
+      const seq = ++_livingStreamSeq;   // only the newest read draws: an older page never lands on a newer list
       if (!more) {
         _livingStreamOffset = 0;
         _livingStreamLast = null;
-        box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+        const cap = $("living-stream-cap");
+        if (cap) cap.textContent = "";   // an older page's failure never stays under a new list
+        ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       }
       try {
         const d = await api(`/api/wiki/lane/changes?limit=${_LIVING_STREAM_PAGE}&offset=${_livingStreamOffset}`);
+        if (seq !== _livingStreamSeq) return;
         if (d.measured !== true) {
           _livingStreamLast = { measured: d.measured, reason: d.reason, changes: [], total: 0 };
           renderLivingStream();
@@ -775,7 +791,11 @@
         _livingStreamOffset += d.count;
         _livingStreamCap();
       } catch (e) {
-        box.innerHTML = _livingFailHtml(e.message, t);
+        if (seq !== _livingStreamSeq) return;
+        if (more && _livingStreamLast) { _livingStreamMoreErr = e.message; _livingStreamCap(); return; }
+        // The failure line replaces the whole list, so nothing is held to redraw over it.
+        _livingStreamLast = null;
+        ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT()));
       }
     }
 
@@ -783,15 +803,16 @@
       const t = _livingT(), tf = _livingTf();
       const box = $("living-diff-" + revisionId);
       if (!box) return;
-      if (box.innerHTML) { box.innerHTML = ""; if (btn) btn.textContent = t("Show diff"); return; }
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (box.innerHTML) { box.innerHTML = ""; _livingDiffs.delete(Number(revisionId)); if (btn) ooLive(btn, () => t("Show diff")); return; }
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const d = await api(`/api/wiki/lane/revisions/${Number(revisionId)}`);
         _livingDiffs.set(Number(revisionId), d);
         box.innerHTML = livingDiffBoxHtml(d, t, tf);
-        if (btn) btn.textContent = t("Hide diff");
+        if (btn) ooLive(btn, () => t("Hide diff"));
       } catch (e) {
-        box.innerHTML = _livingFailHtml(e.message, t);
+        _livingDiffs.delete(Number(revisionId));   // an older payload never redraws over this failure
+        ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT()));
       }
     }
 
@@ -815,7 +836,7 @@
         renderLivingPages();
       } catch (e) {
         _livingPagesLast = null;
-        box.innerHTML = _livingFailHtml(e.message, _livingT());
+        ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT()));
       }
     }
 
@@ -839,17 +860,23 @@
       loadLawAmendMap();
       loadLawVelocity();
     }
+    let _livingLawSeq = 0;
     async function loadLivingLaw() {
       const t = _livingT();
       const box = $("living-law-changes");
       if (!box) return;
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      _livingLawLast = null;   // the last list never redraws over the Loading line
+      const seq = ++_livingLawSeq;   // only the newest read draws
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
-        _livingLawLast = await api("/api/law/changes?limit=50");
+        const d = await api("/api/law/changes?limit=50");
+        if (seq !== _livingLawSeq) return;
+        _livingLawLast = d;
         renderLivingLaw();
       } catch (e) {
+        if (seq !== _livingLawSeq) return;
         _livingLawLast = null;
-        box.innerHTML = _livingFailHtml(e.message, t);
+        ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT()));
       }
     }
 
@@ -916,7 +943,7 @@
       const box = $("living-law-week");
       if (!box) return;
       try { _lawWeekLast = await api("/api/law/this-week?days=7"); renderLawWeek(); }
-      catch (e) { _lawWeekLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
+      catch (e) { _lawWeekLast = null; ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT())); }
     }
 
     // -- point-in-time search (Q916) --
@@ -951,16 +978,21 @@
         + (d.truncated ? `<p class="hint">${esc(t("More versions matched than are shown; narrow the words."))}</p>` : "")
         + lawMethodHtml(d, t);
     }
+    let _lawPitSeq = 0;
     async function lawPitSearch() {
       const t = _livingT();
       const box = $("law-pit-results"), q = ($("law-pit-q") || {}).value || "", on = ($("law-pit-on") || {}).value || "";
       if (!box) return;
-      if (!q.trim()) { box.innerHTML = `<div class="muted">${esc(t("Type the words to find."))}</div>`; return; }
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      _lawPitLast = null;   // the last results never redraw over the prompt or the Loading line
+      const seq = ++_lawPitSeq;   // a read still in flight never draws over a newer prompt or search
+      if (!q.trim()) { ooLiveHtml(box, () => `<div class="muted">${esc(t("Type the words to find."))}</div>`); return; }
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
-        _lawPitLast = await api(`/api/law/versions/search?q=${encodeURIComponent(q)}` + (on ? `&on=${encodeURIComponent(on)}` : ""));
+        const d = await api(`/api/law/versions/search?q=${encodeURIComponent(q)}` + (on ? `&on=${encodeURIComponent(on)}` : ""));
+        if (seq !== _lawPitSeq) return;
+        _lawPitLast = d;
         renderLawPit();
-      } catch (e) { _lawPitLast = null; box.innerHTML = _livingFailHtml(e.message, t); }
+      } catch (e) { if (seq !== _lawPitSeq) return; _lawPitLast = null; ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT())); }
     }
 
     // -- the documents list and the ONE version reader (Q918 + note) --
@@ -979,7 +1011,7 @@
       const box = $("living-law-docs");
       if (!box) return;
       try { _lawDocsLast = await api("/api/law/documents"); renderLivingLawDocs(); }
-      catch (e) { _lawDocsLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
+      catch (e) { _lawDocsLast = null; ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT())); }
     }
     // -- the language coverage floor (v0.6.0 row C, S1; Q912): where each floor country stands --
     // Every country in the dated floor file (all three bases counted and labelled) is in ONE of four states, never a
@@ -1125,7 +1157,7 @@
         const env = await api("/api/diagnostics/law-coverage");
         _lawFloorLast = { floor: ((env && env.data) || {}).floor };
         renderLawFloor();
-      } catch (e) { _lawFloorLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
+      } catch (e) { _lawFloorLast = null; ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT())); }
     }
     function openLawVersions(id) {
       const host = $("law-tc-versions");
@@ -1194,7 +1226,7 @@
       const box = $("law-thesauri");
       if (!box) return;
       try { _lawThesauriLast = await api("/api/law/thesauri"); renderLawThesauri(); }  // loopback: a read of the data folder
-      catch (e) { _lawThesauriLast = null; box.innerHTML = _livingFailHtml(e.message, _livingT()); }
+      catch (e) { _lawThesauriLast = null; ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT())); }
     }
 
     // -- analytic 3: a topic across jurisdictions --
@@ -1211,14 +1243,20 @@
           + `<th>${esc(t("Documents containing it"))}</th><th>${esc(t("In the newest held version"))}</th><th>${esc(t("Documents tracked"))}</th></tr></thead><tbody>${rows}</tbody></table>`
         : `<div class="muted">${esc(t("No tracked law contains these words."))}</div>`) + lawMethodHtml(d, t);
     }
+    let _lawTopicSeq = 0;
     async function lawTopicCompare() {
       const t = _livingT();
       const box = $("law-topic-results"), q = ($("law-topic-q") || {}).value || "";
       if (!box) return;
-      if (!q.trim()) { box.innerHTML = `<div class="muted">${esc(t("Type the words to find."))}</div>`; return; }
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      try { _lawTopicLast = await api(`/api/law/topics?q=${encodeURIComponent(q)}`); renderLawTopic(); }
-      catch (e) { _lawTopicLast = null; box.innerHTML = _livingFailHtml(e.message, t); }
+      _lawTopicLast = null;   // the last results never redraw over the prompt or the Loading line
+      const seq = ++_lawTopicSeq;   // a read still in flight never draws over a newer prompt or search
+      if (!q.trim()) { ooLiveHtml(box, () => `<div class="muted">${esc(t("Type the words to find."))}</div>`); return; }
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
+      try {
+        const d = await api(`/api/law/topics?q=${encodeURIComponent(q)}`);
+        if (seq !== _lawTopicSeq) return;
+        _lawTopicLast = d; renderLawTopic();
+      } catch (e) { if (seq !== _lawTopicSeq) return; _lawTopicLast = null; ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT())); }
     }
 
     // -- analytic 4: amendment activity on the equal-area map, with its vintage --
@@ -1280,14 +1318,14 @@
       const host = $("law-velocity");
       if (!host) return;
       try { _lawVelocityLast = await api("/api/law/amendment-velocity?period=month"); renderLawVelocity(); }
-      catch (e) { _lawVelocityLast = null; host.innerHTML = _livingFailHtml(e.message, _livingT()); }
+      catch (e) { _lawVelocityLast = null; ooLiveHtml(host, () => _livingFailHtml(e.message, _livingT())); }
     }
 
     async function loadLawAmendMap() {
       const host = $("law-amend-map");
       if (!host) return;
       try { _lawMapLast = await api("/api/law/amendment-map?days=365"); await renderLawAmendMap(); }
-      catch (e) { _lawMapLast = null; host.innerHTML = _livingFailHtml(e.message, _livingT()); }
+      catch (e) { _lawMapLast = null; ooLiveHtml(host, () => _livingFailHtml(e.message, _livingT())); }
     }
 
     function repaintLawEvolutionFromCache() {
@@ -1311,7 +1349,7 @@
         renderLivingMaps();
       } catch (e) {
         _livingMapsLast = null;
-        box.innerHTML = _livingFailHtml(e.message, _livingT());
+        ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT()));
       }
     }
 
@@ -1878,7 +1916,8 @@
       const t = _livingT(), tf = _livingTf();
       const cands = $("wiki-div-cands"), out = $("wiki-div-result");
       if (cands) cands.innerHTML = _wikiDivCands ? wikiDivCandidatesHtml(_wikiDivCands, t, tf) : "";
-      if (out) out.innerHTML = _wikiDivLast ? wikiDivergenceHtml(_wikiDivLast.d, t, tf) : "";
+      // Nothing held yet (a read in flight, or failed): the line drawn there is left to its own hold.
+      if (out && _wikiDivLast) out.innerHTML = wikiDivergenceHtml(_wikiDivLast.d, t, tf);
     }
 
     // With no item it asks only for the suggestions; with one it reads that item across editions.
@@ -1894,23 +1933,26 @@
         renderWikiDivergence();
       } catch (e) {
         _wikiDivLast = null;
-        if (out) out.innerHTML = _livingFailHtml(e.message, t);
+        if (out) ooLiveHtml(out, () => _livingFailHtml(e.message, _livingT()));
       }
     }
 
+    let _wikiAttPending = false, _wikiAttSeq = 0, _wikiAttWant = "";
     function renderWikiAttention() {
       const t = _livingT(), tf = _livingTf();
       const tools = $("wiki-att-tools"), out = $("wiki-att-result");
       const d = _wikiAttLast && _wikiAttLast.d;
       if (tools) {
         const withList = (d && Array.isArray(d.with_list)) ? d.with_list : [];
-        const pick = (d && d.edition) || "";
+        // While a read is in flight the select keeps the edition asked for, so Refresh asks for it again.
+        const pick = (_wikiAttPending && _wikiAttWant) || (d && d.edition) || "";
         tools.innerHTML = (withList.length > 1
           ? `<select id="wiki-att-edition" aria-label="${esc(t("Edition"))}">${withList.map((e) =>
             `<option value="${esc(e)}"${e === pick ? " selected" : ""}>${esc((typeof ooLangCode === "function" && ooLangCode(e)) || e)}</option>`).join("")}</select> ` : "")
           + `<button type="button" class="secondary tiny" data-att-refresh>${esc(t("Refresh"))}</button>`;
       }
-      if (out) out.innerHTML = d ? wikiAttentionHtml(d, t, tf) : "";
+      // A read in flight or failed: the line drawn there is left to its own hold.
+      if (out && d && !_wikiAttPending) out.innerHTML = wikiAttentionHtml(d, t, tf);
     }
 
     async function loadWikiAttention(edition, force) {
@@ -1918,14 +1960,20 @@
       if (_wikiAttLast && !force) { renderWikiAttention(); return; }
       const t = _livingT();
       const out = $("wiki-att-result");
-      if (out) out.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      const seq = ++_wikiAttSeq;   // only the newest read draws, and only it ends the pending state
+      _wikiAttPending = true; _wikiAttWant = edition || "";
+      if (out) ooLiveHtml(out, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const d = await api("/api/wiki/lane/attention" + (edition ? "?" + new URLSearchParams({ edition }).toString() : ""));
+        if (seq !== _wikiAttSeq) return;
         _wikiAttLast = { d };
+        _wikiAttPending = false;
         renderWikiAttention();
       } catch (e) {
+        if (seq !== _wikiAttSeq) return;
+        _wikiAttPending = false;
         _wikiAttLast = null;
-        if (out) out.innerHTML = _livingFailHtml(e.message, t);
+        if (out) ooLiveHtml(out, () => _livingFailHtml(e.message, _livingT()));
       }
     }
 
