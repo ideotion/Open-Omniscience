@@ -9842,7 +9842,8 @@ def test_the_ai_store_panel_leads_with_the_path_in_use():
     app's configured path and the app's configured size, so the numbers pointed away
     from the answer and the folder had to be found in a file manager."""
     app = app_js()
-    body = _js_function_body(app, "loadAiStore")
+    # The panel is drawn by _aiStoreHtml through ooLiveHtml (row 367).
+    body = _js_function_body(app, "loadAiStore") + _js_function_body(app, "_aiStoreHtml")
     assert "r.ollama.in_app_folder === false" in body, "the two cases must be told apart"
     assert "r.ollama.detected" in body and "r.ollama.detected_bytes" in body, (
         "the path IN USE, sized by what it actually holds"

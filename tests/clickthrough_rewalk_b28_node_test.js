@@ -296,6 +296,8 @@ async function run() {
     const saved = [];
     const src = [ESC, FMTNUM, C("_jobLabel"), C("_framedText"), C("_apiErrorMessage"), A("_qualTf"),
       "var _qualMergeLast = null; var _qualMergeRefusal = null;",
+      // ooLive as a text write and a release as a no-op (row 367): the progress line is the text its render returns
+      "function ooLive(el, render) { if (render) el.textContent = render(); }",
       A("overlayMerge"), A("_renderOverlayMerge"),
       "return {merge: overlayMerge, render: _renderOverlayMerge};"].join("\n");
     // eslint-disable-next-line no-new-func

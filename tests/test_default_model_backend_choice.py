@@ -326,7 +326,7 @@ def _model_step() -> str:
     cannot be satisfied by an unrelated line elsewhere in an 18k-line file."""
     src = app_js()
     at = src.index('} else if (step.id === "model")')
-    return src[at : src.index('say(t("Starting the local AI…"))', at)]
+    return src[at : src.index('say(() => t("Starting the local AI…"))', at)]
 
 
 def test_the_chain_stops_when_the_download_never_started():
