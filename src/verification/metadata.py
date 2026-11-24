@@ -15,7 +15,9 @@ score" -- metadata is evidence to weigh, not a verdict.
 from __future__ import annotations
 
 import io
+import re
 from dataclasses import dataclass, field
+from struct import error as StructError
 
 from PIL import Image, UnidentifiedImageError
 from PIL.ExifTags import GPSTAGS, TAGS
@@ -88,23 +90,15 @@ def _parse_gps(gps_ifd: dict) -> dict:
     return out
 
 
-def extract_image_metadata(data: bytes) -> ImageMetadata:
-    """Extract format, dimensions, EXIF and GPS from image bytes."""
-    # (no process-wide warnings filter: this runs in a thread pool, and the cap below
-    # fires before Pillow's own bomb warning; past twice that, open() itself raises)
-    try:
-        img = Image.open(io.BytesIO(data))
-        if img.width * img.height > MAX_DECODE_PIXELS:
-            raise ImageError(
-                f"image too large to read here: {img.width} x {img.height} pixels "
-                f"(limit {MAX_DECODE_PIXELS:,})"
-            )
-        img.load()
-    except Image.DecompressionBombError as exc:
-        raise ImageError(f"image too large to read here: {record_text(exc)}") from exc
-    except (UnidentifiedImageError, OSError) as exc:
-        raise ImageError(f"not a readable image: {record_text(exc)}") from exc
+_OBJECT_ADDRESS = re.compile(r"<[^<>]* at 0x[0-9a-fA-F]+>")
 
+
+def _reason(text: str) -> str:
+    """An error's scrubbed text without Python object reprs (Pillow names the in-memory buffer)."""
+    return _OBJECT_ADDRESS.sub("the uploaded bytes", text)
+
+
+def _read_exif(img) -> tuple[dict, dict]:
     exif_raw = img.getexif()
     exif: dict = {}
     gps: dict = {}
@@ -127,6 +121,39 @@ def extract_image_metadata(data: bytes) -> ImageMetadata:
                     exif.setdefault(sub, _jsonable(sub_val))
         except Exception:  # an unreadable sub-block leaves the main tags as they are
             exif.setdefault("ExifSubBlock", "present but unreadable")
+    return exif, gps
+
+
+def extract_image_metadata(data: bytes) -> ImageMetadata:
+    """Extract format, dimensions, EXIF and GPS from image bytes."""
+    # (no process-wide warnings filter: this runs in a thread pool, and the cap below
+    # fires before Pillow's own bomb warning; past twice that, open() itself raises)
+    try:
+        img = Image.open(io.BytesIO(data))
+        if img.width * img.height > MAX_DECODE_PIXELS:
+            raise ImageError(
+                f"image too large to read here: {img.width} x {img.height} pixels "
+                f"(limit {MAX_DECODE_PIXELS:,})"
+            )
+        img.load()
+        exif, gps = _read_exif(img)
+    except ImageError:
+        raise
+    except Image.DecompressionBombError as exc:
+        raise ImageError(f"image too large to read here: {_reason(record_text(exc))}") from exc
+    # A malformed file can fail in the decoder or in the EXIF parser with any of these
+    # (Pillow 13 raises KeyError on a TIFF whose tag table is cut short): every one is
+    # "this is not a readable image", a 400, never an unhandled 500.
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        SyntaxError,
+        KeyError,
+        IndexError,
+        StructError,
+    ) as exc:
+        raise ImageError(f"not a readable image: {_reason(record_text(exc))}") from exc
 
     observations: list[str] = []
     if not exif:

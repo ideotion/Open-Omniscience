@@ -2535,7 +2535,7 @@ def _cpu_model_safe() -> str:
             import subprocess
 
             out = subprocess.run(
-                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                ["/usr/sbin/sysctl", "-n", "machdep.cpu.brand_string"],
                 capture_output=True, text=True, timeout=2,
             )
             if out.returncode == 0 and out.stdout.strip():

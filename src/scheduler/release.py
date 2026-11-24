@@ -48,7 +48,6 @@ import shutil
 import sys
 import threading
 import time
-from contextlib import suppress
 from typing import Any
 
 _LOG = logging.getLogger("scheduler.release")
@@ -120,7 +119,10 @@ def _remove_spill(path: str) -> None:
     if mod is not None:
         mod._remove_spill(path)
     else:
-        shutil.rmtree(path, ignore_errors=True)
+        from src.database.drive_pin import on_frozen_drive
+
+        if not on_frozen_drive(path):  # R813: never on a drive found changed during an erase
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def _close_serves(*, wait: bool = True) -> dict[str, Any]:
@@ -149,8 +151,9 @@ def _close_serves(*, wait: bool = True) -> dict[str, Any]:
             try:
                 con = mod._STATE.get("con")
                 if con is not None:
-                    with suppress(Exception):
-                        con.close()
+                    from src.database.drive_pin import close_or_keep
+
+                    close_or_keep(con, mod._STATE.get("spill"))  # R813: kept, never closed, when it is on a frozen drive
                     mod._STATE["con"] = None
                     mod._STATE["built_at"] = 0.0
                     spill, mod._STATE["spill"] = mod._STATE.get("spill"), None
@@ -264,8 +267,9 @@ def _close_when_free(name: str, target: Any, reason: str = "encryption", cleared
                     stale = bool(mod._STATE.get("spill")) and not mod._STATE.get("persisted")
                 if not stale:
                     return  # replaced by a connection of the new state: the replacer retired the old one
-            with suppress(Exception):
-                con.close()
+            from src.database.drive_pin import close_or_keep
+
+            close_or_keep(con, mod._STATE.get("spill"))  # R813: kept, never closed, when it is on a frozen drive
             mod._STATE["con"] = None
             mod._STATE["built_at"] = 0.0
             spill, mod._STATE["spill"] = mod._STATE.get("spill"), None

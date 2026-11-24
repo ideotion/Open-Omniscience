@@ -585,9 +585,9 @@ artifacts:
       floor release (in its own venv; a job of its own, urllib3-floor, until PR #1988) and the test job on the newest the range admits. pyproject.toml carries the range and the ceiling (the first
       release NOT read, patch releases included).
     upstream: https://pypi.org/project/urllib3/ (https://github.com/urllib3/urllib3)
-    check_upstream: "pypi.org/pypi/urllib3/json - compare info.version; 2.8.0 was the newest on 2026-10-16 and is read (it is what pip resolves inside the range); requirements.lock pins 2.7.0, the floor"
+    check_upstream: "pypi.org/pypi/urllib3/json - compare info.version; 2.8.0 was the newest on 2026-10-16 and is read (it is what pip resolves inside the range); requirements.lock pins 2.8.0, the floor since Audit 17 row 373 (2.7.0 carries three advisories 2.8.0 fixes)"
     license: MIT
-    pin: {floor: "2.7.0", verified: "2.8.0", ceiling: "2.8.1"}  # ceiling = the first release NOT read (pyproject says <ceiling)
+    pin: {floor: "2.8.0", verified: "2.8.0", ceiling: "2.8.1"}  # ceiling = the first release NOT read (pyproject says <ceiling)
     upstream_check: {github: "urllib3/urllib3", type: release, current: "2.8.0"}
     refresh: >
       read the new release (docs/maintenance/EXTERNAL_DEPENDENCIES.md, the urllib3 row): run
@@ -599,9 +599,9 @@ artifacts:
     couplings:
       - "pyproject.toml dependencies urllib3 carries the same floor and a ceiling below the first release not read"
       - "src/ingest/urllib3_log.py SHAPES and LOGGERS equal the installed release's log calls and loggers (test-enforced)"
-      - "requirements.lock pins a release inside the range (2.7.0 today, the floor; the crypto CI job's urllib3 floor venv runs the table test on it)"
-      - ".github/workflows/ci.yml crypto job, its urllib3 floor venv, installs the floor release (2.7.0) and runs the table test"
-    last_verified: "2026-10-16"
+      - "requirements.lock pins a release inside the range (2.8.0 today, the floor; the crypto CI job's urllib3 floor venv runs the table test on it)"
+      - ".github/workflows/ci.yml crypto job, its urllib3 floor venv, installs the floor release (2.8.0) and runs the table test"
+    last_verified: "2026-11-23"
 
   - id: trafilatura-floor
     title: trafilatura (article extraction), floor 2.1.0
