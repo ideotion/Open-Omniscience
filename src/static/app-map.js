@@ -2192,7 +2192,7 @@
           const d = await api("/api/timemap?limit=4000&hazards=true");
           _ooMapSignals = (d.signals || []).filter(s => typeof s.t === "number" && s.lat != null && s.lon != null);
         } else if (key === "places" && !_ooMapWhere) {
-          _ooMapWhere = await api("/api/insights/where?limit=400");
+          _ooMapWhere = await api(OO_MAP_PLACES_URL);
         } else if (key === "servers" && !_ooMapServerLoc) {
           _ooMapServerLoc = await api("/api/insights/server-locations");
         }
@@ -2207,6 +2207,14 @@
       if (_ooMapPayload) _renderOoMapDim();
     }
     // A one-line, honest description of the active lens (translated).
+    // Row 398: the map asks only for places it can draw (filtered BEFORE the limit), and
+    // says when the 400 it plots are not all of them.
+    const OO_MAP_PLACES_URL = "/api/insights/where?limit=400&placed_only=true";
+    function _ooMapPlacesCutText(w) {
+      if (!w || !w.truncated || typeof w.total !== "number") return "";
+      const shown = Array.isArray(w.places) ? w.places.length : 0;
+      return _tfn("{shown} of {total} shown.", { shown: fmtNum(shown, 0), total: fmtNum(w.total, 0) });
+    }
     function _renderOoMapLensDesc() {
       const el = $("oomap-lens-desc"); if (!el) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
@@ -2216,7 +2224,8 @@
         places: t("The places your articles mention — what the corpus is about. Deduced from text, never confirmed."),
         servers: t("Where the servers we reached are located (offline geo) — a CDN edge / anycast host, not the publisher's origin; unavailable over Tor."),
       };
-      el.textContent = d[_ooMapLens] || "";
+      const cut = _ooMapPlacesOn ? _ooMapPlacesCutText(_ooMapWhere) : "";
+      el.textContent = [d[_ooMapLens] || "", cut].filter(Boolean).join(" ");
     }
     // Story-type chips under the Stories lens (field-test Item 6 incitement UI): the
     // event KINDS present in the corpus with a COUNT each, clickable to filter the
@@ -2519,9 +2528,10 @@
         onPlaces: async () => {
           _ooMapPlacesOn = !_ooMapPlacesOn;
           if (_ooMapPlacesOn && !_ooMapWhere) {
-            try { _ooMapWhere = await api("/api/insights/where?limit=400"); }
+            try { _ooMapWhere = await api(OO_MAP_PLACES_URL); }
             catch { _ooMapWhere = { places: [] }; }
           }
+          _renderOoMapLensDesc();
           _renderOoMapDim();
         },
         signalsOn: _ooMapSignalsOn, signals: sig, focusT, windowY, focusSlider, focusLabel, focusTicks,
