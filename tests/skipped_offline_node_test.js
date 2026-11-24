@@ -60,7 +60,9 @@ function sandbox(responses) {
     "function _failMsg(t, e){return t;}", "function _ores(){return 'false';}",
     // Row 372(b): the progress line is drawn through ooLive (app-core.js); drawn once here.
     "function ooLive(el, r){ if (el && r) el.textContent = r(); }",
-    extract("tally"), extract("tallyHover"), extract("ingestSource"), extract("ingestBatch"), extract("lawTrack"), extract("trackWikiNow"),
+    // Row 367: the batch table is held through ooLiveHtml, drawn once here.
+    "function ooLiveHtml(el, r){ if (el && r) el.innerHTML = r(); }",
+    extract("_srcAirplaneNothing"), extract("_srcFeedResultLine"), extract("_srcBatchResultLine"), extract("tally"), extract("tallyHover"), extract("ingestSource"), extract("ingestBatch"), extract("lawTrack"), extract("trackWikiNow"),
     "return { ingestSource, ingestBatch, lawTrack, trackWikiNow, tally };",
   ].join("\n");
   const f = new Function("$", "api", "toast", "doSearch", "loadLaw", "loadLawChanges", "loadWiki", "loadSources", src);
@@ -68,6 +70,8 @@ function sandbox(responses) {
     () => { log.searches++; }, () => { log.laws++; }, () => {}, () => { log.wikis++; }, () => {});
   return { h: api2, log, el };
 }
+// A result line held through ooLiveHtml lands in innerHTML, one held through ooLive in textContent (row 367).
+const line = (log, id) => (log.html[id] !== undefined ? log.html[id] : log.texts[id]) || "";
 const zero = { stored: 0, duplicate: 0, fetch_failed: 0, entries: 0 };
 
 (async () => {
@@ -75,14 +79,14 @@ const zero = { stored: 0, duplicate: 0, fetch_failed: 0, entries: 0 };
   {
     const { h, log, el } = sandbox({ "/api/sources/7/ingest": { source_id: 7, tally: { ...zero, skipped_offline: 1 } } });
     await h.ingestSource();
-    assert.strictEqual(log.texts["ingest-result"], S1, "a refused feed says so in the result line");
+    assert.strictEqual(line(log, "ingest-result"), S1, "a refused feed says so in the result line");
     assert.deepStrictEqual(log.toasts, [[S1, "warn"]], "and only a warning, never 'Ingest complete.'");
     assert.strictEqual(log.searches, 0, "nothing changed, so the corpus is not refreshed");
   }
   {
     const { h, log } = sandbox({ "/api/sources/7/ingest": { source_id: 7, tally: { ...zero, stored: 3 } } });
     await h.ingestSource();
-    assert.ok(/new articles stored: 3/.test(log.texts["ingest-result"]) && !/skipped_offline|Airplane/.test(log.texts["ingest-result"]));
+    assert.ok(/new articles stored: 3/.test(line(log, "ingest-result")) && !/skipped_offline|Airplane/.test(line(log, "ingest-result")));
     assert.deepStrictEqual(log.toasts, [["Ingest complete.", "ok"]]);
     assert.strictEqual(log.searches, 1);
   }
@@ -99,7 +103,7 @@ const zero = { stored: 0, duplicate: 0, fetch_failed: 0, entries: 0 };
       requested: 2, ingested: 2, aggregate: { ...zero, skipped_offline: 2 },
       results: [refused, { ...refused, source_id: 2, source: "B" }] } });
     await h.ingestBatch({ disabled: false });
-    assert.strictEqual(log.texts["bi-status"], S1);
+    assert.strictEqual(line(log, "bi-status"), S1);
     assert.ok(log.html["bi-results"].includes(S3) && !/skipped_offline/.test(log.html["bi-results"]), "every row says it was not fetched");
     assert.deepStrictEqual(log.toasts, [[S1, "warn"]]);
     assert.strictEqual(log.searches, 0);
@@ -110,8 +114,8 @@ const zero = { stored: 0, duplicate: 0, fetch_failed: 0, entries: 0 };
       results: [{ source_id: 1, source: "A", status: "ok", tally: { ...zero, skipped_offline: 1 } },
                 { source_id: 2, source: "B", status: "ok", tally: { ...zero, stored: 4 } }] } });
     await h.ingestBatch({ disabled: false });
-    assert.ok(log.texts["bi-status"].startsWith("Done: 1 of 2 fetched"), "a refused feed is not 'fetched': " + log.texts["bi-status"]);
-    assert.ok(log.texts["bi-status"].includes("1 not fetched (airplane mode)") && log.texts["bi-status"].includes("stored: 4"));
+    assert.ok(line(log, "bi-status").startsWith("Done: 1 of 2 fetched"), "a refused feed is not 'fetched': " + line(log, "bi-status"));
+    assert.ok(line(log, "bi-status").includes("1 not fetched (airplane mode)") && line(log, "bi-status").includes("stored: 4"));
     assert.ok(log.html["bi-results"].includes(S3) && log.html["bi-results"].includes("stored: 4"));
     assert.deepStrictEqual(log.toasts, [["Batch ingest complete.", "ok"]]);
     assert.strictEqual(log.searches, 1);
@@ -121,7 +125,7 @@ const zero = { stored: 0, duplicate: 0, fetch_failed: 0, entries: 0 };
       requested: 1, ingested: 1, aggregate: { ...zero, stored: 2 },
       results: [{ source_id: 1, source: "A", status: "ok", tally: { ...zero, stored: 2 } }] } });
     await h.ingestBatch({ disabled: false });
-    assert.ok(log.texts["bi-status"].startsWith("Done: 1 of 1 fetched") && !/airplane/i.test(log.texts["bi-status"]), "unchanged when nothing was refused");
+    assert.ok(line(log, "bi-status").startsWith("Done: 1 of 1 fetched") && !/airplane/i.test(line(log, "bi-status")), "unchanged when nothing was refused");
     assert.deepStrictEqual(log.toasts, [["Batch ingest complete.", "ok"]]);
   }
   // ---- lawTrack ----------------------------------------------------------------------------------------------------
