@@ -79,7 +79,7 @@ class El {
   set innerHTML(v) {
     const html = String(v);
     this._drop();
-    this.replaceChildren(new Text(html)); this._html = html;
+    this.replaceChildren(...(html === "" ? [] : [new Text(html)])); this._html = html;   // "" leaves no child, as in a browser
     for (const m of html.matchAll(/<(\w+)([^>]*)>/g)) {
       const id = /\bid="([^"]+)"/.exec(m[2]), cl = /\bclass="([^"]+)"/.exec(m[2]);
       if (!id && !cl) continue;
@@ -265,6 +265,11 @@ const has = (el, s) => el.innerHTML.includes(s) || el.textContent.includes(s);
     await tick(); await tick();
     h.switchTo("fr");
     assert.ok(has(h.$("cov-tm-body"), esc(FR["Coverage is unavailable right now."])), "the Coverage result follows a switch");
+    // A failed /api/jobs read empties both lists and keeps the last payload: a switch must not bring that list back.
+    h.$("jobs-body").innerHTML = ""; h.$("queue-body").innerHTML = "";
+    h.switchTo("de");
+    assert.strictEqual(h.$("jobs-body").innerHTML, "", "an emptied Active list stays empty across a switch");
+    assert.strictEqual(h.$("queue-body").innerHTML, "", "an emptied Queue list stays empty across a switch");
   }
 
   // 7. The listener calls the task manager's repaint.

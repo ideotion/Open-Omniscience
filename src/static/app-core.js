@@ -3216,7 +3216,10 @@
     // lists, the Schedule and the Coverage are drawn again from what they last read -- never a fetch, and nothing
     // for a panel never drawn. A Coverage read in flight draws its own result when it lands.
     function repaintTaskManager() {
-      if (_jobsData) _paintJobs();
+      // Only panels that show a list are redrawn: a failed /api/jobs read empties both and keeps _jobsData, and a
+      // switch must not bring that older list back as if it were current.
+      const ja = $("jobs-body"), jq = $("queue-body");
+      if (_jobsData && ((ja && ja.childNodes.length) || (jq && jq.childNodes.length))) _paintJobs();
       const sb = $("sched-tm-body");
       if (sb && sb.childNodes.length) _renderSchedule();
       const cb = $("cov-tm-body");
