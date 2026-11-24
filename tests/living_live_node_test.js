@@ -81,7 +81,7 @@ class El {
 
 const CORE = ["_ooLiveWatch", "_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml",
   "ooLiveRepaint"];
-const FNS = ["_livingT", "_livingTf", "_livingFailHtml", "loadLivingOverview", "loadLivingStream", "livingShowDiff", "loadLivingLaw",
+const FNS = ["_livingT", "_livingTf", "_livingFailHtml", "renderLivingOverview", "loadLivingOverview", "loadLivingStream", "livingShowDiff", "loadLivingLaw",
   "loadLivingPages", "lawPitSearch", "lawTopicCompare", "renderWikiDivergence", "loadWikiDivergence", "renderWikiAttention",
   "loadWikiAttention", "repaintWikiCompareFromCache", "loadLawWeek", "loadLivingLawDocs", "loadLawFloor", "loadLawThesauri",
   "loadLawVelocity", "loadLawAmendMap", "loadLivingMaps"];
@@ -92,7 +92,8 @@ const IDS = ["living-status", "living-stream", "living-diff-42", "living-law-cha
   "law-pit-on", "law-topic-results", "law-topic-q", "wiki-div-cands", "wiki-div-result", "wiki-att-tools", "wiki-att-result",
   ...PANELS.map((x) => x[1])];
 
-function harness(answers) {
+function harness(answers0) {
+  let answers = answers0;
   const map = Object.assign({}, locale("en"));
   let lang = "en";
   const OOI18N = engine(map, () => lang);
@@ -115,14 +116,16 @@ function harness(answers) {
     "let _livingOverview = null, _livingStreamOffset = 0, _livingStreamLast = null, _livingLawLast = null, _livingPagesLast = null;",
     "let _lawPitLast = null, _lawTopicLast = null, _wikiDivLast = null, _wikiDivCands = null, _wikiAttLast = null;",
     "let _lawWeekLast = null, _lawDocsLast = null, _lawFloorLast = null, _lawThesauriLast = null, _lawVelocityLast = null;",
-    "let _lawMapLast = null, _livingMapsLast = null;",
+    "let _lawMapLast = null, _livingMapsLast = null, _livingOverviewFailed = false, _wikiAttPending = false;",
     "const _LIVING_STREAM_PAGE = 50; const _livingDiffs = new Map(); const _WIKI_LANE_STATES = {};",
     ...CORE.map(extract), ...FNS.map(extract),
-    "return { fns: {" + FNS.join(",") + ", ooLiveRepaint} };",
+    "return { fns: {" + FNS.join(",") + ", ooLiveRepaint}, state: () => ({ _lawPitLast, _lawTopicLast, _livingLawLast,"
+      + " _livingStreamLast, _livingDiffs, _livingOverviewFailed }) };",
   ].join("\n");
   const env = {
     window, OOI18N, document, MutationObserver: undefined, console, esc, $: (id) => nodes[id] || null, api,
-    ooLabelText: (a, b) => a + ": " + b, renderLivingOverview() {}, renderLivingStream() {}, _livingStreamCap() {},
+    ooLabelText: (a, b) => a + ": " + b, livingGroupsHtml: () => "", livingGroupsFor: () => [], livingWhen: () => "now",
+    renderLivingStream() {}, _livingStreamCap() {},
     livingStreamRowsHtml: () => "<div>ROWS</div>", livingDiffBoxHtml: () => "<div>DIFF</div>", renderLivingLaw() {},
     renderLivingPages() {}, renderLawPit() {}, renderLawTopic() {}, _wikiCompareWire() {},
     wikiDivCandidatesHtml: () => "", wikiDivergenceHtml: () => "<div>DIV</div>", wikiAttentionHtml: () => "<div>ATT</div>",
@@ -131,11 +134,13 @@ function harness(answers) {
   };
   const out = new Function(...Object.keys(env), src)(...Object.values(env));
   return {
-    fns: out.fns, nodes, held, calls, $: (id) => nodes[id],
+    setAnswers(a) { answers = a; },
+    fns: out.fns, state: out.state, nodes, held, calls, $: (id) => nodes[id],
     switchTo(l) {
       lang = l; for (const k of Object.keys(map)) delete map[k]; Object.assign(map, locale(l));
       out.fns.ooLiveRepaint();                 // app-boot's ONE oo:langchange listener: every held node first,
-      out.fns.repaintWikiCompareFromCache();   // then the cached Living views (repaintLivingFromCache's compare part)
+      out.fns.renderLivingOverview();          // then the cached Living views (repaintLivingFromCache's overview
+      out.fns.repaintWikiCompareFromCache();   // and compare parts)
     },
   };
 }
@@ -228,6 +233,50 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     assert.ok(has(h.$("law-topic-results"), esc(DE["Loading…"])), "the topic search's loading line follows a switch");
     assert.ok(has(h.$("wiki-att-result"), esc(DE["Could not load"])), "the attention failure follows a switch");
     h.held.forEach((x) => x.reject(new Error("x"))); await law; await topic;
+  }
+
+  // 6. The cached views never redraw an older answer over a held line: each read forgets what it replaces before it
+  //    holds its prompt, loading or failure line, and the repaint draws only what is current.
+  {
+    const h = harness({ "GET /api/living/overview": { sources: [], read_at: "x", window_days: 7 },
+      "GET /api/law/versions/search?q=water": { hits: [] }, "GET /api/law/topics?q=water": { rows: [] },
+      "GET /api/law/changes?limit=50": { changes: [] }, "GET /api/wiki/lane/changes?limit=50&offset=0": { measured: true, changes: [], total: 99, count: 50 },
+      "GET /api/wiki/lane/revisions/42": { a: 1 }, "GET /api/wiki/lane/attention": { a: 1 } });
+    await h.fns.loadLivingOverview();
+    assert.ok(h.$("living-status").textContent.startsWith("Read now"), "a read overview says when it was read");
+    h.$("law-pit-q").value = "water"; h.$("law-topic-q").value = "water";
+    await h.fns.lawPitSearch(); await h.fns.lawTopicCompare(); await h.fns.loadLivingLaw(); await h.fns.loadLivingStream(false);
+    const btn = button("Show diff");
+    await h.fns.livingShowDiff(42, btn); await h.fns.livingShowDiff(42, btn);   // opened, then closed
+    await h.fns.loadWikiAttention("", true);
+    const s0 = h.state();
+    assert.ok(s0._lawPitLast && s0._lawTopicLast && s0._livingLawLast && s0._livingStreamLast && s0._livingDiffs.has(42), "every view holds a read");
+    h.held.length = 0;
+    const again = { "GET /api/living/overview": new Error("gone"), "GET /api/law/changes?limit=50": "hold",
+      "GET /api/wiki/lane/changes?limit=50&offset=50": new Error("gone"), "GET /api/wiki/lane/revisions/42": new Error("gone"),
+      "GET /api/wiki/lane/attention": "hold" };
+    h.setAnswers(again);
+    await h.fns.loadLivingOverview();
+    h.$("law-pit-q").value = ""; h.$("law-topic-q").value = "";
+    await h.fns.lawPitSearch(); await h.fns.lawTopicCompare();
+    const law = h.fns.loadLivingLaw();
+    await h.fns.loadLivingStream(true);
+    await h.fns.livingShowDiff(42, btn);
+    const att = h.fns.loadWikiAttention("", true);
+    const s1 = h.state();
+    assert.strictEqual(s1._lawPitLast, null, "the point-in-time search forgets its last results before its prompt");
+    assert.strictEqual(s1._lawTopicLast, null, "the topic search forgets its last results before its prompt");
+    assert.strictEqual(s1._livingLawLast, null, "the Law changes forget their last list before the Loading line");
+    assert.strictEqual(s1._livingStreamLast, null, "a failed older page leaves no list to redraw over its failure");
+    assert.ok(!s1._livingDiffs.has(42), "a failed diff leaves no older payload to redraw over its failure");
+    assert.strictEqual(s1._livingOverviewFailed, true);
+    h.switchTo("fr");
+    assert.strictEqual(h.$("living-status").textContent, FR["Could not load"] + ": gone", "a failed re-read is not covered by the read before it");
+    assert.ok(has(h.$("wiki-att-result"), esc(FR["Loading…"])), "a re-read in flight is not covered by the answer before it");
+    h.held[1].resolve({ a: 2 }); await att;
+    h.switchTo("de");
+    assert.strictEqual(h.$("wiki-att-result").innerHTML, "<div>ATT</div>", "the new answer is drawn");
+    h.held[0].reject(new Error("x")); await law;
   }
 
   const own = (loc, name, keys) => keys.forEach((k) => assert.ok(loc[k] && loc[k] !== k, name + " has its own words for " + k));

@@ -686,6 +686,7 @@
       else if (kind === "osm") loadLivingMaps();
     }
 
+    let _livingOverviewFailed = false;
     function renderLivingOverview() {
       const t = _livingT(), tf = _livingTf();
       const d = _livingOverview;
@@ -695,7 +696,8 @@
         if (el) el.innerHTML = livingGroupsHtml(livingGroupsFor(src, t, tf));
       });
       const st = $("living-status");
-      if (st) {
+      // A failed re-read keeps its own held line: the read before it is never shown as current.
+      if (st && !_livingOverviewFailed) {
         st.textContent = tf("Read {when}. Counts cover the last {days} days.", { when: livingWhen(d.read_at, t), days: d.window_days });
         st.title = t("Counts of what this machine recorded, read now. Nothing is sent anywhere.");
       }
@@ -712,8 +714,10 @@
       const t = _livingT();
       try {
         _livingOverview = await api("/api/living/overview");
+        _livingOverviewFailed = false;
         renderLivingOverview();
       } catch (e) {
+        _livingOverviewFailed = true;
         const st = $("living-status");
         if (st) ooLive(st, () => ooLabelText(t("Could not load"), e.message));   // held (row 367)
       }
@@ -775,6 +779,8 @@
         _livingStreamOffset += d.count;
         _livingStreamCap();
       } catch (e) {
+        // The failure line replaces the whole list, so nothing is held to redraw over it.
+        _livingStreamLast = null;
         ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT()));
       }
     }
@@ -791,6 +797,7 @@
         box.innerHTML = livingDiffBoxHtml(d, t, tf);
         if (btn) ooLive(btn, () => t("Hide diff"));
       } catch (e) {
+        _livingDiffs.delete(Number(revisionId));   // an older payload never redraws over this failure
         ooLiveHtml(box, () => _livingFailHtml(e.message, _livingT()));
       }
     }
@@ -843,6 +850,7 @@
       const t = _livingT();
       const box = $("living-law-changes");
       if (!box) return;
+      _livingLawLast = null;   // the last list never redraws over the Loading line
       ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         _livingLawLast = await api("/api/law/changes?limit=50");
@@ -955,6 +963,7 @@
       const t = _livingT();
       const box = $("law-pit-results"), q = ($("law-pit-q") || {}).value || "", on = ($("law-pit-on") || {}).value || "";
       if (!box) return;
+      _lawPitLast = null;   // the last results never redraw over the prompt or the Loading line
       if (!q.trim()) { ooLiveHtml(box, () => `<div class="muted">${esc(t("Type the words to find."))}</div>`); return; }
       ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
@@ -1215,6 +1224,7 @@
       const t = _livingT();
       const box = $("law-topic-results"), q = ($("law-topic-q") || {}).value || "";
       if (!box) return;
+      _lawTopicLast = null;   // the last results never redraw over the prompt or the Loading line
       if (!q.trim()) { ooLiveHtml(box, () => `<div class="muted">${esc(t("Type the words to find."))}</div>`); return; }
       ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try { _lawTopicLast = await api(`/api/law/topics?q=${encodeURIComponent(q)}`); renderLawTopic(); }
@@ -1899,6 +1909,7 @@
       }
     }
 
+    let _wikiAttPending = false;
     function renderWikiAttention() {
       const t = _livingT(), tf = _livingTf();
       const tools = $("wiki-att-tools"), out = $("wiki-att-result");
@@ -1911,8 +1922,8 @@
             `<option value="${esc(e)}"${e === pick ? " selected" : ""}>${esc((typeof ooLangCode === "function" && ooLangCode(e)) || e)}</option>`).join("")}</select> ` : "")
           + `<button type="button" class="secondary tiny" data-att-refresh>${esc(t("Refresh"))}</button>`;
       }
-      // Nothing held yet (a read in flight, or failed): the line drawn there is left to its own hold.
-      if (out && d) out.innerHTML = wikiAttentionHtml(d, t, tf);
+      // A read in flight or failed: the line drawn there is left to its own hold.
+      if (out && d && !_wikiAttPending) out.innerHTML = wikiAttentionHtml(d, t, tf);
     }
 
     async function loadWikiAttention(edition, force) {
@@ -1920,12 +1931,15 @@
       if (_wikiAttLast && !force) { renderWikiAttention(); return; }
       const t = _livingT();
       const out = $("wiki-att-result");
+      _wikiAttPending = true;
       if (out) ooLiveHtml(out, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const d = await api("/api/wiki/lane/attention" + (edition ? "?" + new URLSearchParams({ edition }).toString() : ""));
         _wikiAttLast = { d };
+        _wikiAttPending = false;
         renderWikiAttention();
       } catch (e) {
+        _wikiAttPending = false;
         _wikiAttLast = null;
         if (out) ooLiveHtml(out, () => _livingFailHtml(e.message, _livingT()));
       }

@@ -3,6 +3,8 @@
 # whose docstring states the method and its blind spots. tests/test_i18n_frozen_renderers.py
 # requires the scan to equal this list exactly. THE LIST IS THE RATCHET: a fix deletes its own
 # line in the same PR; a new freeze would have to add one, in plain sight in the diff.
+# The six unlock.js lines stay on purpose (row 367): the lock page sets its language once, in the first-launch
+# step, before they draw, and has no switcher. Pinned by tests/test_unlock_language_once.py.
 app-backup.js _uxCancelExport
 app-backup.js _uxImKeyRows
 app-backup.js _uxImLeftoverPlaintext
