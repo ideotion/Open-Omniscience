@@ -430,6 +430,59 @@ def test_short_memory_keeps_the_marker_and_the_task_manager_says_why(tmp_path, m
     eng.dispose()
 
 
+def test_a_storage_guard_wait_shows_in_the_task_manager(tmp_path, monkeypatch, roomy):
+    """Row 411: memory and disk suffice, but the storage guard holds writes, so the heal waits. The job ends (a
+    finished job is not listed), and the task manager's own row names the guard rather than showing nothing."""
+    from src.scheduler.storage_guard import storage_guard
+
+    monkeypatch.setattr(storage_guard, "engaged_now", lambda: True)
+    eng = _file_engine(tmp_path / "g.db")
+    s = sessionmaker(bind=eng, future=True)()
+    planned = open_window(s, keep=DRAIN_KEEP, reason="test")
+    s.close()
+
+    @contextlib.contextmanager
+    def _scope():
+        ss = sessionmaker(bind=eng, future=True)()
+        try:
+            yield ss
+            ss.commit()
+        finally:
+            ss.close()
+
+    monkeypatch.setattr("src.database.session.session_scope", _scope)
+
+    class _Ctx:
+        def __init__(self):
+            self.progress: list[dict] = []
+
+        def set_progress(self, **kw):
+            self.progress.append(kw)
+
+    ctx = _Ctx()
+    out = bb._heal_worker(ctx)
+    assert out["complete"] is False and out["reason"] == "storage_guard_engaged"
+    assert getattr(ctx.progress[-1]["detail"], "i18n", None) == bb.FRAME_WAITING_GUARD
+    s = sessionmaker(bind=eng, future=True)()
+    assert read_state(s) is not None and not set(planned) & _indexes(s), "the marker is kept, nothing claimed rebuilt"
+    s.close()
+
+    from src.api import jobs as jobs_api
+
+    monkeypatch.setattr("src.database.session.engine", eng)
+    monkeypatch.setitem(jobs_api._kw_index_cache, "at", 0.0)
+    monkeypatch.setitem(jobs_api._kw_index_cache, "value", None)
+    monkeypatch.setattr(jobs_api, "_KW_INDEX_TTL_S", -1.0)
+    rows = jobs_api._keyword_index_rows()
+    assert len(rows) == 1 and rows[0]["state"] == "paused" and rows[0]["detail_i18n"] == bb.FRAME_WAITING_GUARD
+    assert "memory" not in rows[0]["detail"] and "disk" not in rows[0]["detail"], "nothing was short"
+
+    monkeypatch.setattr(storage_guard, "engaged_now", lambda: False)
+    monkeypatch.setitem(jobs_api._kw_index_cache, "at", 0.0)
+    assert jobs_api._keyword_index_rows() == [], "memory and disk suffice once the guard lets go: no waiting row"
+    eng.dispose()
+
+
 def test_the_two_lines_are_keyed_in_every_language():
     import json
 

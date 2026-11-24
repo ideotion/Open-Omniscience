@@ -455,7 +455,19 @@ FRAME_WAITING_BOTH = (
     "The keyword indexes were not rebuilt yet: there is not enough free memory ({ram_free} MB free, about {ram_needed} MB "
     "needed) and not enough free disk space ({disk_free} MB free, about {disk_needed} MB needed)." + _WAIT_TAIL
 )
-FRAMES_WAITING = (FRAME_WAITING_MEMORY, FRAME_WAITING_DISK, FRAME_WAITING_BOTH)
+#: The line when the storage guard (R398) holds writes, so the rebuild waits with the marker kept (row 411, keyed x12).
+FRAME_WAITING_GUARD = (
+    "The keyword indexes were not rebuilt yet: writing to the database is paused because its storage needs attention."
+    + _WAIT_TAIL
+)
+FRAMES_WAITING = (FRAME_WAITING_MEMORY, FRAME_WAITING_DISK, FRAME_WAITING_BOTH, FRAME_WAITING_GUARD)
+
+
+def guard_waiting_line():
+    """The task-manager line for a rebuild the storage guard holds back (row 411): a ``Framed`` with no values."""
+    from src.jobs.background import Framed
+
+    return Framed(FRAME_WAITING_GUARD, FRAME_WAITING_GUARD)
 
 
 def mention_rows_bound(session: Session) -> int:
@@ -642,6 +654,8 @@ def owed_waiting_line(engine: Engine | None = None):
                 return None
             if not [n for n in state["planned"] if n not in _existing_indexes(s.connection())]:
                 return None
+            if _storage_guard_engaged():
+                return guard_waiting_line()
             room = rebuild_preflight(s, mention_rows_bound(s))
         finally:
             s.close()
@@ -670,6 +684,7 @@ def _heal_worker(ctx, **_kw) -> dict:
         if state is None:
             return {"complete": True, "created": []}
         if _storage_guard_engaged():
+            ctx.set_progress(detail=guard_waiting_line())
             return {"complete": False, "created": [], "reason": "storage_guard_engaged"}
         out = finish_window(session, on_progress=_progress)
     if out.get("waiting"):
