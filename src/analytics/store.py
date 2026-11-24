@@ -641,19 +641,22 @@ def _stamp_index_engine(
     from src.database.models import ArticleIndexStamp
 
     try:
-        from src.analytics.engine_identity import accepted_engine_ids
+        from src.analytics.engine_identity import INDEXER_VERSION, accepted_engine_ids_and_record
 
         # R758: the canonical id is the one written; a stamp naming the pre-R758 Windows id of the SAME engine (same bytes, other file
         # names) still vouches for the earlier pass's rows, so the conditional delete below keeps it.
-        accepted = accepted_engine_ids(extractor)
+        accepted, record = accepted_engine_ids_and_record(extractor)
         current = accepted[0]
     except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
         log_failure(_LOG, "could not compute the engine identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleIndexStamp).where(ArticleIndexStamp.article_id == article.id))
         return
     if certified:
+        # R824 (row 405): the stage version beside the id, and no carry provenance -- these rows were extracted HERE, whatever an
+        # earlier stamp said; the engine's readable components ride their own table, once per id.
         stmt = sqlite_insert(ArticleIndexStamp).values(
-            article_id=article.id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC)
+            article_id=article.id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
+            stage_version=INDEXER_VERSION, carried_from_batch=None,
         )
         session.execute(
             stmt.on_conflict_do_update(
@@ -662,9 +665,12 @@ def _stamp_index_engine(
                     "engine": stmt.excluded.engine,
                     "inputs": stmt.excluded.inputs,
                     "stamped_at": stmt.excluded.stamped_at,
+                    "stage_version": stmt.excluded.stage_version,
+                    "carried_from_batch": None,
                 },
             )
         )
+        _record_engine(session, current, "kw", record)
     else:
         session.execute(
             delete(ArticleIndexStamp).where(
@@ -689,16 +695,17 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
     from src.database.models import ArticleWwwStamp
 
     try:
-        from src.analytics.engine_identity import www_engine_id, www_inputs_digest
+        from src.analytics.engine_identity import WWW_INDEXER_VERSION, www_engine_record, www_inputs_digest
 
-        current = www_engine_id()
+        current, record = www_engine_record()
         inputs = www_inputs_digest(raw_content=raw_content, country=country)
     except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
         log_failure(_LOG, "could not compute the www identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleWwwStamp).where(ArticleWwwStamp.article_id == article_id))
         return
     stmt = sqlite_insert(ArticleWwwStamp).values(
-        article_id=article_id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC)
+        article_id=article_id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
+        stage_version=WWW_INDEXER_VERSION, carried_from_batch=None,
     )
     session.execute(
         stmt.on_conflict_do_update(
@@ -707,8 +714,26 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
                 "engine": stmt.excluded.engine,
                 "inputs": stmt.excluded.inputs,
                 "stamped_at": stmt.excluded.stamped_at,
+                "stage_version": stmt.excluded.stage_version,
+                "carried_from_batch": None,
             },
         )
+    )
+    _record_engine(session, current, "www", record)
+
+
+def _record_engine(session: Session, engine: str, stage: str, components: str) -> None:
+    """One ``index_engines`` row per engine id (R824, row 405): what the id is a hash of, so a later restore of this store can name the
+    component that differs from its own engine. An insert that keeps an existing row, one primary-key probe per stamp; it writes inside
+    the stamp's own transaction, so the row exists exactly when a stamp naming it does."""
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    from src.database.models import IndexEngine
+
+    session.execute(
+        sqlite_insert(IndexEngine)
+        .values(engine=engine, stage=stage, components=components, recorded_at=datetime.now(UTC))
+        .on_conflict_do_nothing(index_elements=[IndexEngine.engine])
     )
 
 

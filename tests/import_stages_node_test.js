@@ -68,6 +68,7 @@ const src = [
   // 2026-09-28 walk: the analytics statement on its own (an ended run reuses it), and
   // the "nothing of this import reached the corpus" test stages 3 and 4 read.
   extract("function _uxImAnalyticsStatement("),
+  extract("function _uxImStageLines("),
   extract("function _uxImNothingMerged("),
   extract("function _uxImRenderStatements("),
   extract("function _uxImRenderStages("),
@@ -95,7 +96,7 @@ const src = [
   "return { _uxImReindexBits, _uxImStatements, _uxImRenderStages, _uxImLastLineHtml,"
   + " _uxImCheckpointHtml, _uxImHistoryHtml, _uxPatchRow, _uxPruneRows,"
   + " _uxImStage4Owed, _uxImFreshView, _uxImRunSummary, _uxImRenderFresh,"
-  + " _uxImStartGuarded, _uxImFinishedReports, __setApi, view: () => _uxImView };",
+  + " _uxImStartGuarded, _uxImFinishedReports, _uxImAnalyticsStatement, __setApi, view: () => _uxImView };",
 ].join("\n");
 
 function makeNode() {
@@ -162,6 +163,22 @@ test("a running drain with no total says it is resuming and invents no numerator
   const out = mod._uxImReindexBits({ state: "running", done: 0, total: 0 }, t, tf);
   assert(out.indexOf("resuming re-index") !== -1, out);
   assert(out.indexOf(" of ") === -1, "no denominator exists, so none may be drawn: " + out);
+});
+
+// R824 (row 405): the three counts per stage, from the backlog's own stamps.
+test("a pending backlog adds carried, extracted here and awaiting per stage", () => {
+  const bk = { available: true, articles_pending: 7, stages: {
+    kw: { carried: 90, extracted_here: 3, awaiting: 0 },
+    www: { carried: 0, extracted_here: 86, awaiting: 7 } } };
+  const out = mod._uxImAnalyticsStatement({ state: "idle" }, { state: "idle", backlog: bk }, t, tf);
+  assert(out.length === 3, JSON.stringify(out));
+  assert(out[1].text.indexOf("Keywords and dates: 90 reused") === 0 && out[1].ok === true, out[1].text);
+  assert(out[2].text.indexOf("86 extracted on this computer, 7 still to extract") !== -1 && out[2].ok === false, out[2].text);
+});
+
+test("a backlog without stage counts draws no stage line, never zeros", () => {
+  const out = mod._uxImAnalyticsStatement({ state: "idle" }, { state: "idle", backlog: { available: true, articles_pending: 4 } }, t, tf);
+  assert(out.length === 1, JSON.stringify(out));
 });
 
 // ── the three statements (Q203) ──────────────────────────────────────────────
