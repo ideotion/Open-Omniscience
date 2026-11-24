@@ -381,7 +381,8 @@ def test_the_insights_header_is_keyed_frames_around_fmt_num_counters():
 
 
 def test_the_keyword_growth_head_uses_the_locale_separator():
-    head = strip_comments(function_body(read_static("app-diagnostics.js"), "viewKeywordGrowth"))
+    # Row 361: the head is built by _keywordGrowthHtml, which viewKeywordGrowth draws through ooLiveHtml.
+    head = strip_comments(function_body(read_static("app-diagnostics.js"), "_keywordGrowthHtml"))
     assert_present(head, 'ooLabelHtml(esc(t("Keywords"))')
     assert_absent(head, 't("Keywords"))}: <b>', why="a welded colon is wrong in fr/zh/ar")
     assert_absent(head, "toLocaleString", why="the browser's grouping, not the ruled one")
