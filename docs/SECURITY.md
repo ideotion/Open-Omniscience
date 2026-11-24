@@ -866,7 +866,9 @@ imply a protection we cannot deliver.
   (absent) or 1 (lost); with the drive absent or unidentified it runs before the app opens anything (`src/api/_panic_precheck.py`,
   row 388): asked first unless `--yes`, it erases what the overrides keep outside the drive without the database module (which
   cannot be imported without the drive), says "Files erased outside the data drive: N of M" (or that nothing was found there)
-  and that the stores and keys on the drive were not erased, and still exits 2. The free-space overwrite after it writes
+  and that the stores and keys on the drive were not erased, and still exits 2. A drive plugged in while the question waits is
+  left whole (the operator agreed only to the rest), and another program holding a store outside the drive is said ("may be
+  incomplete"); the CLI process opened no pool of its own, so its own connections count 0. The free-space overwrite after it writes
   nothing at the path of an absent drive (`scrub_not_done: "drive_absent"`) and never says the corpus is unrecoverable.
   R812: a folder whose marker file is there and cannot be read is "The data drive could not be identified", the same failure
   (an empty mount point stays "not present"); the drive's identity (resolved folder's device and inode, a directory descriptor

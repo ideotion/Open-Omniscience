@@ -1103,7 +1103,7 @@ def _left_entries(base: Path) -> dict[str, list[str]]:
 
 def quick_crypto_erase(
     confirm: bool = False, *, data_dir: Path | None = None, hold_for_rescrub: bool = False, hold_generation: int = 0,
-    settle: bool = True,
+    settle: bool = True, off_drive_only: bool = False,
 ) -> dict:
     """Instant crypto-erase then remove the data dir. Requires ``confirm=True``.
 
@@ -1141,7 +1141,7 @@ def quick_crypto_erase(
         # R802: the erase latches its folder before it touches a byte; its own overwrites, on this thread, are the writes let through.
         with erase_owned():
             report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed, close_own_pool=own,
-                                         drive_fds=drive_fds)
+                                         drive_fds=drive_fds, off_drive_only=off_drive_only)
             report["files_not_kept"] = len(missed)  # a count: the names are never reported
             if settle or own:
                 finish_holder_check(report, generation)
@@ -1207,7 +1207,7 @@ def _close_own_pool() -> int | None:
 
 
 def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[str], close_own_pool: bool = False,
-                        drive_fds: list[int] | None = None) -> dict:
+                        drive_fds: list[int] | None = None, off_drive_only: bool = False) -> dict:
     """The erase itself (see :func:`quick_crypto_erase`); keeps its descriptors under ``generation`` and names in ``missed``
     each file of a store that existed but could not be kept."""
 
@@ -1219,6 +1219,11 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # is read, erased, scoped or removed. What the overrides keep elsewhere (DATABASE_URL, OO_COLUMNAR_DIR) and the passphrase held
     # in memory are still erased, and counted apart. A drive that IS there has its device read now and again at the end (R809).
     drive = _drive_state(base) if data_dir is None else "unwatched"
+    # Row 388: the panic CLI asked for what is OUTSIDE a drive it found not there; a drive there again by now (plugged in while
+    # the question waited) is left whole, exactly as if it were still away: the operator never agreed to erase it.
+    drive_returned = off_drive_only and drive not in ("absent", "unidentified")
+    if drive_returned:
+        drive = "absent"
     drive_absent = drive in ("absent", "unidentified")
     drive_unidentified = drive == "unidentified"
     anchor = _drive_anchor(base) if drive == "ok" else None
@@ -1680,6 +1685,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         # R809: the marked drive was not there (nothing on it touched; the counts above are what was erased elsewhere), or it went
         # away during the erase. Either is a failure state: never "removed", never clean.
         "drive_absent": drive_absent,
+        "drive_returned": drive_returned,  # row 388: the drive is there now and was left whole (off_drive_only)
         "drive_unidentified": drive_absent and drive_unidentified,  # R812 (a)
         "drive_lost": drive_lost,
         "drive_forgotten": drive_lost and drive_forgotten,  # R812 (b)
