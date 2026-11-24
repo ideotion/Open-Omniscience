@@ -2729,8 +2729,8 @@
       if (!st) return [];
       const out = [];
       for (const [key, tpl] of [
-        ["kw", "Keywords and dates: {carried} reused from the backup, {here} extracted on this computer, {awaiting} still to extract."],
-        ["www", "Places, people and organisations: {carried} reused from the backup, {here} extracted on this computer, {awaiting} still to extract."],
+        ["kw", "Keywords and dates, articles reused from the backup: {carried}; extracted on this computer: {here}; still to extract: {awaiting}."],
+        ["www", "Places, people and organisations, articles reused from the backup: {carried}; extracted on this computer: {here}; still to extract: {awaiting}."],
       ]) {
         const s = st[key];
         if (!s) continue;
@@ -2739,7 +2739,7 @@
           awaiting: fmtNum(Number(s.awaiting), 0) }) });
         // A stamp written before stamps recorded where they came from: carried or extracted here, nobody can say which now.
         if (Number(s.not_recorded) > 0) {
-          out.push({ ok: true, text: tf("{n} more were already extracted before this version recorded whether an extraction came from a backup.", {
+          out.push({ ok: true, text: tf("{n} more articles were extracted before this version began recording whether an extraction came from a backup, so for these it is not known.", {
             n: fmtNum(Number(s.not_recorded), 0) }) });
         }
       }
