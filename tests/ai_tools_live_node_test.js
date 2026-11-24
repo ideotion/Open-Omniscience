@@ -494,6 +494,18 @@ const frame = (L, label, text) => L["{prefix}: {text}"].replace("{prefix}", labe
     await h.fns.loadQualifyBulk();
     assert.strictEqual(line.textContent, DE["{n} candidates awaiting qualification."].replace("{n}", "2"), "a later read shows the backlog again");
   }
+  {
+    // the read after the run fails: the run's line is still the news, not "Could not load"
+    let reads = 0;
+    const h = harness({
+      "/api/sources/qualify-bulk/status": () => (++reads === 1 ? { running: false, backlog: {} } : new Error("offline")),
+      "POST /api/sources/qualify-bulk": { started: true },
+    }, { poll: async () => ({ state: "error", error: "boom" }) });
+    const errs = console.error; console.error = () => {};
+    try { await h.fns.qualifyBulkStart(null); await tick(); } finally { console.error = errs; }
+    assert.strictEqual(reads, 2);
+    assert.strictEqual(h.$("qualify-bulk-status").textContent, "Qualification failed — see console");
+  }
 
   console.log("ai_tools_live_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });

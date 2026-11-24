@@ -125,7 +125,8 @@
         const qd = document.querySelector('#set-advanced details.adv-sec[data-adv="qualification"]');
         if (qd && qd.dataset.advLoaded === "1" && typeof loadQualificationGates === "function") {
           loadQualificationGates();
-          if (typeof loadQualifyBulk === "function") loadQualifyBulk();
+          // The backlog line (loadQualifyBulk) is a held render now (row 367): ooLiveRepaint redraws it, and a re-read
+          // here would replace a finished run's tally, which belongs to the read after the run, with the backlog.
           // The queue panel picks its list separator from the page direction, so it has to be
           // redrawn on a switch too (found in the R95 follow-up review: en -> ar kept the ASCII comma).
           if (typeof loadQualQueue === "function") loadQualQueue();

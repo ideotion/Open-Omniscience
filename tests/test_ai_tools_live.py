@@ -29,3 +29,11 @@ def test_the_ai_tools_lines_in_node():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "ai_tools_live_node_test.js: OK" in proc.stdout
+
+
+def test_a_language_switch_does_not_re_read_the_qualification_line():
+    """The line is a held render; a re-read on a switch would replace a finished run's tally with the backlog."""
+    boot = (_ROOT / "src" / "static" / "app-boot.js").read_text(encoding="utf-8")
+    code = "\n".join(line.split("//", 1)[0] for line in boot.splitlines())
+    assert "loadQualificationGates();" in code
+    assert "loadQualifyBulk(" not in code

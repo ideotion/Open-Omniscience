@@ -825,9 +825,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("qualify-bulk-status");
       if (!out) return;
+      const done = _qualifyBulkDone;
+      _qualifyBulkDone = null;
       try {
-        const done = _qualifyBulkDone;
-        _qualifyBulkDone = null;
         const st = await api("/api/sources/qualify-bulk/status");
         const cancelBtn = $("qualify-bulk-cancel-btn");
         ooLive(out, () => (!st.running && done ? done() : _qualifyBulkLine(st)));
@@ -858,7 +858,10 @@
           }
           if (cancelBtn) cancelBtn.style.display = "none";
         }
-      } catch (e) { ooLive(out, () => t("Could not load qualification status.")); }
+      } catch (e) {
+        // a finished run's line is still the news when the read after it fails
+        ooLive(out, () => (done ? done() : t("Could not load qualification status.")));
+      }
     }
     async function qualifyBulkStart(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
