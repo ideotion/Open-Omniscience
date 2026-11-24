@@ -34,12 +34,21 @@ marker read that fails for a moment pins only the connections closed in that mom
 erase's to decide. Only a watched data folder (one marked on a drive at first launch, R86) is asked about; a data folder on the
 internal disk has no drive to be swapped.
 
+A connection the disposal does not close (one checked out at that moment, which goes back to the replaced pool and is freed with it;
+or one opened after the shutdown disposal) is closed by its deallocation, which no patched close sees. So every tracked connection
+on a drive that is not the marked one is pinned at the three moments that can leave one to that: when the watchdog finds the drive
+gone (src/safety/data_volume.py ``VolumeMonitor._trigger``), at every :func:`~src.database.session.dispose_engine`, and at exit
+(an ``atexit`` hook registered at import, so it runs after every hook the app registers later, before the interpreter frees
+anything) (:func:`pin_if_gone`).
+
 STATED LIMITS: only connections opened through a SQLAlchemy pool are tracked (the corpus engine and the lane engines). A raw
 ``sqlite3``/``sqlcipher3`` connection a module opens and closes itself is short-lived and, after the erase latched the folder
 (R802), refused. A connection closed before the drive was found changed was closed on the drive the erase last saw. A pool
 connection DETACHED from its pool (``Connection.detach()``; nothing in the app detaches one) is not followed once detached.
-A pool record freed (its engine let go of) is closed by its own deallocation, which no patched close sees: nothing in the app lets
-go of an engine with connections on the data drive while it runs, and an erase's pin holds every tracked one first.
+A connection freed between the drive changing and the next of those three moments (seconds: the watchdog polls) is closed on the
+drive there by its deallocation. Raw ``sqlite3`` connections a module opens and closes itself (the wiki dump index, the OSM reader,
+the keyword log scan) are not pooled and not covered: they open the file at the path, so they read or write the other drive's file
+(as every write in the data folder would) and close it whole, without removing another store's log.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -47,6 +56,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import atexit
 import contextlib
 import ctypes
 import logging
@@ -169,11 +179,39 @@ def _pin_one(conn: Any) -> None:
     _LOG.warning("data drive: a connection on it is kept open until the app closes, since the drive there is not the marked one (row 390)")
 
 
+def _pin_tracked(base: Path) -> None:
+    """Pin every tracked pool connection with a file on ``base`` (checked out or not): never closed, never freed."""
+    with _LOCK:
+        for key, (ref, files) in list(_LIVE.items()):
+            if key in _PINNED_IDS or not any(_under(f, base) for f in files):
+                continue
+            conn = _live_connection(key, ref)
+            if conn is None:
+                _LIVE.pop(key, None)
+                continue
+            _PINNED_IDS.add(key)
+            _immortal(conn)
+
+
+def pin_if_gone() -> int:
+    """Row 390: when a data drive is not the marked one (found by an erase, or asked now), pin every tracked connection on it, before
+    a disposal leaves one to its deallocation or the exit frees it. Returns how many are pinned in all. Never raises."""
+    try:
+        for base in _gone_bases():
+            _pin_tracked(base)
+    except Exception as exc:  # noqa: BLE001 - never stops a disposal or the exit
+        _LOG.error("could not pin the connections on the data drive (%s)", type(exc).__name__)  # the type only: no path
+    return len(_PINNED)
+
+
 def _do_close(self, dbapi_connection) -> None:
     """The dialect's close, except for a pinned connection, which is never closed in this process, and (row 390) a connection with a
     file on a data drive that is not the marked one right now, which is pinned instead. The connection is the one being closed, so
     reading its files here races no other user of it."""
     if id(dbapi_connection) in _PINNED_IDS:
+        return
+    if getattr(self, "name", "sqlite") != "sqlite":  # another backend (DATABASE_URL elsewhere) has no file in the data folder
+        _ORIGINAL_DO_CLOSE(self, dbapi_connection)
         return
     try:
         bases = _gone_bases()
@@ -182,11 +220,13 @@ def _do_close(self, dbapi_connection) -> None:
         gone = bool(_FROZEN) or _changed_drive() is not None
     if gone:
         _pin_one(dbapi_connection)
+        pin_if_gone()  # the rest on that drive too: one checked out now is otherwise freed later with its pool, unseen
         return
     _ORIGINAL_DO_CLOSE(self, dbapi_connection)
 
 
 _sa_default.DefaultDialect.do_close = _do_close  # type: ignore[method-assign]  # row 390: from import on, every close asks
+atexit.register(pin_if_gone)  # registered first, so it runs last: after the app's own exit disposal, before anything is freed
 
 
 def _under(path: str | None, base: Path) -> bool:
@@ -288,16 +328,7 @@ def pin_drive(base: Path) -> int:
             if not any(os.path.abspath(b) == os.path.abspath(base) for b in _FROZEN):
                 _FROZEN.append(Path(base))  # first: a serve closed from here on, by any thread, is kept (close_or_keep)
         _sa_default.DefaultDialect.do_close = _do_close  # type: ignore[method-assign]  # installed at import; again, should anything have reset it
-        with _LOCK:
-            for key, (ref, files) in list(_LIVE.items()):
-                if key in _PINNED_IDS or not any(_under(f, base) for f in files):
-                    continue
-                conn = _live_connection(key, ref)
-                if conn is None:
-                    _LIVE.pop(key, None)
-                    continue
-                _PINNED_IDS.add(key)
-                _immortal(conn)
+        _pin_tracked(base)
         _pin_serves(base)
     except Exception as exc:  # noqa: BLE001 - never stops an erase; the result still says the key may be in memory
         _LOG.error("could not pin every connection on the data drive (%s)", type(exc).__name__)  # the type only: no path

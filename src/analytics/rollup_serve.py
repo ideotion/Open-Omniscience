@@ -504,6 +504,9 @@ def _build_inmemory_and_swap() -> dict | None:
         if not ok:  # a decline or an error: this connection is never served, so it must not leak
             _close_con(con, spill)
             _remove_spill(spill)  # after the close: DuckDB holds its files open until then
+    if spill and _on_frozen_drive(spill):
+        _close_con(con, spill)  # kept, never closed (R813 / row 390); the folder stays
+        return {"reason": DRIVE_CHANGED, "at": time.time()}
     if spill and _corpus_encrypted():
         # The library was encrypted while this build ran: its offload folder holds plaintext derived data, so the connection is
         # not served. Closed, folder removed; the next request builds again with no offload. Not a stop: no hold is kept.
@@ -629,6 +632,8 @@ def _refresh_persisted_build() -> bool | None:
         # given no passphrase (or no secure backend) hands back an IN-MEMORY store, which this function would record as the persisted one.
         # The generation BEFORE the key: a clearing or a new key between the two reads leaves this generation behind, so the check
         # under the lock below declines the store (never records one keyed by a key it did not read the generation of).
+        if _on_frozen_drive(True):
+            return _persisted_declined(DRIVE_CHANGED)  # row 390: never opens (nor makes) the store at the path, on another drive
         key_gen = _key_generation()
         passphrase = _persist_passphrase()
         if not passphrase:
@@ -1306,6 +1311,9 @@ def _spill_folder(*, make: bool) -> str:
     from src.paths import data_dir
 
     global _OWN_SPILL_SWEPT
+    if _on_frozen_drive(True):
+        # Row 390: the data folder's drive is not the marked one: nothing is made, swept or removed there (it is another drive's).
+        raise RuntimeError("the data drive is not the marked one")
     root = data_dir() / "duckdb_tmp"
     # One caller at a time: the map serve and the source-coverage benchmark take their folder here too, and a first
     # sweep running beside another caller's new folder of this pid would remove a live connection's folder.

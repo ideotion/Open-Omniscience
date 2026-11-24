@@ -200,6 +200,82 @@ def test_a_cached_persisted_serve_on_a_gone_drive_is_taken_out_and_never_refresh
     rollup_serve._PERSISTED_DECLINE["why"] = None
 
 
+def test_a_straggler_the_disposal_leaves_is_pinned_before_its_pool_frees_it(drive):
+    """The security read's finding: a connection checked out at the disposal goes back to the replaced pool and is freed with it,
+    a close no patched close sees. ``dispose_engine`` pins it first."""
+    import gc
+
+    folder, state = drive
+    eng, _raw = _wal_store(folder / "x.db")
+    c = eng.connect()
+    raw = c.connection.dbapi_connection
+    assert raw is not None
+    state["now"] = "mismatch"
+    drive_pin.pin_if_gone()  # what dispose_engine and the exit hook do first
+    eng.dispose()
+    c.close()
+    del c, eng
+    gc.collect()
+    raw.execute("select count(*) from t").fetchall()  # never closed, never freed
+    assert (folder / "x.db-wal").exists()
+
+
+def test_dispose_engine_and_the_watchdog_pin_first():
+    src = Path("src/database/session.py").read_text(encoding="utf-8")
+    i = src.index("def dispose_engine()")
+    assert "_drive_pin.pin_if_gone()" in src[i:i + 3000]
+    v = Path("src/safety/data_volume.py").read_text(encoding="utf-8")
+    i = v.index("def _trigger(")
+    assert "pin_if_gone()" in v[i:i + 1500]
+    assert "atexit.register(pin_if_gone)" in Path("src/database/drive_pin.py").read_text(encoding="utf-8")
+
+
+def test_the_watchdogs_finding_pins_what_is_open_on_the_drive(drive, monkeypatch):
+    folder, state = drive
+    eng, raw = _wal_store(folder / "x.db")
+    monkeypatch.setattr(data_volume, "record_incident", lambda *a, **k: None)
+    monkeypatch.setattr(data_volume, "_activity", lambda: {})
+    mon = data_volume.VolumeMonitor(probe_fn=lambda: {"state": "missing"}, pause_fn=lambda: None)
+    state["now"] = "missing"
+    with mon._lock:
+        mon._trigger("test")
+    assert id(raw) in drive_pin._PINNED_IDS
+    eng.dispose()
+    raw.execute("select 1").fetchall()
+
+
+def test_nothing_is_made_or_opened_on_a_gone_drive(drive, monkeypatch):
+    from src.analytics import columnar, rollup_serve
+
+    _folder, state = drive
+    state["now"] = "missing"
+    assert rollup_serve._spill_setting() == "" and rollup_serve._persisted_spill_setting() == ""
+    monkeypatch.setitem(rollup_serve._STATE, "con", None)
+    monkeypatch.setitem(rollup_serve._STATE, "persisted", False)
+    monkeypatch.setattr(columnar, "open_store", lambda *a, **k: pytest.fail("the store at the path is another drive's"))
+    assert rollup_serve._refresh_persisted_build() is False
+    assert rollup_serve._PERSISTED_DECLINE["why"] == rollup_serve.DRIVE_CHANGED
+    rollup_serve._PERSISTED_DECLINE["why"] = None
+
+
+def test_another_backend_is_closed_as_before(drive):
+    folder, state = drive
+    state["now"] = "missing"
+
+    class Dialect:
+        name = "postgresql"
+
+    class Conn:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    conn = Conn()
+    drive_pin._do_close(Dialect(), conn)
+    assert conn.closed
+
+
 def test_the_refusal_reasons_name_the_drive():
     src = Path("src/analytics/rollup_serve.py").read_text(encoding="utf-8")
     assert 'DRIVE_CHANGED = "drive-changed"' in src
@@ -224,6 +300,14 @@ with session.engine.begin() as c:  # a WAL store with a log on the drive, its co
     for i in range(40):
         c.execute(text("insert into t values(:a)"), {"a": "x" * 400})
 assert (data / "open_omniscience.db-wal").exists()
+if sys.argv[1] == "straggler-unguarded":  # the control for a straggler: no pin before the disposal nor at exit
+    import atexit
+    import src.database.drive_pin as dp
+    atexit.unregister(dp.pin_if_gone)
+    dp.pin_if_gone = lambda: 0
+if sys.argv[1].startswith("straggler"):
+    straggler = session.engine.connect()
+    straggler.execute(text("select count(*) from t")).fetchall()
 subprocess.check_call(["mount", "-t", "tmpfs", "-o", "size=20m", "tmpfs", str(data.parent)])
 data.mkdir()
 if sys.argv[1] != "absent":
@@ -236,6 +320,8 @@ if sys.argv[1] == "unguarded":  # the control: the close as it was before row 39
 from src.database.shutdown_checkpoint import checkpoint_before_dispose
 print("STEP " + json.dumps(checkpoint_before_dispose()))
 session.dispose_engine()  # the lifespan's shutdown disposal
+if sys.argv[1].startswith("straggler"):  # the only connection was checked out at the disposal: back to the replaced pool, freed at exit
+    straggler.close()
 print("DONE")
 """  # then a normal exit: interpreter teardown and the atexit disposal
 
@@ -283,13 +369,14 @@ def _run_child(tmp_path, scen):
     return files, step
 
 
-def test_without_the_check_the_ordinary_close_deletes_the_other_drives_log_files(tmp_path):
-    files, _step = _run_child(tmp_path, "unguarded")
+@pytest.mark.parametrize("scen", ["unguarded", "straggler-unguarded"])
+def test_without_the_check_the_ordinary_close_deletes_the_other_drives_log_files(tmp_path, scen):
+    files, _step = _run_child(tmp_path, scen)
     assert files.get("open_omniscience.db-wal") != _FOREIGN["open_omniscience.db-wal"], (
         "the control did not reproduce the deletion: the test below would prove nothing")
 
 
-@pytest.mark.parametrize("scen", ["absent", "mismatch"])
+@pytest.mark.parametrize("scen", ["absent", "mismatch", "straggler"])
 def test_another_drive_at_the_path_keeps_its_files_through_an_ordinary_shutdown(tmp_path, scen):
     files, step = _run_child(tmp_path, scen)
     for name, body in _FOREIGN.items():
