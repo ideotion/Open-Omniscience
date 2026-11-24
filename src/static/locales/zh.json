@@ -8149,6 +8149,7 @@
   "the background journal read has not completed (or was never started) — unmeasured, not 'clean'": "后台读取 journal 尚未完成（或从未开始）— 未测量，并非 'clean'",
   "the background kernel-log read has not completed (or was never started, e.g. outside the app's own boot path) — unmeasured, not 'clean'": "后台读取内核日志尚未完成（或从未开始，例如在应用自身的启动路径之外）— 未测量，并非 'clean'",
   "the backlog could not be read": "无法读取待处理队列",
+  "the backup lists this key file more than once; no copy is written, and it stays in the backup": "备份中多次列出此密钥文件；不会写入任何副本，仍保留在备份中",
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "包的版本、生成时间、案例名称（您的搜索查询或分析标签）、文章数量，以及涵盖它们的默克尔根",
   "the climate fetch record holds no readable dataset entry": "气候获取记录中没有可读取的数据集条目",
   "the concept “{concept}”": "概念“{concept}”",

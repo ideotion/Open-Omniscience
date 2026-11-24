@@ -8149,6 +8149,7 @@
   "the background journal read has not completed (or was never started) — unmeasured, not 'clean'": "لم تكتمل قراءة journal في الخلفية (أو لم تبدأ أبدًا) — غير مقيسة، وليست 'clean'",
   "the background kernel-log read has not completed (or was never started, e.g. outside the app's own boot path) — unmeasured, not 'clean'": "لم تكتمل قراءة سجل النواة في الخلفية (أو لم تبدأ أبدًا، مثلًا خارج مسار إقلاع التطبيق نفسه) — غير مقيسة، وليست 'clean'",
   "the backlog could not be read": "تعذّرت قراءة المتأخرات",
+  "the backup lists this key file more than once; no copy is written, and it stays in the backup": "تذكر النسخة الاحتياطية ملف المفتاح هذا أكثر من مرة؛ لا تتم كتابة أي نسخة منه، ويبقى في النسخة الاحتياطية",
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "إصدار الحزمة، ووقت إنشائها، واسم القضية (استعلام بحثك أو تسمية التحليل)، وعدد المقالات، وجذر ميركل الذي يغطيها",
   "the climate fetch record holds no readable dataset entry": "سجل جلب المناخ لا يحوي أي مدخل مجموعة بيانات مقروء",
   "the concept “{concept}”": "المفهوم «{concept}»",

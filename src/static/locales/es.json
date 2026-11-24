@@ -8149,6 +8149,7 @@
   "the background journal read has not completed (or was never started) — unmeasured, not 'clean'": "la lectura del journal en segundo plano no ha terminado (o nunca empezó) — sin medir, no 'clean'",
   "the background kernel-log read has not completed (or was never started, e.g. outside the app's own boot path) — unmeasured, not 'clean'": "la lectura del registro del kernel en segundo plano no ha terminado (o nunca empezó, p. ej. fuera de la ruta de arranque de la propia aplicación) — sin medir, no 'clean'",
   "the backlog could not be read": "no se pudo leer la cola pendiente",
+  "the backup lists this key file more than once; no copy is written, and it stays in the backup": "la copia de seguridad incluye este archivo de clave más de una vez; no se escribe ninguna copia y permanece en la copia de seguridad",
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "la versión del paquete, cuándo se creó, el nombre del caso (su consulta de búsqueda o la etiqueta del análisis), cuántos artículos tiene y la raíz de Merkle que los cubre",
   "the climate fetch record holds no readable dataset entry": "el registro de descargas climáticas no contiene ninguna entrada de conjunto de datos legible",
   "the concept “{concept}”": "el concepto «{concept}»",

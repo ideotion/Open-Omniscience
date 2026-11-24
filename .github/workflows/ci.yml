@@ -754,7 +754,8 @@ jobs:
             tests/test_custody_timestamp.py \
             tests/test_capability_probes.py \
             tests/test_annotations.py \
-            tests/test_dependency_ceilings.py
+            tests/test_dependency_ceilings.py \
+            "tests/test_restore_key_rewrap.py::test_r811_the_real_ml_dsa_65_layout_keeps_the_public_key_hash_where_the_check_reads_it"
 
       # THE urllib3 LOG TABLE ON THE FLOOR RELEASE, in a second environment of this job (folded in from the former `urllib3-floor` job on
       # 2026-11-14, PR #1988, so a run takes one runner fewer). The table of urllib3 log calls (src/ingest/urllib3_log.py) was read from two

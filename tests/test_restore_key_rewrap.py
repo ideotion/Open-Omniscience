@@ -43,19 +43,22 @@ posix_only = pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
 
 
 class _FakeMldsa:
-    """Stands in for the post-quantum backend, so the ML-DSA key file's restore is tested without the library."""
+    """Stands in for the post-quantum backend, so the ML-DSA key file's restore is tested without the library. Its keys
+    have the ML-DSA-65 sizes and keep tr = SHAKE256(public key) where FIPS 204 does (bytes 64..128 of the secret key),
+    since the restore checks that where the library is absent (R811)."""
 
-    PUBLIC_KEY_SIZE = 40
+    PUBLIC_KEY_SIZE = 1952
 
     @staticmethod
     def _public(sk: bytes) -> bytes:
-        d = hashlib.sha256(sk).digest()
-        return d + d[:8]
+        return hashlib.shake_256(b"fake-mldsa-public" + sk[:64]).digest(1952)
 
     @classmethod
     def generate_keypair(cls):
-        sk = os.urandom(100)
-        return cls._public(sk), sk
+        seed = os.urandom(64)
+        pk = cls._public(seed)
+        sk = seed + hashlib.shake_256(pk).digest(64) + os.urandom(4032 - 128)
+        return pk, sk
 
     # R811 (1): the restore checks a carried pair with one sign-and-verify round trip, so the stand-in signs too: the
     # public key it derives from the secret key, then the bytes (a public key from another pair does not verify)
@@ -66,6 +69,12 @@ class _FakeMldsa:
     @staticmethod
     def verify(pk: bytes, data: bytes, sig: bytes) -> bool:
         return sig == pk + data
+
+
+def _ml_blob() -> bytes:
+    """An ML-DSA-65 key file's bytes (public key + secret key) whose halves belong together."""
+    pk, sk = _FakeMldsa.generate_keypair()
+    return pk + sk
 
 
 @pytest.fixture(autouse=True)
@@ -565,7 +574,7 @@ def test_without_the_post_quantum_library_a_wrapped_pair_is_still_restored_whole
     monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
     _hold(monkeypatch, HERE)
     ed = Ed25519PrivateKey.generate()
-    ml = os.urandom(140)  # public + secret key bytes, as the signer stores them
+    ml = _ml_blob()  # public + secret key bytes, as the signer stores them
     carried = {CUSTODY_ED: _wrapped(ed, SOURCE), CUSTODY_ML: signing.seal_mldsa_key(ml, b"", SOURCE.encode())}
     staged, live = _stage(tmp_path, carried, SOURCE)
     out = merge.merge_side_files(staged)["keys"]
@@ -577,7 +586,7 @@ def test_without_the_post_quantum_library_a_wrapped_pair_is_still_restored_whole
 def test_without_the_library_an_mldsa_key_already_wrapped_here_is_placed_as_carried(tmp_path, monkeypatch):
     monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
     _hold(monkeypatch, HERE)
-    raw = signing.seal_mldsa_key(os.urandom(140), b"", HERE.encode())
+    raw = signing.seal_mldsa_key(_ml_blob(), b"", HERE.encode())
     staged, live = _stage(tmp_path, {CUSTODY_ED: _wrapped(Ed25519PrivateKey.generate(), HERE), CUSTODY_ML: raw}, SOURCE)
     out = merge.merge_side_files(staged)["keys"]
     assert out["restored"] == [CUSTODY_ED, CUSTODY_ML] and out["resealed"] == [], out
@@ -589,7 +598,7 @@ def test_without_the_library_and_nothing_held_a_wrapped_mldsa_key_is_placed_stil
     from src.backup.import_reports import render_import_report_markdown
 
     monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
-    ml = os.urandom(140)
+    ml = _ml_blob()
     carried = signing.seal_mldsa_key(ml, b"", BACKUP.encode())
     staged, live = _stage(tmp_path, {CUSTODY_ED: _wrapped(Ed25519PrivateKey.generate(), BACKUP), CUSTODY_ML: carried}, SOURCE, BACKUP)
     staged.key_passphrase_roles = ("corpus", "backup")
@@ -680,9 +689,9 @@ def test_a_sealed_copy_that_cannot_be_read_back_at_all_is_called_so(tmp_path, mo
 def test_without_the_library_a_moved_mldsa_key_that_does_not_read_back_is_not_written(tmp_path, monkeypatch):
     monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
     _hold(monkeypatch, HERE)
-    staged, live = _stage(tmp_path, {CUSTODY_ED: _wrapped(Ed25519PrivateKey.generate(), SOURCE), CUSTODY_ML: signing.seal_mldsa_key(os.urandom(140), b"", SOURCE.encode())}, SOURCE)
+    staged, live = _stage(tmp_path, {CUSTODY_ED: _wrapped(Ed25519PrivateKey.generate(), SOURCE), CUSTODY_ML: signing.seal_mldsa_key(_ml_blob(), b"", SOURCE.encode())}, SOURCE)
     real_seal = signing.seal_mldsa_key
-    monkeypatch.setattr(signing, "seal_mldsa_key", lambda _pk, _sk, passphrase: real_seal(os.urandom(140), b"", passphrase))
+    monkeypatch.setattr(signing, "seal_mldsa_key", lambda _pk, _sk, passphrase: real_seal(_ml_blob(), b"", passphrase))
     out = merge.merge_side_files(staged)["keys"]
     why = {e["name"]: e["reason"] for e in out["not_placed"]}
     assert set(why) == {CUSTODY_ED, CUSTODY_ML}, out
@@ -703,7 +712,7 @@ def test_no_passphrase_or_key_byte_reaches_a_log_an_exception_or_the_report_on_t
     monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
     _hold(monkeypatch, HERE)
     ed = Ed25519PrivateKey.generate()
-    ml = os.urandom(140)
+    ml = _ml_blob()
     carried = {
         EVIDENCE: _wrapped(Ed25519PrivateKey.generate(), "a-passphrase-nobody-gave-the-restore"),
         CUSTODY_ED: _wrapped(ed, SOURCE),
@@ -914,7 +923,7 @@ def test_a_password_protected_evidence_pem_is_not_placed_on_an_install_that_hold
     carried = {
         EVIDENCE: _pkcs8_encrypted(evidence, BACKUP),
         "keys/annotations_ed25519.pem": _pkcs8_encrypted(custody, BACKUP),
-        "keys/annotations_ml_dsa_65.key": signing.seal_mldsa_key(os.urandom(140), b"", BACKUP.encode()),
+        "keys/annotations_ml_dsa_65.key": signing.seal_mldsa_key(_ml_blob(), b"", BACKUP.encode()),
     }
     staged, live = _stage(tmp_path, carried, BACKUP)
     staged.key_passphrase_roles = ("backup",)
@@ -1000,7 +1009,7 @@ def test_a_half_rewritten_in_place_meanwhile_is_not_taken_back(tmp_path, monkeyp
 #  The read of the final head (2026-11-08).
 # --------------------------------------------------------------------------- #
 def _plaintext_mldsa65() -> bytes:
-    return os.urandom(merge._MLDSA65_PLAIN_LEN)  # public + secret key as they are, the length the signer reads
+    return _ml_blob()  # public + secret key as they are, the length the signer reads
 
 
 def test_without_the_library_a_plaintext_pair_is_placed_as_carried_where_nothing_is_held(tmp_path, monkeypatch):
@@ -1126,7 +1135,7 @@ def test_r811_a_lone_half_beside_a_local_key_leaves_it_and_adds_no_note(tmp_path
     assert (live / CUSTODY_ED).read_bytes() == mine and not (live / CUSTODY_ML).exists()
 
 
-def test_r811_halves_that_do_not_match_are_both_refused_the_same_way(tmp_path, monkeypatch):
+def test_r811_halves_that_do_not_match_are_both_refused(tmp_path, monkeypatch):
     _pq(monkeypatch)
     _hold(monkeypatch, HERE)
     other_pk, _other_sk = _FakeMldsa.generate_keypair()
@@ -1135,7 +1144,7 @@ def test_r811_halves_that_do_not_match_are_both_refused_the_same_way(tmp_path, m
     staged, live = _stage(tmp_path, {CUSTODY_ED: _wrapped(Ed25519PrivateKey.generate(), SOURCE), CUSTODY_ML: mismatched}, SOURCE)
     out = merge.merge_side_files(staged)["keys"]
     why = {e["name"]: e["reason"] for e in out["not_placed"]}
-    assert why == {CUSTODY_ED: merge._KEY_PAIR_MISMATCH, CUSTODY_ML: merge._KEY_PAIR_MISMATCH}, out
+    assert why == {CUSTODY_ED: merge._KEY_PAIR_HALF, CUSTODY_ML: merge._KEY_PAIR_MISMATCH}, out  # said where it is
     assert [n["note"][: len(CUSTODY_PAIR_NOTE)] for n in out["notes"]] == [CUSTODY_PAIR_NOTE]
     assert out["lone_halves"] == 0
     assert _keys_folder_files(live) == set()
@@ -1207,5 +1216,54 @@ def test_r811_the_new_words_are_translated_in_every_locale():
     assert len(files) == 12
     for f in files:
         table = json.loads(f.read_text(encoding="utf-8"))
-        for text in (merge._KEY_PAIR_LONE, merge._KEY_PAIR_MISMATCH, merge._KEY_NONE_HERE):
+        for text in (merge._KEY_PAIR_LONE, merge._KEY_PAIR_MISMATCH, merge._KEY_NONE_HERE, merge._KEY_LISTED_TWICE):
             assert text in table and "{name}" in table[merge._KEY_NONE_HERE], f.name
+
+
+def test_r811_without_the_library_a_public_key_from_another_pair_is_refused(tmp_path, monkeypatch):
+    """A security read of row 386: tr = SHAKE256(public key) sits in the secret key (FIPS 204), so plain hashlib tells a
+    foreign public key where the post-quantum library is absent, wrapped or plaintext alike."""
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", False)
+    _hold(monkeypatch, HERE)
+    other_pk, _ = _FakeMldsa.generate_keypair()
+    _pk, sk = _FakeMldsa.generate_keypair()
+    for carried in (signing.seal_mldsa_key(other_pk, sk, SOURCE.encode()), other_pk + sk):
+        root = tmp_path / str(len(carried))
+        staged, live = _stage(root, {CUSTODY_ED: _wrapped(Ed25519PrivateKey.generate(), SOURCE), CUSTODY_ML: carried}, SOURCE)
+        out = merge.merge_side_files(staged)["keys"]
+        why = {e["name"]: e["reason"] for e in out["not_placed"]}
+        assert why == {CUSTODY_ED: merge._KEY_PAIR_HALF, CUSTODY_ML: merge._KEY_PAIR_MISMATCH}, out
+        assert _keys_folder_files(live) == set()
+
+
+def test_r811_the_real_ml_dsa_65_layout_keeps_the_public_key_hash_where_the_check_reads_it():
+    """Pins the FIPS 204 layout the no-library check relies on against the library, where it is installed."""
+    pytest.importorskip("pqcrypto")
+    from pqcrypto.sign import ml_dsa_65
+
+    pk, sk = ml_dsa_65.generate_keypair()
+    assert len(pk) == merge._MLDSA65_PK_LEN and len(pk) + len(sk) == merge._MLDSA65_PLAIN_LEN
+    assert merge._mldsa65_tr_matches(pk + sk)
+    other, _ = ml_dsa_65.generate_keypair()
+    assert not merge._mldsa65_tr_matches(other + sk)
+
+
+def test_r811_a_key_file_listed_twice_places_nothing_and_says_so(tmp_path, monkeypatch):
+    """A security read of row 386: a manifest may list one name twice; neither copy, nor the rest of the pair, is placed,
+    and nothing reads as kept or raced."""
+    _pq(monkeypatch)
+    _hold(monkeypatch, HERE)
+    pk, sk = _FakeMldsa.generate_keypair()
+    staged, live = _stage(
+        tmp_path,
+        {CUSTODY_ED: _wrapped(Ed25519PrivateKey.generate(), SOURCE), CUSTODY_ML: signing.seal_mldsa_key(pk, sk, SOURCE.encode())},
+        SOURCE,
+    )
+    twice = [*staged.member_paths("keys"), (CUSTODY_ED, staged.member_paths("keys")[0][1])]
+    monkeypatch.setattr(type(staged), "member_paths", lambda self, role: twice if role == "keys" else [])
+    out = merge.merge_side_files(staged)["keys"]
+    why = {e["name"]: e["reason"] for e in out["not_placed"]}
+    assert why == {CUSTODY_ED: merge._KEY_LISTED_TWICE, CUSTODY_ML: merge._KEY_PAIR_HALF}, out
+    assert out["kept_local"] == [] and out["restored"] == []
+    assert [n["note"][: len(CUSTODY_PAIR_NOTE)] for n in out["notes"]] == [CUSTODY_PAIR_NOTE]
+    assert _keys_folder_files(live) == set()

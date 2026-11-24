@@ -8149,6 +8149,7 @@
   "the background journal read has not completed (or was never started) — unmeasured, not 'clean'": "バックグラウンドでの journal の読み取りが完了していません（または開始されていません）— 未測定であり、'clean' ではありません",
   "the background kernel-log read has not completed (or was never started, e.g. outside the app's own boot path) — unmeasured, not 'clean'": "バックグラウンドでのカーネルログの読み取りが完了していません（またはアプリ自身の起動経路の外などで開始されていません）— 未測定であり、'clean' ではありません",
   "the backlog could not be read": "未処理分を読み取れませんでした",
+  "the backup lists this key file more than once; no copy is written, and it stays in the backup": "バックアップにこの鍵ファイルが複数回記載されています。どのコピーも書き込まれず、バックアップに残ります",
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "パッケージのバージョン、作成日時、ケース名（検索クエリまたは分析のラベル）、記事の件数、それらをまとめるマークルルート",
   "the climate fetch record holds no readable dataset entry": "気候データの取得記録に読み取り可能なデータセット項目がない",
   "the concept “{concept}”": "概念「{concept}」",

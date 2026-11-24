@@ -8149,6 +8149,7 @@
   "the background journal read has not completed (or was never started) — unmeasured, not 'clean'": "पृष्ठभूमि में journal पढ़ना पूरा नहीं हुआ (या कभी शुरू नहीं हुआ) — मापा नहीं गया, 'clean' नहीं",
   "the background kernel-log read has not completed (or was never started, e.g. outside the app's own boot path) — unmeasured, not 'clean'": "पृष्ठभूमि में कर्नेल-लॉग पढ़ना पूरा नहीं हुआ (या कभी शुरू नहीं हुआ, जैसे ऐप के अपने बूट पथ के बाहर) — मापा नहीं गया, 'clean' नहीं",
   "the backlog could not be read": "बकाया सूची पढ़ी नहीं जा सकी",
+  "the backup lists this key file more than once; no copy is written, and it stays in the backup": "बैकअप में यह कुंजी फ़ाइल एक से अधिक बार सूचीबद्ध है; कोई प्रति लिखी नहीं जाती, और यह बैकअप में रहती है",
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "पैकेज का संस्करण, वह कब बना, केस का नाम (आपकी खोज क्वेरी या विश्लेषण का लेबल), कितने लेख हैं, और उन्हें ढकने वाला मर्कल रूट",
   "the climate fetch record holds no readable dataset entry": "जलवायु फ़ेच रिकॉर्ड में कोई पठनीय डेटासेट प्रविष्टि नहीं",
   "the concept “{concept}”": "“{concept}” संकल्पना",

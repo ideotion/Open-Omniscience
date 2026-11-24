@@ -8149,6 +8149,7 @@
   "the background journal read has not completed (or was never started) — unmeasured, not 'clean'": "the background journal read has not completed (or was never started) — unmeasured, not 'clean'",
   "the background kernel-log read has not completed (or was never started, e.g. outside the app's own boot path) — unmeasured, not 'clean'": "the background kernel-log read has not completed (or was never started, e.g. outside the app's own boot path) — unmeasured, not 'clean'",
   "the backlog could not be read": "the backlog could not be read",
+  "the backup lists this key file more than once; no copy is written, and it stays in the backup": "the backup lists this key file more than once; no copy is written, and it stays in the backup",
   "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them": "the bundle version, when it was made, the case name (your search query or the analysis label), how many articles, and the Merkle root that covers them",
   "the climate fetch record holds no readable dataset entry": "the climate fetch record holds no readable dataset entry",
   "the concept “{concept}”": "the concept “{concept}”",
