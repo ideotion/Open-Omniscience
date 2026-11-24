@@ -104,15 +104,14 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False, off_drive
                 try:
                     own_open = _dispose_after_erase(generation, arm_late=not erased)
                 except BaseException:  # a Ctrl-C inside it: nothing below runs, so the late pass is armed here
-                    if erased:
-                        _arm_late_rescrub(generation)
+                    _arm_late_rescrub(generation)
                     raise
     # R792: only now, with the app offline and this process's own pool closed (its close would undo the lock this takes), look
     # for ANOTHER process still holding the store and rewrite while it does, within the bound; the report says what was found.
     # R805 (a): this process's own connections a request thread still held when the pool was closed are a holder the probe cannot
     # see (one process's POSIX locks never conflict), so they are counted; not knowing is "unknown", never "none".
-    report["own_connections_open"] = own_open
     try:
+        report["own_connections_open"] = own_open
         from src.paths import erase_owned
 
         with erase_owned():  # the wipe's own rewrite through the descriptors it kept

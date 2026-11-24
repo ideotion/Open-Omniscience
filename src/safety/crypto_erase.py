@@ -603,6 +603,7 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
                     return _untouched("changed")
                 rec["reason"] = rec["reason"] or ("write_failed" if st is None else "changed")  # never "in full" (security read)
                 deleted = False  # left at its name; step 6 or a later look may still find it gone
+                _note_left(rec, st, name, dfd)
                 continue
             if suffix == "":
                 rec["other_names"] = max(0, st.st_nlink - 1)
@@ -618,11 +619,37 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
                 pass
             except OSError:
                 deleted = False
+                _note_left(rec, st, name, dfd)  # rewritten through its handle; the walks of the folder only remove the name
                 _LOG.warning("crypto-erase: could not delete a file of an unencrypted store")
         rec["deleted"] = deleted
         return rec
     finally:
         os.close(dfd)
+
+
+def _note_left(rec: dict, st: os.stat_result | None, name: str, dfd: int) -> None:
+    """A file of the plaintext store left at its name by :func:`_open_and_unlink_plain` (refused, or its unlink failed), by its
+    identity: the later walks of the data folder (5b, step 6) only remove the name of such a file, never write it by path (it may
+    be a file that is not the store's, reached through another name). By identity, never by spelling: the walks spell the data
+    folder their own way (security read)."""
+    if st is None:
+        try:
+            st = os.lstat(name, dir_fd=dfd)
+        except OSError:
+            return
+    rec.setdefault("_left", set()).add((st.st_dev, st.st_ino))
+
+
+def _left_by_erase(rec: dict | None, p: Path) -> bool:
+    """Whether ``p`` is a file of the plaintext store :func:`_open_and_unlink_plain` left at its name (see :func:`_note_left`)."""
+    left = rec.get("_left") if rec else None
+    if not left:
+        return False
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return False
+    return (st.st_dev, st.st_ino) in left
 
 
 def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
@@ -2008,8 +2035,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     for p in _files_under(roots, base, _unlisted, skip=paths["keys_dir"], unreached=_unreached):
         if _kind(p, _unreached) != "file":
             continue
-        if p in plain_parts and plain_rec is not None:
-            continue  # a name of the plaintext store the erase left (refused to write, or its unlink failed): step 6 only removes it
+        if _left_by_erase(plain_rec, p):
+            continue  # a file of the plaintext store the erase left (refused to write, or its unlink failed): step 6 only removes it
         name = p.name
         whole = name.endswith(("-wal", "-journal"))
         if _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=name.endswith("-shm")):
@@ -2063,14 +2090,17 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             with contextlib.suppress(OSError):
                 p.unlink()
             continue
-        if p in plain_parts and plain_rec is not None:
-            # R815 (2): a name of the plaintext store still there (its unlink failed, or the erase refused to write it: another
-            # file, another device, other names). Its own file is rewritten through the kept handle; this name is only removed,
-            # never written by path (a hard link here may lead to a file that is not the store's), never counted in "Wiped".
+        if _left_by_erase(plain_rec, p):
+            # R815 (2): a file of the plaintext store the erase left at its name (its unlink failed, or the erase refused to write
+            # it: another file, another device, other names), known by its identity. Its own file is rewritten through the kept
+            # handle; this name is only removed, never written by path (a hard link here may lead to a file that is not the
+            # store's), never counted in "Wiped". Anything else at a store name (a new log written since) is erased as before.
             with contextlib.suppress(OSError):
                 p.unlink()
             continue
         _s, _overwritten, _w = _track(p)
+        if p in plain_parts and plain_rec is not None:
+            continue  # R815 (2): never counted in "Wiped"
         seen += _s
         wiped += _w
     left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}

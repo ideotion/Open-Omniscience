@@ -551,3 +551,19 @@ def test_a_sidecar_in_the_data_folder_linked_to_another_file_is_never_written(tm
     crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
     assert victim.read_bytes() == WITNESS, "the other file is never written"
     assert not os.path.lexists(db.with_name(db.name + "-journal"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
+def test_a_left_name_is_known_by_identity_whatever_the_folder_is_called(tmp_path):
+    """Security read: the walks spell the data folder their own way (here through a link to it), so a file the erase left is known
+    by its identity, never by its path's spelling."""
+    real = tmp_path / "real data"
+    db = real / "open_omniscience.db"
+    _plain_db(db)
+    victim = tmp_path / "victim.bin"
+    victim.write_bytes(WITNESS)
+    os.link(victim, db.with_name(db.name + "-wal"))
+    linked = tmp_path / "linked data"
+    linked.symlink_to(real, target_is_directory=True)
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=linked)
+    assert victim.read_bytes() == WITNESS, "the other file is never written"
