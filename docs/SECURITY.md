@@ -950,8 +950,9 @@ imply a protection we cannot deliver.
   "unencrypted" in words. The in-process evidence counts only while the process still holds a descriptor on that very file
   (POSIX: listed from the process's own descriptors, a `fstat` each, never a read), since only then can the file system not
   hand its inode to another file; a disposal of the app's pool forgets it all (restore, repair, unlock and power dispose
-  before they swap files; an erase that disposes the pool itself takes the evidence first and keeps a descriptor on that file
-  until the end), and an open of the corpus known to be plaintext removes any identity the record names (an open whose kind
+  before they swap files; an erase that disposes the pool itself asks for the evidence first, before it opens anything of the
+  store, so only the pool's own descriptor can meet the test, then keeps a descriptor on that file until the end; on Windows
+  it opens nothing, which would block the delete), and an open of the corpus known to be plaintext removes any identity the record names (an open whose kind
   this process cannot tell, after a disposal on another thread, leaves the record as it is). Where the file at the store's
   path is not the store, the record goes only from the pinned folder, through its handle: a link or another drive at that
   place holds another store's record, never removed. An encrypted main

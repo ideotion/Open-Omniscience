@@ -504,10 +504,18 @@ def test_the_evidence_is_taken_before_the_erase_disposes_its_own_pool(tmp_path, 
     main = tmp_path / crypto_erase._MAIN_DB
     main.write_bytes(os.urandom(4096))
     ident = _ident(main)
-    monkeypatch.setattr(connect_module, "opened_with_key", lambda i: tuple(i) == ident)
+    asked: list[int] = []
+
+    def _evidence(i):
+        # asked before the erase opens anything of its own: only the app's pool may meet the descriptor test (security read)
+        asked.append(len(crypto_erase._HELD.get(gen, [])))
+        return tuple(i) == ident
+
+    monkeypatch.setattr(connect_module, "opened_with_key", _evidence)
     gen = 396_003
     try:
         assert crypto_erase._keyed_evidence_kept(main, gen) == ident
+        assert asked == [0], "the evidence is asked before the erase holds a descriptor of its own"
         assert len(crypto_erase._HELD.get(gen, [])) == 1
         monkeypatch.setattr(connect_module, "opened_with_key", lambda i: False)
         assert crypto_erase._keyed_evidence_kept(main, gen) is None
@@ -525,3 +533,35 @@ def test_the_main_database_s_head_is_matched_by_its_real_path_never_its_name():
     src = inspect.getsource(crypto_erase._quick_crypto_erase)
     assert "str(_real(main_db)) in head_reals" in src
     assert "_real(main_db).name in headers" not in src
+
+
+@posix_only
+def test_a_stale_keyed_identity_is_never_revived_by_the_erase_s_own_descriptor(tmp_path):
+    """The security read's reproduction: a keyed identity left in the set while no descriptor is held (the store replaced, every
+    pool descriptor closed, the inode handed to a plaintext file) is not evidence, and the erase's own kept descriptor never makes
+    it evidence."""
+    main = tmp_path / crypto_erase._MAIN_DB
+    main.write_bytes(os.urandom(4096))
+    ident = _ident(main)
+    with connect_module._lock:
+        connect_module._opened_with_key.add(ident)
+    assert not connect_module.opened_with_key(ident)
+    gen = 396_004
+    try:
+        assert crypto_erase._keyed_evidence_kept(main, gen) is None
+    finally:
+        for fd, _kind, _cap in crypto_erase._HELD.pop(gen, []):
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+
+@posix_only
+def test_the_pinned_folder_is_matched_through_a_link_above_it(tmp_path):
+    real = tmp_path / "real"
+    (real / "store").mkdir(parents=True)
+    main = real / "store" / crypto_erase._MAIN_DB
+    main.write_bytes(os.urandom(4096))
+    pin = crypto_erase._pin_file(main)
+    (tmp_path / "via").symlink_to(real)
+    assert crypto_erase._folder_is_pinned(tmp_path / "via" / "store" / crypto_erase._MAIN_DB, pin)
+    assert not crypto_erase._folder_is_pinned(main, "absent")

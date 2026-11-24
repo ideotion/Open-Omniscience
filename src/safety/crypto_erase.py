@@ -827,7 +827,11 @@ def _folder_is_pinned(db: Path, pin: tuple[int, int, int, int, str] | str | None
         st = os.lstat(pin[4])
     except OSError:
         return False
-    return stat.S_ISDIR(st.st_mode) and (st.st_dev, st.st_ino) == (pin[2], pin[3]) and Path(pin[4]) == db.parent
+    try:
+        same_place = os.path.realpath(db.parent) == pin[4]  # both resolved: a link or junction above the folder is no mismatch
+    except (OSError, ValueError):
+        return False
+    return stat.S_ISDIR(st.st_mode) and (st.st_dev, st.st_ino) == (pin[2], pin[3]) and same_place
 
 
 def _drop_record_beside(db: Path) -> None:
@@ -1860,28 +1864,40 @@ def finish_holder_check(report: dict, generation: int) -> str:
 
 
 def _keyed_evidence_kept(main_db: Path | None, generation: int) -> tuple[int, int] | None:
-    """The (device, inode) of the main database when this process read it under a key (:func:`opened_with_key`), with a descriptor
-    on it kept among this wipe's (closed only by the late pass, R789); None otherwise. Opened no-follow, a regular file only, the
-    very file at the path. Never raises."""
+    """The (device, inode) of the main database when this process read it under a key (:func:`opened_with_key`), asked BEFORE
+    anything is opened here: the descriptor test inside it must be met by the app's own pool, never by this function's descriptor
+    (security read). On POSIX a descriptor on that very file (no-follow, a regular file, the identity just asked about) is then kept
+    among this wipe's (closed only by the late pass, R789), so its inode cannot pass to another file before the pin; on Windows
+    nothing is opened (an open handle without share-delete would block the delete, and the answer there needs no descriptor).
+    None otherwise. Never raises."""
     if main_db is None:
         return None
     from src.database.connect import opened_with_key
 
+    real = _real(main_db)
     try:
-        fd = os.open(_real(main_db), os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-                     | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0))
+        st0 = os.lstat(real)
     except OSError:
         return None
+    if not stat.S_ISREG(st0.st_mode):
+        return None
+    ident = (st0.st_dev, st0.st_ino)
+    keyed = opened_with_key(ident)  # while no descriptor of the erase's own is open on it
+    if os.name == "nt":
+        return ident if keyed else None
+    try:
+        fd = os.open(real, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0))
+    except OSError:
+        return None
+    # Kept whatever it is (a regular file this process's pool may hold: closing it would drop the pool's locks); never written.
+    _HELD.setdefault(generation, []).append((fd, "keep", 0))
     try:
         st = os.fstat(fd)
     except OSError:
-        st = None
-    # Kept whatever it is (a regular file this process's pool may hold: closing it would drop the pool's locks); never written.
-    _HELD.setdefault(generation, []).append((fd, "keep", 0))
-    if st is None or not stat.S_ISREG(st.st_mode):
         return None
-    ident = (st.st_dev, st.st_ino)
-    return ident if opened_with_key(ident) else None
+    if not keyed or not stat.S_ISREG(st.st_mode) or (st.st_dev, st.st_ino) != ident:
+        return None
+    return ident
 
 
 def _close_own_pool() -> int | None:
