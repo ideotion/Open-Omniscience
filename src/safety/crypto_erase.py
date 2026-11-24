@@ -692,37 +692,52 @@ def _drive_state(base: Path) -> str:
         return "absent"
 
 
-def _drive_anchor(base: Path) -> tuple[Path, int] | None:
+def _drive_anchor(base: Path) -> tuple[Path, int, bool] | None:
     """R809: a folder that stays on the data drive through the erase, with the drive's device id: the data folder's parent when it
-    is on the same drive (the erase removes the folder itself), else the folder (it is the drive's mount point, which stays)."""
+    is on the same drive (the erase removes the folder itself), else the folder (it is the drive's mount point, which stays). Taken
+    on the RESOLVED folder (os.path.realpath), so a data folder or a parent that is a link to the drive is followed to the drive and
+    never stands for the disk the link is on. The third item says the anchor is the folder itself."""
     try:
-        dev = os.lstat(base).st_dev
-    except OSError:
+        real = Path(os.path.realpath(base))
+        dev = os.stat(real).st_dev
+    except (OSError, ValueError):
         return None
     try:
-        if os.lstat(base.parent).st_dev == dev:
-            return base.parent, dev
+        if os.stat(real.parent).st_dev == dev and real.parent != real:
+            return real.parent, dev, False
     except OSError:
         pass
-    return base, dev
+    return real, dev, True
 
 
-def _drive_lost(anchor: tuple[Path, int] | None) -> bool:
-    """R809: the drive whose ``anchor`` was taken before the erase is gone, or another device is at its place, after it."""
+def _drive_lost(anchor: tuple[Path, int, bool] | None) -> bool:
+    """R809: the drive whose ``anchor`` was taken before the erase is gone, or another device is at its place, after it. An anchor
+    that is the data folder itself and is gone was removed by the erase (a removable mount, a subvolume): not a lost drive."""
     if anchor is None:
         return False
     try:
         return os.lstat(anchor[0]).st_dev != anchor[1]
+    except FileNotFoundError:
+        return not anchor[2]
     except OSError:
         return True
 
 
 def _under(p: Path | None, base: Path) -> bool:
-    """``p`` is the data folder or inside it, by its spelling (never resolved: the folder may not be there)."""
+    """``p`` is the data folder or inside it, by its spelling or by its resolved path (os.path.realpath, which reads only the links
+    that are there and never makes anything): a store reached through a link into the drive, or a data folder that is a link, is
+    inside it either way."""
     if p is None:
         return False
-    a, b = os.path.abspath(p), os.path.abspath(base)
-    return a == b or a.startswith(b.rstrip(os.sep) + os.sep)
+    pairs = [(os.path.abspath(p), os.path.abspath(base))]
+    with contextlib.suppress(OSError, ValueError):
+        pairs.append((os.path.realpath(p), os.path.realpath(base)))
+        pairs.append((os.path.realpath(p), os.path.abspath(base)))
+        pairs.append((os.path.abspath(p), os.path.realpath(base)))
+    for a, b in pairs:
+        if a == b or a.startswith(b.rstrip(os.sep) + os.sep):
+            return True
+    return False
 
 
 def _app_keys_left(keys_dir: Path) -> list[str]:
@@ -1443,7 +1458,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # R809: the drive went away while this erase ran: partially erased, the rest could not be checked (R797 / R798), never "removed".
     drive_lost = _drive_lost(anchor)
     if drive_lost:
-        unlisted_folders.append(str(base))
+        # Its own sentence says what was left could not be checked (R798): never counted as a folder to make readable, which a
+        # drive that is not there cannot be.
         _LOG.error("CRYPTO-ERASE: the data drive disconnected during the erase; it was only partially erased")
     kept_foreign = not drive_absent and _present(base) and (bool(kept_items) if app_only else keys_foreign and _kind(keys_dir) != "absent")
     # An app key or private copy still in a kept keys folder (its unlink failed), or a ``.pending`` that is a link the app's
@@ -1607,7 +1623,7 @@ def _sweep_crash_left_scrubs(where: Path) -> None:
 
 
 #: Why the free space was not overwritten (R805 (c)1/2; R798 style: "could not", never a success). The UI words each ×12.
-SCRUB_NOT_DONE = ("other_drive", "drive_unread", "no_folder", "nothing_written")
+SCRUB_NOT_DONE = ("other_drive", "drive_unread", "no_folder", "nothing_written", "drive_absent")
 
 
 def full_secure_erase(
@@ -1640,13 +1656,16 @@ def full_secure_erase(
         # R802: the folder the panic erase latched is never made again, so it is named, not asked for.
         base = data_dir_path() if erased_folder_of(data_dir_path()) else data_dir()
     latched = erased_folder_of(base)
-    if not latched:
+    # R809: the marked data drive is not there, or another drive is at its place: nothing is written at its path (the fill files
+    # would land on whatever disk is there, never on the erased data), and nothing says the corpus is unrecoverable.
+    drive_absent = base_dir is None and _drive_state(base) == "absent"
+    if not latched and not drive_absent:
         base.mkdir(parents=True, exist_ok=True)
     where = base
     while not where.is_dir() and where.parent != where:
         where = where.parent
-    not_done: str | None = None
-    if latched:
+    not_done: str | None = "drive_absent" if drive_absent else None
+    if latched and not_done is None:
         dev = erased_device(base)
         try:
             here = os.stat(where).st_dev
@@ -1696,5 +1715,5 @@ def full_secure_erase(
         # The private folder when it could not be removed (shown as a plain path, to remove by hand); None when it was.
         "scrub_folder_left": str(scrub_dir) if (scrub_dir is not None and left_behind) else None,
         "reserve_bytes": _DISK_RESERVE,
-        "limit": _LIMIT_NOTE,
+        "limit": _DRIVE_ABSENT_SENTENCE if drive_absent else _LIMIT_NOTE,
     }

@@ -10,6 +10,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -36,8 +37,24 @@ def marked(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_COLUMNAR_DIR", str(outside))
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setattr(paths, "_memo", None)
+    # The store the app has open is the one the override names, outside the drive (never the suite's own database).
+    monkeypatch.setattr("src.database.session.DATABASE_URL", "sqlite:///" + str(tmp_path / "internal" / "none.db"))
     monkeypatch.setattr(data_volume, "forget_volume_id", lambda *a, **k: pytest.fail("the id of a drive not there is kept"))
+    # As in the running app: the error journal is installed, so a log line the erase writes would land in the data folder if the
+    # erase did not latch it first (the panic's first step, src/safety/panic.py; R802).
+    from src.monitoring import errorlog
+
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", list(root.handlers))
+    monkeypatch.setattr(errorlog, "_installed", errorlog._installed)
+    errorlog.install()
     return data, outside
+
+
+def _erase(data: Path) -> dict:
+    """The erase as the panic runs it: the folder latched first (R802), then erased."""
+    crypto_erase._latch(data)
+    return crypto_erase.quick_crypto_erase(confirm=True)
 
 
 def _app_files(data: Path, marker_id: str | None) -> dict[Path, bytes]:
@@ -52,9 +69,13 @@ def _app_files(data: Path, marker_id: str | None) -> dict[Path, bytes]:
     return files
 
 
+def _hashes(root: Path) -> dict[str, bytes]:
+    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
 def test_a_drive_not_there_is_a_failure_and_nothing_is_made(marked):
     data, outside = marked
-    out = crypto_erase.quick_crypto_erase(confirm=True)
+    out = _erase(data)
     assert out["drive_absent"] is True and out["removed"] is False, out
     assert out["limit"] == S1, "the sentence alone: no reassurance of any kind"
     assert "unrecoverable" not in out["limit"]
@@ -67,7 +88,7 @@ def test_a_drive_not_there_is_a_failure_and_nothing_is_made(marked):
 def test_a_different_drive_at_the_path_is_never_touched(marked):
     data, _outside = marked
     files = _app_files(data, marker_id="ffffffffffffffff")  # another drive's marker
-    out = crypto_erase.quick_crypto_erase(confirm=True)
+    out = _erase(data)
     assert out["drive_absent"] is True and out["removed"] is False and out["limit"] == S1, out
     for p, b in files.items():
         assert p.read_bytes() == b, f"{p.name} on the other drive is byte-identical"
@@ -79,7 +100,7 @@ def test_the_marked_drive_there_is_erased_as_before(marked, monkeypatch):
     forgot = []
     monkeypatch.setattr(data_volume, "forget_volume_id", lambda *a, **k: forgot.append(1))
     _app_files(data, marker_id="a1b2c3d4e5f60718")
-    out = crypto_erase.quick_crypto_erase(confirm=True)
+    out = _erase(data)
     assert out["drive_absent"] is False and out["drive_lost"] is False and out["removed"] is True, out
     assert not data.exists() and forgot == [1]
 
@@ -89,8 +110,8 @@ def test_a_drive_that_goes_away_during_the_erase_is_partial_and_unchecked(marked
     _app_files(data, marker_id="a1b2c3d4e5f60718")
     monkeypatch.setattr(data_volume, "forget_volume_id", lambda *a, **k: None)
     monkeypatch.setattr(crypto_erase, "_drive_lost", lambda anchor: anchor is not None)
-    out = crypto_erase.quick_crypto_erase(confirm=True)
-    assert out["drive_lost"] is True and out["removed"] is False and out["unlisted_folders"] >= 1, out
+    out = _erase(data)
+    assert out["drive_lost"] is True and out["removed"] is False and out["unlisted_folders"] == 0, out
     assert out["limit"].startswith(S3) and "permanently unrecoverable" not in out["limit"]
     assert crypto_erase.settle_removed(out) is False
 
@@ -99,10 +120,66 @@ def test_the_device_check_itself(tmp_path):
     folder = tmp_path / "d" / "OOS data"
     folder.mkdir(parents=True)
     anchor = crypto_erase._drive_anchor(folder)
-    assert anchor is not None and anchor[0] == folder.parent
+    real_parent = Path(os.path.realpath(folder.parent))
+    assert anchor is not None and anchor[0] == real_parent and anchor[2] is False
     assert crypto_erase._drive_lost(anchor) is False
-    assert crypto_erase._drive_lost((anchor[0], anchor[1] + 1)) is True, "another device at its place"
-    assert crypto_erase._drive_lost((tmp_path / "gone", anchor[1])) is True, "gone"
+    assert crypto_erase._drive_lost((anchor[0], anchor[1] + 1, False)) is True, "another device at its place"
+    assert crypto_erase._drive_lost((tmp_path / "gone", anchor[1], False)) is True, "gone"
+    # The folder itself as the anchor (a mount point), removed by the erase: the erase did that, the drive is not lost.
+    assert crypto_erase._drive_lost((tmp_path / "gone", anchor[1], True)) is False
+
+
+def test_the_anchor_follows_a_link_to_the_drive(tmp_path):
+    """Security read B (2): a parent that is a link to the drive is followed, so a clean erase is never called a lost drive."""
+    drive = tmp_path / "mnt" / "drive"
+    drive.mkdir(parents=True)
+    (tmp_path / "home").mkdir()
+    link = tmp_path / "home" / "link"
+    link.symlink_to(drive, target_is_directory=True)
+    folder = link / "OOS data"
+    folder.mkdir()
+    anchor = crypto_erase._drive_anchor(folder)
+    assert anchor is not None and anchor[0] == Path(os.path.realpath(drive)) and anchor[2] is False
+    import shutil
+
+    shutil.rmtree(Path(os.path.realpath(folder)))
+    assert crypto_erase._drive_lost(anchor) is False
+
+
+def test_a_store_reached_through_a_linked_data_folder_is_inside_it(tmp_path):
+    """Security read B (3): the data folder named through a link and a store spelled by the real path are the same place."""
+    real = tmp_path / "other" / "data"
+    real.mkdir(parents=True)
+    link = tmp_path / "drive" / "link"
+    link.parent.mkdir()
+    link.symlink_to(real, target_is_directory=True)
+    assert crypto_erase._under(real / "open_omniscience.db", link)
+    assert crypto_erase._under(link / "x.db", real)
+    assert not crypto_erase._under(tmp_path / "internal" / "x.db", link)
+
+
+def test_a_mismatched_drive_through_a_linked_folder_is_untouched(tmp_path, monkeypatch):
+    """Security read B (3) end to end: OO_DATA_DIR is a link to another drive's folder, the stores spelled by its real path."""
+    real = tmp_path / "other" / "data"
+    _app_files(real, marker_id="ffffffffffffffff")
+    link = tmp_path / "drive" / "link"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(real, target_is_directory=True)
+    (real / "open_omniscience.db").write_bytes(b"S" * 8192)
+    cols = real / "columnar"
+    cols.mkdir()
+    for name in crypto_erase._DUCK_FILES:
+        (cols / name).write_bytes(b"D" * 8192)
+    monkeypatch.setenv("OO_DATA_DIR", str(link))
+    monkeypatch.setenv(data_volume.ENV_ID, "a1b2c3d4e5f60718")
+    monkeypatch.setenv("OO_COLUMNAR_DIR", str(cols))
+    monkeypatch.setattr("src.database.session.DATABASE_URL", "sqlite:///" + str(real / "open_omniscience.db"))
+    monkeypatch.setattr(paths, "_memo", None)
+    monkeypatch.setattr(data_volume, "forget_volume_id", lambda *a, **k: pytest.fail("the id of a drive not there is kept"))
+    before = _hashes(real)
+    out = _erase(link)
+    assert out["drive_absent"] is True and out["files_wiped"] == 0, out
+    assert _hashes(real) == before
 
 
 def test_an_unanswerable_drive_question_is_absent(monkeypatch, tmp_path):
@@ -146,3 +223,56 @@ def test_the_panic_page_says_failed_and_offers_no_overwrite():
     assert '"Files erased outside the data drive: {done} of {total}."' in js
     assert S1 in js and S3 in js
     assert '(driveAbsent ? "" : `<div class="hint" style="margin-top:8px">${esc(rec)}`' in js
+
+
+@pytest.mark.parametrize("layout", ["absent", "mismatch"])
+def test_the_real_cli_in_a_fresh_process_exits_2_without_a_traceback(tmp_path, layout):
+    """Security reads A (1) and B (1): ``open-omniscience panic`` with the drive not there used to die on the database import
+    (DataVolumeMissing) with a traceback and exit 1, before the erase ever ran. Run for real, in a fresh process."""
+    import subprocess
+    import sys
+
+    data = tmp_path / "drive" / "OOS data"
+    files = {}
+    if layout == "mismatch":
+        files = _app_files(data, marker_id="ffffffffffffffff")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OO_", "DATABASE_URL"))}
+    env.update({"OO_DATA_DIR": str(data), data_volume.ENV_ID: "a1b2c3d4e5f60718", "PYTHONPATH": os.getcwd(),
+                "HOME": str(tmp_path / "home")})
+    run = subprocess.run([sys.executable, "-m", "src.api.main", "panic", "--yes"], env=env, capture_output=True, text=True,
+                         timeout=120, cwd=os.getcwd())
+    assert run.returncode == 2, run.stdout + run.stderr
+    assert "Traceback" not in run.stderr and "ERASE FAILED: " + S1 in run.stdout
+    assert "Wiped" not in run.stdout and "unrecoverable" not in run.stdout
+    if layout == "absent":
+        assert not data.exists() and not data.parent.exists(), "nothing is made where the drive should be"
+    for p, b in files.items():
+        assert p.read_bytes() == b
+
+
+def test_the_precheck_leaves_every_other_command_alone(monkeypatch):
+    from src.api import _panic_precheck
+
+    monkeypatch.setattr(data_volume, "watched", lambda: True)
+    monkeypatch.setattr(data_volume, "probe", lambda: {"state": "missing"})
+    assert _panic_precheck.drive_absent_for_panic(["panic", "--yes"]) is True
+    assert _panic_precheck.drive_absent_for_panic(["serve"]) is False and _panic_precheck.drive_absent_for_panic([]) is False
+    monkeypatch.setattr(data_volume, "probe", lambda: {"state": "ok"})
+    assert _panic_precheck.drive_absent_for_panic(["panic"]) is False
+    monkeypatch.setattr(data_volume, "watched", lambda: False)
+    assert _panic_precheck.drive_absent_for_panic(["panic"]) is False
+
+
+def test_no_free_space_overwrite_where_the_drive_is_not(marked):
+    """Security reads A (2) and B (4): after an erase that found another drive at the path (or an empty mount point), the
+    free-space overwrite writes nothing there and never says the corpus is unrecoverable."""
+    data, _outside = marked
+    files = _app_files(data, marker_id="ffffffffffffffff")
+    out = _erase(data)
+    assert out["drive_absent"] is True
+    scrub = crypto_erase.full_secure_erase(1, _cap_bytes=4096)
+    assert scrub["scrub_not_done"] == "drive_absent" and scrub["bytes_written"] == 0 and scrub["scrub_location"] == "none"
+    assert scrub["limit"] == S1 and "unrecoverable" not in scrub["limit"]
+    assert _hashes(data) == {str(p.relative_to(data)): b for p, b in files.items()} | {
+        data_volume.MARKER_NAME: (data / data_volume.MARKER_NAME).read_bytes()}
+    assert "drive_absent" in crypto_erase.SCRUB_NOT_DONE

@@ -39,6 +39,10 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
+# isort: off
+# R809: before any import below opens the data folder (see the module's docstring).
+import src.api._panic_precheck  # noqa: F401
+# isort: on
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -4041,7 +4045,8 @@ def _panic_cli(*, force: bool) -> None:
         print("ERASE FAILED: " + report["limit"])
         print(f"Files erased outside the data drive: {report['files_wiped']} of {report['files_seen']}.")
         sys.exit(2)
-    print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
+    if not report.get("drive_lost"):  # R809: a drive that went away is never "wiped"; its sentence leads report["limit"] below
+        print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
     if report.get("scope") == "app-only":
         # R711: a folder the app does not own keeps everything that is not the app's, and the folder itself.
         print(f"The data folder is not the app's own ({report.get('scope_reason')}): only the app's files were removed; "

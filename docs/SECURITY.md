@@ -861,7 +861,11 @@ imply a protection we cannot deliver.
   that drive, so nothing erased elsewhere makes it unreadable) and no free-space overwrite offered. What the overrides keep
   elsewhere (`DATABASE_URL`, `OO_COLUMNAR_DIR`) and the passphrase in memory are still erased, and counted apart ("Files erased
   outside the data drive"). A drive that is there has its device read before the erase and again after it: gone or changed is
-  "partially erased, what was left could not be checked" (R797 / R798). The CLI says the same and exits 2 (absent) or 1 (lost).
+  "partially erased, what was left could not be checked" (R797 / R798); the device is read on the RESOLVED folder, so a link to
+  the drive is followed, and a store is "on the drive" by its spelling or its resolved path. The CLI says the same and exits 2
+  (absent) or 1 (lost); with the drive absent it stops before it opens anything (`src/api/_panic_precheck.py`: the app cannot
+  open its stores without the drive, so nothing else is erased either, and it says so). The free-space overwrite after it writes
+  nothing at the path of an absent drive (`scrub_not_done: "drive_absent"`) and never says the corpus is unrecoverable.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or

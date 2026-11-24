@@ -4359,9 +4359,14 @@
         // R792: only "none" is a clean erase. Another program that still had the database open may have written the key material
         // back into the files it holds ("held"), and on Windows, or when the check failed, the erase cannot tell ("unknown"): the
         // result then never says the store is unrecoverable, and the notice stays visible beside it.
+        // R809: with the drive absent no free-space overwrite is offered below, so the note never points at one.
         const holderNote = holder === "held"
-          ? t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer, then run a full overwrite of free disk space below.")
-          : t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer, then run a full overwrite of free disk space below.");
+          ? (driveAbsent
+            ? t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer.")
+            : t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer, then run a full overwrite of free disk space below."))
+          : (driveAbsent
+            ? t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer.")
+            : t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer, then run a full overwrite of free disk space below."));
         $("panic-result").innerHTML =
           `<span class="pill warn">${esc(t(driveAbsent ? "erase failed" : clean ? "crypto-erased" : "erase may be incomplete"))}</span> ` +
           // R809: with the drive absent the count is only what was erased ELSEWHERE, said as that, never as the erase's success.
@@ -4396,7 +4401,9 @@
           `<button class="danger" data-on-click="secureErase(3)">${esc(t("Triple pass"))}</button>` +
           `<button class="danger" data-on-click="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
           `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`);
-        toast(clean ? t("Local data crypto-erased. Restart the app.") : t("The erase may be incomplete. Read the notice under the wipe button."), clean ? "warn" : "err");
+        toast(clean ? t("Local data crypto-erased. Restart the app.")
+          : driveAbsent ? t("The erase failed. Read the notice under the wipe button.")  // R809: a failure, never "may be incomplete"
+          : t("The erase may be incomplete. Read the notice under the wipe button."), clean ? "warn" : "err");
       } catch (e) { toast(_failMsg("Panic wipe failed: {error}", e), "err"); }
     }
 
@@ -4421,6 +4428,8 @@
           drive_unread: "Free disk space was not overwritten: the app could not tell which drive held the erased data folder.",
           no_folder: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
           nothing_written: "Free disk space was not overwritten: nothing could be written on the drive that held the data, which may already be full.",
+          // R809: the marked data drive is not there (or another drive is at its place): nothing was written at its path.
+          drive_absent: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
         }[r.scrub_not_done];
         const tfw = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
