@@ -52,7 +52,7 @@ function makeWatcher() {
     "  const s = env.statuses.length > 1 ? env.statuses.shift() : env.statuses[0];\n" +
     "  if (s instanceof Error) throw s; return s; }\n" +
     extract("_diagSectionOpen") + "\n" + extract("_armJobSettle") + "\n" +
-    extract("_settleJob") + "\n" + extract("_watchJobLine") + "\n" +
+    extract("_settleJob") + "\n" + extract("_drawJobLine") + "\n" + extract("_watchJobLine") + "\n" +
     "module.exports = { _watchJobLine };";
   const m = { exports: {} };
   new Function("module", "exports", "env", "global", src)(m, m.exports, env, global);

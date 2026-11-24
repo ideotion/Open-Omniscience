@@ -27,6 +27,12 @@ METHOD (source only; nothing is executed):
   ``.outerHTML`` assigned with ``=`` or ``+=``, or ``.insertAdjacentHTML(``) AND a translator call
   (``t(``, ``tf(``, ``tr(``, ``trf(``, ``_t(``, ``_tf(``, ``_custT(``, ``OOI18N.t(``, ``OOI18N.tf(``).
 * Exempt, any one of:
+  0. (row 364) the node and the render passed to ``ooLive(el, render)``/``ooLiveHtml(el, render)``
+     are not looked at: those arguments are blanked before sinks and translators are matched (unless
+     they hold a sink, which an inline render would aim at another node), so a
+     unit that draws ONLY through the helper has nothing left to count, while a write to another
+     node in the same unit -- or to the same node outside the call, or after ``ooLive(el, null)``
+     released it -- still counts;
   1. the unit marks its output: ``setAttribute("data-i18n-dyn"``, ``dataset.i18nDyn``, or
      ``data-i18n-dyn`` inside an HTML tag in a string;
   2. the unit looks up an element that ``index.html`` marks ``data-i18n-dyn`` -- ``$("id")``,
@@ -123,6 +129,8 @@ _DYN_TAG = re.compile(r"<[A-Za-z][\w-]*\b[^<>`]*\bdata-i18n-dyn\b")
 _CALL = re.compile(r"(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(")
 _WORD = re.compile(r"[A-Za-z_$][\w$]*")
 _LISTENER = re.compile(r"addEventListener\(\s*[\"']oo:langchange[\"']")
+# Row 364: ooLive(el, render) / ooLiveHtml(el, render) (app-core.js) keep the render and redraw el on a switch.
+_LIVE_CALL = re.compile(r"(?<![\w$.])ooLive(?:Html)?\s*\(")
 
 
 @dataclass(frozen=True)
@@ -254,6 +262,27 @@ def _close(skel: str, at: int, open_ch: str, close_ch: str) -> int:
     raise ValueError(f"unbalanced {open_ch}{close_ch} from offset {at}")
 
 
+def _blank_live_calls(skel: str) -> str:
+    """``skel`` with the arguments of every ``ooLive(...)``/``ooLiveHtml(...)`` call blanked.
+
+    The node passed and the t() calls in its render are then neither a sink nor a translator of
+    the unit's: that node is kept and redrawn on a switch. Only those arguments are blanked, and
+    only when they hold no sink (an inline render that writes another node is counted), so a
+    write into ANY other node (or into the same node outside the call) still counts, and a release
+    (``ooLive(el, null)``) exempts nothing written after it.
+    """
+    out = list(skel)
+    for m in _LIVE_CALL.finditer(skel):
+        end = _close(skel, m.end() - 1, "(", ")")
+        # An inline render is not a unit of its own, so its body is the caller's code: a sink inside it writes some
+        # other node, and the call is then left as it stands, to be counted like any other code.
+        if _SINK.search(skel, m.end(), end):
+            continue
+        for j in range(m.end(), end):
+            out[j] = " "
+    return "".join(out)
+
+
 def dyn_ids(index_html: str) -> set[str]:
     """Element ids that ``index.html`` marks ``data-i18n-dyn``."""
     tags = re.findall(r"<[^<>]*\bdata-i18n-dyn\b[^<>]*>", index_html)
@@ -350,7 +379,7 @@ def scan_sources(
     ids = dyn_ids(index_html)
     hits = []
     for u in units:
-        own_code, own_skel = u["own_code"], u["own_skel"]
+        own_code, own_skel = u["own_code"], _blank_live_calls(u["own_skel"])
         if not (_SINK.search(own_skel) and _TRANSLATOR.search(own_skel)):
             continue
         if u["id"] in repainted or _MARKS_DYN.search(own_code):
