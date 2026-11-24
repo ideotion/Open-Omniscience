@@ -431,7 +431,7 @@ jobs:
         # ruff CI installs, before merging, never from this comment. (This comment must not spell
         # out the script's command line: guards_for_diff.py refuses a ci.yml with a second such
         # line, and test_ruff_ratchet.py reads the number from the first one.)
-        run: python scripts/ruff_ratchet.py --max 411
+        run: python scripts/ruff_ratchet.py --max 391
 
       # THE PLANNED-WORK REVERSE INDEX (maintainer-asked 2026-09-22): "find a way so that
       # future bug discovery would not contradict what has been planned ... to help future
