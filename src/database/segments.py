@@ -93,6 +93,7 @@ def registry(con: Any) -> list[Segment]:
 
 
 def _now() -> str:
+    # Naive UTC text, the form SQLAlchemy writes a DateTime in on SQLite (the model default is aware UTC).
     return datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ")
 
 
@@ -102,6 +103,23 @@ def _begin(con: Any) -> None:
             "the registry is changed in a transaction of its own, never inside another one"
         )
     con.execute("BEGIN IMMEDIATE")
+
+
+def _rollback(con: Any) -> None:
+    # SQLite may already have rolled back by itself (SQLITE_FULL, an I/O error): a second ROLLBACK would raise
+    # "no transaction is active" and hide the error that matters.
+    if getattr(con, "in_transaction", False):
+        con.execute("ROLLBACK")
+
+
+def _commit(con: Any) -> None:
+    # A COMMIT that fails (busy, I/O) must not leave the connection inside the transaction: every later step on it
+    # would then be refused as "inside another one".
+    try:
+        con.execute("COMMIT")
+    except BaseException:
+        _rollback(con)
+        raise
 
 
 @dataclass(frozen=True)
@@ -134,7 +152,8 @@ def reserve_segment(con: Any, size: int = DEFAULT_SEGMENT_SIZE) -> Reservation:
         lo = max(max_article + 1, int(counter[0]) if counter else 1, int(top_range or 0) + 1)
         hi = lo + size - 1
         if not con.execute("SELECT 1 FROM corpus_segments WHERE seg_no = 0").fetchone():
-            # Legacy segment 0 closes at what it holds; it never gets a new id again.
+            # Legacy segment 0 closes at what it holds; it never gets a new id again. An empty corpus closes it as the
+            # EMPTY range [1, 0] (id_hi < id_lo), which overlaps nothing.
             con.execute(
                 "INSERT INTO corpus_segments (seg_no, file_name, state, id_lo, id_hi, created_at, state_at)"
                 " VALUES (0, NULL, 'closed', 1, ?, ?, ?)",
@@ -153,9 +172,9 @@ def reserve_segment(con: Any, size: int = DEFAULT_SEGMENT_SIZE) -> Reservation:
             (hi + 1,),
         )
     except BaseException:
-        con.execute("ROLLBACK")
+        _rollback(con)
         raise
-    con.execute("COMMIT")
+    _commit(con)
     return Reservation(seg_no, name, lo, hi)
 
 
@@ -182,9 +201,9 @@ def commit_segment(seg_con: Any, r: Reservation) -> None:
             (r.seg_no, r.id_lo, r.id_hi, _now()),
         )
     except BaseException:
-        seg_con.execute("ROLLBACK")
+        _rollback(seg_con)
         raise
-    seg_con.execute("COMMIT")
+    _commit(seg_con)
 
 
 def segment_identity(seg_con: Any) -> tuple[int, int, int] | None:
@@ -209,9 +228,9 @@ def _set_state(con: Any, seg_no: int, frm: str, to: str) -> bool:
         )
         changed = cur.rowcount == 1
     except BaseException:
-        con.execute("ROLLBACK")
+        _rollback(con)
         raise
-    con.execute("COMMIT")
+    _commit(con)
     return changed
 
 

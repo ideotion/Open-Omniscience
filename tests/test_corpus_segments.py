@@ -265,3 +265,28 @@ def test_a_restore_never_carries_another_machines_registry():
 
     for t in ("corpus_segments", "corpus_id_counter"):
         assert t in _MERGE_NOT_CARRIED and t not in _MERGE_HANDLED
+
+
+class _CommitFails(sqlite3.Connection):
+    """A connection whose COMMIT raises once, as SQLITE_BUSY or an I/O error would."""
+
+    fail_commit = True
+
+    def execute(self, sql, *args):  # type: ignore[override]
+        if sql == "COMMIT" and self.fail_commit:
+            self.fail_commit = False
+            raise sqlite3.OperationalError("database is locked")
+        return super().execute(sql, *args)
+
+
+def test_a_failed_commit_leaves_no_transaction_open_and_writes_nothing(tmp_path):
+    _shared(tmp_path).close()
+    con = sqlite3.connect(
+        tmp_path / "open_omniscience.db", isolation_level=None, factory=_CommitFails
+    )
+    with pytest.raises(sqlite3.OperationalError):
+        sg.reserve_segment(con, 10)
+    assert not con.in_transaction
+    assert _snapshot(con) == [[], []]
+    r = sg.reserve_segment(con, 10)  # the connection is usable again
+    assert (r.seg_no, r.id_lo) == (1, 1)
