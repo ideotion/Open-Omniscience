@@ -45,6 +45,7 @@ FEED_LEVEL = {
     ("src/analytics/passport.py", "corpus_passport"): ("caveat", "a descriptive size of the selection"),
     ("src/api/reporting.py", "plan_evidence"): ("caveat", "what the bundle holds: one item per article, its source named"),
     ("src/timemap/datestore.py", "upcoming_deduced"): ("caveat", "breadth of a mentioned date, descriptive"),
+    ("src/analytics/queries.py", "corpus_sources"): ("caveat", "how many feed rows the matched set spans, beside a table of those same rows cut to its biggest (row 395); a size, never a voice count"),
     ("src/analytics/claim_workspace.py", "_corpus_source_facets"): ("registry", "which countries, languages and source types the sources list holds, a presence test against the trail, never a voice count"),
     ("src/catalog/qualification.py", "admission_audit"): ("registry", "sources collection can reach vs sources the audit accounts for"),
     ("src/analytics/concentration.py", "find_flooded_topics"): ("per_feed", "a flood is one feed's share; the ubiquity ratio compares feeds with feeds"),

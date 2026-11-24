@@ -117,7 +117,7 @@ function harness(answers, opts = {}) {
       "loadAiHero", "_aiHeroRedraw", "_aiHeroHtml", "aiStartNow",
       "loadAiStore", "_aiStoreRedraw", "_aiStoreHtml", "migrateOllamaStore",
       "_gbytes", "loadAiUninstall", "_aiUninstallRedraw", "_aiUninstallPlanHtml", "uninstallAi",
-      "renderCustodyStatus", "_custodyStatusHtml", "verifyChain", "viewChain", "custodyAnchorResultHtml", "anchorRoot"].map(extract),
+      "renderCustodyStatus", "_custodyStatusHtml", "custodySignerWords", "verifyChain", "viewChain", "custodyAnchorResultHtml", "anchorRoot"].map(extract),
     ...STATE_B,
     ...["_mcRedraw", "_mcSay", "loadModelCatalog", "_modelCatalogRowsHtml", "installOneModel",
       "_abRedraw", "loadAiBackendPanel", "_aiBackendHtml", "launchOllama", "_ollamaAct", "releaseOllama",
@@ -314,6 +314,20 @@ const frame = (L, label, text) => L["{prefix}: {text}"].replace("{prefix}", labe
     h.switchTo("ja");
     assert.strictEqual(out.innerHTML, `<span class="pill ok" title="${esc(JA[H1])}">${esc(JA["verified"])}</span> ${esc(JA["chain intact, signatures valid."])}`);
     assert.strictEqual(JA["verified"], "検証済み", "the custody pill no longer reads 'date confirmed'");
+  }
+  {
+    // Row 382 (R800): whose key signed the chain rides in the same live redraw, so a language switch re-words it too.
+    const key = "ab".repeat(32);
+    const h = harness({ "/api/custody/item-1/verify": () => ({ verified: true, accepted_unendorsed: false, notes: [],
+      signed_by: "another-installation", signer_key: key }) });
+    await h.fns.verifyChain();
+    const out = h.$("cust-result");
+    const fp = "\u2068" + key.slice(0, 2 * 8) + "\u2069";
+    h.switchTo("fr");
+    assert.ok(out.innerHTML.includes('<span class="cust-signer">'
+      + esc(FR["Signed by another installation, key {fp}"].replace("{fp}", fp)) + "</span>"), out.innerHTML);
+    h.switchTo("ja");
+    assert.ok(out.innerHTML.includes(esc(JA["Signed by another installation, key {fp}"].replace("{fp}", fp))), out.innerHTML);
   }
   {
     const h = harness({ "/api/custody/item-1/verify": { verified: false, issues: ["seq <gap> at 3"] }, "/api/custody/item-1": { entries: [], entry_count: 4 } });
