@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "0f92b84e6f45f27c0cd1224b7ffb5c9e2ca0325b3578fb0512398b74f7bf04bd",
+  "digest": "0a8696975a751aaf5e7e9d6ee6c37b0b7fb68224b272f9009689b8a0f41e065e",
   "log": [
     {
       "version": 1,
@@ -127,6 +127,12 @@
       "digest": "0f92b84e6f45f27c0cd1224b7ffb5c9e2ca0325b3578fb0512398b74f7bf04bd",
       "kind": "same",
       "note": "Row 406: index_article inserts an article's new keywords in one flush instead of one each, and the script check counts per distinct letter; the rows written are identical (tests/test_import_writer_speed_row406.py)"
+    },
+    {
+      "version": 3,
+      "digest": "0a8696975a751aaf5e7e9d6ee6c37b0b7fb68224b272f9009689b8a0f41e065e",
+      "kind": "same",
+      "note": "Row 418: the apply path writes the same rows through Core statements instead of the ORM unit of work (date tags, places, entities, the article's derived columns, the stamps); rows, ids and stored values are identical, pinned by tests/test_apply_core_row418.py and the golden output digest"
     }
   ]
 }

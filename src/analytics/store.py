@@ -26,7 +26,7 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import Table, bindparam, delete, func, insert, select, text, update
+from sqlalchemy import Table, bindparam, delete, func, insert, null, select, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -641,6 +641,27 @@ def _resolve_known_language(article: Article, content: str) -> str | None:
     )
 
 
+#: Row 418: the article's derived columns go out through this Core table statement (``session.execute``, so the write
+#: gate and the R827 recorder see it), keyed by a bound id; the SET list is the parameters' columns.
+_ARTICLE_DERIVED_UPDATE = update(cast(Table, Article.__table__)).where(
+    cast(Table, Article.__table__).c.id == bindparam("_article_id")
+)
+
+
+def _write_article_derived(session: Session, article: Article, values: dict[str, Any]) -> None:
+    """Write ``values`` (column name to value) onto the article's row now, plus ``updated_at`` (its onupdate), and record
+    them on ``article`` as its committed state (row 418).
+
+    What the attribute assignments and the flush's UPDATE did, minus the unit of work: the row ends identical, the
+    object reads the same values without a query, and the article is not left dirty for a later flush to write again."""
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    values = {**values, "updated_at": datetime.now(UTC)}
+    session.execute(_ARTICLE_DERIVED_UPDATE, {"_article_id": article.id, **values})
+    for key, value in values.items():
+        set_committed_value(article, key, value)
+
+
 def _stamp_index_engine(
     session: Session, article: Article, extractor, *, certified: bool, inputs: str
 ) -> None:
@@ -662,7 +683,6 @@ def _stamp_index_engine(
     -- the stamp only ever makes a restore cheaper, so its absence costs a re-extraction
     and never a keyword."""
     from sqlalchemy import and_, delete, not_
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
     from src.database.models import ArticleIndexStamp
 
@@ -680,21 +700,12 @@ def _stamp_index_engine(
     if certified:
         # R824 (row 405): the stage version beside the id, and no carry provenance -- these rows were extracted HERE, whatever an
         # earlier stamp said; the engine's readable components ride their own table, once per id.
-        stmt = sqlite_insert(ArticleIndexStamp).values(
-            article_id=article.id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
-            stage_version=INDEXER_VERSION, carried_from_batch=None,
-        )
         session.execute(
-            stmt.on_conflict_do_update(
-                index_elements=[ArticleIndexStamp.article_id],
-                set_={
-                    "engine": stmt.excluded.engine,
-                    "inputs": stmt.excluded.inputs,
-                    "stamped_at": stmt.excluded.stamped_at,
-                    "stage_version": stmt.excluded.stage_version,
-                    "carried_from_batch": None,
-                },
-            )
+            _stamp_upsert(ArticleIndexStamp),
+            {
+                "article_id": article.id, "engine": current, "inputs": inputs, "stamped_at": datetime.now(UTC),
+                "stage_version": INDEXER_VERSION, "carried_from_batch": None,
+            },
         )
         _record_engine(session, current, "kw", record)
     else:
@@ -716,7 +727,6 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
     the stamp only ever makes a restore cheaper, so its absence costs a re-extraction
     and never a wrong row."""
     from sqlalchemy import delete
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
     from src.database.models import ArticleWwwStamp
 
@@ -733,21 +743,12 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
         log_failure(_LOG, "could not compute the www identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleWwwStamp).where(ArticleWwwStamp.article_id == article_id))
         return
-    stmt = sqlite_insert(ArticleWwwStamp).values(
-        article_id=article_id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
-        stage_version=WWW_INDEXER_VERSION, carried_from_batch=None,
-    )
     session.execute(
-        stmt.on_conflict_do_update(
-            index_elements=[ArticleWwwStamp.article_id],
-            set_={
-                "engine": stmt.excluded.engine,
-                "inputs": stmt.excluded.inputs,
-                "stamped_at": stmt.excluded.stamped_at,
-                "stage_version": stmt.excluded.stage_version,
-                "carried_from_batch": None,
-            },
-        )
+        _stamp_upsert(ArticleWwwStamp),
+        {
+            "article_id": article_id, "engine": current, "inputs": inputs, "stamped_at": datetime.now(UTC),
+            "stage_version": WWW_INDEXER_VERSION, "carried_from_batch": None,
+        },
     )
     _record_engine(session, current, "www", record)
 
@@ -756,15 +757,60 @@ def _record_engine(session: Session, engine: str, stage: str, components: str) -
     """One ``index_engines`` row per engine id (R824, row 405): what the id is a hash of, so a later restore of this store can name the
     component that differs from its own engine. An insert that keeps an existing row, one primary-key probe per stamp; it writes inside
     the stamp's own transaction, so the row exists exactly when a stamp naming it does."""
+    session.execute(
+        _record_engine_insert(),
+        {"engine": engine, "stage": stage, "components": components, "recorded_at": datetime.now(UTC)},
+    )
+
+
+_STAMP_COLUMNS = ("article_id", "engine", "inputs", "stamped_at", "stage_version", "carried_from_batch")
+
+
+def _compiled_once(stmt, table: Table, names: Iterable[str]):
+    """``stmt`` rendered ONCE to SQLite text with typed parameters (row 418).
+
+    SQLAlchemy cannot cache a SQLite ``ON CONFLICT`` insert (it reports "no key"), so the construct was compiled again
+    for every article: 0.5 ms per statement, three of them per article. The text is the construct's own rendering, and
+    each parameter keeps its column's type, so a datetime is stored exactly as before. It still runs through
+    ``session.execute``, so the write gate and the R827 recorder see it."""
+    from sqlalchemy.dialects import sqlite
+
+    sql = str(stmt.compile(dialect=sqlite.dialect(paramstyle="named")))
+    return text(sql).bindparams(*(bindparam(name, type_=table.c[name].type) for name in names))
+
+
+@functools.cache
+def _stamp_upsert(model):
+    """The stamp upsert for ``model`` (``ArticleIndexStamp`` or ``ArticleWwwStamp``), built once (row 418, the reason in
+    :func:`_compiled_once`). Same SQL and conflict rule as the per-call construct it replaces."""
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    table = cast(Table, model.__table__)
+    stmt = sqlite_insert(table).values({name: bindparam(name) for name in _STAMP_COLUMNS})
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[table.c.article_id],
+        set_={
+            "engine": stmt.excluded.engine,
+            "inputs": stmt.excluded.inputs,
+            "stamped_at": stmt.excluded.stamped_at,
+            "stage_version": stmt.excluded.stage_version,
+            "carried_from_batch": null(),  # the construct bound None; NULL is the same value, written into the text
+        },
+    )
+    return _compiled_once(stmt, table, _STAMP_COLUMNS)
+
+
+@functools.cache
+def _record_engine_insert():
+    """``_record_engine``'s insert-or-keep, built once (row 418, the reason in :func:`_compiled_once`)."""
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
     from src.database.models import IndexEngine
 
-    session.execute(
-        sqlite_insert(IndexEngine)
-        .values(engine=engine, stage=stage, components=components, recorded_at=datetime.now(UTC))
-        .on_conflict_do_nothing(index_elements=[IndexEngine.engine])
-    )
+    table = cast(Table, IndexEngine.__table__)
+    names = ("engine", "stage", "components", "recorded_at")
+    stmt = sqlite_insert(table).values({name: bindparam(name) for name in names})
+    return _compiled_once(stmt.on_conflict_do_nothing(index_elements=[table.c.engine]), table, names)
 
 
 def _index_article_www(
@@ -1089,12 +1135,13 @@ def index_article(
     # extractor generation. Set unconditionally (never `or`-guarded): an article whose
     # keywords were all suppressed this pass must go BACK to NULL rather than keep a
     # stale top keyword that no mention row supports any more.
+    derived: dict[str, Any] = {}
     if sentiment_result is not None:
-        article.sentiment_score, article.sentiment_label = sentiment_result
+        derived["sentiment_score"], derived["sentiment_label"] = sentiment_result
     (
-        article.top_keyword_id,
-        article.top_keyword_count,
-        article.top_keyword_tied_n,
+        derived["top_keyword_id"],
+        derived["top_keyword_count"],
+        derived["top_keyword_tied_n"],
     ) = top_keyword_of(new_contrib)
 
     # THE ATTEMPT RECORD (PRH-01). Stamped on EVERY scope, including the keyword-only
@@ -1110,7 +1157,13 @@ def index_article(
     # record of a keyword pass that did in fact complete. Verified, not assumed --
     # tests/test_backfill_cursor.py drives a failing WWW store and asserts the stamp
     # survives.
-    article.keyword_indexed_at = datetime.now(UTC)
+    #
+    # Row 418: written by ONE statement here rather than by the unit of work at the next flush -- the same columns, the
+    # same transaction, and still outside the savepoint (it runs before it). ``updated_at`` is the column's own
+    # onupdate, stated so the object can be told; the object then holds the stored values as committed state, exactly
+    # as after the flush, so nothing is pending and nothing is read back.
+    derived["keyword_indexed_at"] = datetime.now(UTC)
+    _write_article_derived(session, article, derived)
 
     # Keep the denormalised counters exact for THIS article's net change.
     #

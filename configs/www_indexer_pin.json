@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "616a885cf9716299aa36fb593d079177924e79d4c5cf41b2260f3b80684ffd02",
+  "digest": "b5c1237ac41075f2d46e4fc867629371a9567ef0a8bbcc9a9f0550577ad4aab5",
   "log": [
     {
       "version": 1,
@@ -61,6 +61,12 @@
       "digest": "616a885cf9716299aa36fb593d079177924e79d4c5cf41b2260f3b80684ffd02",
       "kind": "same",
       "note": "row 292 (R776): cities.py reads an optional per-country last_diff from the places artifact; for every artifact without one (any built before R776, or with no daily file applied) each entry's vintage is the same string as before, so the rows index_article writes are identical; an artifact that carries last_diff is a different data file, which www_data_digest already counts"
+    },
+    {
+      "version": 1,
+      "digest": "b5c1237ac41075f2d46e4fc867629371a9567ef0a8bbcc9a9f0550577ad4aab5",
+      "kind": "same",
+      "note": "Row 418: places and entities are written by one executemany each and the www stamp by a statement compiled once, instead of the ORM unit of work; rows, ids and stored values are identical, pinned by tests/test_apply_core_row418.py and the golden output digest"
     }
   ]
 }
