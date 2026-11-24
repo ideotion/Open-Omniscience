@@ -54,6 +54,7 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False, off_drive
         _latch,
         _pin_drive,
         finish_holder_check,
+        finish_plaintext_rewrite,
         new_hold_generation,
         quick_crypto_erase,
     )
@@ -102,6 +103,8 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False, off_drive
     # see (one process's POSIX locks never conflict), so they are counted; not knowing is "unknown", never "none".
     report["own_connections_open"] = own_open
     with erase_owned():  # the wipe's own rewrite through the descriptors it kept
+        # R818 (b): a plaintext store's body is rewritten only now, its own pool disposed; not confirmed closed, it is left.
+        finish_plaintext_rewrite(report, generation, own_open)
         finish_holder_check(report, generation)
     if failed:
         report["after_erase_failures"] = failed

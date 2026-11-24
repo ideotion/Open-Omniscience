@@ -883,23 +883,36 @@ def test_the_uninstall_plan_reads_the_scope_and_hands_the_watcher_the_app_s_name
 
 
 def test_a_plaintext_database_step_one_could_not_unlink_is_rewritten_whole(tmp_path, monkeypatch):
-    """Only an ENCRYPTED store's database skips step 6's whole rewrite when its unlink failed (Windows, an open pool)."""
+    """Only an ENCRYPTED store's database skips a whole rewrite when its unlink failed (Windows, an open pool). A plaintext one
+    (R817, row 392) is rewritten in full through the handle the erase kept on it, whether or not its unlink went through."""
     folder = tmp_path / "OOS data"
     folder.mkdir()
     main = folder / "open_omniscience.db"
     _plain_sqlite(main)
     kept = tmp_path / "kept"
     os.link(main, kept)
-    real_unlink = Path.unlink
     calls = []
+    if os.name == "posix" and os.unlink in os.supports_dir_fd:
+        real_os_unlink = os.unlink
 
-    def unlink(self, *a, **k):
-        if self.name == "open_omniscience.db" and not calls:
-            calls.append(self)
-            raise PermissionError("held open")
-        return real_unlink(self, *a, **k)
+        def os_unlink(path, *a, **k):
+            if path == "open_omniscience.db" and k.get("dir_fd") is not None and not calls:
+                calls.append(path)
+                raise PermissionError("held open")
+            return real_os_unlink(path, *a, **k)
 
-    monkeypatch.setattr(Path, "unlink", unlink)
+        monkeypatch.setattr(os, "supports_dir_fd", os.supports_dir_fd | {os_unlink})
+        monkeypatch.setattr(os, "unlink", os_unlink)
+    else:
+        real_unlink = Path.unlink
+
+        def unlink(self, *a, **k):
+            if self.name == "open_omniscience.db" and not calls:
+                calls.append(self)
+                raise PermissionError("held open")
+            return real_unlink(self, *a, **k)
+
+        monkeypatch.setattr(Path, "unlink", unlink)
     crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
     assert calls and b"plaintext-row" not in kept.read_bytes()
 

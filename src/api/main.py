@@ -4030,7 +4030,7 @@ def _panic_cli(*, force: bool) -> None:
     import sys
 
     from src.paths import data_dir_path
-    from src.safety import panic_wipe
+    from src.safety import crypto_erase, panic_wipe
     from src.safety.crypto_erase import _PLAINTEXT_SENTENCE, plaintext_store_sentences
 
     target = data_dir_path()  # named, never made or checked: data_dir() raises when the marked drive is not there (R809)
@@ -4039,6 +4039,8 @@ def _panic_cli(*, force: bool) -> None:
         if ans.strip().lower() != "wipe":
             print("Aborted.")
             return
+    # R818 (a): said as the body rewrite of an unencrypted main database starts; information only, nothing to answer.
+    crypto_erase.plain_rewrite_notice = lambda: print(crypto_erase.PLAIN_STORE_NOTICE, flush=True)
     report = panic_wipe(confirm=True)
     if report.get("drive_absent"):
         # R809: a failure state. What was erased elsewhere (stores kept outside the data folder, the passphrase in memory) is said

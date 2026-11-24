@@ -70,7 +70,7 @@ def test_cli_rewrites_the_plaintext_store_through_every_name(tmp_path):
     assert not db.exists()
     _witnessed(link)
     assert crypto_erase.PLAIN_STORE_STATE["overwritten"] in out, out
-    assert crypto_erase.PLAIN_STORE_OTHER_NAMES.format(n=1) in out, out
+    assert crypto_erase.PLAIN_STORE_OTHER_NAMES_OVERWRITTEN.format(n=1) in out, out
     assert GUARANTEE not in out and crypto_erase._PLAINTEXT_SENTENCE in out, out
     assert "Wiped 0/0 files" in out, "the plaintext store is never counted as a wiped file"
     assert "The corpus key is destroyed" not in out and "salt" not in out, out
@@ -92,7 +92,7 @@ def test_cli_with_the_drive_absent_rewrites_the_plaintext_store_outside_it(tmp_p
     assert run.returncode == 2, out + run.stderr
     assert not db.exists() and not data.parent.exists()
     _witnessed(link)
-    assert crypto_erase.PLAIN_STORE_STATE["overwritten"] in out and crypto_erase.PLAIN_STORE_OTHER_NAMES.format(n=1) in out, out
+    assert crypto_erase.PLAIN_STORE_STATE["overwritten"] in out and crypto_erase.PLAIN_STORE_OTHER_NAMES_OVERWRITTEN.format(n=1) in out, out
     assert crypto_erase._PLAINTEXT_SENTENCE in out and GUARANTEE not in out, out
     # The store is never counted as a wiped file: what else was outside (nothing here) is said as nothing.
     assert "Files erased outside the data drive: 0 of 0." in out, out
@@ -142,7 +142,7 @@ def _erase_plain(db: Path, pin) -> dict:
     """The two halves the erase runs (R817): open, keep and unlink in step 1; rewrite through the kept handles at the end."""
     generation = crypto_erase.new_hold_generation()
     try:
-        rec = crypto_erase._open_and_unlink_plain(db, pin, generation, None)
+        rec = crypto_erase._open_and_unlink_plain(db, pin, generation, [])
         crypto_erase._rewrite_plain(rec, may_write=True)
     finally:
         crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
@@ -176,7 +176,8 @@ def test_cli_rewrites_a_plaintext_store_inside_the_data_folder_through_every_nam
     assert not db.exists()
     _witnessed(link)
     assert crypto_erase.PLAIN_STORE_STATE["overwritten"] in out and crypto_erase.PLAIN_STORE_DELETED in out, out
-    assert crypto_erase.PLAIN_STORE_OTHER_NAMES.format(n=1) in out, out
+    assert crypto_erase.PLAIN_STORE_OTHER_NAMES_OVERWRITTEN.format(n=1) in out, out
+    assert crypto_erase.PLAIN_STORE_NOTICE in out, "R818 (a): said as the rewrite starts"
     assert GUARANTEE not in out and crypto_erase._PLAINTEXT_SENTENCE in out, out
 
 
@@ -220,7 +221,7 @@ def test_the_store_is_unlinked_before_its_rewrite_and_a_stop_is_partially_overwr
     pin = crypto_erase._pin_file(db)
     generation = crypto_erase.new_hold_generation()
     try:
-        rec = crypto_erase._open_and_unlink_plain(db, pin, generation, None)
+        rec = crypto_erase._open_and_unlink_plain(db, pin, generation, [])
         assert not db.exists() and rec["deleted"] is True, "deleted before a byte of its contents is rewritten (R817 (1)/(2))"
         assert WITNESS[:34] in link.read_bytes(), "the contents wait for the end of the erase"
         real = crypto_erase._rewrite_fd
@@ -251,11 +252,15 @@ def test_a_drive_that_changed_rewrites_nothing(tmp_path):
     os.link(db, link)
     generation = crypto_erase.new_hold_generation()
     try:
-        rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, None)
+        rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, [])
         crypto_erase._rewrite_plain(rec, may_write=False)
     finally:
         crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
-    assert rec["state"] == "not_overwritten" and rec["reason"] == "drive" and rec["deleted"] is True
+    assert rec["state"] == "first_page" and rec["reason"] == "drive" and rec["deleted"] is True
+    assert WITNESS[:34] in link.read_bytes(), "nothing past the first page was written on a drive that changed"
+    words = crypto_erase.plaintext_store_sentences({"plaintext_store": rec})
+    assert words[:3] == [crypto_erase.PLAIN_STORE_STATE["first_page"], crypto_erase.PLAIN_STORE_REST,
+                         crypto_erase.PLAIN_STORE_REASON["drive"]]
 
 
 @pytest.mark.parametrize("change", ["swapped", "gone", "link"])
@@ -272,7 +277,7 @@ def test_another_file_or_a_link_at_its_place_is_never_touched(tmp_path, change):
         db.symlink_to(target)  # a link swapped in at the path: never followed, never removed
     rec = _erase_plain(db, pin)
     assert rec["state"] == "not_overwritten" and rec["touched"] is False
-    assert rec["reason"] == {"swapped": "changed", "gone": "absent", "link": "unidentified"}[change]
+    assert rec["reason"] == {"swapped": "changed", "gone": "absent", "link": "changed"}[change]
     if change == "swapped":
         assert db.read_bytes() == WITNESS, "nothing at that place is touched"
     if change == "link":
@@ -294,7 +299,7 @@ def test_a_log_swapped_for_a_link_is_never_written_through(tmp_path):
     rec = _erase_plain(db, crypto_erase._pin_file(db))
     assert target.read_bytes() == WITNESS, "the link's target is never written"
     assert not os.path.lexists(wal), "the link itself is removed"
-    assert rec["state"] != "overwritten"
+    assert rec["state"] != "overwritten" and rec["reason"] == "changed", rec
 
 
 def test_the_first_page_fallback_is_said_as_such():
@@ -331,10 +336,102 @@ def test_the_page_fails_closed_and_says_the_store_apart():
     assert "&& !plaintext;" in js, "a plaintext erase is never the clean, crypto-erased result"
     words = [*crypto_erase.PLAIN_STORE_STATE.values(), *crypto_erase.PLAIN_STORE_REASON.values(), crypto_erase.PLAIN_STORE_DELETED,
              crypto_erase.PLAIN_STORE_NOT_DELETED, crypto_erase.PLAIN_STORE_OTHER_NAMES, crypto_erase._PLAINTEXT_SENTENCE,
-             crypto_erase._UNKNOWN_SENTENCE]
+             crypto_erase._UNKNOWN_SENTENCE, crypto_erase.PLAIN_STORE_REST, crypto_erase.PLAIN_STORE_NOTICE,
+             crypto_erase.PLAIN_STORE_OTHER_NAMES_OVERWRITTEN]
     tables = {lang: json.loads(Path(f"src/static/locales/{lang}.json").read_text(encoding="utf-8"))
               for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")}
     for w in words:
         assert w in js, w
         for lang, table in tables.items():
             assert table.get(w), (lang, w)
+
+
+# ---------------------------------------------------------------- R818: fast destruction first, body after the pool
+
+
+def _store_with_log(tmp_path: Path) -> tuple[Path, Path, Path, bytes]:
+    """A plaintext store, a log beside it holding the rows, and a second name for each, to read them after the unlink."""
+    db = tmp_path / "main.db"
+    _plain_db(db)
+    wal = db.with_name(db.name + "-wal")
+    wal.write_bytes(WITNESS * 8)
+    link, wal_link = tmp_path / "other.db", tmp_path / "other.db-wal-name"
+    os.link(db, link)
+    os.link(wal, wal_link)
+    return db, link, wal_link, link.read_bytes()[:4096]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
+def test_a_stop_before_the_body_rewrite_finds_page_one_and_the_log_already_destroyed(tmp_path):
+    db, link, wal_link, page1 = _store_with_log(tmp_path)
+    generation = crypto_erase.new_hold_generation()
+    try:
+        rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, [])
+        # the erase stops here: no body rewrite has run
+        assert not db.exists() and rec["deleted"] is True
+        assert link.read_bytes()[:4096] != page1, "page 1 is destroyed before the unlink (R818)"
+        assert WITNESS[:34] not in wal_link.read_bytes(), "the log is destroyed whole before the unlink (R818)"
+        assert WITNESS[:34] in link.read_bytes()[4096:], "only the body waits for the rewrite"
+    finally:
+        crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
+@pytest.mark.parametrize("own_open", [1, None])
+def test_a_pool_not_confirmed_closed_leaves_the_body_and_says_so(tmp_path, own_open):
+    db, link, _wal_link, page1 = _store_with_log(tmp_path)
+    generation = crypto_erase.new_hold_generation()
+    report: dict = {}
+    try:
+        rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, [])
+        crypto_erase._PLAIN_PENDING[generation] = (rec, True, [str(db)])
+        crypto_erase.finish_plaintext_rewrite(report, generation, own_open)
+    finally:
+        crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
+    ps = report["plaintext_store"]
+    assert ps["state"] == "first_page" and ps["reason"] == "pool" and ps["deleted"] is True, ps
+    assert link.read_bytes()[:4096] != page1 and WITNESS[:34] in link.read_bytes(), "page 1 gone; the rest not written, as said"
+    words = crypto_erase.plaintext_store_sentences(report)
+    assert words[:4] == [crypto_erase.PLAIN_STORE_STATE["first_page"], crypto_erase.PLAIN_STORE_REST,
+                         crypto_erase.PLAIN_STORE_REASON["pool"], crypto_erase.PLAIN_STORE_DELETED], words
+    assert crypto_erase.PLAIN_STORE_OTHER_NAMES.format(n=1) in words, "not overwritten: its other names still lead to the rows"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
+def test_a_confirmed_closed_pool_rewrites_the_body_after_the_notice(tmp_path, monkeypatch):
+    db, link, _wal_link, _page1 = _store_with_log(tmp_path)
+    said: list[int] = []
+    monkeypatch.setattr(crypto_erase, "plain_rewrite_notice", lambda: said.append(1))
+    generation = crypto_erase.new_hold_generation()
+    report: dict = {}
+    try:
+        rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, [])
+        crypto_erase._PLAIN_PENDING[generation] = (rec, True, [str(db)])
+        crypto_erase.finish_plaintext_rewrite(report, generation, 0)
+    finally:
+        crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
+    assert said == [1], "the notice is said once, as the rewrite starts (R818 (a))"
+    assert report["plaintext_store"]["state"] == "overwritten"
+    _witnessed(link)
+    assert crypto_erase.PLAIN_STORE_OTHER_NAMES_OVERWRITTEN.format(n=1) in crypto_erase.plaintext_store_sentences(report)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
+def test_a_stop_during_the_body_rewrite_is_partially_overwritten(tmp_path, monkeypatch):
+    db, link, _wal_link, _page1 = _store_with_log(tmp_path)
+    generation = crypto_erase.new_hold_generation()
+    try:
+        rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, [])
+
+        def killed(fd, **kw):  # the operator closes the app partway (a Ctrl-C on the CLI)
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.write(fd, os.urandom(8192))
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(crypto_erase, "_rewrite_fd", killed)
+        crypto_erase._rewrite_plain(rec, may_write=True)
+    finally:
+        crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
+    assert rec["state"] == "partially_overwritten" and rec["reason"] == "stopped", rec
+    words = crypto_erase.plaintext_store_sentences({"plaintext_store": rec})
+    assert crypto_erase.PLAIN_STORE_REASON["stopped"] in words and crypto_erase.PLAIN_STORE_REST not in words

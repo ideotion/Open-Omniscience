@@ -80,6 +80,7 @@ def precheck(argv: list[str]) -> None:
         from src.safety import crypto_erase, panic_wipe
 
         # off_drive_only: a drive plugged in while the question waited is left whole (the operator agreed to the rest only).
+        crypto_erase.plain_rewrite_notice = lambda: print(crypto_erase.PLAIN_STORE_NOTICE, flush=True)  # R818 (a)
         report = panic_wipe(confirm=True, off_drive_only=True)
     except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 - said, never a traceback (a Ctrl-C during the erase too)
         print(f"The erase of what the app keeps outside the data drive did not finish ({type(exc).__name__}): it may be partly "
