@@ -132,7 +132,7 @@ def test_run_restore_defers_the_walk_and_waits_for_it_before_verify():
     src = (_ROOT / "src/backup/merge.py").read_text(encoding="utf-8")
     restore = python_function_source(src, "run_restore")
     assert "defer_quick_check=True" in restore
-    wrapped = 'with timings.stage("merge"), _quick_check_alongside(staged.corpus_path, timings):'
+    wrapped = "_quick_check_alongside(staged.corpus_path, timings),"
     assert wrapped in restore, "the walk runs around the merge"
     assert restore.index(wrapped) < restore.index('_abort_point("verify")'), (
         "the walk is waited for before the verify stage, so before any swap"

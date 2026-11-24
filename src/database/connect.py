@@ -1833,13 +1833,17 @@ def _copy_fd(src_p: Path, fd: int, dest_p: Path, *, chunk: int, use_sendfile: bo
         raise
 
 
-def _sha256_of_file(path: Path, *, chunk: int = 8 * 1024 * 1024) -> tuple[int, str]:
-    """``(bytes read, sha256 hex)`` of a file this process just wrote, read back from disk, never through a link."""
+def _sha256_of_file(path: Path, *, chunk: int = 8 * 1024 * 1024, should_stop=None) -> tuple[int, str]:
+    """``(bytes read, sha256 hex)`` of a file this process just wrote, read back from disk, never through a link.
+
+    ``should_stop`` (optional, checked between chunks) ends the read early with :class:`StoreCopyRefused`."""
     h = hashlib.sha256()
     n = 0
     fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
     try:
         while True:  # the guard-clause form: the back-edge stays inside the try (R163)
+            if should_stop is not None and should_stop():
+                raise StoreCopyRefused("the read-back of the safety copy was stopped before it finished")
             data = os.read(fd, chunk)
             if not data:
                 break
@@ -1850,17 +1854,24 @@ def _sha256_of_file(path: Path, *, chunk: int = 8 * 1024 * 1024) -> tuple[int, s
     return n, h.hexdigest()
 
 
-def verified_store_copy(src_p: Path, dest_p: Path) -> dict | None:
-    """A byte copy of the encrypted store, VERIFIED WHOLE before it is trusted: R827 R5/R6(a).
+def verified_store_copy(src_p: Path, dest_p: Path, *, read_back: bool = True) -> dict | None:
+    """A byte copy of the encrypted store, VERIFIED WHOLE before it is trusted: R827 R5/R6(a), R830.
 
     The import's safety net, the copy that is never written to. Same proof as
     :func:`_quiesced_file_copy` (the write gate held, the checkpoint drained, an empty ``-wal``) and, under
-    that SAME gate hold, the source's sha256 is taken from the bytes as they are copied and the copy is read
-    back from disk and hashed: the copy is kept only when its size and hash equal the source's. A mismatch
-    removes it and raises :class:`StoreCopyRefused`; nothing is written to the source either way.
+    that SAME gate hold, the source's sha256 is taken from the bytes as they are copied. The copy is then
+    flushed to disk (fsync), its size compared with the source's, and it is opened under the same key: the
+    cheap checks. With ``read_back`` (the default) the copy is also read back from disk and hashed here, and
+    kept only when the hash equals the source's. A mismatch removes it and raises :class:`StoreCopyRefused`;
+    nothing is written to the source either way.
 
-    Returns ``{"bytes": n, "sha256": hex}``, or None when the store is plaintext or the proof cannot be made
-    (the caller then takes its copies the way it did before)."""
+    ``read_back=False`` is for a caller that runs :func:`store_copy_reads_back` itself, off the critical path,
+    and refuses before using the copy for anything that cannot be undone (R830: the import runs it beside the
+    merge and refuses before the swap). The returned dict then says ``"read_back": False`` -- the copy is not
+    yet verified whole, and must not be reported as verified until that check has passed.
+
+    Returns ``{"bytes": n, "sha256": hex, "read_back": bool}``, or None when the store is plaintext or the proof
+    cannot be made (the caller then takes its copies the way it did before)."""
     from src.database.writer import gate_enabled, write_lock
 
     src_p, dest_p = Path(src_p), Path(dest_p)
@@ -1890,16 +1901,41 @@ def verified_store_copy(src_p: Path, dest_p: Path) -> dict | None:
         try:
             with store_reader(src_p) as fd:
                 src_bytes = os.fstat(fd).st_size
-            copy_bytes, copy_hash = _sha256_of_file(dest_p)
-            if copy_bytes != src_bytes or copy_hash != source.hexdigest():
+            _fsync_file(dest_p)  # on disk before anything relies on it (R830)
+            copy_bytes = os.stat(dest_p, follow_symlinks=False).st_size
+            if copy_bytes != src_bytes:
                 raise StoreCopyRefused(
-                    "the safety copy does not match the corpus it was copied from (size or sha256); it was removed"
+                    "the safety copy does not match the corpus it was copied from (size); it was removed"
                 )
+            if read_back:
+                store_copy_reads_back(dest_p, {"bytes": src_bytes, "sha256": source.hexdigest()})
         except BaseException:
             dest_p.unlink(missing_ok=True)
             raise
-    connect(dest_p, check_same_thread=False).close()  # opens under the same key (page-1 HMAC)
-    return {"bytes": copy_bytes, "sha256": copy_hash}
+    try:
+        connect(dest_p, check_same_thread=False).close()  # opens under the same key (page-1 HMAC)
+    except BaseException:
+        dest_p.unlink(missing_ok=True)
+        raise
+    return {"bytes": copy_bytes, "sha256": source.hexdigest(), "read_back": bool(read_back)}
+
+
+def _fsync_file(path: Path) -> None:
+    """Flush a file this process just wrote to the disk, opened without following a link."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def store_copy_reads_back(dest_p: Path, facts: dict, *, should_stop=None) -> None:
+    """Read a copy made by :func:`verified_store_copy` back from disk and compare it with the source's size and
+    sha256 (``facts``, as that call returned them). Raises :class:`StoreCopyRefused` when they differ, or when
+    ``should_stop`` ends the read first; never removes or changes the copy itself (the caller decides)."""
+    n, h = _sha256_of_file(Path(dest_p), should_stop=should_stop)
+    if n != int(facts["bytes"]) or h != str(facts["sha256"]):
+        raise StoreCopyRefused("the safety copy does not match the corpus it was copied from (size or sha256)")
 
 
 def clone_file(src_p: Path, dest_p: Path, *, chunk: int = 64 * 1024 * 1024) -> None:

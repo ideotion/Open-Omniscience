@@ -10,6 +10,9 @@ cloned from the safety net, which is never written to, and the commit reuses the
 - a plaintext store or a disabled gate returns None, so the caller copies the way it did before;
 - free space for both copies is checked before anything is written;
 - run_restore is wired that way: the clone is taken from the net, and the commit reuses it.
+R830 (amends R827): the net is flushed to disk and its size and key checked on the critical path; the read-back
+of the whole copy, compared with the hash taken while copying, runs beside the merge, and a mismatch refuses
+before the swap, removes the net and forgets it as the run's safety net.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -61,7 +64,7 @@ def test_the_safety_net_is_byte_identical_verified_and_opens(tmp_path, passphras
     before = live.read_bytes()
     net = tmp_path / "net.db"
     facts = verified_store_copy(live, net)
-    assert facts == {"bytes": len(before), "sha256": hashlib.sha256(before).hexdigest()}
+    assert facts == {"bytes": len(before), "sha256": hashlib.sha256(before).hexdigest(), "read_back": True}
     assert net.read_bytes() == before and live.read_bytes() == before
     working = tmp_path / "w" / "working.db"
     working.parent.mkdir()
@@ -158,14 +161,119 @@ def test_a_plaintext_live_store_takes_no_early_net_and_checks_nothing(tmp_path, 
     assert m._take_safety_net_with_the_copy(tmp_path / "w" / "working.db") is None
 
 
+@sqlcipher_only
+def test_without_read_back_the_cheap_checks_still_run_and_the_copy_says_it_is_not_yet_verified(
+    tmp_path, monkeypatch, passphrase
+):
+    import src.database.connect as C
+
+    live = tmp_path / "live.db"
+    _encrypted_corpus(live)
+    before = live.read_bytes()
+    read: list[Path] = []
+    real = C._sha256_of_file
+    monkeypatch.setattr(C, "_sha256_of_file", lambda p, **kw: (read.append(p), real(p, **kw))[1])
+    synced: list[Path] = []
+    real_sync = C._fsync_file
+    monkeypatch.setattr(C, "_fsync_file", lambda p: (synced.append(p), real_sync(p))[1])
+    net = tmp_path / "net.db"
+    facts = C.verified_store_copy(live, net, read_back=False)
+    assert facts == {"bytes": len(before), "sha256": hashlib.sha256(before).hexdigest(), "read_back": False}
+    assert [r for r in read if Path(r) == net] == [], "the read-back is left to the caller"
+    assert [y for y in synced if Path(y) == net] == [net], "the copy is flushed to disk before anything relies on it"
+    C.store_copy_reads_back(net, facts)  # and the caller's read-back passes on a good copy
+    net.write_bytes(net.read_bytes()[:-1] + b"\x00")
+    with pytest.raises(C.StoreCopyRefused, match="does not match"):
+        C.store_copy_reads_back(net, facts)
+
+
+def _net_facts(tmp_path: Path, body: bytes = b"n" * 100_000) -> tuple[Path, dict]:
+    net = tmp_path / "pre-restore-x.db"
+    net.write_bytes(body)
+    return net, {"bytes": len(body), "sha256": hashlib.sha256(body).hexdigest(), "read_back": False}
+
+
+class _Rec:
+    def __init__(self) -> None:
+        self.seen: dict[str, float] = {}
+
+    def record(self, name: str, seconds: float) -> None:
+        self.seen[name] = seconds
+
+
+def test_the_read_back_beside_the_merge_passes_and_marks_the_net_verified(tmp_path):
+    from src.backup.merge import _net_read_back_alongside
+
+    net, facts = _net_facts(tmp_path)
+    rec = _Rec()
+    ran = []
+    with _net_read_back_alongside((net, facts), rec):
+        ran.append("merge")
+    assert ran == ["merge"] and facts["read_back"] is True and net.exists()
+    assert set(rec.seen) == {"merge:net_read_back", "merge:net_read_back_wait"}
+
+
+def test_a_net_that_does_not_read_back_refuses_before_the_swap_and_is_dropped(tmp_path, monkeypatch):
+    import src.backup.merge as m
+    from src.backup.merge import MergeError, _net_read_back_alongside
+
+    net, facts = _net_facts(tmp_path)
+    net.write_bytes(b"x" * facts["bytes"])  # same size, different bytes: the disk does not hold what was copied
+    monkeypatch.setattr(m, "_RUN_SNAPSHOT", (7, net))
+    after = []
+    with pytest.raises(MergeError, match="could not be verified") as exc:
+        with _net_read_back_alongside((net, facts), None):
+            pass
+        after.append("verify")  # never reached: no verify stage, so no swap
+    assert after == [] and "not changed" in str(exc.value)
+    assert not net.exists(), "a net that did not verify is never left to be trusted"
+    assert m._RUN_SNAPSHOT is None, "and is forgotten as the run's safety net"
+    assert facts["read_back"] is False
+
+
+def test_a_failing_merge_keeps_its_own_error_and_an_unfinished_read_back_drops_the_net(tmp_path, monkeypatch):
+    import threading
+
+    import src.database.connect as C
+    from src.backup.merge import _net_read_back_alongside
+
+    net, facts = _net_facts(tmp_path)
+    started = threading.Event()
+
+    def _slow(path, facts, *, should_stop=None):
+        started.set()
+        while not should_stop():
+            threading.Event().wait(0.01)
+        raise C.StoreCopyRefused("stopped")
+
+    monkeypatch.setattr(C, "store_copy_reads_back", _slow)
+    with pytest.raises(ValueError, match="the merge failed"), _net_read_back_alongside((net, facts), None):
+        started.wait(5)
+        raise ValueError("the merge failed")
+    assert not net.exists() and facts["read_back"] is False
+
+
+def test_no_net_taken_in_this_call_reads_nothing(tmp_path):
+    from src.backup.merge import _net_read_back_alongside
+
+    with _net_read_back_alongside(None, None):
+        pass
+
+
 def test_run_restore_clones_the_working_copy_from_the_net_and_the_commit_reuses_it():
     src = (_ROOT / "src/backup/merge.py").read_text(encoding="utf-8")
     restore = python_function_source(src, "run_restore")
     take = restore.index("_net_here = _take_safety_net_with_the_copy(working, timings)")
     clone = restore.index("clone_file(_net_here[0], working)")
-    merge = restore.index('with timings.stage("merge")')
+    merge = restore.index('timings.stage("merge"),')
     assert take < clone < merge, "the net is taken and the working copy cloned from it before the merge"
     assert "_reuse = _net_here[0] if _net_here is not None else _run_scoped_snapshot()" in restore
     assert "if commit and exclusive and _run_scoped_snapshot() is None" in restore, (
         "only a committing restore on a machine it owns takes it early, and only once per run"
     )
+    merge_block = restore.index("_net_read_back_alongside(_net_here, timings)")
+    assert merge < merge_block < restore.index('_abort_point("verify")'), (
+        "R830: the net's read-back runs beside the merge and is waited for before verify, so before any swap"
+    )
+    take_src = python_function_source(src, "_take_safety_net_with_the_copy")
+    assert "verified_store_copy(live, net, read_back=False)" in take_src

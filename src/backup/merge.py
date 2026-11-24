@@ -884,6 +884,89 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
         raise MergeError(str(state["error"]))
 
 
+#: R830: the words an import refused on a safety copy that did not read back as the corpus it was copied from.
+_NET_NOT_VERIFIED = (
+    "the safety copy of your corpus could not be verified against the corpus it was copied from, so the backup "
+    "was not merged; your corpus was not changed"
+)
+
+
+@contextmanager
+def _net_read_back_alongside(net: tuple[Path, dict] | None, timings: object = None) -> Iterator[None]:
+    """R830 (amends R827 R5/R6): read the run's safety net back from disk and hash it on its own thread while the body
+    (the merge) runs, and refuse before the swap when it does not match.
+
+    :func:`_take_safety_net_with_the_copy` copies the live corpus with its sha256 taken from the bytes as they are
+    read, flushes the copy and checks its size and that it opens under the key -- the cheap checks, on the critical
+    path. The read-back of the whole copy, compared with that hash, is the part that costs a full read; it runs here
+    beside the merge instead (the merge never reads or writes the net: it works on a clone of it).
+
+    Nothing reaches the live corpus without passing: on a normal exit the block WAITS for the read-back, and a
+    mismatch (or a read-back that could not run) removes the net, forgets it as the run's safety net and raises
+    :class:`MergeError` -- before the verify stage and so before any swap, with the live corpus untouched. When the
+    body raises instead, the read-back is stopped and the body's own exception goes on unchanged; a net whose
+    read-back had not passed by then is removed and forgotten the same way, because nothing later in the run
+    re-verifies the net it reuses. ``net`` None (no net taken in this call) does nothing.
+
+    Timed as ``merge:net_read_back`` (its own time) and ``merge:net_read_back_wait`` (how long the merge waited)."""
+    if net is None:
+        yield
+        return
+    from src.database.connect import store_copy_reads_back
+
+    path, facts = net
+    stop = threading.Event()
+    state: dict[str, object] = {"ok": False, "error": None, "seconds": None}
+
+    def _read() -> None:
+        t0 = time.monotonic()
+        try:
+            store_copy_reads_back(path, facts, should_stop=stop.is_set)
+            state["ok"] = True
+        except BaseException:  # noqa: BLE001 - a mismatch or a read that could not run is a refusal, never a pass
+            state["error"] = _NET_NOT_VERIFIED
+        finally:
+            state["seconds"] = time.monotonic() - t0
+
+    reader = threading.Thread(target=_read, name="oo-import-net-read-back", daemon=True)
+    reader.start()
+    finished = False
+    try:
+        yield
+        finished = True
+    finally:
+        if not finished:
+            stop.set()
+        t_wait = time.monotonic()
+        reader.join()
+        _record = getattr(timings, "record", None)
+        if _record is not None:
+            with suppress(Exception):
+                _record("merge:net_read_back_wait", time.monotonic() - t_wait)
+                if isinstance(state["seconds"], float):
+                    _record("merge:net_read_back", state["seconds"])
+        if not state["ok"]:
+            _drop_unverified_net(path)
+    if not state["ok"]:
+        raise MergeError(str(state["error"] or _NET_NOT_VERIFIED))
+    facts["read_back"] = True
+
+
+def _drop_unverified_net(path: Path) -> None:
+    """Remove a safety net whose read-back did not pass (or never finished), so nothing later trusts it: forgotten as
+    the run's net, its staging registration released, the file removed. The live corpus is not touched."""
+    from src.backup.stream_backup import unregister_active_staging
+
+    global _RUN_SNAPSHOT
+    with _RUN_SNAPSHOT_LOCK:
+        if _RUN_SNAPSHOT is not None and _RUN_SNAPSHOT[1] == path:
+            _RUN_SNAPSHOT = None
+    with suppress(Exception):
+        unregister_active_staging(path)
+    with suppress(OSError):
+        path.unlink(missing_ok=True)
+
+
 def prepare_staged_corpus(
     staged: StagedArtifact,
     *,
@@ -6811,9 +6894,7 @@ def _take_safety_net_with_the_copy(working: Path, timings: object = None) -> tup
     from src.backup.artifact import preflight_free_space
     from src.backup.sqlite_backup import live_db_path
     from src.backup.stream_backup import register_active_staging, unregister_active_staging
-    from src.database.connect import verified_store_copy
-
-    from src.database.connect import is_encrypted_file
+    from src.database.connect import is_encrypted_file, verified_store_copy
     from src.database.writer import gate_enabled
 
     live = live_db_path()
@@ -6832,7 +6913,7 @@ def _take_safety_net_with_the_copy(working: Path, timings: object = None) -> tup
     register_active_staging(net)  # the age sweep never takes it; released by the commit tail's guard
     try:
         with _sub_timer(timings)("snapshot_working_copy:safety_net"):
-            facts = verified_store_copy(live, net)
+            facts = verified_store_copy(live, net, read_back=False)  # R830: the read-back runs beside the merge
     except BaseException:
         unregister_active_staging(net)
         raise
@@ -10267,7 +10348,12 @@ def run_restore(
     _abort_point("merge")
     # R827 R3(a): the staged copy's quick_check runs beside the merge and is waited for at its end;
     # a failure raises here, before the verify stage and any swap.
-    with timings.stage("merge"), _quick_check_alongside(staged.corpus_path, timings):
+    # R830: the safety net's read-back runs beside it too, and is waited for there; a mismatch refuses before the swap.
+    with (
+        timings.stage("merge"),
+        _quick_check_alongside(staged.corpus_path, timings),
+        _net_read_back_alongside(_net_here, timings),
+    ):
         _step_clock["t"] = time.monotonic()
         counts, batch_id = merge_corpus(
             staged.corpus_path, working, meta,
