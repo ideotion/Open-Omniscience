@@ -3371,10 +3371,15 @@
         if (++n > 40) { clearInterval(_osmPollTimer); _osmPollTimer = null; }
       }, 3000);
     }
+    // Row 372(b) review: while a start is in flight its button stays disabled; a language switch does not redraw the
+    // region list over it (the poll that follows the start redraws it).
+    let _osmStartsInFlight = 0;
     async function startOsmDownload(code, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const c = code || "";
       if (!c) return;
+      _osmStartsInFlight++;
+      try {
       if (btn) { btn.disabled = true; ooLive(btn, () => t("Starting…")); }   // instant feedback
       // No extra "are you sure" confirm (field test 2026-06-19 #15): the size is shown in
       // the row; the ONE network-consent popup (ensureOnline) is the only gate that matters.
@@ -3383,6 +3388,7 @@
         await api("/api/geo/downloads/start", { method: "POST", body: JSON.stringify({ code: c }) });
         toast(t("Download started.")); _osmPoll();
       } catch (e) { toast(_failMsg("Start failed: {error}", e), "err"); loadOsmMap(); }
+      } finally { _osmStartsInFlight--; }
     }
     function resumeOsm(code, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -3395,6 +3401,8 @@
     // WITHOUT re-downloading (a single monolithic planet file cannot skip parts).
     async function startPlanetDownload(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _osmStartsInFlight++;
+      try {
       if (btn) { btn.disabled = true; ooLive(btn, () => t("Starting…")); }
       if (!await ensureOnline(t("Download the offline world map"))) { loadOsmMap(); return; }
       const byCode = _osmDlByCode();
@@ -3409,6 +3417,7 @@
       }
       toast(`${t("Queued")} ${started} ${t("regions")}${skip.length ? ` · ${skip.length} ${t("already present")}` : ""}`);
       _osmPoll();
+      } finally { _osmStartsInFlight--; }
     }
     // Reorder a QUEUED region download (same prioritisation control as the task
     // manager's dump/OSM reorder). Optimistic: renumber the cached queue + repaint
@@ -3660,7 +3669,7 @@
       _osmGeoRender();
       // Row 372(b): surfaces drawn from what they last read, redrawn here in the new language; none fetches.
       if (_wikiDumpsLast && $("dump-table") && $("dump-table").querySelector("tr")) _renderWikiDumps(_wikiDumpsLast);
-      if (_osmListDrawn) _renderOsmList();
+      if (_osmListDrawn && !_osmStartsInFlight) _renderOsmList();
       if (_dumpIdxLast && $("dumpfts-index")) _renderDumpIndexStatus(_dumpIdxLast);
       // The per-country profile tabs and bodies, and the geography panel (its pickers, notes and map), from their caches.
       const osmProf = $("osm-profile");
