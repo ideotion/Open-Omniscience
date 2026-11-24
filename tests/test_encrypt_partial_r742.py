@@ -321,7 +321,7 @@ def test_the_record_holds_names_and_times_only(stores):
     # R828 (1): the record's own random binding key, at the top level, and nothing else beside the entries
     assert set(doc) <= {"version", "stores", "binding_key"}
     assert "binding_key" not in doc or len(bytes.fromhex(doc["binding_key"])) == 32
-    for name, entry in doc["stores"].items():
+    for entry in doc["stores"].values():
         # R820 (4): plus the store's (device, inode) when it was read back with the key; numbers, never a path or a secret
         # R828 (1): plus a MAC of the file's first 16 bytes, never the bytes themselves
         assert set(entry) - {"dev", "ino", "mac"} == {"encrypted_at", "read_back_with_key"}
