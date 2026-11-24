@@ -8240,6 +8240,7 @@
   "the name of the signature scheme, ed25519": "le nom du schéma de signature, ed25519",
   "the newest held version": "la version détenue la plus récente",
   "the next one rejoins the line on {when}": "la prochaine revient dans la file le {when}",
+  "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup": "la note qui marque cette clé comme restaurée depuis une sauvegarde n'a pas pu être écrite à côté d'elle, et une clé restaurée sans cette note serait comptée comme celle de cette installation ; elle n'est pas écrite et reste dans la sauvegarde",
   "the operator's population table ({name})": "la table de population de l'opérateur ({name})",
   "the pass journal could not be read ({error})": "le journal des passes n’a pas pu être lu ({error})",
   "the passphrase has a character that cannot be written as UTF-8": "la phrase secrète contient un caractère qui ne peut pas s'écrire en UTF-8",

@@ -46,8 +46,8 @@ def _restore(tmp_path, members: dict[str, bytes]):
 
 
 def test_the_restore_places_from_the_erase_list():
-    marker = "evidence_ed25519.pem" + ev.RESTORED_KEY_MARKER_SUFFIX
-    assert data_scope.APP_KEY_NAMES - {marker} == merge._APP_KEY_FILES
+    markers = {f"{who}_ed25519.pem{ev.RESTORED_KEY_MARKER_SUFFIX}" for who in ("custody", "annotations", "evidence")}  # R816
+    assert data_scope.APP_KEY_NAMES - markers == merge._APP_KEY_FILES
     assert all(merge._key_slot(n) is not None for n in merge._APP_KEY_FILES)
     # row 385: only names the app actually writes; the evidence signer has no ML-DSA key
     assert "evidence_ml_dsa_65.key" not in data_scope.APP_KEY_NAMES and len(merge._APP_KEY_FILES) == 5

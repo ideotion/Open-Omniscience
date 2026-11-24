@@ -8240,6 +8240,7 @@
   "the name of the signature scheme, ed25519": "اسم مخطط التوقيع، ed25519",
   "the newest held version": "أحدث إصدار محفوظ",
   "the next one rejoins the line on {when}": "يعود التالي إلى الطابور في {when}",
+  "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup": "تعذّرت كتابة الملاحظة التي تُعلِّم هذا المفتاح بأنه مستعاد من نسخة احتياطية بجانبه، والمفتاح المستعاد بدون هذه الملاحظة سيُعدّ مفتاحًا خاصًا بهذا التثبيت؛ لذلك لا يُكتب ويبقى في النسخة الاحتياطية",
   "the operator's population table ({name})": "جدول السكان الخاص بالمشغّل ({name})",
   "the pass journal could not be read ({error})": "تعذّرت قراءة سجل الجولات ({error})",
   "the passphrase has a character that cannot be written as UTF-8": "عبارة المرور تحتوي على حرف لا يمكن كتابته بترميز UTF-8",

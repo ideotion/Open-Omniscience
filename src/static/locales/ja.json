@@ -8240,6 +8240,7 @@
   "the name of the signature scheme, ed25519": "署名方式の名前（ed25519）",
   "the newest held version": "保持している最新の版",
   "the next one rejoins the line on {when}": "次の 1 件は {when} にキューに戻ります",
+  "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup": "この鍵をバックアップから復元したものとして示す注記を鍵の横に書き込めませんでした。注記のない復元鍵はこのインストール環境自身の鍵として扱われてしまうため、書き込まれず、バックアップに残ります",
   "the operator's population table ({name})": "運用者の人口表({name})",
   "the pass journal could not be read ({error})": "パスの記録を読み取れませんでした（{error}）",
   "the passphrase has a character that cannot be written as UTF-8": "パスフレーズに UTF-8 で書き表せない文字が含まれています",

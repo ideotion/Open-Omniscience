@@ -233,7 +233,8 @@ def test_the_app_key_names_match_where_the_app_writes_them():
     from src.custody.keyfile import PENDING
     from src.reporting.evidence import RESTORED_KEY_MARKER_SUFFIX
 
-    assert set(_APP_KEY_FILES) | {"evidence_ed25519.pem" + RESTORED_KEY_MARKER_SUFFIX} == data_scope.APP_KEY_NAMES
+    markers = {f"{who}_ed25519.pem{RESTORED_KEY_MARKER_SUFFIX}" for who in ("custody", "annotations", "evidence")}  # R816
+    assert set(_APP_KEY_FILES) | markers == data_scope.APP_KEY_NAMES
     assert PENDING == data_scope.KEYS_PENDING
     sample = f"custody_ed25519.pem.{os.getpid()}.{1234}.{'a' * 12}.rewrap"
     assert re.fullmatch(data_scope.KEYS_PENDING_RE, sample)
