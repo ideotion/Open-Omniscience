@@ -251,7 +251,12 @@ def doctor() -> dict:
         return line
 
     lanes = {spec.kind: _line(f"lane:{spec.kind}", data_dir() / spec.filename) for spec in all_lanes()}
+    from src.safety.crypto_erase import plaintext_body_rewrite_supported
+
     return {
+        # Row 392 (Plan on R818 (a)): whether an erase here rewrites a plaintext main database's body after deleting it (POSIX);
+        # the page says its "may take several minutes" notice only then.
+        "erase_rewrites_plaintext_body": plaintext_body_rewrite_supported(),
         "driver": have_driver(),
         # R742: the whole set at once. ``complete`` is never true while any store is plaintext, and the plaintext pre-encrypt
         # snapshots still on the disk are named, so "encrypted" is never read as "no plaintext anywhere".

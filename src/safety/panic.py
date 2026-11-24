@@ -54,6 +54,7 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False, off_drive
         _latch,
         _pin_drive,
         finish_holder_check,
+        finish_plaintext_rewrite,
         new_hold_generation,
         quick_crypto_erase,
     )
@@ -82,27 +83,43 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False, off_drive
             from src.monitoring.secret_scrub import log_failure
 
             log_failure(_LOG, "panic wipe: the settings cache could not be cleared before the erase", exc, level=logging.WARNING)
+        erased = False  # the late pass is armed here only when the wipe stops before its last use of the kept descriptors
         try:
             report = quick_crypto_erase(confirm=True, data_dir=data_dir, hold_for_rescrub=True, hold_generation=generation,
                                         settle=False, off_drive_only=off_drive_only)
+            erased = True
         finally:
             # In a `finally` because a partial wipe still removed the store.
             try:
                 _tidy_after_erase(failed)
+            except BaseException:
+                erased = False
+                raise
             finally:
                 # whatever the tidying above did: the late-commit rewrite must still run. R813, stated: a drive found absent,
                 # unidentified, changed or lost had its connections pinned by the erase, and this close skips them; a drive swapped
                 # after the erase's last re-check and before this close is the window left for it (follow-up row 390).
-                own_open = _dispose_after_erase(generation)
+                # The late pass is armed below, after the body rewrite and the holder check (both use the kept descriptors); here
+                # only when the wipe is stopping on an exception, so that nothing below runs and the descriptors still go.
+                try:
+                    own_open = _dispose_after_erase(generation, arm_late=not erased)
+                except BaseException:  # a Ctrl-C inside it: nothing below runs, so the late pass is armed here
+                    _arm_late_rescrub(generation)
+                    raise
     # R792: only now, with the app offline and this process's own pool closed (its close would undo the lock this takes), look
     # for ANOTHER process still holding the store and rewrite while it does, within the bound; the report says what was found.
-    from src.paths import erase_owned
-
     # R805 (a): this process's own connections a request thread still held when the pool was closed are a holder the probe cannot
     # see (one process's POSIX locks never conflict), so they are counted; not knowing is "unknown", never "none".
-    report["own_connections_open"] = own_open
-    with erase_owned():  # the wipe's own rewrite through the descriptors it kept
-        finish_holder_check(report, generation)
+    try:
+        report["own_connections_open"] = own_open
+        from src.paths import erase_owned
+
+        with erase_owned():  # the wipe's own rewrite through the descriptors it kept
+            # R818 (b): a plaintext store's body is rewritten only now, its own pool disposed; not confirmed closed, it is left.
+            finish_plaintext_rewrite(report, generation, own_open)
+            finish_holder_check(report, generation)
+    finally:
+        _arm_late_rescrub(generation)
     if failed:
         report["after_erase_failures"] = failed
     from src.safety.crypto_erase import settle_removed
@@ -233,7 +250,7 @@ def _dispose_own_pool() -> int | None:
         return None
 
 
-def _dispose_after_erase(generation: int | None = None) -> int | None:
+def _dispose_after_erase(generation: int | None = None, *, arm_late: bool = True) -> int | None:
     """Close the pool once the key is gone, then rewrite through the kept descriptors what a transaction already under way
     put back into the unlinked files (its commit writes page 1, salt included): once now, and once more after
     :data:`_LATE_RESCRUB_S` on a timer that never holds the wipe up. Only this wipe's descriptors (``generation``), so a
@@ -243,17 +260,31 @@ def _dispose_after_erase(generation: int | None = None) -> int | None:
     # this process holds a store: none of its own connections is open.
     still_open = _dispose_own_pool() if "src.database.session" in sys.modules else 0
     try:
-        from src.safety.crypto_erase import held_count, rescrub_held
+        from src.safety.crypto_erase import rescrub_held
 
         rescrub_held(close=False, generation=generation)
-        if held_count(generation):  # even when that pass rewrote nothing: the late pass is also the one that lets the descriptors go
+    except Exception:  # noqa: BLE001 - never raises  # nosec B110
+        pass
+    if arm_late:
+        _arm_late_rescrub(generation)
+    return still_open
+
+
+def _arm_late_rescrub(generation: int | None) -> None:
+    """The late pass: :data:`_LATE_RESCRUB_S` from now, rewrite once more through this wipe's kept descriptors and let them go.
+    The panic wipe arms it only after its own last use of them (a plaintext store's body rewrite, which can take minutes, and the
+    holder check, which probes them by descriptor), so it can never close them under either (row 392, security read). Never
+    raises."""
+    try:
+        from src.safety.crypto_erase import held_count, rescrub_held
+
+        if held_count(generation):  # even when the last pass rewrote nothing: the late pass is also the one that lets them go
             late = threading.Timer(_LATE_RESCRUB_S, rescrub_held, kwargs={"close": True, "generation": generation})
             late.name = "oo-panic-rescrub"
             late.daemon = True
             late.start()
     except Exception:  # noqa: BLE001 - never raises  # nosec B110
         pass
-    return still_open
 
 
 #: R813 row 389: how long after a panic result that keeps a drive's key in memory the app starts closing (the response is sent and
