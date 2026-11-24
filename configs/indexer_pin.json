@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "68435602dd5228c82972aeccf201b8d5b5e0891c3f36e2251e76f8691ac5ec60",
+  "digest": "e96db328f2644adbcf5067cc2f4b2415021b1275890e8bcfda608e9859bae970",
   "log": [
     {
       "version": 1,
@@ -124,7 +124,13 @@
     },
     {
       "version": 3,
-      "digest": "68435602dd5228c82972aeccf201b8d5b5e0891c3f36e2251e76f8691ac5ec60",
+      "digest": "0f92b84e6f45f27c0cd1224b7ffb5c9e2ca0325b3578fb0512398b74f7bf04bd",
+      "kind": "same",
+      "note": "Row 406: index_article inserts an article's new keywords in one flush instead of one each, and the script check counts per distinct letter; the rows written are identical (tests/test_import_writer_speed_row406.py)"
+    },
+    {
+      "version": 3,
+      "digest": "e96db328f2644adbcf5067cc2f4b2415021b1275890e8bcfda608e9859bae970",
       "kind": "same",
       "note": "Row 416 changes only reindex_parallel.py's pool lifetime and worker count (one kept pool per drain, recycled, memory-bounded); every task is computed by the same _worker_compute in a worker built by the same _worker_init, and index_article is untouched"
     }
