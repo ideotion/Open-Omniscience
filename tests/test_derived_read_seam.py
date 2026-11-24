@@ -222,7 +222,9 @@ _RAW_CEILING: dict[str, int] = {
     "src/ai_layer/source_tags_job.py": 1,
     "src/ai_layer/store.py": 1,
     "src/ai_layer/triage.py": 2,
-    "src/analytics/bulk_build.py": 3,
+    # R825 (row 407): the window measures the table it drops and rebuilds indexes on (MAX(id) of keyword_mentions in this
+    # file, not the view): a writer-side bound, not a read.
+    "src/analytics/bulk_build.py": 4,
     "src/analytics/columnar.py": 14,
     "src/analytics/concentration.py": 3,
     # R625: the two triggers that mark a day stale (a trigger must name its table, never the view) and the install

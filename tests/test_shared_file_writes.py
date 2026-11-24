@@ -43,7 +43,7 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/api/diagnostics/keywords.py": (1, "keyword"),
     "src/api/diagnostics_volumes.py": (4, "export"),
     "src/api/markets.py": (1, "Plan J"),
-    "src/backup/artifact.py": (3, "export"),
+    "src/backup/artifact.py": (2, "export"),
     "src/backup/country_migration.py": (2, "export"),
     "src/backup/export_folder.py": (1, "export"),
     "src/backup/folder_backup.py": (2, "WAL"),

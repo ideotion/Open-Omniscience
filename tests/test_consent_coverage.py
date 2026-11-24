@@ -569,6 +569,8 @@ def test_the_consent_predicate_reads_code_not_prose():
     assert not asks_before_it_fetches("async function f() { if (go) await ensureOnline('x'); await api('/x'); }")
     assert asks_before_it_fetches("async function f() { const ok = await ensureOnline('x'); if (!ok) return; await api('/x'); }")
     assert asks_before_it_fetches("async function f() { if (typeof ensureOnline === 'function' && !await ensureOnline('x')) return; await api('/x'); }")
+    # the fail-closed form every gate uses since R822
+    assert asks_before_it_fetches("async function f() { if (typeof ensureOnline !== 'function' || !await ensureOnline('x')) return; await api('/x'); }")
 
 
 def test_the_consent_predicate_follows_the_route():

@@ -580,8 +580,13 @@ def init_db() -> None:
     # turning every query that used them into a full scan, silently. The heal is driven
     # by a durable marker and asks sqlite_master what is actually absent, so it is a
     # no-op (one small read, no DDL) on every boot where nothing was interrupted.
+    # R825 (b): the heal no longer BUILDS here. A CREATE INDEX over a corpus-sized table inside the call
+    # that opens the database is minutes with nothing on screen; reads stay correct without the dropped
+    # indexes (the unique ones and ix_mention_article are never dropped), so this only reads the marker and
+    # says what is owed; the re-index drain or the background heal (bulk_build.start_heal, started by the boot
+    # sequence's re-index step and after a restore) rebuilds it.
     _init_step("heal_bulk_build")
-    heal_bulk_build(engine)
+    heal_bulk_build(engine, inline=False)
 
     # Per-feed de-churn backoff columns (field log finding F) for databases that
     # already had feed_fetch_state before these columns existed (create_all never

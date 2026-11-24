@@ -1167,7 +1167,7 @@
     }
     async function feedAction(id, action) {
       // Both actions fetch from the feed's publisher, so they pass the ONE consent first, like every other fetch button (#14).
-      if (typeof ensureOnline === "function" && !await ensureOnline(_bulT("Fetch one calendar feed from its publisher"))) return;
+      if (typeof ensureOnline !== "function" || !await ensureOnline(_bulT("Fetch one calendar feed from its publisher"))) return;
       try {
         // The two routes are spelled out (never `${action}`), so the consent ratchet can see each one is asked for first.
         const r = action === "import"

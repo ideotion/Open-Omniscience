@@ -106,13 +106,15 @@ function consentHarness(delays, values) {
     clock.setTimeout(() => (d < 0 ? rej(new Error("read failed")) : res(values[p])), Math.abs(d));
   });
   const body = "const _NET_CONSENT_READ_MS = " + BUDGET + ";\nlet _netConsentGen = 0;\n"
-    + extract(APP, "_netConsentConfig") + extract(APP, "ensureOnline") + "return ensureOnline;";
+    + extract(APP, "_netConsentConfig") + extract(APP, "ensureOnline") + extract(APP, "_ensureOnlineAsk")
+    + "return ensureOnline;";
   const ensureOnline = new Function("api", "document", "window", "setTimeout", "_renderNetLanes",
-    "_paintNetwork", "_postGoOnline", "ooLive", body)(
+    "_paintNetwork", "_postGoOnline", "ooLive", "toast", body)(
     api, document, {}, clock.setTimeout,
     (cfg, enabling) => { renders.push(Object.assign({ enabling }, cfg)); nodes["net-consent-lanes"].textContent = "rendered"; },
     () => {}, async () => true,
-    (node, render) => { node.textContent = render(); });   // ooLive (app-core.js): a held line, drawn once here
+    (node, render) => { node.textContent = render(); },   // ooLive (app-core.js): a held line, drawn once here
+    () => {});   // toast: the R822 gate's failure message, not exercised here
   return { clock, nodes, dlg, renders, ensureOnline };
 }
 const NET_VALUES = {

@@ -463,7 +463,8 @@ def read_volume_set(
     written = 0
     tmp = Path(dest).with_name(Path(dest).name + ".reassembling")
     try:
-        with create_new(tmp) as outf:  # never through a link at the working copy's name (row 313)
+        # Never through a link at the working copy's name (row 313); owner-only, as it is the whole plaintext archive (R829 B).
+        with create_new(tmp, mode=0o600) as outf:
             for v in m["volumes"]:
                 if should_stop is not None and should_stop():
                     raise VolumeStopped("stopped while reassembling the backup")
@@ -473,7 +474,9 @@ def read_volume_set(
                 vtmp = Path(dest).with_name(f".{v['name']}.{secrets.token_hex(4)}.plain")
                 try:
                     # Never through a link, and only bytes whose checksum is the one the check above found (row 329).
-                    decrypt_file(out / v["name"], vtmp, passphrase, follow_links=False, **volume_expectation(v))
+                    decrypt_file(
+                        out / v["name"], vtmp, passphrase, follow_links=False, mode=0o600, **volume_expectation(v)
+                    )
                     with open(vtmp, "rb") as vf:
                         while True:
                             blk = vf.read(_COPY_BUF)

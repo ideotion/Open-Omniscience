@@ -1,4 +1,5 @@
-// Settings > Backup text that follows a language switch (row 366, the app-backup.js part of the row 352 list).
+// Settings > Backup text that follows a language switch (row 366, the app-backup.js part of the row 352 list):
+// group (b), the volume lines and the differences panel, and group (a), the export, import and verify screens.
 //
 // Open Omniscience - Global Intelligence Platform for Investigative Journalism
 // Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -39,7 +40,9 @@ class Text {
   get textContent() { return this.nodeValue; }
 }
 class El {
-  constructor(tag) { this.nodeName = tag; this.childNodes = []; this.attrs = {}; this.parentNode = null; this._html = null; this.style = {}; this.disabled = false; }
+  constructor(tag) { this.nodeName = tag; this.childNodes = []; this.attrs = {}; this.parentNode = null; this._html = null; this.style = {}; this.disabled = false; this.dataset = {}; }
+  append(...nodes) { for (const n of nodes) { const c = typeof n === "string" ? new Text(n) : n; c.parentNode = this; this.childNodes.push(c); } this._html = null; }
+  appendChild(n) { this.append(n); return n; }
   get isConnected() { return true; }
   hasAttribute(a) { return Object.prototype.hasOwnProperty.call(this.attrs, a); }
   setAttribute(a, v) { this.attrs[a] = String(v); }
@@ -63,7 +66,7 @@ class El {
   }
 }
 
-function harness(byId) {
+function harness(byId, extra = []) {
   const map = Object.assign({}, locale("en"));
   let lang = "en";
   const OOI18N = engine(map, () => lang);
@@ -72,19 +75,59 @@ function harness(byId) {
   const window = { OOI18N, console: { warn() {} } };
   const document = { createElement: (tag) => new El(tag.toUpperCase()), getElementById: (id) => byId[id] || null };
   const names = ["_ooLiveWatch", "_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml",
-    "ooLiveRepaint", "_volRefresh", "loadAlternates", "_altFetch"];
+    "ooLiveRepaint", "_volRefresh", "loadAlternates", "_altFetch", ...extra];
   const src = ["const _ooLiveNodes = new Set();", "let _ooLiveObs = null;", "let _volPollTimer = null;", "let _altRep = null;",
     ...names.map((n) => extractFrom(APP, n)),
-    "return { ooLiveRepaint, _volRefresh, loadAlternates };"].join("\n");
+    "return { " + ["ooLiveRepaint", "_volRefresh", "loadAlternates", ...extra].join(", ") + " };"].join("\n");
   const api = async (url) => { requests.push(url); if (answer instanceof Error) throw answer; return answer; };
   const fns = new Function("window", "document", "console", "OOI18N", "$", "api", "ooServerText", "_uxFmtS", "esc", "_altHtml", "MutationObserver", src)(
     window, document, window.console, OOI18N, (id) => byId[id] || null, api, (s) => String(s), (n) => n + " s",
     (s) => String(s), (rep, t) => "<b>" + t("Cancelled.") + "</b> " + rep.items.length, undefined);
   return {
-    fns, requests,
+    fns, requests, t: (x) => OOI18N.t(x),
     answer: (v) => { answer = v; },
     switchTo: (l) => { lang = l; for (const k of Object.keys(map)) delete map[k]; Object.assign(map, locale(l)); fns.ooLiveRepaint(); },
   };
+}
+
+// The import checklist's host: writing its HTML makes fresh inputs from the markup (id, checked), as a page does.
+function checklistHarness() {
+  const map = Object.assign({}, locale("en"));
+  let lang = "en";
+  const OOI18N = engine(map, () => lang);
+  const esc = (x) => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const host = {
+    _html: "", inputs: [],
+    get innerHTML() { return this._html; },
+    set innerHTML(h) {
+      this._html = String(h);
+      this.inputs = [...this._html.matchAll(/<input ([^>]*)>/g)].map((m) => ({
+        id: (/id="([^"]+)"/.exec(m[1]) || [])[1], type: (/type="([^"]+)"/.exec(m[1]) || [])[1], checked: /\bchecked\b/.test(m[1]), value: "",
+      }));
+    },
+    querySelectorAll: function () { return this.inputs.filter((i) => i.id); },
+    querySelector: function (sel) { return this.inputs.find((i) => "#" + i.id === sel) || null; },
+  };
+  const args = { value: null };
+  const paintSrc = extractFrom(APP, "_uxImPaintChecklist");
+  const paint = new Function("window", "OOI18N", "esc", "fmtNum", "CSS", "args", "_uxImArtifactHfRow", "_uxImBlobRow", "_uxImHfTick", "_uxImUnreadNote",
+    "const _uxImChecklistArgs = args.value;\n" + paintSrc + "\nreturn _uxImPaintChecklist();");
+  const window = { OOI18N };
+  const run = () => paint(window, OOI18N, esc, (n) => String(n), { escape: (x) => x }, args, () => "", () => "", () => "", () => "");
+  return {
+    host,
+    paint: (f) => { args.value = { f, host }; return run(); },
+    // the import dialog's oo:langchange listener calls the painter first
+    switchTo: (l) => { lang = l; for (const k of Object.keys(map)) delete map[k]; Object.assign(map, locale(l)); run(); },
+    escFr: (k) => esc(locale("fr")[k]),
+  };
+}
+
+function keyRowsHarness() {
+  const box = new El("DIV");
+  const wrap = new El("DETAILS");
+  const h = harness({ "ux-imp-keys-rows": box, "ux-imp-keys-each": wrap }, ["_uxImKeyRows", "_uxImLabel"]);
+  return { box, rows: (c, l) => h.fns._uxImKeyRows(c, l), switchTo: h.switchTo };
 }
 
 async function main() {
@@ -145,6 +188,56 @@ async function main() {
     assert.strictEqual(host.textContent, "The differences could not be read.");
     h.switchTo("fr");
     assert.strictEqual(host.textContent, fr["The differences could not be read."]);
+  }
+  // group (a): the paused line and its Resume button, then Pause after a resume
+  {
+    const prog = new El("SPAN");
+    const btn = new El("BUTTON");
+    btn.dataset = {};
+    const h = harness({}, ["_uxShowPaused"]);
+    h.fns._uxShowPaused(prog, null, btn, h.t);
+    assert.strictEqual(prog.textContent, "Backup paused. Resume to continue where it left off.");
+    assert.strictEqual(btn.textContent, "Resume");
+    h.switchTo("fr");
+    assert.strictEqual(prog.textContent, fr["Backup paused."] + " " + fr["Resume to continue where it left off."]);
+    assert.strictEqual(btn.textContent, fr["Resume"], "the Resume button follows the switch");
+  }
+  // group (a): the import checklist is redrawn in the new language and keeps every tick the operator set
+  {
+    const p = checklistHarness();
+    p.paint({ corpus: [{ path: "/b/one", volumes: 2 }], newsletters: { count: 3 } });
+    assert.ok(p.host.innerHTML.includes("Restore corpus backup"));
+    const box = p.host.querySelector("#ux-i-corpus");
+    assert.strictEqual(box.checked, true);
+    box.checked = false; // the operator unticks the corpus
+    p.switchTo("fr");
+    assert.ok(p.host.innerHTML.includes(p.escFr("Restore corpus backup")), "the checklist is drawn in French");
+    assert.ok(!p.host.innerHTML.includes("Restore corpus backup"));
+    assert.strictEqual(p.host.querySelector("#ux-i-corpus").checked, false, "a switch never re-ticks what the operator unticked");
+    assert.strictEqual(p.host.querySelector("#ux-i-eml").checked, true);
+  }
+  // group (a): the per-backup key rows carry English keys for the walker, and a folder name is data, never translated
+  {
+    const k = keyRowsHarness();
+    k.rows([{ path: "/b/Sources" }, { path: "" }], [{ path: "/b/old.zip", name: "old.zip" }]);
+    const rows = k.box.childNodes;
+    assert.strictEqual(rows.length, 3);
+    const fr0 = locale("fr");
+    for (const row of rows) {
+      for (const input of row.childNodes[1].childNodes) {
+        for (const a of ["placeholder", "aria-label", "title"]) {
+          assert.ok(fr0[input.attrs[a]], "attribute " + a + " is an English key the walker translates: " + input.attrs[a]);
+        }
+      }
+    }
+    const named = rows[0].childNodes[0].childNodes[0];
+    assert.strictEqual(named.attrs.translate, "no", "a folder called Sources stays as the operator named it");
+    assert.strictEqual(named.textContent, "Sources");
+    const generic = rows[1].childNodes[0].childNodes[0];
+    assert.strictEqual(generic.textContent, "Corpus backup");
+    k.switchTo("fr");
+    assert.strictEqual(generic.textContent, fr0["Corpus backup"], "the generic label follows the switch");
+    assert.strictEqual(named.textContent, "Sources");
   }
   console.log("backup_live_text_node_test.js: OK");
 }
