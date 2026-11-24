@@ -58,8 +58,8 @@ UNKNOWN = ("The erase could not check whether another program had a store outsid
            "may be incomplete: close such a program or restart the computer.")
 RETURNED = ("The data drive is there now, so nothing on it was erased: you agreed only to erase what is outside it. Run the "
             "erase again to erase the drive.")
-PLAINTEXT = ("If a store outside the data drive was not encrypted, it had its first page overwritten and was removed, but the rest "
-             "of its contents may still be recoverable from that disk: only full-disk encryption protects it.")
+PLAINTEXT = ("If a store outside the data drive was not encrypted, no key was destroyed: old pages of it may remain on that disk "
+             "after the overwrite and delete. Full-disk encryption is the remedy.")
 
 
 def precheck(argv: list[str]) -> None:
@@ -93,12 +93,16 @@ def precheck(argv: list[str]) -> None:
         found = crypto_erase._drive_failure_sentence(report)
         if found and found != sentence:  # the erase read the drive again and found it otherwise: its reading is the one said
             print("ERASE FAILED: " + found)
-    if report.get("files_seen"):
+    if report.get("files_seen") or report.get("plaintext_store"):
         print(f"Files erased outside the data drive: {report['files_wiped']} of {report['files_seen']}.")
     else:
         print(NOTHING_OUTSIDE)
-    if report.get("files_seen") and report.get("encrypted_corpus") is not True:
-        print(PLAINTEXT)  # the store's salt is the guarantee only when it is encrypted; otherwise its pages outlive the unlink
+    for line in crypto_erase.plaintext_store_sentences(report):  # R815 (2): apart from the count above, never in it
+        print(line)
+    if report.get("plaintext_store"):
+        print(crypto_erase._PLAINTEXT_SENTENCE)  # R815 (3): the main database outside the drive is known plaintext
+    elif report.get("files_seen") and report.get("encrypted_corpus") is not True:
+        print(PLAINTEXT)  # the store's salt is the guarantee only when it is encrypted; otherwise its pages outlive the delete
     holder = report.get("other_holder", "unknown")
     if holder == "held":
         print(HELD)

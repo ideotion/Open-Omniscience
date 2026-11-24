@@ -155,6 +155,72 @@ _DEFENCE_TAIL = (
     " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
     "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
 )
+# R815 (3): the clean guarantee (_LIMIT_NOTE) only for a main database positively known to be encrypted. Plaintext fails closed to
+# the first sentence, a main database whose state could not be read to the second (R817 notes 7 and 7u): no key was destroyed.
+_PLAINTEXT_SENTENCE = (
+    "The main database was not encrypted, so no key was destroyed: old pages of it may remain on the disk after the overwrite "
+    "and delete. Full-disk encryption is the remedy."
+)
+_UNKNOWN_SENTENCE = (
+    "The main database could not be confirmed as encrypted, so this erase cannot promise it is unreadable: old pages of it may "
+    "remain on the disk after the overwrite and delete. Full-disk encryption is the remedy."
+)
+
+
+def _plain_sentence(encrypted: bool | None) -> str:
+    """R815 (3): the fail-closed sentence for a main database not known to be encrypted (plaintext, or unknown)."""
+    return _PLAINTEXT_SENTENCE if encrypted is False else _UNKNOWN_SENTENCE
+
+
+_NOT_CLEAN_PLAIN_SENTENCE = (
+    "Another program that had the database open may have written to files it still held, so the erase may be incomplete."
+)
+
+
+#: R815 / R817 (2): what is said of the plaintext main database (in the data folder or outside it), apart from "Wiped n/n"; the
+#: same words, translated, in the panic page. ``first_page`` is the fallback where an open file cannot be unlinked (R817 (4)).
+PLAIN_STORE_STATE = {
+    "overwritten": "The unencrypted main database was overwritten in full.",
+    "partially_overwritten": "The unencrypted main database was only partially overwritten.",
+    "not_overwritten": "The unencrypted main database was not overwritten.",
+    "first_page": "The unencrypted main database had its first page overwritten.",
+}
+PLAIN_STORE_REASON = {
+    "absent": "It was no longer there.",
+    "unidentified": "It could not be identified, so nothing there was touched.",
+    "changed": "Another file was at its place, so nothing there was touched.",
+    "drive": "The data drive changed or went away during the erase, so it was not rewritten.",
+    "reserve": "The overwrite stopped to leave free space on a nearly full disk.",
+    "write_failed": "A write to it failed.",
+}
+PLAIN_STORE_DELETED = "It was deleted."
+PLAIN_STORE_NOT_DELETED = "It could not be deleted: remove it by hand."
+PLAIN_STORE_OTHER_NAMES = "Other names for it remain on the disk and lead to the same file (count: {n})."
+
+
+def plaintext_store_sentences(report: dict) -> list[str]:
+    """R815 (2)/(4): the plain words for ``report["plaintext_store"]`` (none when there is no such store)."""
+    st = report.get("plaintext_store")
+    if not isinstance(st, dict) or st.get("state") not in PLAIN_STORE_STATE:
+        return []
+    out = [PLAIN_STORE_STATE[st["state"]]]
+    if st.get("reason") in PLAIN_STORE_REASON:
+        out.append(PLAIN_STORE_REASON[st["reason"]])
+    if st.get("touched"):
+        out.append(PLAIN_STORE_DELETED if st.get("deleted") else PLAIN_STORE_NOT_DELETED)
+    if st.get("other_names"):
+        out.append(PLAIN_STORE_OTHER_NAMES.format(n=int(st["other_names"])))
+    return out
+
+
+#: R815 (3): what the last erase in this process found the main database to be (None: none ran, or it could not tell); the
+#: free-space scrub that follows it claims the crypto-erase guarantee only when this is True.
+_LAST_ERASE_ENCRYPTED: bool | None = None
+
+
+def _clean_note(encrypted: bool | None) -> str:
+    """R815 (3): the note of a clean erase; the crypto-erase guarantee only when the main database is known to be encrypted."""
+    return _LIMIT_NOTE if encrypted is True else _plain_sentence(encrypted) + _DEFENCE_TAIL
 
 
 def settle_removed(report: dict) -> bool:
@@ -311,6 +377,197 @@ def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False
     except OSError:
         _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", _masked([str(path)])[0])
         return False
+
+
+
+def _data_regions(fd: int, size: int) -> list[tuple[int, int]] | None:
+    """R797: the ``(start, end)`` regions of an open file that hold data, read with ``SEEK_DATA``/``SEEK_HOLE``; ``None`` where the
+    platform or the file system cannot say (the caller then rewrites the logical size, keeping the disk reserve)."""
+    seek_data, seek_hole = getattr(os, "SEEK_DATA", None), getattr(os, "SEEK_HOLE", None)
+    if seek_data is None or seek_hole is None:
+        return None
+    regions: list[tuple[int, int]] = []
+    off = 0
+    try:
+        while True:
+            if off >= size:
+                break
+            try:
+                start = os.lseek(fd, off, seek_data)
+            except OSError as exc:
+                if exc.errno == errno.ENXIO:
+                    break  # no data past ``off``
+                raise
+            end = min(os.lseek(fd, start, seek_hole), size)
+            if end > start:
+                regions.append((start, end))
+            off = max(end, start + 1)
+    except OSError:
+        return None
+    return regions
+
+
+def _fd_free_bytes(fd: int) -> int | None:
+    try:
+        st = os.fstatvfs(fd)
+    except (OSError, AttributeError):
+        return None
+    return st.f_bavail * st.f_frsize
+
+
+def _rewrite_fd(fd: int, *, zeros: bool = False) -> tuple[int, int, str | None]:
+    """R815 / R797: rewrite in place every byte of the open regular file ``fd`` that holds data, then fsync; every other name of
+    the same file is covered by the same write. The regions come from :func:`_data_regions`; where they cannot be read, the logical
+    size is rewritten and the rewrite stops before the drive's free space would fall under :data:`_DISK_RESERVE`. Returns
+    ``(written, total, stop)``: ``stop`` is None when every byte was written, else ``"reserve"`` or ``"write_failed"``. Never
+    closes ``fd`` (R789: the caller keeps it until the app's own connections are closed). Never raises."""
+    written = total = 0
+    stop: str | None = None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return 0, 0, "write_failed"
+        regions = _data_regions(fd, st.st_size)
+        reserve = regions is None  # the logical size may reach holes, which take new space on the drive
+        regions = [(0, st.st_size)] if regions is None else regions
+        total = sum(end - start for start, end in regions)
+        for start, end in regions:
+            os.lseek(fd, start, os.SEEK_SET)
+            pos = start
+            while True:
+                if pos >= end:
+                    break
+                n = min(_CHUNK, end - pos)
+                if reserve:
+                    free = _fd_free_bytes(fd)
+                    if free is None or free - n < _DISK_RESERVE:
+                        stop = "reserve"
+                        break
+                done = os.write(fd, bytes(n) if zeros else os.urandom(n))
+                if done <= 0:
+                    raise OSError("nothing written")
+                pos += done
+                written += done
+            if stop:
+                break
+        os.fsync(fd)
+    except OSError:
+        stop = stop or "write_failed"
+        _LOG.warning("crypto-erase: the rewrite of an unencrypted store stopped (only partially overwritten)")
+    return written, total, stop
+
+
+#: R815: the files of one SQLite store, the main file first.
+_STORE_PARTS = ("", "-wal", "-journal", "-shm")
+
+
+def _pin_file(p: Path) -> tuple[int, int, int] | str:
+    """R815/R817: the identity of ``p`` itself (never through a link) and of its folder's drive (device, inode, folder's device),
+    or why it cannot be read: ``"absent"`` (not there), ``"unidentified"`` (there, but not a regular file or not readable)."""
+    try:
+        st, folder = os.lstat(p), os.stat(p.parent)
+    except OSError as exc:
+        return "absent" if _absent(exc) else "unidentified"
+    if not stat.S_ISREG(st.st_mode):
+        return "unidentified"
+    return (st.st_dev, st.st_ino, folder.st_dev)
+
+
+def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int] | str, generation: int, unreached) -> dict:
+    """R817 (1): a main database KNOWN to be plaintext. Checked against ``pin`` (read when the erase began) first: a file that is
+    gone, cannot be identified or is another file (a link or another drive at that place) is never opened. Each part (main, -wal,
+    -journal, -shm) is opened no-follow, checked to be a regular file, its handle kept, and unlinked AT ONCE: its contents are
+    rewritten through the kept handle only after every key, salt page and unlink of the erase (:func:`_rewrite_plain`). Where an
+    open file cannot be unlinked (Windows, which this code opens without share-delete) the order is today's: the first page
+    overwritten, then the unlink -- deletion is never traded for the rewrite (R817 (4)).
+
+    Returns the store's record: ``state`` (None until rewritten), ``reason``, ``other_names`` (hard links, a count), ``deleted`` and,
+    private to the erase, ``_held`` as ``[(fd, kind, (dev, ino))]``."""
+    rec: dict = {"state": None, "reason": None, "other_names": 0, "deleted": False, "touched": False, "_held": []}
+    now = _pin_file(db)
+    if isinstance(pin, str) or now != pin:
+        rec["state"] = "not_overwritten"
+        rec["reason"] = pin if isinstance(pin, str) else (now if isinstance(now, str) else "changed")
+        return rec
+    deleted = True
+    rec["touched"] = True
+    for suffix in _STORE_PARTS:
+        p = db.with_name(db.name + suffix)
+        if not _present(p, unreached):
+            continue
+        kind = "head" if suffix == "" else ("shm" if suffix == "-shm" else "whole")
+        if os.name != "posix":
+            # R817 (4): no share-delete open here, so an open file could not be unlinked: the first page, then the unlink.
+            head_ok = _overwrite(p, head_bytes=_SQLCIPHER_PAGE1, zeros=suffix == "-shm") if suffix in ("", "-shm") else _overwrite(p)
+            try:
+                p.unlink()
+            except OSError:
+                deleted = False
+            rec["state"] = "first_page" if head_ok and rec["state"] in (None, "first_page") else "not_overwritten"
+            continue
+        try:
+            fd = os.open(p, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0))
+        except OSError:
+            if unreached is not None:
+                unreached(p)
+            rec["reason"] = rec["reason"] or "write_failed"
+            try:
+                p.unlink()  # R817 (4): deletion is never traded for the rewrite
+            except OSError:
+                deleted = False
+            continue
+        try:
+            st = os.fstat(fd)
+        except OSError:
+            st = None
+        if st is None or not stat.S_ISREG(st.st_mode):
+            os.close(fd)  # a FIFO, socket or device is never written to; its name is removed
+            rec["reason"] = rec["reason"] or "write_failed"
+            with contextlib.suppress(OSError):
+                p.unlink()
+            continue
+        if suffix == "":
+            rec["other_names"] = max(0, st.st_nlink - 1)
+        # Kept with this wipe's descriptors at once (R817 (3)): closed only by the late pass, after the app's own pool on the store,
+        # and seen by the holder rule; never left open if the erase stops before the rewrite.
+        _HELD.setdefault(generation, []).append((fd, kind, st.st_size + _HELD_GROWTH))
+        rec["_held"].append((fd, kind, (st.st_dev, st.st_ino)))
+        try:
+            p.unlink()
+        except OSError:
+            deleted = False
+            _LOG.warning("crypto-erase: could not delete a file of an unencrypted store")
+    rec["deleted"] = deleted
+    return rec
+
+
+def _rewrite_plain(rec: dict, *, may_write: bool) -> None:
+    """R817 (1)/(2)/(3): rewrite every kept part of a plaintext store through its handle, after every key, salt page and unlink of
+    the erase, each handle first checked to be the same regular file that was unlinked. The handles stay with this wipe's kept
+    descriptors (:func:`_open_and_unlink_plain`): never closed here (R789). ``may_write`` False (the drive it is on changed or went away, R812) rewrites nothing. Sets ``state`` and ``reason``."""
+    held = rec.pop("_held", [])
+    if rec["state"] is not None:  # not touched, or the first-page fallback: already said
+        return
+    written_any, stop = False, rec["reason"]
+    for fd, kind, ident in held:
+        try:
+            st = os.fstat(fd)
+            same = stat.S_ISREG(st.st_mode) and (st.st_dev, st.st_ino) == ident
+        except OSError:
+            same = False
+        if not may_write:
+            stop = stop or "drive"
+        elif not same:
+            stop = stop or "changed"
+        else:
+            written, _total, why = _rewrite_fd(fd, zeros=kind == "shm")
+            written_any = written_any or written > 0
+            stop = stop or why
+    if stop is None:
+        rec["state"] = "overwritten"
+    else:
+        rec["state"] = "partially_overwritten" if written_any else "not_overwritten"
+        rec["reason"] = stop
 
 
 # Descriptors the erase keeps on the files it unlinked, as (fd, kind), one list per wipe (its GENERATION): a transaction
@@ -1181,7 +1438,9 @@ def finish_holder_check(report: dict, generation: int) -> str:
     if state != HOLDER_NONE:
         report["limit"] = (
             (_drive_failure_sentence(report) + " " if report.get("drive_lost") else "")  # R809: said first, whatever else is said
-            + _LIMIT_NOTE_NOT_CLEAN + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
+            + (_LIMIT_NOTE_NOT_CLEAN if report.get("encrypted_corpus") is True
+               else _NOT_CLEAN_PLAIN_SENTENCE + " " + _clean_note(report.get("encrypted_corpus")))
+            + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
         )
         _LOG.warning("CRYPTO-ERASE: %s", "another program had the database open during the erase; the erase may be "
                      "incomplete" if state == HOLDER_HELD else "could not check whether another program had the database open")
@@ -1350,7 +1609,6 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # optional full pass matters more; surfaced so the UI can recommend it).
     main_db: Path | None = paths["main_db"]
     encrypted = is_encrypted_file(main_db) if main_db is not None else None
-
     # 1) Destroy the salt/header page of each encrypted DB, then its sidecars. Head-only
     #    on the main file = instant even for a 100 GB corpus; the salt is what matters.
     # The lane files join this loop rather than falling through to step 6: each is an
@@ -1375,17 +1633,27 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     dbs = [_real(db) for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())) if db is not None]
     if drive_absent:
         dbs = [db for db in dbs if not _under(db, base)]  # R809: a store reached through a link into the absent drive is not touched
+    # R815 / R817: a main database KNOWN to be plaintext, in the data folder or outside it, has no salt to lose: it leaves the
+    # passes below. Its identity is read now, before anything of it is opened (R802/R805); in pass 3's place each of its files is
+    # opened no-follow, kept and unlinked (:func:`_open_and_unlink_plain`), and its contents are rewritten in full through the kept
+    # handles at the very end of the erase, after every key, salt page and unlink (:func:`_rewrite_plain`).
+    plain_main = _real(main_db) if encrypted is False and main_db is not None and _real(main_db) in dbs else None
+    plain_pin = _pin_file(plain_main) if plain_main is not None else None
+    plain_parts = {plain_main.with_name(plain_main.name + suffix) for suffix in _STORE_PARTS} if plain_main is not None else set()
+    plain_rec: dict | None = None
     head_ok: dict[Path, bool] = {}
     # The -shm head is written with ZEROS, never random bytes: it holds no page data, and a connection that rolls back
     # after the erase reads its frame count from that header and grows the mapped file toward it -- a random count grew
     # it toward 32 GiB in the security read; a zeroed header reads as "rebuild from the log", which is already noise.
     for db in dbs:
         for p in (db.with_name(db.name + "-shm"), db):
-            if _present(p, _unreached):
+            if p not in plain_parts and _present(p, _unreached):
                 head_ok[p] = _overwrite(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
     for db in dbs:
         for suffix in ("-wal", "-journal"):
             p = db.with_name(db.name + suffix)
+            if p in plain_parts:
+                continue
             if _hold(p, whole=True, generation=generation) is False:
                 missed.append(p.name)
             s, overwritten, w = _shred(p, unreached=_unreached)
@@ -1393,8 +1661,15 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             wiped += w
             if s and not overwritten:
                 overwrite_failures.append(str(p))
+    if plain_main is not None and plain_pin is not None:
+        if _under(plain_main, base) and _off_drive():
+            plain_rec = {"state": "not_overwritten", "reason": "drive", "other_names": 0, "deleted": False, "touched": False}  # R812
+        else:
+            plain_rec = _open_and_unlink_plain(plain_main, plain_pin, generation, _unreached)
     for db in dbs:
         for p in (db, db.with_name(db.name + "-shm")):
+            if p in plain_parts:
+                continue
             if _hold(p, whole=False, generation=generation, kind="head" if p == db else "shm") is False:
                 missed.append(p.name)
             s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db, unreached=_unreached)
@@ -1629,6 +1904,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # report; the app's own names only in the log's count, never an operator's.
     keys_left = _app_keys_left(keys_dir) if (kept_foreign or app_only) and not drive_absent and not drive_stopped else []
 
+    # R817 (2): the plaintext store's contents, rewritten last, through the handles kept when its files were unlinked; on its drive
+    # only while that drive is the one the erase began on (R812). Never counted in files_wiped/files_seen (R815 (2)).
+    plaintext_store = None
+    if plain_rec is not None:
+        _rewrite_plain(plain_rec, may_write=not (_under(plain_main, base) and (drive_absent or drive_stopped or drive_lost)))
+        plaintext_store = {k: plain_rec[k] for k in ("state", "reason", "other_names", "deleted", "touched")}
+        if plaintext_store["state"] != "overwritten" or not plaintext_store["deleted"]:
+            overwrite_failures.append(str(plain_main))
     overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
     unlisted_folders[:] = list(dict.fromkeys(unlisted_folders))  # 5b and 6 walk the same folders
     # The log names no path whole (R734/R736): each is written as its role, and one that cannot be read as such is withheld.
@@ -1650,6 +1933,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             len(overwrite_failures),
             _masked(overwrite_failures, base),
         )
+    global _LAST_ERASE_ENCRYPTED
+    _LAST_ERASE_ENCRYPTED = encrypted
     _LOG.warning(
         "CRYPTO-ERASE executed on %s (encrypted=%s, %d/%d files, %d headers, %d keys, "
         "%d overwrite failures)",
@@ -1672,6 +1957,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "overwrite_failures": overwrite_failures,
         "passphrase_cleared": passphrase_cleared,
         "encrypted_corpus": encrypted,
+        # R815 / R817: the plaintext main database, in the data folder or outside it (None when there is none): never counted above.
+        "plaintext_store": plaintext_store,
         "copies_destroyed": copies_destroyed,
         # R711: "data-folder" removes the folder whole; "app-only" reached only the app's own entries in a folder it does not
         # own. Names only, never read: ``left_untouched`` the entries that are not the app's, ``left_common_names`` the app's
@@ -1715,7 +2002,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         + _DEFENCE_TAIL if drive_lost
         else (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
         + (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
-        + (_LIMIT_NOTE_UNLISTED if unlisted_folders else _LIMIT_NOTE),
+        + (_LIMIT_NOTE_UNLISTED + ("" if encrypted is True else " " + _plain_sentence(encrypted)) if unlisted_folders
+           else _clean_note(encrypted)),
     }
 
 
@@ -1888,5 +2176,6 @@ def full_secure_erase(
         "reserve_bytes": _DISK_RESERVE,
         # Never the clean guarantee when nothing was overwritten (a drive that went away during the erase lands here as
         # "other_drive" or "drive_absent"; its own result already says what happened to it): the plain limit of an overwrite only.
-        "limit": _DEFENCE_TAIL.strip() if not_done else _LIMIT_NOTE,
+        # R815 (3): the crypto-erase guarantee only when the erase before it found the main database encrypted.
+        "limit": _DEFENCE_TAIL.strip() if not_done else _clean_note(_LAST_ERASE_ENCRYPTED),
     }

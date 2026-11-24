@@ -4322,7 +4322,8 @@
         // The browser's own copy of a personal place goes too (Climate "Your place", R683): the wipe
         // reaches what this page stored, not only the server's files.
         try { localStorage.removeItem("oo.climate.place"); } catch (_e) { /* storage may be unavailable */ }
-        const plaintext = r.encrypted_corpus === false;
+        // R815 (3): the crypto-erase guarantee only for a main database KNOWN to be encrypted; plaintext or unknown fails closed.
+        const plaintext = r.encrypted_corpus !== true;
         // R792, read here before the offer below: it may never call the corpus unrecoverable unless the erase result is clean.
         const holder = r.other_holder || "unknown";
         // R798: a folder the erase could not list holds files it never checked, so that result is never clean either.
@@ -4344,11 +4345,38 @@
         // during the erase (partially erased, the rest not checked).
         const driveAbsent = r.drive_absent === true;
         const driveLost = r.drive_lost === true;
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost;
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext;
+        // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
+        const tfwNow = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf
+          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+        const ps = r.plaintext_store && typeof r.plaintext_store === "object" ? r.plaintext_store : null;
+        const psState = ps ? {
+          overwritten: "The unencrypted main database was overwritten in full.",
+          partially_overwritten: "The unencrypted main database was only partially overwritten.",
+          not_overwritten: "The unencrypted main database was not overwritten.",
+          first_page: "The unencrypted main database had its first page overwritten.",
+        }[ps.state] : null;
+        const psReason = ps ? {
+          absent: "It was no longer there.",
+          unidentified: "It could not be identified, so nothing there was touched.",
+          changed: "Another file was at its place, so nothing there was touched.",
+          drive: "The data drive changed or went away during the erase, so it was not rewritten.",
+          reserve: "The overwrite stopped to leave free space on a nearly full disk.",
+          write_failed: "A write to it failed.",
+        }[ps.reason] : null;
+        const psWords = psState ? [t(psState)]
+          .concat(psReason ? [t(psReason)] : [])
+          .concat(ps.touched === true ? [t(ps.deleted === true ? "It was deleted." : "It could not be deleted: remove it by hand.")] : [])
+          .concat(Number(ps.other_names) > 0 ? [tfwNow("Other names for it remain on the disk and lead to the same file (count: {n}).", { n: fmtNum(Number(ps.other_names), 0) })] : [])
+          .join(" ") : "";
+        // R815 (3): said plainly, visible beside the result, whenever there was a main database that is not known to be encrypted.
+        const plainNote = plaintext && (driveAbsent ? !!ps : (r.encrypted_corpus === false || Number(r.files_seen) > 0 || !!ps));
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
         // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
         const rec = plaintext
-          ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
+          ? (r.encrypted_corpus === false ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
+            : t("Your store could not be confirmed as encrypted, so a full disk-overwrite is recommended before you stop."))
           : !clean ? t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.")
           : t("For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.") +
             " " + t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.");
@@ -4387,6 +4415,10 @@
             // R812 (b): only when the erase had already made the app forget the drive's id (it is never restored).
             (r.drive_forgotten === true ? ` ${esc(t("Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a later launch unless it is set up again."))}` : "") +
             `</div>` : "") +
+          (psWords ? `<div class="card-caveat">${esc(psWords)}</div>` : "") +
+          (plainNote ? `<div class="card-caveat">${esc(r.encrypted_corpus === false
+            ? t("The main database was not encrypted, so no key was destroyed: old pages of it may remain on the disk after the overwrite and delete. Full-disk encryption is the remedy.")
+            : t("The main database could not be confirmed as encrypted, so this erase cannot promise it is unreadable: old pages of it may remain on the disk after the overwrite and delete. Full-disk encryption is the remedy."))}</div>` : "") +
           (clean ? `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` : "") +
           `<span class="muted">${esc(r.limit)}</span>` +
           (holder === "none" ? "" : `<div class="card-caveat">${esc(holderNote)}</div>`) +
