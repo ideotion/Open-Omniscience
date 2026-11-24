@@ -561,6 +561,8 @@
       try {
         if (!again) {
           const held = await api("/api/weather/anomaly/held?" + params.toString());
+          // the read the view starts by itself answers that view only: left meanwhile, it draws nothing
+          if (quiet && _climateView !== "place") return;
           if (held && held.held) { _climatePlaceSave(q); if (out) ooLiveHtml(out, () => climatePlaceResultHtml(held, t, tf)); say(() => t("Read from this machine; nothing was sent.")); return; }
           if (quiet) { if (out) ooLiveHtml(out, () => `<div class="muted">${esc(t("Not fetched on this machine yet for this place and window."))}</div>`); return; }
         }

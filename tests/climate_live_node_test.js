@@ -290,6 +290,21 @@ const answersFor = (units) => ({
     assert.strictEqual(h.$("climate-status").textContent, FR["Type a latitude and a longitude in decimal degrees, for example 48.85 and 2.35."]);
   }
 
+  // 5. The place view's own read, answered after the view was left, draws nothing under the other view.
+  {
+    let answer;
+    const answers = answersFor([GISTEMP]);
+    answers[`/api/weather/anomaly/held?lat=48.9&lon=2.4&start_date=2026-10-01&end_date=2026-10-30`] = () => new Promise((r) => { answer = r; });
+    const h = harness(answers, { saved: { lat: 48.9, lon: 2.4, start: "2026-10-01", end: "2026-10-30" } });
+    h.fns.showClimateView("place");
+    await tick();
+    h.fns.showClimateView("gistemp");
+    await settle();
+    answer({ held: true, license: "x", provenance: {}, results: [] });
+    await settle();
+    assert.strictEqual(h.$("climate-status").textContent, "", "a late answer of the place view says nothing under another view");
+  }
+
   console.log("climate_live_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });
 
