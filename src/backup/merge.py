@@ -857,9 +857,9 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
                 state["conn"] = None
 
     walker = threading.Thread(target=_walk, name="oo-import-quick-check", daemon=True)
-    walker.start()
     finished = False
     try:
+        walker.start()  # inside the try: the finally below stops and joins whatever it started
         yield
         finished = True
     finally:

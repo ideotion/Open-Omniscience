@@ -2025,10 +2025,7 @@ def clone_file(src_p: Path, dest_p: Path, *, chunk: int = 64 * 1024 * 1024) -> N
                             cfr = None
                     if cfr is None:
                         data = read_at(fd, want, done)
-                        view = memoryview(data)
-                        while view:
-                            view = view[os.write(out, view) :]
-                        n = len(data)
+                        n = _write_all(out, data)
                     if n == 0:
                         raise StoreCopyRefused(f"the copy ended after {done} of {size} bytes")
                     done += n
@@ -2039,6 +2036,14 @@ def clone_file(src_p: Path, dest_p: Path, *, chunk: int = 64 * 1024 * 1024) -> N
             raise
     finally:
         os.close(fd)
+
+
+def _write_all(out: int, data: bytes) -> int:
+    """Write all of ``data`` to ``out``; returns its length. Its own scope, outside the caller's ``try`` (R163)."""
+    view = memoryview(data)
+    while view:
+        view = view[os.write(out, view) :]
+    return len(data)
 
 
 def snapshot_open_connection(conn, dest: Path | str) -> Path:
