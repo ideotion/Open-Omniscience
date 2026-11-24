@@ -60,7 +60,9 @@ function sandbox(responses) {
     "function _failMsg(t, e){return t;}", "function _ores(){return 'false';}",
     // Row 372(b): the progress line is drawn through ooLive (app-core.js); drawn once here.
     "function ooLive(el, r){ if (el && r) el.textContent = r(); }",
-    extract("tally"), extract("tallyHover"), extract("ingestSource"), extract("ingestBatch"), extract("lawTrack"), extract("trackWikiNow"),
+    // Row 367: the batch table is held through ooLiveHtml, drawn once here.
+    "function ooLiveHtml(el, r){ if (el && r) el.innerHTML = r(); }",
+    extract("_srcAirplaneNothing"), extract("tally"), extract("tallyHover"), extract("ingestSource"), extract("ingestBatch"), extract("lawTrack"), extract("trackWikiNow"),
     "return { ingestSource, ingestBatch, lawTrack, trackWikiNow, tally };",
   ].join("\n");
   const f = new Function("$", "api", "toast", "doSearch", "loadLaw", "loadLawChanges", "loadWiki", "loadSources", src);
