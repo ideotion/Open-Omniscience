@@ -7735,6 +7735,7 @@
   "not a file": "bukan berkas",
   "not a key this app creates; it is not written and stays in the backup": "bukan kunci yang dibuat aplikasi ini; kunci ini tidak ditulis dan tetap ada di cadangan",
   "not a recognised country code": "kode negara tidak dikenali",
+  "not a regular file, or larger than any key file, so it was not read; it is not written and stays in the backup": "bukan berkas biasa, atau lebih besar dari berkas kunci mana pun, jadi tidak dibaca; tidak ditulis dan tetap ada di cadangan",
   "not a usable edition code": "bukan kode edisi yang dapat dipakai",
   "not an ISO code": "bukan kode ISO",
   "not an article (menu, index or notice page)": "bukan artikel (menu, halaman indeks, atau halaman pemberitahuan)",

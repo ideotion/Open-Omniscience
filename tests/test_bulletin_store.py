@@ -187,7 +187,7 @@ class _Staged:
         self.origin_fingerprint = "f" * 40
         self.signature_state = "verified"
 
-    def member_paths(self, role):
+    def member_paths(self, role, **_kw):
         return list(self._m.get(role, []))
 
 

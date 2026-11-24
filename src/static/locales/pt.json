@@ -7735,6 +7735,7 @@
   "not a file": "não é um arquivo",
   "not a key this app creates; it is not written and stays in the backup": "não é uma chave que este aplicativo cria; não é gravada e permanece no backup",
   "not a recognised country code": "código de país não reconhecido",
+  "not a regular file, or larger than any key file, so it was not read; it is not written and stays in the backup": "não é um arquivo comum, ou é maior que qualquer arquivo de chave, então não foi lido; não é gravado e permanece no backup",
   "not a usable edition code": "código de edição inutilizável",
   "not an ISO code": "não é um código ISO",
   "not an article (menu, index or notice page)": "não é um artigo (menu, página de índice ou página de aviso)",

@@ -7735,6 +7735,7 @@
   "not a file": "ليس ملفًا",
   "not a key this app creates; it is not written and stays in the backup": "ليس مفتاحًا ينشئه هذا التطبيق؛ لا تتم كتابته ويبقى في النسخة الاحتياطية",
   "not a recognised country code": "رمز دولة غير معروف",
+  "not a regular file, or larger than any key file, so it was not read; it is not written and stays in the backup": "ليس ملفًا عاديًا، أو أكبر من أي ملف مفتاح، لذا لم تتم قراءته؛ لا تتم كتابته ويبقى في النسخة الاحتياطية",
   "not a usable edition code": "رمز نسخة غير صالح للاستخدام",
   "not an ISO code": "ليس رمزًا من رموز أيزو",
   "not an article (menu, index or notice page)": "ليست مقالًا (قائمة أو صفحة فهرس أو صفحة إشعار)",
