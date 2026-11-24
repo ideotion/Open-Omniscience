@@ -114,7 +114,7 @@ def test_a_backlog_below_the_break_even_keeps_the_live_indexes(tmp_path, roomy):
         _stamp(s, 200)
         below = int(200 * bb.DRAIN_WINDOW_MIN_FRACTION) - 1
         plan = drain_window_plan(s, _backlog(s, below))
-        assert plan["open"] is False and plan["reason"] == "backlog below the break-even share"
+        assert plan["open"] is False and plan["reason"] == "below_break_even"
         assert plan["fraction"] < bb.DRAIN_WINDOW_MIN_FRACTION
         at = drain_window_plan(s, _backlog(s, 3, start=5000) + below)
         assert at["open"] is True and at["reason"] == "open" and at["fraction"] >= bb.DRAIN_WINDOW_MIN_FRACTION
@@ -132,7 +132,7 @@ def test_an_unread_memory_or_disk_figure_declines_the_window(tmp_path, monkeypat
     try:
         _stamp(s, 10)
         plan = drain_window_plan(s, _backlog(s, 10))
-        assert plan["open"] is False and plan["reason"] == "memory or disk not measured"
+        assert plan["open"] is False and plan["reason"] == "room_not_measured"
     finally:
         s.close()
         eng.dispose()
@@ -148,7 +148,7 @@ def test_one_unread_reading_declines_the_window(tmp_path, monkeypatch, unread):
     try:
         _stamp(s, 10)
         plan = drain_window_plan(s, _backlog(s, 10))
-        assert plan["open"] is False and plan["reason"] == "memory or disk not measured"
+        assert plan["open"] is False and plan["reason"] == "room_not_measured"
     finally:
         s.close()
         eng.dispose()
@@ -162,7 +162,7 @@ def test_short_memory_declines_the_window_and_says_so(tmp_path, monkeypatch):
     try:
         _stamp(s, 10)
         plan = drain_window_plan(s, _backlog(s, 10))
-        assert plan["open"] is False and plan["reason"] == "not enough memory or disk"
+        assert plan["open"] is False and plan["reason"] == "not_enough_room"
         assert plan["preflight"]["short_on"] == ["memory"]
     finally:
         s.close()

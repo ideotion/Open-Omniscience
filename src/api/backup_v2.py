@@ -1480,7 +1480,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                 ix_window["plan"] = {k: v for k, v in plan.items() if k != "preflight"}
                 if plan["open"]:
                     with corpus_lease("reindex-resume"):
-                        ix_window["dropped"] = _bb.open_window(_s, keep=_bb.DRAIN_KEEP, reason="post-import re-index drain")
+                        ix_window["dropped"] = _bb.open_window(_s, keep=_bb.DRAIN_KEEP, reason="post_import_reindex_drain")
                     ix_window["open"] = True
                 else:
                     _LOG.info("re-index drain: index window not opened (%s)", plan["reason"])

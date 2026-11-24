@@ -526,10 +526,10 @@ def drain_window_plan(session: Session, backlog_articles: int) -> dict:
     backlog = max(0, int(backlog_articles))
     out: dict = {"open": False, "backlog_articles": backlog, "min_fraction": DRAIN_WINDOW_MIN_FRACTION}
     if backlog == 0:
-        out["reason"] = "no backlog"
+        out["reason"] = "no_backlog"
         return out
     if read_state(session) is not None:
-        out["reason"] = "a bulk build is already open"
+        out["reason"] = "window_already_open"
         return out
     rows = mention_rows_bound(session)
     # The articles already indexed: every article but the backlog (counted from the articles, not the stamps,
@@ -542,16 +542,16 @@ def drain_window_plan(session: Session, backlog_articles: int) -> dict:
     fraction = round(projected / rows, 4) if rows else None
     out.update(mention_rows_bound=rows, indexed_articles=indexed, fraction=fraction, projected_rows=projected)
     if fraction is not None and fraction < DRAIN_WINDOW_MIN_FRACTION:
-        out["reason"] = "backlog below the break-even share"
+        out["reason"] = "below_break_even"
         return out
     room = rebuild_preflight(session, rows + projected)
     out["preflight"] = room
     if room.get("ram_available_bytes") is None or room.get("disk_free_bytes") is None:
         # Opening is optional: BOTH readings must have been made (the heal, which has no choice, goes ahead on one).
-        out["reason"] = "memory or disk not measured"
+        out["reason"] = "room_not_measured"
         return out
     if room.get("sufficient") is not True:
-        out["reason"] = "not enough memory or disk"
+        out["reason"] = "not_enough_room"
         return out
     out["open"] = True
     out["reason"] = "open"
@@ -582,7 +582,7 @@ def finish_window(session: Session, *, on_progress: Callable[[int, int], None] |
             return {"complete": True, "created": []}
         planned = list(state["planned"])
         if not planned:
-            return {"complete": False, "created": [], "reason": "marker present but unusable"}
+            return {"complete": False, "created": [], "reason": "marker_unusable"}
         missing = [n for n in planned if n not in _existing_indexes(session.connection())]
         if missing:
             room = rebuild_preflight(session, mention_rows_bound(session))
@@ -665,7 +665,7 @@ def _heal_worker(ctx, **_kw) -> dict:
         if state is None:
             return {"complete": True, "created": []}
         if _storage_guard_engaged():
-            return {"complete": False, "created": [], "reason": "storage guard engaged"}
+            return {"complete": False, "created": [], "reason": "storage_guard_engaged"}
         out = finish_window(session, on_progress=_progress)
     if out.get("waiting"):
         ctx.set_progress(detail=waiting_line(out["waiting"]))
