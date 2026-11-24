@@ -35,7 +35,7 @@ def _setup_chain() -> str:
     cannot be satisfied by an unrelated await elsewhere in an 18k-line file."""
     src = app_js()
     at = src.index('if (step.id === "install-vllm")')
-    end = src.index('say(t("Starting the local AI…"))', at)
+    end = src.index('say(() => t("Starting the local AI…"))', at)  # the status is a held render (row 367)
     return src[at:end]
 
 

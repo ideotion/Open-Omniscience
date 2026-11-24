@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -34,14 +35,17 @@ _PANIC_HOLD_S = 2.0
 #: What a settings save made during the wipe is told: it is refused at once, never kept waiting behind an erase that can take hours.
 _PANIC_REFUSED = "A panic wipe is erasing this app's data, so this was not saved — nothing was written."
 
-def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
+def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False, off_drive_only: bool = False) -> dict:
     """Instantly crypto-erase, then delete everything under the data dir. Requires
     ``confirm``. Returns the ``quick_crypto_erase`` summary (``files_seen`` /
     ``files_wiped`` / ``data_dir`` / ``limit`` preserved for existing callers).
 
     A step of the tidying after a COMPLETED erase that fails is named in ``after_erase_failures`` and the report is still
     returned (row 35): before, an exception there made the endpoint answer 500 about an erase that had succeeded, and an
-    operator racing a seizure was told the wipe failed when the key was already gone."""
+    operator racing a seizure was told the wipe failed when the key was already gone.
+
+    ``off_drive_only`` (row 388, the panic CLI with its data drive not there): the operator agreed to erase only what is outside
+    the drive, so a drive that is there again by the time the erase reads it is left whole (``drive_returned`` in the report)."""
     if not confirm:
         raise PermissionError("panic_wipe requires confirm=True (this is irreversible)")
     from src.paths import data_dir_path
@@ -80,7 +84,7 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
             log_failure(_LOG, "panic wipe: the settings cache could not be cleared before the erase", exc, level=logging.WARNING)
         try:
             report = quick_crypto_erase(confirm=True, data_dir=data_dir, hold_for_rescrub=True, hold_generation=generation,
-                                        settle=False)
+                                        settle=False, off_drive_only=off_drive_only)
         finally:
             # In a `finally` because a partial wipe still removed the store.
             try:
@@ -212,13 +216,8 @@ _COLLECTOR_THREADS = ("oo-scheduler", "oo-collect", "oo-briefing-bg", "oo-housek
 _LATE_RESCRUB_S = 15.0
 
 
-def _dispose_after_erase(generation: int | None = None) -> int | None:
-    """Close the pool once the key is gone, then rewrite through the kept descriptors what a transaction already under way
-    put back into the unlinked files (its commit writes page 1, salt included): once now, and once more after
-    :data:`_LATE_RESCRUB_S` on a timer that never holds the wipe up. Only this wipe's descriptors (``generation``), so a
-    second wipe within the delay never shortens the first one's late pass, nor the first one's timer the second's. Never
-    raises."""
-    still_open: int | None = None
+def _dispose_own_pool() -> int | None:
+    """Close this process's pool; its connections still checked out on the erased store, ``None`` when that cannot be told."""
     try:
         from src.database import session
         from src.paths import erased_folder_of
@@ -228,11 +227,21 @@ def _dispose_after_erase(generation: int | None = None) -> int | None:
         # R805 (a): only a pool on the erased store is a holder of it; a pool on a store elsewhere is closed all the same and
         # counts 0 (the same rule as crypto_erase._close_own_pool), so its count never turns a clean wipe into "unknown".
         if db_file and not erased_folder_of(db_file):
-            still_open = 0
-        else:
-            still_open = n if isinstance(n, int) else None
-    except Exception:  # noqa: BLE001 - the wipe is done; this is tidying  # nosec B110
-        pass
+            return 0
+        return n if isinstance(n, int) else None
+    except Exception:  # noqa: BLE001 - the wipe is done; this is tidying
+        return None
+
+
+def _dispose_after_erase(generation: int | None = None) -> int | None:
+    """Close the pool once the key is gone, then rewrite through the kept descriptors what a transaction already under way
+    put back into the unlinked files (its commit writes page 1, salt included): once now, and once more after
+    :data:`_LATE_RESCRUB_S` on a timer that never holds the wipe up. Only this wipe's descriptors (``generation``), so a
+    second wipe within the delay never shortens the first one's late pass, nor the first one's timer the second's. Never
+    raises."""
+    # Row 388: the database module never imported in this process (the panic CLI with its data drive not there) means no pool of
+    # this process holds a store: none of its own connections is open.
+    still_open = _dispose_own_pool() if "src.database.session" in sys.modules else 0
     try:
         from src.safety.crypto_erase import held_count, rescrub_held
 

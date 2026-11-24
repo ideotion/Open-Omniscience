@@ -143,8 +143,10 @@ def test_a_chain_that_does_not_verify_names_no_signer(client, tmp_path, monkeypa
 
 
 def test_the_view_shows_the_r800_labels_and_only_for_a_verified_chain():
+    from tests.js_source_helper import function_source
+
     src = (ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")
-    body = src[src.index("function custodySignerWords"):src.index("async function exportCustody")]
+    body = function_source(src, "custodySignerWords") + function_source(src, "verifyChain")
     for label in ("Signed by this installation, key {fp}", "Signed by another installation, key {fp}", "Signed by key {fp}"):
         assert f'"{label}"' in body
     assert "d.verified ? custodySignerWords(d.signed_by, d.signer_key)" in body
