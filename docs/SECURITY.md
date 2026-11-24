@@ -928,6 +928,28 @@ imply a protection we cannot deliver.
   unrecoverable") is said only when the main database is positively known to be encrypted; a plaintext one fails closed to
   "not encrypted, old pages may remain on the disk, full-disk encryption is the remedy", one whose state could not be read to
   "could not be confirmed as encrypted", on the CLI, the HTTP answer, the page and the free-space overwrite after it.
+  **Encrypted only on positive evidence (R819/R820, row 396).** A header that is not SQLite's is never by itself evidence
+  of encryption (a plaintext store whose page 1 an earlier, failed erase randomised reads exactly so). The erase takes the
+  encrypted path (three salt passes, no body rewrite) only when this process read the very file it pinned under a key, state
+  the process already holds (`connect.opened_with_key`, by device and inode, never persisted; a plaintext open of the same
+  identity forgets it); nothing of the store is opened or read for it before its key is destroyed. Every other main
+  database takes the plaintext path above, and the verdict is settled after its first page and log were destroyed: its first
+  16 bytes, read once through the kept handle before that, decide "not encrypted" when they are SQLite's own header whatever
+  any record says; "encrypted" (no body rewrite, counted like the encrypted path) needs another header AND the app's
+  record `at_rest_encryption.json` beside it naming this very (device, inode) as read back with the key AND a fast
+  destruction that reached the first page and every log whole with no part refused; every other case (no record, an
+  unreadable, malformed, oversized or linked record, a record from before R820 without an identity, another identity, a
+  short read) is "could not be determined", with the full rewrite and R815 (3)'s note. The record is read no-follow through
+  the pinned folder's handle, a regular file only, at most 64 KiB, and destroyed with its store (it is one of the app's own
+  files, R806). It gets the identity only after a real keyed page read by the app's own engine (stat by path, never an
+  open and close of the store's files, R789), atomically, and a plaintext open of the same identity removes it; a failed
+  write never fails the open. Any replacement of the store (restore, repair, encrypt, decrypt) is a new identity, so a
+  mismatch and the full rewrite. The result names one of three states on the CLI and in the HTTP answer
+  (`corpus_encryption`): encrypted and its key destroyed (or its first page could not be overwritten, so its key may still
+  be on the disk), not encrypted, or could not be determined; a store whose state could not be determined is never called
+  "unencrypted" in words. LIMIT: an inode the file system hands to a new plaintext file while this process still lists it
+  can carry the in-process evidence over only if no connection of the app ever opened the new file, since every open
+  re-reads the header and a plaintext one forgets it.
   **A data folder the app does not own (R711).** Ownership is where the app put the
   folder, never what is in it (the app writes its own files at every start): the default location and the first-launch
   `OOS data` folder are the app's; a folder set by hand in `OO_DATA_DIR` is shared when it is, on the path it leads to, the

@@ -4359,12 +4359,25 @@
           ? OOI18N.tf
           : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
         const ps = r.plaintext_store && typeof r.plaintext_store === "object" ? r.plaintext_store : null;
-        const psState = ps ? {
+        // R819 (4) / R820 (6): a main database whose encryption could not be determined is never called "unencrypted" in words.
+        const psState = ps ? (ps.form === "unknown" ? {
+          overwritten: "The main database was overwritten in full.",
+          partially_overwritten: "The main database was only partially overwritten.",
+          not_overwritten: "The main database was not overwritten.",
+          first_page: "The main database had its first page overwritten.",
+        } : {
           overwritten: "The unencrypted main database was overwritten in full.",
           partially_overwritten: "The unencrypted main database was only partially overwritten.",
           not_overwritten: "The unencrypted main database was not overwritten.",
           first_page: "The unencrypted main database had its first page overwritten.",
-        }[ps.state] : null;
+        })[ps.state] : null;
+        // R819 (4): the three states, said beside the result: encrypted (key destroyed), not encrypted, could not be determined.
+        const encLine = {
+          encrypted: "The main database was encrypted, and its key was destroyed.",
+          encrypted_key_left: "The main database was encrypted, but its first page could not be overwritten, so its key may still be on the disk.",
+          not_encrypted: "The main database was not encrypted.",
+          unknown: "Whether the main database was encrypted could not be determined.",
+        }[r.corpus_encryption] || "";
         const psReason = ps ? {
           absent: "It was no longer there.",
           unidentified: "It could not be identified, so nothing there was touched.",
@@ -4431,6 +4444,7 @@
             // R812 (b): only when the erase had already made the app forget the drive's id (it is never restored).
             (r.drive_forgotten === true ? ` ${esc(t("Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a later launch unless it is set up again."))}` : "") +
             `</div>` : "") +
+          (encLine ? `<div class="${r.corpus_encryption === "encrypted" ? "hint" : "card-caveat"}">${esc(t(encLine))}</div>` : "") +
           (psWords ? `<div class="card-caveat">${esc(psWords)}</div>` : "") +
           (plainNote ? `<div class="card-caveat">${esc(r.encrypted_corpus === false
             ? t("The main database was not encrypted, so no key was destroyed: old pages of it may remain on the disk after the overwrite and delete. Full-disk encryption is the remedy.")

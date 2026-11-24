@@ -314,7 +314,9 @@ def test_the_record_holds_names_and_times_only(stores):
     raw = (stores.parent / at_rest_state.RECORD_NAME).read_text(encoding="utf-8")
     assert _KEY not in raw and str(stores.parent) not in raw
     for entry in json.loads(raw)["stores"].values():
-        assert set(entry) == {"encrypted_at", "read_back_with_key"}
+        # R820 (4): plus the store's (device, inode) when it was read back with the key; numbers, never a path or a secret
+        assert set(entry) - {"dev", "ino"} == {"encrypted_at", "read_back_with_key"}
+        assert all(type(entry[k]) is int for k in ("dev", "ino") if k in entry)
 
 
 def test_an_unreadable_record_reads_as_empty_and_the_state_still_comes_from_the_files(stores):

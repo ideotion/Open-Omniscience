@@ -139,6 +139,32 @@ _lock = threading.Lock()
 # deliberately expensive — ~173 ms, CLAUDE.md's rate-limiting-is-a-
 # deliberate-omission entry).
 _last_good_page_size: dict[str, int | None] = {}
+# R819 (1): the (device, inode) of every file this process read under a key, never persisted. A plaintext open of the
+# same identity forgets it, so an inode the file system hands to a plaintext file later never carries the evidence over. The
+# erase reads it (:func:`opened_with_key`) as positive evidence that a store is encrypted; a header alone never is.
+_opened_with_key: set[tuple[int, int]] = set()
+
+
+def _note_open(p: Path, keyed: bool) -> None:
+    """Record (keyed) or forget (plaintext) the identity of the file at ``p`` just opened. Never raises: evidence that cannot be
+    taken is simply absent, and the erase then says "could not be determined"."""
+    try:
+        st = os.stat(p)
+    except OSError:
+        return
+    ident = (st.st_dev, st.st_ino)
+    with _lock:
+        if keyed:
+            _opened_with_key.add(ident)
+        else:
+            _opened_with_key.discard(ident)
+
+
+def opened_with_key(ident: tuple[int, int]) -> bool:
+    """R819 (1): whether this process read the file with this (device, inode) under a key, and has not since opened it as
+    plaintext. State the process already holds: no file is read."""
+    with _lock:
+        return ident in _opened_with_key
 
 
 def _guard_the_key() -> None:
@@ -1012,9 +1038,13 @@ def _connect(
         if cipher_page_size is None:
             with _lock:
                 _last_good_page_size[str(p.resolve())] = winning_candidate
+        # R819 (1): a page read under a key succeeded, so this very file is encrypted (with whichever key opened it: its salt is
+        # what the erase destroys). Only this branch records; a fresh file is recorded by its first keyed reopen.
+        _note_open(p, keyed=True)
         return conn
 
     if state is False:
+        _note_open(p, keyed=False)  # R819 (1): plaintext now, whatever this identity was before
         if read_only:
             return sqlite3.connect(
                 _read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout
@@ -1053,6 +1083,7 @@ def _connect(
     if create_encrypted is False or (create_encrypted is None and plaintext_mode()):
         conn = sqlite3.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
         conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        _note_open(p, keyed=False)  # R819 (1): a fresh plaintext file never inherits an identity an older file left behind
         return conn
     if use_key:
         if not have_driver():  # pragma: no cover

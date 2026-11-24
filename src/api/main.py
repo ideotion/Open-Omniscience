@@ -4031,7 +4031,11 @@ def _panic_cli(*, force: bool) -> None:
 
     from src.paths import data_dir_path
     from src.safety import crypto_erase, panic_wipe
-    from src.safety.crypto_erase import _PLAINTEXT_SENTENCE, plaintext_store_sentences
+    from src.safety.crypto_erase import (
+        CORPUS_ENCRYPTION,
+        _plain_sentence,
+        plaintext_store_sentences,
+    )
 
     target = data_dir_path()  # named, never made or checked: data_dir() raises when the marked drive is not there (R809)
     if not force:
@@ -4040,20 +4044,24 @@ def _panic_cli(*, force: bool) -> None:
             print("Aborted.")
             return
     # R818 (a): said as the body rewrite of an unencrypted main database starts; information only, nothing to answer.
-    crypto_erase.plain_rewrite_notice = lambda: print(crypto_erase.PLAIN_STORE_NOTICE, flush=True)
+    crypto_erase.plain_rewrite_notice = lambda: print(crypto_erase.plain_notice_now, flush=True)
     report = panic_wipe(confirm=True)
     if report.get("drive_absent"):
         # R809: a failure state. What was erased elsewhere (stores kept outside the data folder, the passphrase in memory) is said
         # apart, and nothing reassures: the keys are on the drive, so nothing erased here makes it unreadable.
         print("ERASE FAILED: " + report["limit"])
         print(f"Files erased outside the data drive: {report['files_wiped']} of {report['files_seen']}.")
+        if report.get("corpus_encryption") in CORPUS_ENCRYPTION:
+            print(CORPUS_ENCRYPTION[report["corpus_encryption"]])  # R819 (4): only for a main database the erase reached
         for line in plaintext_store_sentences(report):  # R815 (2): the plaintext main database, never in the count above
             print(line)
         if report.get("plaintext_store"):
-            print(_PLAINTEXT_SENTENCE)  # R815 (3)
+            print(_plain_sentence(report.get("encrypted_corpus")))  # R815 (3) / R819: plaintext, or could not be determined
         sys.exit(2)
     if not report.get("drive_lost"):  # R809: a drive that went away is never "wiped"; its sentence leads report["limit"] below
         print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
+    if report.get("corpus_encryption") in CORPUS_ENCRYPTION:
+        print(CORPUS_ENCRYPTION[report["corpus_encryption"]])  # R819 (4): encrypted, not encrypted, or could not be determined
     for line in plaintext_store_sentences(report):  # R815 (2): the plaintext main database outside the folder, never in "Wiped"
         print(line)
     if report.get("scope") == "app-only":

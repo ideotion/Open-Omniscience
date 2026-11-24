@@ -128,7 +128,8 @@ def test_http_rewrites_the_plaintext_store_and_never_claims_the_guarantee(tmp_pa
     assert line is not None, run.stdout[-3000:] + run.stderr[-3000:]
     rep = json.loads(line.removeprefix("REPORT "))
     assert rep["encrypted_corpus"] is False
-    assert rep["plaintext_store"] == {"state": "overwritten", "reason": None, "other_names": 1, "deleted": True, "touched": True}, \
+    assert rep["plaintext_store"] == {"state": "overwritten", "reason": None, "other_names": 1, "deleted": True, "touched": True,
+                                   "form": "plain"}, \
         rep["plaintext_store"]
     assert GUARANTEE not in rep["limit"] and crypto_erase._PLAINTEXT_SENTENCE in rep["limit"], rep["limit"]
     assert not db.exists()

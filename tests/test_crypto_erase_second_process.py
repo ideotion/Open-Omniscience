@@ -85,6 +85,7 @@ def _store(tmp_path: Path) -> tuple[Path, bytes]:
         con.commit()
     finally:
         con.close()
+    cm.connect(db, key=_KEY, check_same_thread=False).close()  # R819 (1): read back under its key, as the app does
     # The salt SQLCipher keeps in plaintext at the start of page 1: with the passphrase, it is what makes the body readable.
     # Read with os.pread on a descriptor no SQLite connection of this process shares (nothing of this process holds the store).
     fd = os.open(db, os.O_RDONLY)

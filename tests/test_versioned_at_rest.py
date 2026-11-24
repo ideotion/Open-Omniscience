@@ -156,6 +156,7 @@ def test_CRYPTO_ERASE_destroys_each_lane_s_OWN_salt_page(data_dir, monkeypatch):
     con = connect(str(data_dir / "open_omniscience.db"), key=PASSPHRASE, create_encrypted=True)
     con.execute("CREATE TABLE t(a)")
     con.close()
+    connect(str(data_dir / "open_omniscience.db"), key=PASSPHRASE).close()  # R819 (1): read back under its key, as the app does
     store.create_lane("wiki")
 
     report = quick_crypto_erase(confirm=True, data_dir=data_dir)

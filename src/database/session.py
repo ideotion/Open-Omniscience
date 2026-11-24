@@ -122,9 +122,12 @@ def _build_engine() -> Engine:
         db_path = _sqlite_file(DATABASE_URL)
 
         def _creator():
+            from src.database.at_rest_state import note_main_open
             from src.database.connect import connect
 
-            return connect(db_path, check_same_thread=False, timeout=30)
+            conn = connect(db_path, check_same_thread=False, timeout=30)
+            note_main_open(db_path)  # R820 (4): the record's identity of the corpus, once per process; never fails the open
+            return conn
 
         # Pool sized for the bandwidth-governed collector: up to ~50 workers may
         # hold a session concurrently (reads; writes still serialise through the

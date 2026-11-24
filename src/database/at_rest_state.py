@@ -103,9 +103,117 @@ def record_encrypted(name: str, main: Path | None = None) -> None:
         with file_lock(path):
             doc = read_record(rows[0][1])
             doc["stores"][name] = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True}
+            store = dict(rows).get(name)
+            ident = _identity(store) if store is not None else None
+            if ident is not None:  # R820 (4): the identity of the file read back with the key, by path (R789)
+                doc["stores"][name].update(dev=int(ident[0]), ino=int(ident[1]))
             atomic_replace(path, json.dumps(doc, indent=1, sort_keys=True))
     except OSError as exc:
         log_failure(_LOG, "the at-rest record could not be written (the files still say which stores are encrypted)", exc)
+
+
+#: R820 (4): the record's identity fields. A store's (device, inode) when it was read back with the app's key, never a secret; an
+#: entry without them (a record from before R820) is never evidence (R755: additive).
+_IDENT_KEYS = ("dev", "ino")
+#: R820 (3): the most of the record the erase reads; a longer file is not the app's record.
+RECORD_MAX_BYTES = 64 * 1024
+_NOTE_LOCK = threading.Lock()
+#: The identities this process already wrote into the record (keyed) or checked against it (plaintext), so the hook on every new
+#: pooled connection costs one ``stat`` and a set lookup after the first.
+_NOTED_KEYED: set[tuple[int, int]] = set()
+_NOTED_PLAIN: set[tuple[int, int]] = set()
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    try:
+        st = os.stat(path)  # by path: never an open and close of a store's file (R789)
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
+
+
+def _write_identity(name: str, path: Path, ident: tuple[int, int] | None) -> None:
+    """Set (``ident``) or clear (None) the identity of ``name`` in the record, atomically and under its lock. Never raises."""
+    from src.safety.file_lock import atomic_replace, file_lock
+
+    try:
+        with file_lock(path):
+            doc = _read_record_at(path)
+            entry = dict(doc["stores"].get(name) or {})
+            if ident is None:
+                if not entry or (entry.get("dev"), entry.get("ino")) == (None, None):
+                    return
+                for k in _IDENT_KEYS:
+                    entry.pop(k, None)
+                entry["read_back_with_key"] = False
+            else:
+                entry.setdefault("encrypted_at", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+                entry.update(read_back_with_key=True, dev=int(ident[0]), ino=int(ident[1]))
+            doc["stores"][name] = entry
+            atomic_replace(path, json.dumps(doc, indent=1, sort_keys=True))
+    except OSError as exc:
+        log_failure(_LOG, "the at-rest record could not be written (the files still say which stores are encrypted)", exc)
+
+
+def _read_record_at(path: Path) -> dict[str, Any]:
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"version": RECORD_VERSION, "stores": {}}
+    if not isinstance(doc, dict) or not isinstance(doc.get("stores"), dict):
+        return {"version": RECORD_VERSION, "stores": {}}
+    return {"version": RECORD_VERSION, "stores": {str(k): v for k, v in doc["stores"].items() if isinstance(v, dict)}}
+
+
+def note_main_open(path: Path | str) -> None:
+    """R820 (4): called after the app's own engine opened a connection on the corpus at ``path``. Opened with the app's key (a real
+    keyed page read: :func:`src.database.connect.opened_with_key`), its (device, inode) is written into the record once per process;
+    opened as plaintext, an identity the record holds for it is removed. A failed write never fails the open. Never raises."""
+    try:
+        p = Path(path)
+        ident = _identity(p)
+        if ident is None:
+            return
+        from src.database.connect import opened_with_key
+
+        keyed = opened_with_key(ident)
+        with _NOTE_LOCK:
+            seen = _NOTED_KEYED if keyed else _NOTED_PLAIN
+            if ident in seen:
+                return
+            seen.add(ident)
+            (_NOTED_PLAIN if keyed else _NOTED_KEYED).discard(ident)
+        record = _record_path(p)
+        if keyed:
+            entry = _read_record_at(record)["stores"].get("corpus") or {}
+            if (entry.get("dev"), entry.get("ino")) != ident:
+                _write_identity("corpus", record, ident)
+        elif record.exists():
+            entry = _read_record_at(record)["stores"].get("corpus") or {}
+            if (entry.get("dev"), entry.get("ino")) == ident:
+                _write_identity("corpus", record, None)
+    except Exception as exc:  # noqa: BLE001 - bookkeeping never fails an open
+        log_failure(_LOG, "the at-rest record could not be updated after an open", exc, level=logging.DEBUG)
+
+
+def record_names_identity(raw: bytes | None, ident: tuple[int, int]) -> bool:
+    """R820 (1)/(3): whether the record's bytes ``raw`` (read by the erase, no-follow, regular file only, at most
+    :data:`RECORD_MAX_BYTES`) name the corpus at ``ident`` as encrypted and read back with the key. Anything else is False: no record,
+    a malformed one, an entry without an identity (a record from before R820) or with another one."""
+    if not raw or len(raw) > RECORD_MAX_BYTES:
+        return False
+    try:
+        doc = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return False
+    stores = doc.get("stores") if isinstance(doc, dict) else None
+    entry = stores.get("corpus") if isinstance(stores, dict) else None
+    if not isinstance(entry, dict) or entry.get("read_back_with_key") is not True:
+        return False
+    dev, ino = entry.get("dev"), entry.get("ino")
+    if type(dev) is not int or type(ino) is not int:
+        return False
+    return (dev, ino) == tuple(ident)
 
 
 def _names_beside(rows: list[tuple[str, Path]]) -> list[tuple[Path, str]]:
