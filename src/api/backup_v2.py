@@ -29,6 +29,7 @@ and can refuse, never replaces.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException, Query
@@ -1258,6 +1259,81 @@ def _drain_metrics(run: dict) -> dict | None:
     wall = float(run.get("wall_s") or 0.0)
     articles = int(run.get("articles", 0))
     out["articles_per_second"] = round(articles / wall, 2) if articles and wall > 0 else None
+    by_size = _rate_by_store_gb(run)
+    if by_size:
+        out["rate_by_store_gb"] = by_size
+    if run.get("rate_buckets_dropped_s"):
+        out["rate_buckets_dropped_s"] = round(float(run["rate_buckets_dropped_s"]), 1)
+    return out
+
+
+# THE DRAIN'S RATE AGAINST THE SIZE OF THE STORE IT WRITES INTO (row 414, 2026-11-24). Row 412 found the likeliest home of most of a
+# week-long import in a drain that slows as the corpus grows -- 11.6 articles/s into a nearly empty store on 2026-11-15 against
+# 2.1/s on a 41 GB one (src/analytics/store.py) -- with two points and nothing between them. This measures the curve on every
+# drain: inside each call, every few seconds, the articles finished since the last sample and the seconds they took are added
+# to the bucket of the main file's size, in whole GiB, when the interval began. One stat of one file, no read of the corpus.
+# The seconds are only those inside a call (a wait for the storage guard or between batches is never counted), so a bucket's
+# rate is the drain's own. The size is the main file's alone: the write-ahead log is not the corpus.
+_RATE_SAMPLE_S = 5.0
+_RATE_BUCKET_BYTES = 1 << 30
+#: Buckets kept: one per GiB up to this many distinct sizes. Time that would open a new one past it is counted, never folded
+#: into a neighbour, so no bucket's rate is altered by it.
+_RATE_BUCKETS_MAX = 512
+
+
+def _corpus_file_bytes() -> int | None:
+    try:
+        from src.database.repair import corpus_path
+
+        p = corpus_path()
+        return p.stat().st_size if p is not None else None
+    except Exception:  # noqa: BLE001 - no size, no sample; the drain itself never depends on it
+        return None
+
+
+class _StoreRateSampler:
+    """One per call of the re-index: the first observation sets the baseline, so nothing outside the call is counted."""
+
+    def __init__(self, run: dict, *, clock: Callable[[], float] = time.monotonic,
+                 size: Callable[[], int | None] = _corpus_file_bytes) -> None:
+        self._run = run
+        self._clock = clock
+        self._size = size
+        self._last: tuple[float, int, int] | None = None
+
+    def observe(self, done: int) -> None:
+        try:
+            now = self._clock()
+            last = self._last
+            if last is not None and now - last[0] < _RATE_SAMPLE_S:
+                return
+            size = self._size()
+            if size is None:
+                self._last = None
+                return
+            if last is not None and done >= last[1]:
+                buckets = self._run.setdefault("rate_by_store_gb", {})
+                gb = int(last[2] // _RATE_BUCKET_BYTES)
+                if gb in buckets or len(buckets) < _RATE_BUCKETS_MAX:
+                    b = buckets.setdefault(gb, [0, 0.0])
+                    b[0] += done - last[1]
+                    b[1] += now - last[0]
+                else:
+                    self._run["rate_buckets_dropped_s"] = float(self._run.get("rate_buckets_dropped_s", 0.0)) + (now - last[0])
+            self._last = (now, done, size)
+        except Exception:  # noqa: BLE001 - a measurement never breaks the drain
+            self._last = None
+
+
+def _rate_by_store_gb(run: dict) -> list[dict]:
+    out = []
+    for gb, (articles, seconds) in sorted((run.get("rate_by_store_gb") or {}).items()):
+        out.append({
+            "store_gib": gb,
+            "articles": int(articles),
+            "seconds": round(float(seconds), 1),
+            "articles_per_second": round(articles / seconds, 2) if articles and seconds > 0 else None,
+        })
     return out
 
 
@@ -1493,8 +1569,11 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             )
             ctx.set_progress(detail=shown["line"])
 
-            def _progress(done: int, _total: int, _base: int = walked) -> None:
+            sampler = _StoreRateSampler(run)
+
+            def _progress(done: int, _total: int, _base: int = walked, _sampler: _StoreRateSampler = sampler) -> None:
                 ctx.set_progress(done=_base + done)
+                _sampler.observe(done)
 
             # Re-read per batch, never once at the top: a drain measured in days must follow
             # the machine it is actually on, and the operator may go online mid-run. The
