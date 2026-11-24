@@ -171,12 +171,14 @@ def test_a_key_that_lands_on_the_evidence_name_by_any_route_keeps_the_marker(tmp
     key = Ed25519PrivateKey.generate()
 
     def aliasing(local, data):
-        if local.name == "notes.txt":  # what a case-insensitive or short-name filesystem would do with another spelling
+        # what a case-insensitive or short-name filesystem would do with another spelling (since R808 only the app's own
+        # names are placed, so the carried file is another of them)
+        if local.name == "annotations_ed25519.pem":
             return real(local.parent / "evidence_ed25519.pem", _pem(key))
         return real(local, data)
 
     monkeypatch.setattr(merge, "_place_key_file", aliasing)
-    _restore(tmp_path, {"keys/notes.txt": b"x"})
+    _restore(tmp_path, {"keys/annotations_ed25519.pem": _pem(Ed25519PrivateKey.generate())})
     assert (tmp_path / "live" / MARKER).exists()
     assert ev.is_this_installations_key(ev.public_key_hex(key)) is False
 
@@ -213,11 +215,15 @@ def test_no_reader_compares_keys_itself():
         assert "is_this_installations_key(" in src and "fromhex" not in src and "key ==" not in src, fn.__name__
 
 
-def test_a_file_beside_the_key_that_is_no_key_is_carried(tmp_path):
+def test_a_file_beside_the_key_that_is_no_key_is_not_placed(tmp_path):
+    """R808 (row 379) replaced "carried as it is": only the key files this app creates are placed."""
     out = _restore(tmp_path, {"keys/evidence_ed25519.pem.bak": b"an operator's copy", "keys/OLD_ed25519.pem": b"x"})
-    assert out["carried_unread"] == ["keys/evidence_ed25519.pem.bak"]
-    old = [n for n in out["not_placed"] if n["name"] == "keys/OLD_ed25519.pem"]
-    assert old and old[0]["reason"] != merge._KEY_UNSAFE_NAME  # judged as a key (it is none), not refused by its case
+    assert out["restored"] == [] and out["not_app_keys"]["count"] == 2
+    assert {n["name"]: n["reason"] for n in out["not_placed"]} == {
+        "keys/evidence_ed25519.pem.bak": merge._KEY_NOT_APP,
+        "keys/OLD_ed25519.pem": merge._KEY_NOT_APP,  # not one of the app's names (its case differs from none of them)
+    }
+    assert not (tmp_path / "live" / "keys" / "evidence_ed25519.pem.bak").exists()
     assert not (tmp_path / "live" / MARKER).exists()  # no evidence key was placed
 
 

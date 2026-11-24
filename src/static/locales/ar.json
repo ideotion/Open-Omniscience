@@ -7730,6 +7730,7 @@
   "not .eml": "ليست .eml",
   "not PDF": "ليس PDF",
   "not a file": "ليس ملفًا",
+  "not a key this app creates; it is not written and stays in the backup": "ليس مفتاحًا ينشئه هذا التطبيق؛ لا تتم كتابته ويبقى في النسخة الاحتياطية",
   "not a recognised country code": "رمز دولة غير معروف",
   "not a usable edition code": "رمز نسخة غير صالح للاستخدام",
   "not an ISO code": "ليس رمزًا من رموز أيزو",

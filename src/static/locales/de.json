@@ -7730,6 +7730,7 @@
   "not .eml": "kein .eml",
   "not PDF": "kein PDF",
   "not a file": "keine Datei",
+  "not a key this app creates; it is not written and stays in the backup": "kein Schlüssel, den diese App anlegt; er wird nicht geschrieben und bleibt in der Sicherung",
   "not a recognised country code": "kein bekannter Ländercode",
   "not a usable edition code": "kein brauchbarer Ausgaben-Code",
   "not an ISO code": "kein ISO-Code",

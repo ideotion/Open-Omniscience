@@ -7730,6 +7730,7 @@
   "not .eml": ".eml 以外",
   "not PDF": "件が PDF でない",
   "not a file": "ファイルではありません",
+  "not a key this app creates; it is not written and stays in the backup": "このアプリが作成する鍵ではありません。書き込まれず、バックアップに残ります",
   "not a recognised country code": "認識できない国コード",
   "not a usable edition code": "使用できない版コードです",
   "not an ISO code": "ISO コードではありません",

@@ -7730,6 +7730,7 @@
   "not .eml": ".eml নয়",
   "not PDF": "PDF নয়",
   "not a file": "ফাইল নয়",
+  "not a key this app creates; it is not written and stays in the backup": "এটি এমন কোনো কী নয় যা এই অ্যাপ তৈরি করে; এটি লেখা হয় না এবং ব্যাকআপে থেকে যায়",
   "not a recognised country code": "অপরিচিত দেশের কোড",
   "not a usable edition code": "ব্যবহারযোগ্য সংস্করণ কোড নয়",
   "not an ISO code": "এটি আইএসও কোড নয়",
