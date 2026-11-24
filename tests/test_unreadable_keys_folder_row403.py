@@ -67,12 +67,26 @@ def test_the_export_review_says_unreadable_never_none(tmp_path, own_key, monkeyp
 
 def test_a_missing_key_or_folder_is_still_no_key(tmp_path, own_key):
     assert EV.is_this_installations_key("00" * 32) is False
+    assert EV.signing_key_state() == ("none", None)  # no keys folder yet: export makes it and the key
+    own_key.parent.mkdir(parents=True)
     assert EV.signing_key_state() == ("none", None)
+
+
+def test_a_keys_path_under_a_file_is_not_own_and_promises_no_key(tmp_path, own_key):
+    """ENOTDIR: not this installation's key, but export could not create one there, so the review never says "none"."""
     own_key.parent.mkdir(parents=True)
     own_key.parent.joinpath("not-a-folder").write_text("x", encoding="utf-8")
     beneath_a_file = own_key.parent / "not-a-folder" / "evidence_ed25519.pem"
-    assert EV.is_this_installations_key("00" * 32, beneath_a_file) is False  # ENOTDIR: not there
-    assert EV.signing_key_state(beneath_a_file) == ("none", None)
+    assert EV.is_this_installations_key("00" * 32, beneath_a_file) is False
+    assert EV.signing_key_state(beneath_a_file) == ("unreadable", None)
+
+
+def test_a_link_to_nothing_at_the_key_name_is_not_own_and_promises_no_key(tmp_path, own_key):
+    own_key.parent.mkdir(parents=True)
+    own_key.symlink_to(tmp_path / "gone.pem")
+    assert EV.is_this_installations_key("00" * 32) is False
+    assert EV.signing_key_state() == ("unreadable", None)
+    assert own_key.is_symlink() and not (tmp_path / "gone.pem").exists()  # the review wrote nothing
 
 
 def test_an_unreadable_key_file_is_unreadable(tmp_path, own_key):

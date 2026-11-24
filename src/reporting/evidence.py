@@ -321,6 +321,18 @@ def _key_file_state(path: Path) -> str:
     return "present"
 
 
+def _nothing_at_the_name(path: Path) -> bool:
+    """True only when the key's name is plainly free for export to create it (row 403): not a dangling link there (lstat
+    finds it), and not a path whose folder is a file (ENOTDIR)."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return True
+    except (OSError, ValueError):
+        return False
+    return False  # stat said absent, yet something is at the name: a link to nothing
+
+
 def _marker_present(marker: Path) -> bool:
     """True unless the marker is plainly absent: a link, a folder, an unreadable or odd file all count as present, and
     so does a check that fails (R801 (3)). Only its presence is read, never its content."""
@@ -408,10 +420,12 @@ def signing_key_state(path: Path | None = None) -> tuple[str, str | None]:
     """
     path = path or _default_key_path()
     state = _key_file_state(path)
-    if state == "absent":
+    if state == "absent" and _nothing_at_the_name(path):
         return "none", None
-    if state == "unreadable":
-        return "unreadable", None  # row 403: never "none" (an export would promise to create a key it cannot write)
+    if state != "present":
+        # row 403: "none" promises that export creates a key; a keys path under a FILE (ENOTDIR) or a link to nothing at
+        # the key's name cannot hold that promise, so they read as unreadable here (they stay "not own" in the comparison)
+        return "unreadable", None
     pub = existing_public_key_hex(path)
     return ("ok", pub) if pub is not None else ("unreadable", None)
 
