@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,15 @@ S3 = "The data drive disconnected during the erase: it was only partially erased
 S5 = "The data drive could not be identified. Nothing on it was checked or erased. The data on that drive still exists."
 S6 = ("Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a "
       "later launch unless it is set up again.")
+
+
+@pytest.fixture(autouse=True)
+def _no_pins_left():
+    """R812: a drive pinned by one test never keeps another test's connections open."""
+    yield
+    from src.database import drive_pin
+
+    drive_pin._reset_for_tests()
 
 
 @pytest.fixture
@@ -342,7 +352,9 @@ def test_a_drive_that_changes_before_the_key_step_is_stopped_and_keeps_its_id(ma
 
     def _same(hold, want_id, *, marker):
         calls.append(marker)
-        return real_same(hold, want_id, marker=marker) if len(calls) == 1 else False
+        # Every re-check up to the one before the first write (each reads the marker) is real; the first later one (the lane
+        # dispose, after the first write and before the key step) and every one after it see another drive.
+        return real_same(hold, want_id, marker=marker) if all(calls) else False
 
     monkeypatch.setattr(crypto_erase, "_drive_same", _same)
     out = _erase(data)
@@ -371,3 +383,152 @@ def test_the_real_cli_says_could_not_be_identified(tmp_path):
 def test_the_page_says_r812():
     js = Path("src/static/app-backup.js").read_text(encoding="utf-8")
     assert S5 in js and S6 in js and "r.drive_unidentified === true" in js and "r.drive_forgotten === true" in js
+
+
+# --------------------------------------------------------------------------- #
+#  R812 (coordinator decision 1): connections on a drive that is not there, not identifiable or changed are never closed
+# --------------------------------------------------------------------------- #
+
+_CHILD = r"""
+import json, os, subprocess, sys
+from pathlib import Path
+data = Path(os.environ["OO_DATA_DIR"])
+mount_point = data.parent
+scen = sys.argv[1]
+from sqlalchemy import text
+from src.database import session
+with session.engine.begin() as c:  # a WAL store with a log on the drive, its connection back in the pool, open
+    c.execute(text("create table if not exists t(a)"))
+    for i in range(40):
+        c.execute(text("insert into t values(:a)"), {"a": "x" * 400})
+assert (data / "open_omniscience.db-wal").exists()
+
+def swap():
+    # Another drive mounted over the path. The open connections still reach the old drive's files; the path reaches the new
+    # drive's. SQLite's "has the file moved" test compares the INODE NUMBER only, and a fresh drive's first files get the same
+    # numbers, so it reads "not moved", checkpoints and deletes the log files by path (measured; a rename on one file system
+    # gets a new inode and never shows it, which is why this test mounts).
+    subprocess.check_call(["mount", "-t", "tmpfs", "-o", "size=20m", "tmpfs", str(mount_point)])
+    data.mkdir()
+    (data / ".oos-volume").write_text(json.dumps({"id": "ffffffffffffffff"}), encoding="utf-8")
+    for n in ("open_omniscience.db", "open_omniscience.db-wal", "open_omniscience.db-shm", "other.txt"):
+        (data / n).write_bytes(b"FOREIGN " + n.encode() * 40)
+
+from src.safety import crypto_erase
+if scen in ("absent", "absent-unpinned"):
+    swap()
+    if scen == "absent-unpinned":  # the control: without the pin, the close deletes the other drive's log files
+        import src.database.drive_pin as dp
+        dp.pin_drive = lambda base: 0
+elif scen == "mid":
+    real_same, calls = crypto_erase._drive_same, []
+    def same(hold, want_id, *, marker):
+        calls.append(1)
+        if len(calls) == 2:
+            swap()
+        return real_same(hold, want_id, marker=marker)
+    crypto_erase._drive_same = same
+from src.safety import panic_wipe
+rep = panic_wipe(confirm=True)
+print("REPORT " + json.dumps({k: rep.get(k) for k in ("drive_absent", "drive_lost", "drive_key_in_memory",
+                                                      "drive_connections_kept", "limit")}))
+sys.stdout.flush()
+"""  # then a NORMAL exit: interpreter teardown, atexit (the engine dispose at exit) and all
+
+
+def _can_mount(tmp_path) -> bool:
+    import subprocess
+
+    probe = tmp_path / "mount-probe"
+    probe.mkdir()
+    try:
+        ok = subprocess.run(["mount", "-t", "tmpfs", "-o", "size=1m", "tmpfs", str(probe)], capture_output=True).returncode == 0
+    except OSError:
+        return False
+    if ok:
+        subprocess.run(["umount", str(probe)], capture_output=True)
+    return ok
+
+
+def _run_child(tmp_path, scen):
+    import subprocess
+    import sys
+
+    if not _can_mount(tmp_path):
+        pytest.skip("needs to mount a drive over the path (root); the unit test below covers the pin itself")
+    mount_point = tmp_path / "drive"
+    mount_point.mkdir()
+    subprocess.check_call(["mount", "-t", "tmpfs", "-o", "size=20m", "tmpfs", str(mount_point)])
+    data = mount_point / "OOS data"
+    data.mkdir()
+    (data / data_volume.MARKER_NAME).write_text(json.dumps({"id": "a1b2c3d4e5f60718"}), encoding="utf-8")
+    script = tmp_path / "child.py"
+    script.write_text(_CHILD, encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OO_", "DATABASE_URL"))}
+    env.update({"OO_DATA_DIR": str(data), data_volume.ENV_ID: "a1b2c3d4e5f60718", "OO_DB_PLAINTEXT": "1",
+                "OO_NO_SCHEDULER": "1", "OO_AUTOSEED": "0", "OO_LLM_AUTOSTART": "0", "OO_STORAGE_GUARD": "0",
+                "PYTHONPATH": os.getcwd(), "HOME": str(tmp_path / "home")})
+    try:
+        run = subprocess.run([sys.executable, str(script), scen], env=env, capture_output=True, text=True, timeout=240,
+                             cwd=os.getcwd())
+        assert run.returncode == 0, run.stdout[-3000:] + run.stderr[-3000:]
+        line = next(ln for ln in run.stdout.splitlines() if ln.startswith("REPORT "))
+        files = {p.name: p.read_bytes() for p in data.iterdir() if p.is_file()}  # read after the process has exited
+    finally:
+        for _ in range(3):
+            subprocess.run(["umount", "-l", str(mount_point)], capture_output=True)
+    return files, json.loads(line.removeprefix("REPORT "))
+
+
+_FOREIGN = {n: b"FOREIGN " + n.encode() * 40 for n in ("open_omniscience.db", "open_omniscience.db-wal",
+                                                       "open_omniscience.db-shm", "other.txt")}
+
+
+def test_without_the_pin_the_close_deletes_the_other_drives_log_files(tmp_path):
+    """The control: what the pin prevents is real (SQLite removes <db>-wal/-shm BY PATH when the last connection closes)."""
+    files, _report = _run_child(tmp_path, "absent-unpinned")
+    assert files.get("open_omniscience.db-wal") != _FOREIGN["open_omniscience.db-wal"], (
+        "the control did not reproduce the deletion: the test below would prove nothing")
+
+
+@pytest.mark.parametrize("scen", ["absent", "mid"])
+def test_another_drive_at_the_path_keeps_its_log_files_after_panic_and_exit(tmp_path, scen):
+    files, report = _run_child(tmp_path, scen)
+    for name, body in _FOREIGN.items():
+        assert files.get(name) == body, f"{name} on the other drive is byte-identical after panic and process exit"
+    assert report["drive_key_in_memory"] is True and report["drive_connections_kept"] >= 1, report
+    assert crypto_erase._DRIVE_KEY_IN_MEMORY_SENTENCE in report["limit"]
+    if scen == "absent":
+        assert report["drive_absent"] is True
+    else:
+        assert report["drive_lost"] is True and report["drive_absent"] is False
+
+
+def test_a_pinned_connection_is_never_closed(tmp_path):
+    """Without a mount (CI): a pool connection on the drive survives every close the pool makes once the drive is pinned, and one
+    elsewhere is closed as before."""
+    from sqlalchemy import create_engine, text
+
+    from src.database import drive_pin
+
+    on, off = tmp_path / "drive" / "OOS data", tmp_path / "internal"
+    on.mkdir(parents=True)
+    off.mkdir()
+    engines = [create_engine(f"sqlite:///{d / 'x.db'}") for d in (on, off)]
+    raws = []
+    for eng in engines:
+        with eng.connect() as c:
+            c.execute(text("pragma journal_mode=wal"))
+            c.execute(text("create table t(a)"))
+            c.commit()
+            raws.append(c.connection.dbapi_connection)
+    try:
+        assert drive_pin.pin_drive(on) >= 1
+        for eng in engines:
+            eng.dispose()
+        raws[0].execute("select count(*) from t").fetchall()  # still open: never closed
+        with pytest.raises(sqlite3.ProgrammingError):
+            raws[1].execute("select 1")  # closed as before
+        assert (on / "x.db-wal").exists(), "the log of a pinned store is never removed by a close"
+    finally:
+        drive_pin._reset_for_tests()

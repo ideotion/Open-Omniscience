@@ -872,7 +872,11 @@ imply a protection we cannot deliver.
   change or unreadable identity nothing more on it is touched ("could not be identified" before the first write, "disconnected
   ... partially erased" after). THE WINDOW THAT REMAINS: the walks go by path, so a drive swapped between a re-check and the
   writes after it is reached by its path (row 387 makes the POSIX walk handle-relative). An id the erase forgot is never
-  restored, and a lost drive's result says the app no longer remembers it.
+  restored, and a lost drive's result says the app no longer remembers it. When the drive is absent, unidentified, changed or
+  lost, the database connections on it are NEVER closed in this process (`src/database/drive_pin.py`): SQLite deletes
+  `<db>-wal` and `<db>-shm` BY PATH when the last connection closes, which with another drive at the path are that drive's
+  files. They are pinned out of every close and never freed, so only the process exit releases them, and the result says the
+  key to that drive's data stays in memory until the app is closed. SQLITE_FCNTL_PERSIST_WAL is not reachable from our drivers.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or

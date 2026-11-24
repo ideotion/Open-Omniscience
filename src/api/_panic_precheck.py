@@ -15,8 +15,8 @@ import sys
 #: The CLI's own words (English, like the rest of the CLI). The sentences after "ERASE FAILED: " are the panic page's, as Plan
 #: passed them: S1 for a drive not there, S5 (R812 (a)) for one that is there and cannot be identified.
 NOTHING_ELSE = (
-    "Nothing else was erased either: the app cannot run its erase without its data drive. Connect the drive and run the "
-    "erase again."
+    "Nothing else was erased either, including the stores and keys the app keeps outside the drive: the app cannot run its "
+    "erase without its data drive. Connect the drive and run the erase again."
 )
 
 
