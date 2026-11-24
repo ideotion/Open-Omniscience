@@ -5,6 +5,10 @@
 then stopped a restore on a raw error instead of "could not check: this installation's key could not be read", the row 339
 step raised instead of withholding trust, and the export review raised instead of saying "unreadable". Now any failure to
 look other than "not there" is unreadable: never this installation's own key, and never no key at all.
+
+What the tests simulate: ``stat`` refusing with EACCES as the evidence module sees it (``scope_os``), since a real mode-000
+folder cannot refuse the root user the suite may run as. That pins the new pre-check; the raise itself came from
+``Path.exists()``, which these patches do not reach (reproduced by hand as a non-root user).
 """
 
 from __future__ import annotations

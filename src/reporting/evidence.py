@@ -313,7 +313,7 @@ def _key_file_state(path: Path) -> str:
     callers below, which promise an answer. Only "not there" is absent; any other failure to look is "unreadable", so a
     key whose state cannot be read is never counted as this installation's own and never as no key at all."""
     try:
-        os.stat(path)
+        os.stat(path)  # follows a link, as the key read does (keyfile.read_once); the marker check is the one that uses lstat
     except (FileNotFoundError, NotADirectoryError):
         return "absent"
     except (OSError, ValueError):
