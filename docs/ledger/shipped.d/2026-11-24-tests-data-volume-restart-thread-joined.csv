@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-24,tests,"No data-volume restart thread outlives its test",shipped,PR #2368; row 390,tests/test_data_volume.py,"A reconnect tick left the real restart thread running past its test; once the test put the real _restart_process back it called os.execve and replaced the xdist worker mid-way through a later test. The test now stubs the job stop, and a module fixture joins the thread while the patches hold. Cause found by lane I."
