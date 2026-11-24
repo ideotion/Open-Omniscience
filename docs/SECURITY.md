@@ -978,7 +978,13 @@ imply a protection we cannot deliver.
   lock are never carried by a backup, export, field-data file or diagnostic bundle (R828 (3); every writer takes named files
   and none names it; a bundle's folder inventory may list its name and size, never its content). An entry goes when its file
   is replaced (the corpus swap of a restore, repair or rebuild, a lane switch) or opened as plaintext (decrypted, or another
-  file at the name) (R828 (4)). A header that is not SQLite's, alone,
+  file at the name) (R828 (4)). Builds between R820 and R828 (on main only, never in a tag) wrote the 16 bytes into an
+  entry as `head`: that field is dropped from every entry on each read and write, and the first open of a store after an
+  update rewrites a record that still holds one. Every write of the record replaces its file, so its EARLIER versions sit in
+  freed disk blocks that no rewrite or erase reaches: on an install that ran one of those builds, such a block may still hold
+  a salt. Full-disk encryption is the remedy, as for every freed block. The erase never writes a record that has a second
+  name (a hard link): that write would land in the other file, and the result says "key material may remain". Outside the
+  data folder, a record written by this process during an erase is not held off by the erase's latch. A header that is not SQLite's, alone,
   is "looks encrypted; not yet checked with your key"; SQLite's own header is "not encrypted", whatever the record says.
   The lock word ("unlocked-encrypted", "locked") stays a control word, never a claim: reports say
   "unlocked-looks-encrypted" without evidence. Nothing is encrypted, skipped as "already encrypted", recorded or finished on

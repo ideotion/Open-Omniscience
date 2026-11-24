@@ -3,6 +3,7 @@ before any bulk work, and says "key material may remain" when it cannot (2); it 
 field-data file and diagnostic bundle (3); an entry goes when its file is erased, replaced or decrypted (4)."""
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -42,6 +43,20 @@ def _record(main: Path) -> Path:
     p = main.parent / at_rest_state.RECORD_NAME
     p.write_text(json.dumps({"version": 1, "binding_key": key.hex(), "stores": {"corpus": entry}}), encoding="utf-8")
     return p
+
+
+class _Kept:
+    """A read handle on a file, kept open across the erase: it sees the bytes written over the file in place."""
+
+    def __init__(self, path: Path) -> None:
+        self.fd = os.open(path, os.O_RDONLY)
+
+    def read(self) -> bytes:
+        return os.pread(self.fd, os.fstat(self.fd).st_size, 0)
+
+    def __del__(self) -> None:
+        with contextlib.suppress(OSError):
+            os.close(self.fd)
 
 
 def _forget_evidence() -> None:
@@ -86,11 +101,10 @@ def test_the_record_is_overwritten_before_it_is_unlinked(tmp_path):
     rec = folder / at_rest_state.RECORD_NAME
     before = b'{"version": 1, "binding_key": "' + os.urandom(32).hex().encode() + b'", "stores": {}}'
     rec.write_bytes(before)
-    kept = tmp_path / "kept"
-    os.link(rec, kept)  # a second name sees what was written over the first
+    kept = _Kept(rec)  # an open handle sees what was written over the name (a second NAME would make the erase refuse it)
     raw, outcome = crypto_erase._take_record(folder)
     assert raw == before and outcome == "destroyed"
-    assert not rec.exists() and kept.read_bytes() != before and len(kept.read_bytes()) == len(before)
+    assert not rec.exists() and kept.read() != before and len(kept.read()) == len(before)
 
 
 def test_a_record_that_cannot_be_overwritten_is_left_never_destroyed(tmp_path, monkeypatch):
@@ -154,8 +168,7 @@ def test_the_erase_destroys_the_record_before_the_keys_and_the_bulk_steps(tmp_pa
     _forget_evidence()
     rec = _record(main)
     before = rec.read_bytes()
-    kept = tmp_path / "kept"
-    os.link(rec, kept)
+    kept = _Kept(rec)
     seen: list[bool] = []
     real_keys = crypto_erase._destroy_keys_folder
 
@@ -167,7 +180,7 @@ def test_the_erase_destroys_the_record_before_the_keys_and_the_bulk_steps(tmp_pa
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert seen == [False], "gone before the key files, so before every bulk step after them"
     assert report["at_rest_record"] == "destroyed" and report["corpus_encryption"] == "encrypted"
-    assert kept.read_bytes() != before
+    assert kept.read() != before
 
 
 @posix_only
@@ -179,19 +192,18 @@ def test_the_plaintext_path_destroys_the_record_with_the_first_page(tmp_path, mo
     rec = main.parent / at_rest_state.RECORD_NAME
     rec.write_text(json.dumps({"version": 1, "stores": {}}), encoding="utf-8")
     before = rec.read_bytes()
-    kept = tmp_path / "kept"
-    os.link(rec, kept)
+    kept = _Kept(rec)
     seen: list[bool] = []
     real_rewrite = crypto_erase._rewrite_plain
 
     def rewrite(*a, **k):
-        seen.append(rec.exists() or kept.read_bytes() == before)
+        seen.append(rec.exists() or kept.read() == before)
         return real_rewrite(*a, **k)
 
     monkeypatch.setattr(crypto_erase, "_rewrite_plain", rewrite)
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert report["at_rest_record"] == "destroyed"
-    assert kept.read_bytes() != before
+    assert kept.read() != before
     assert seen and True not in seen, "never still there when the body rewrite (the bulk work) runs"
 
 
@@ -331,3 +343,72 @@ def test_a_replaced_corpus_loses_its_entry(tmp_path, monkeypatch):
     monkeypatch.setattr(merge, "_clear_stale_side_files", lambda *a, **k: None)
     merge.swap_in_corpus(working, target)
     assert "corpus" not in json.loads(rec.read_text(encoding="utf-8"))["stores"]
+
+
+# ---------------------------------------------------------------- the two security reads' findings
+
+
+def test_a_record_with_a_second_name_is_never_written_or_removed(tmp_path):
+    folder = tmp_path / "f"
+    folder.mkdir()
+    rec = folder / at_rest_state.RECORD_NAME
+    rec.write_bytes(b'{"version": 1, "stores": {}}')
+    other = tmp_path / "someone-else.json"
+    os.link(rec, other)  # the name is a hard link to another file: writing it would write that file
+    assert crypto_erase._take_record(folder) == (None, "left")
+    assert rec.exists() and other.read_bytes() == b'{"version": 1, "stores": {}}'
+
+
+@pytest.mark.parametrize("mac", ["é" * 64, "zz" * 32, "ab", 7, None])
+def test_a_crafted_mac_is_no_match_and_never_an_error(tmp_path, mac):
+    key, head = os.urandom(32), os.urandom(16)
+    doc = {"binding_key": key.hex(), "stores": {}}
+    entry = {"read_back_with_key": True, "dev": 1, "ino": 2, "mac": mac}
+    assert at_rest_state.entry_names(entry, (1, 2, head), doc) is False
+    raw = json.dumps({"version": 1, "binding_key": key.hex(), "stores": {"corpus": entry}}).encode()
+    assert at_rest_state.record_names_identity(raw, (1, 2), head) is False
+
+
+def _legacy_record(folder: Path) -> Path:
+    rec = folder / at_rest_state.RECORD_NAME
+    salt = os.urandom(16).hex()
+    rec.write_text(json.dumps({"version": 1, "stores": {
+        "corpus": {"read_back_with_key": True, "dev": 1, "ino": 2, "head": salt},
+        "lane:osm": {"read_back_with_key": True, "dev": 1, "ino": 3, "head": os.urandom(16).hex()},
+    }}), encoding="utf-8")
+    return rec
+
+
+def test_a_salt_older_builds_wrote_is_dropped_from_every_entry_on_read_and_write(tmp_path):
+    rec = _legacy_record(tmp_path)
+    doc = at_rest_state._read_record_at(rec)
+    assert all("head" not in e for e in doc["stores"].values())
+    assert all("head" not in e for e in at_rest_state._serialisable(
+        {"stores": json.loads(rec.read_text(encoding="utf-8"))["stores"]})["stores"].values())
+    at_rest_state.forget("custody", tmp_path / "open_omniscience.db")  # no such entry: the record is still rewritten clean
+    on_disk = json.loads(rec.read_text(encoding="utf-8"))
+    assert set(on_disk["stores"]) == {"corpus", "lane:osm"}
+    assert all("head" not in e for e in on_disk["stores"].values())
+
+
+def test_the_scrub_on_open_rewrites_only_a_legacy_record_and_never_makes_one(tmp_path):
+    at_rest_state._scrub_legacy(tmp_path / at_rest_state.RECORD_NAME)
+    assert list(tmp_path.iterdir()) == []
+    rec = _legacy_record(tmp_path)
+    at_rest_state._scrub_legacy(rec)
+    assert "head" not in rec.read_text(encoding="utf-8")
+    ino = os.stat(rec).st_ino
+    at_rest_state._scrub_legacy(rec)  # clean now: left as it is
+    assert os.stat(rec).st_ino == ino
+
+
+def test_the_erase_takes_the_record_in_the_data_folder_with_no_main_database(tmp_path):
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    rec = data / at_rest_state.RECORD_NAME
+    before = b'{"version": 1, "stores": {}}'
+    rec.write_bytes(before)
+    kept = _Kept(rec)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["at_rest_record"] == "destroyed"
+    assert not rec.exists() and kept.read() != before

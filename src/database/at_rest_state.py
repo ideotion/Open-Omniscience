@@ -183,15 +183,40 @@ def entry_names(entry: Any, mark: tuple[int, int, bytes] | None, doc: dict[str, 
     if mark is None or key is None or not isinstance(entry, dict) or entry.get("read_back_with_key") is not True:
         return False
     dev, ino, mac = entry.get("dev"), entry.get("ino"), entry.get("mac")
-    if type(dev) is not int or type(ino) is not int or not isinstance(mac, str):
+    if type(dev) is not int or type(ino) is not int or not isinstance(mac, str) or len(mac) != 64:
+        return False
+    try:
+        given = bytes.fromhex(mac)  # a crafted or damaged value (non-ASCII, not hex) is no match, never an error (security read 1)
+    except ValueError:
         return False
     import hmac
 
-    return (dev, ino) == (mark[0], mark[1]) and hmac.compare_digest(mac, _mac(key, mark[2]))
+    return (dev, ino) == (mark[0], mark[1]) and hmac.compare_digest(given, bytes.fromhex(_mac(key, mark[2])))
+
+
+#: Fields an entry may never carry on disk (R828 (1)): ``head`` held page 1's first 16 bytes (the salt) in builds before R828, and
+#: is dropped from EVERY entry whenever the record is read or written, so an upgraded install's record loses it on its next write.
+_NEVER_KEPT = ("head",)
+
+
+def _scrubbed(stores: Any) -> dict[str, Any]:
+    if not isinstance(stores, dict):
+        return {}
+    return {str(k): {f: x for f, x in v.items() if f not in _NEVER_KEPT} for k, v in stores.items() if isinstance(v, dict)}
+
+
+def _holds_legacy(raw: bytes | None) -> bool:
+    """Whether the record's bytes still carry a field R828 forbids (an entry written before it)."""
+    try:
+        doc = json.loads(raw.decode("utf-8")) if raw else None
+    except (UnicodeDecodeError, ValueError):
+        return False
+    stores = doc.get("stores") if isinstance(doc, dict) else None
+    return isinstance(stores, dict) and any(isinstance(v, dict) and any(f in v for f in _NEVER_KEPT) for v in stores.values())
 
 
 def _serialisable(doc: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {"version": doc.get("version", RECORD_VERSION), "stores": doc.get("stores", {})}
+    out: dict[str, Any] = {"version": doc.get("version", RECORD_VERSION), "stores": _scrubbed(doc.get("stores", {}))}
     if _binding_key(doc) is not None:
         out[BINDING_KEY_FIELD] = doc[BINDING_KEY_FIELD]
     return out
@@ -216,19 +241,34 @@ def _write_identity(name: str, path: Path, ident: tuple[int, int, bytes] | None)
             entry = dict(doc["stores"].get(name) or {})
             if ident is None:
                 # R828 (4): a file opened as plaintext (decrypted, or another file at the name) loses its entry whole
-                if name not in doc["stores"]:
+                if name not in doc["stores"] and not _holds_legacy(_record_bytes(path)):
                     return
                 doc["stores"].pop(name, None)
                 atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
                 return
             else:
                 entry.setdefault("encrypted_at", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
-                entry.pop("head", None)
                 entry.update(read_back_with_key=True, **_bound_entry(doc, ident))
             doc["stores"][name] = entry
             atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
     except OSError as exc:
         log_failure(_LOG, "the at-rest record could not be written (the files still say which stores are encrypted)", exc)
+
+
+def _scrub_legacy(path: Path) -> None:
+    """Rewrite the record without the fields R828 forbids, when an entry from before it still carries one (security reads, R828
+    (1)). Only an existing record is rewritten; never creates one; never raises. The record's earlier versions in freed disk blocks
+    are beyond any rewrite (docs/SECURITY.md)."""
+    from src.safety.file_lock import atomic_replace, file_lock
+
+    if not _holds_legacy(_record_bytes(path)):
+        return
+    try:
+        with file_lock(path):
+            if _holds_legacy(_record_bytes(path)):
+                atomic_replace(path, json.dumps(_serialisable(_read_record_at(path)), indent=1, sort_keys=True))
+    except OSError as exc:
+        log_failure(_LOG, "the at-rest record could not be rewritten", exc)
 
 
 def forget(name: str, store: Path) -> None:
@@ -281,7 +321,7 @@ def _read_record_at(path: Path) -> dict[str, Any]:
         return {"version": RECORD_VERSION, "stores": {}}
     if not isinstance(doc, dict) or not isinstance(doc.get("stores"), dict):
         return {"version": RECORD_VERSION, "stores": {}}
-    out: dict[str, Any] = {"version": RECORD_VERSION, "stores": {str(k): v for k, v in doc["stores"].items() if isinstance(v, dict)}}
+    out: dict[str, Any] = {"version": RECORD_VERSION, "stores": _scrubbed(doc["stores"])}
     if _binding_key(doc) is not None:
         out[BINDING_KEY_FIELD] = doc[BINDING_KEY_FIELD]
     return out
@@ -306,6 +346,7 @@ def note_main_open(path: Path | str) -> None:
             if ident in (_NOTED_KEYED if keyed else _NOTED_PLAIN):
                 return
         record = _record_path(p)
+        _scrub_legacy(record)  # once per process and store: an upgraded install's record loses the salts older builds wrote
         if keyed:
             mark = _mark(p)
             if mark is None or mark[:2] != ident:

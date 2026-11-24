@@ -555,6 +555,10 @@ def _take_record(folder: Path, dfd: int | None = None) -> tuple[bytes | None, st
         return None, "left"
     if not stat.S_ISREG(lst.st_mode) or lst.st_size > RECORD_MAX_BYTES:
         return None, "absent"  # not the app's record (it writes a small regular file): left to the steps for any other file
+    if lst.st_nlink != 1:
+        # another name holds the same file (security read 2): overwriting would write into that other file, and unlinking this
+        # name would leave the contents reachable. Never written or removed; never said as destroyed.
+        return None, "left"
     flags = (os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
              | getattr(os, "O_BINARY", 0))
     try:
@@ -567,7 +571,7 @@ def _take_record(folder: Path, dfd: int | None = None) -> tuple[bytes | None, st
     overwritten = False
     try:
         st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode) or (st.st_dev, st.st_ino) != (lst.st_dev, lst.st_ino):
+        if not stat.S_ISREG(st.st_mode) or (st.st_dev, st.st_ino) != (lst.st_dev, lst.st_ino) or st.st_nlink != 1:
             return None, "left"  # another file swapped in between the look and the open: never read, written or removed
         chunks: list[bytes] = []
         got = 0
@@ -2237,16 +2241,26 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # is overwritten and unlinked now, before any bulk work, wherever step 1 did not already take it. Beside the store as configured
     # and beside where it really is. In the data folder it is the app's own file (step 6 would remove it anyway); outside it, only
     # beside an encrypted store or in the plaintext store's pinned folder (R820 (3): any other folder holds another store's record).
+    # The data folder itself is always looked in (security reads, R828): with no main database configured, or its file gone, the
+    # record there would otherwise go only with step 6's unlink, never overwritten.
+    record_dirs: dict[Path, Path] = {}
     if main_db is not None and not main_unreached:
         for m in dict.fromkeys((main_db, _real(main_db))):
             if plain_main is not None and m == plain_main and record_state is not None:
                 continue  # taken already, through the pinned folder's handle
-            if _under(m.parent, base):
-                if drive_absent or _off_drive():
-                    continue  # R809 / R812: nothing on a drive that is not there, or that changed
-            elif not (encrypted is True or plain_main is not None and _folder_is_pinned(m, plain_pin)):
+            if not _under(m.parent, base) and not (encrypted is True
+                                                   or plain_main is not None and _folder_is_pinned(m, plain_pin)):
                 continue
-            record_state = _worse_record(record_state, _drop_record_beside(m))
+            record_dirs.setdefault(m.parent, m)
+    taken_dirs = {plain_main.parent} if plain_main is not None and record_state is not None else set()
+    if not main_unreached:
+        record_dirs.setdefault(base, base / "oo.db")
+    for folder, m in record_dirs.items():
+        if folder in taken_dirs:
+            continue  # taken already, through the pinned folder's handle
+        if _under(folder, base) and (drive_absent or _off_drive()):
+            continue  # R809 / R812: nothing on a drive that is not there, or that changed
+        record_state = _worse_record(record_state, _drop_record_beside(m))
     # Only for a store known to be encrypted: a plaintext body has no salt to lose, and is rewritten whole by step 6.
     salt_gone = {os.path.realpath(db) for db in dbs if head_ok.get(db)} if encrypted is True else set()
 
