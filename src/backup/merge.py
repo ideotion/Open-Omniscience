@@ -7401,6 +7401,11 @@ _KEY_KINDS: dict[str, frozenset[str]] = {
     who: frozenset(kind for name in _APP_KEY_FILES for suffix, kind in _KEY_FORMS if name == f"{who}{suffix}")
     for who in {name[: -len(suffix)] for name in _APP_KEY_FILES for suffix, _kind in _KEY_FORMS if name.endswith(suffix)}
 }
+#: Row 384: a member at an app key name that is not a regular file (a folder, a pipe, a device, a link) or is larger than
+#: any key file is never read past that check: refused, and the import goes on
+_KEY_UNREADABLE = (
+    "not a regular file, or larger than any key file, so it was not read; it is not written and stays in the backup"
+)
 _KEY_PAIR_LONE = "only one half of this key pair was in the backup; it is not written and stays in the backup"
 #: R811 (a security read of row 386): a manifest may list one name twice; no copy of it is placed, nor the rest of its pair
 _KEY_LISTED_TWICE = "the backup lists this key file more than once; no copy is written, and it stays in the backup"
@@ -7750,7 +7755,11 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
         placeable: list[tuple[str, bytes, str, str | None, int]] = []
         refused: dict[str, str] = {}
         for name, path, kind in halves:
-            sealed = _KEY_HELD_UNUSABLE if held_unusable else _reseal_key(kind, base / name, path.read_bytes(), candidates, held)
+            raw = _read_key_member(path)
+            if raw is None:
+                refused[name] = _KEY_UNREADABLE  # row 384: neither raised nor read to its end
+                continue
+            sealed = _KEY_HELD_UNUSABLE if held_unusable else _reseal_key(kind, base / name, raw, candidates, held)
             if isinstance(sealed, str):
                 refused[name] = sealed
             else:
@@ -7814,6 +7823,22 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
     out["not_app_keys"] = {"count": not_app, "listed": min(not_app, _KEY_NOT_APP_LISTED)}
     _settle_restore_marker(keys_dir / _EVIDENCE_KEY_FILE, made_marker, bool(placed_names))
     return out
+
+
+def _read_key_member(path: Path) -> bytes | None:
+    """Row 384: a key member's bytes, or ``None`` when the name is not a regular file (a folder, a pipe, a device, a
+    link: refused without blocking and without following it, :func:`src.backup.regular_file.open_regular`) or holds
+    more than any key file (:data:`src.custody.keyfile.MAX_KEY_FILE_BYTES`, read at most one byte past it, as row
+    341 reads a key). Never raises for what the backup holds at that name."""
+    from src.backup.regular_file import open_regular
+    from src.custody.keyfile import MAX_KEY_FILE_BYTES
+
+    try:
+        with open_regular(path) as f:
+            raw = f.read(MAX_KEY_FILE_BYTES + 1)
+    except OSError:
+        return None
+    return None if len(raw) > MAX_KEY_FILE_BYTES else raw
 
 
 def _shown_key_name(name: str) -> str:
