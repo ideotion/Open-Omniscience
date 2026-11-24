@@ -4688,13 +4688,13 @@ def _engine_differences(con, plan: dict, key: str, table: str, accepted: tuple[s
 
     A DIAGNOSTIC: it decides nothing the carry does, so any failure here (a hostile or damaged backup table included, the operator's
     Stop excepted) leaves ``{"available": False}`` and the merge goes on."""
+    # Only Python-side failures are caught (a value the parse or the comparison could not take): every SQL statement here reads
+    # capped bytes from columns checked first, so a database error is the merge's own, as for any other statement, and the
+    # operator's Stop -- which aborts the statement with a driver error, sqlcipher's own class on an encrypted store -- stays a Stop
+    # (_step_watch decides that by its own flag, never by the error's words).
     try:
         _engine_differences_read(con, plan, key, table, accepted, stage)
-    except (KeyboardInterrupt, SystemExit):
-        raise
-    except Exception as exc:  # noqa: BLE001 - a diagnostic never decides whether a restore succeeds
-        if "interrupted" in str(exc).lower():  # the operator's Stop aborts the statement this way (_step_watch): it stays a Stop
-            raise
+    except (ValueError, TypeError, KeyError, IndexError, RecursionError) as exc:
         log_failure(_LOG, "could not name what differs in the incoming engines; carry unaffected", exc, level=logging.WARNING)
         plan[key] = {"available": False}
 
@@ -4735,7 +4735,9 @@ def _engine_differences_read(con, plan: dict, key: str, table: str, accepted: tu
     out["could_not_be_read"] += sum(n for e, n in others if e is None or not e.startswith(prefix))
     out["could_not_be_read"] += sum(n for _e, n in named[_ENGINE_RECORDS_MAX:])
     named = named[:_ENGINE_RECORDS_MAX]
-    has_records = _inc_has_table(con, "index_engines")
+    has_records = _inc_has_table(con, "index_engines") and all(
+        _has_column(con, "inc", "index_engines", c) for c in ("engine", "components")
+    )
     counts = out["components"]
     for i in range(0, len(named), 200):
         part = named[i:i + 200]
@@ -5130,12 +5132,17 @@ def _record_local_engines(con, engine: str, www_engine: str | None) -> None:
     from src.analytics.engine_identity import engine_record, www_engine_record
 
     now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ")
-    for stage, stamped, record in (("kw", engine, lambda: engine_record(extractor_name="baseline")), ("www", www_engine, www_engine_record)):
-        if not stamped:
-            continue
-        own_id, blob = record()
-        if own_id != stamped:
-            continue
+    rows: list[tuple[str, str, str]] = []
+    try:  # computing the records is Python only (no statement runs here), so nothing caught can be the operator's Stop
+        for stage, stamped, record in (("kw", engine, lambda: engine_record(extractor_name="baseline")), ("www", www_engine, www_engine_record)):
+            if stamped:
+                own_id, blob = record()
+                if own_id == stamped:
+                    rows.append((own_id, stage, blob))
+    except (OSError, ValueError, TypeError) as exc:  # a record for a later diagnostic never decides whether the carry runs
+        log_failure(_LOG, "could not record this machine's engines; carry unaffected", exc, level=logging.WARNING)
+        return
+    for own_id, stage, blob in rows:
         con.execute(
             "INSERT OR IGNORE INTO main.index_engines (engine, stage, components, recorded_at) VALUES (?, ?, ?, ?)",
             (own_id, stage, blob, now),
@@ -5175,12 +5182,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
 
     kw_prov_cols, kw_prov_vals, kw_prov = _provenance("article_index_stamps", "kw")
     www_prov_cols, www_prov_vals, www_prov = _provenance("article_www_stamps", "www")
-    try:
-        _record_local_engines(con, engine, www_engine)
-    except sqlite3.Error as exc:  # a record for a later diagnostic never decides whether the carry runs
-        if "interrupt" in str(exc).lower():  # the operator's Stop (_step_watch) stays a Stop
-            raise
-        log_failure(_LOG, "could not record this machine's engines; carry unaffected", exc, level=logging.WARNING)
+    _record_local_engines(con, engine, www_engine)
     # Every temp table below is declared with its key, never built with CREATE TABLE AS:
     # a CTAS table has NO index, and each is probed per row -- carry_win by range once per
     # window, carry_delta once per touched keyword by the counter UPDATE. Unindexed, the
