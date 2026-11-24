@@ -105,6 +105,9 @@ const src = [
   functionSource(APP, "fmtNum"),
   functionSource(APP, "_diagIso"),
   functionSource(APP, "_renderAiCheck"),
+  functionSource(APP, "_aiCheckHtml"),
+  // row 361: _renderAiCheck draws through ooLiveHtml; here it only has to draw
+  "function ooLiveHtml(el, render) { if (el) el.innerHTML = render(); }",
   "return { _renderAiCheck, esc, ooLangCell };",
 ].join("\n");
 
