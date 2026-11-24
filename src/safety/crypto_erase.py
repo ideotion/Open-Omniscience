@@ -2199,7 +2199,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                                                    or plain_main is not None and _folder_is_pinned(m, plain_pin)):
                 continue
             record_dirs.setdefault(m.parent, m)
-    taken_dirs = {plain_main.parent} if plain_takes else set()  # the plaintext path takes it there, through the pinned handle
+    taken_dirs = {plain_main.parent} if plain_takes and plain_main is not None else set()  # the plaintext path takes it there, through the pinned handle
     if not main_unreached:
         record_dirs.setdefault(base, base / "oo.db")
     for folder, m in record_dirs.items():
@@ -2208,7 +2208,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         if _under(folder, base) and (drive_absent or _off_drive()):
             continue  # R809 / R812: nothing on a drive that is not there, or that changed
         record_state = _worse_record(record_state, _drop_record_beside(m))
-    if plain_takes:  # R812: else untouched
+    if plain_takes and plain_main is not None and plain_pin is not None:  # R812: else untouched
         plain_rec = _open_and_unlink_plain(plain_main, plain_pin, generation, missed)
         # R819 (4) / R820 (1): settled now, after the store's first page and log were destroyed through the kept handles. SQLite's
         # own header is "not encrypted", whatever any record says; "encrypted" needs another header AND the app's record naming this
