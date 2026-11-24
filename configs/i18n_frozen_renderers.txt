@@ -43,13 +43,6 @@ app-library.js _renderLibGraphHost
 app-library.js renderArticleLengthFigure
 app-library.js renderKpiPanel
 app-library.js renderStorageFootprint
-app-living.js lawPitSearch
-app-living.js lawTopicCompare
-app-living.js livingShowDiff
-app-living.js loadLivingLaw
-app-living.js loadLivingOverview
-app-living.js loadLivingStream
-app-living.js loadWikiAttention
 app-maintenance.js maintLoadFurniture
 app-maintenance.js maintPairAct
 app-maintenance.js maintRender
