@@ -341,6 +341,8 @@ const frame = (L, label, text) => L["{prefix}: {text}"].replace("{prefix}", labe
     const run = h.fns.installOneModel("k1", null);
     for (let i = 0; i < 4; i++) await tick();
     assert.ok(rows().includes(" disabled ") && rows().includes(">" + esc(FR["Starting…"]) + "</button>"), "busy: " + rows());
+    follow("running");   // a bare job state is a key: translated
+    assert.strictEqual(h.$("mc-status").textContent, FR["running"]);
     follow("pulling 40%");
     await h.fns.loadModelCatalog();   // a refresh while the download runs
     assert.ok(rows().includes(">" + esc(FR["Starting…"]) + "</button>"), "the refresh kept the busy button: " + rows());
@@ -428,6 +430,8 @@ const frame = (L, label, text) => L["{prefix}: {text}"].replace("{prefix}", labe
       "a running install's progress is not consumed by a read");
     h.switchTo("de");
     assert.strictEqual(h.$("vllm-install-progress").textContent, DE["Installing — this can take several minutes…"]);
+    follow("running");
+    assert.strictEqual(h.$("vllm-install-progress").textContent, DE["running"], "a bare job state follows the page's language");
     follow("pip: failed to build");
     release({ state: "error", detail: "pip: failed to build" }); await run;
     for (let i = 0; i < 4; i++) await tick();

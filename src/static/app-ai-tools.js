@@ -2017,7 +2017,7 @@
         if (r.backend === "ollama") _llmPullStartPoll();
         const st = await _followJob(
           "/api/llm/models/install/status?backend=" + encodeURIComponent(r.backend || ""),
-          (m) => _mcSay(() => m));
+          (m) => _mcSay(() => t(m)));   // a bare job state ("running") is a key; a server detail is returned as is
         const detail = st.detail || "";
         _mcSay(st.state === "error"
           ? () => t("Download failed:") + " " + detail
@@ -2512,7 +2512,7 @@
           return;
         }
         _vllmSay(() => t("Installing — this can take several minutes…"));
-        await _followJob("/api/llm/vllm/install/status", (m) => _vllmSay(() => m));
+        await _followJob("/api/llm/vllm/install/status", (m) => _vllmSay(() => t(m)));   // as in installOneModel
         reread = true;
       } catch (e) {
         const msg = (e && e.message) || String(e);
