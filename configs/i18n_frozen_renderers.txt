@@ -5,21 +5,9 @@
 # line in the same PR; a new freeze would have to add one, in plain sight in the diff.
 # The six unlock.js lines stay on purpose (row 367): the lock page sets its language once, in the first-launch
 # step, before they draw, and has no switcher. Pinned by tests/test_unlock_language_once.py.
-app-backup.js _uxCancelExport
-app-backup.js _uxImKeyRows
-app-backup.js _uxImLeftoverPlaintext
-app-backup.js _uxImRun
-app-backup.js _uxImScan
-app-backup.js _uxImTickVerify
-app-backup.js _uxImVerify
-app-backup.js _uxLoadInventory
-app-backup.js _uxResume
-app-backup.js _uxShowLastCompletedExportSummary
-app-backup.js _uxShowPaused
 app-backup.js encryptCorpus
 app-backup.js panicWipe
 app-backup.js secureErase
-app-backup.js tick
 app-backup.js uninstallApp
 app-boot.js load
 app-claim.js claimExport
