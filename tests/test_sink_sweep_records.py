@@ -198,6 +198,9 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # class only for a database driver's exception (``record_text``); the lock probes read an attribute and no text.
     "src/backup/merge.py": {
         ("_file_is_locked", 'return getattr(exc, "winerror", None) in (32, 33)'): 1,
+        # R830/R7a: a corrupt answer from the live check after a scoped activation goes to the damage registry, which records
+        # only corruption and only its code and name (the same call as ``country_form._note_damage``); nothing else is kept
+        ("check_live_after_scoped_activation", 'damage.registry.note(damage.FILE_CORPUS, exc, statement="PRAGMA quick_check", path=live_db_path())'): 1,
         ("_lock_holder_note", 'name = getattr(exc, "filename", None)'): 1,
         ("classify_restore_error", "msg = str(exc)"): 1,
         ("classify_restore_error", "if _file_is_locked(exc):"): 1,

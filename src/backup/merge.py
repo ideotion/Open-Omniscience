@@ -41,6 +41,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -980,6 +981,279 @@ def _net_read_back_alongside(net: tuple[Path, dict] | None, timings: object = No
     # Only now is it the run's safety net: a later item of the run reuses it without reading it again, so it is
     # recorded as the run's net only once it has read back whole (security read of #2379).
     _remember_run_snapshot(path)
+
+
+# --- R827 R7(a): the durable "unverified activation" record ------------------------------ #
+
+#: Written before an intermediate checkpoint's swap (its check covered only the tables it wrote); removed once a
+#: whole-file quick_check and foreign_key_check of the live corpus pass. Its presence at a start means the last
+#: activation was never followed by that check (a stop, a failure, a killed process): the start runs it once.
+_UNVERIFIED_ACTIVATION = "import-unverified-activation.json"
+
+
+def _unverified_activation_path() -> Path:
+    return data_dir() / _UNVERIFIED_ACTIVATION
+
+
+def unverified_activation() -> dict | None:
+    """The record, or None when the live corpus has had its whole-file check since its last activation."""
+    try:
+        raw = _unverified_activation_path().read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return {"since": None, "safety_net": None, "unreadable": True}  # present but unreadable: still owed
+    try:
+        got = json.loads(raw)
+    except ValueError:
+        return {"since": None, "safety_net": None, "unreadable": True}
+    return got if isinstance(got, dict) else {"since": None, "safety_net": None, "unreadable": True}
+
+
+def _write_unverified_activation(record: dict) -> None:
+    # The shared writer: a temp name of its own per write, flushed, moved over the record, the folder flushed.
+    from src.safety.file_lock import atomic_replace
+
+    atomic_replace(_unverified_activation_path(), json.dumps(record))
+
+
+def _note_unverified_activation(safety_net: Path | None) -> None:
+    """Write the record before the live corpus changes. The run's safety net (its start state) is kept from an
+    earlier record of the same run, so the state to return to is the one before the run's FIRST activation."""
+    from src.safety.file_lock import file_lock
+
+    with file_lock(_unverified_activation_path()):  # the new record depends on the old one
+        prior = unverified_activation() or {}
+        net = prior.get("safety_net") if prior.get("safety_net") else (str(safety_net) if safety_net is not None else None)
+        # A fresh token per activation: a check that read an older record never clears this one.
+        _write_unverified_activation(
+            {"since": prior.get("since") or datetime.now(UTC).isoformat(), "safety_net": net, "token": secrets.token_hex(8)}
+        )
+
+
+def _supersede_unverified_activation() -> None:
+    """Give an existing record a new token, keeping what it says, so a check that read it stops short of every write
+    (final-head re-read, 2026-11-24). Nothing when there is no record. Never raises: a record left as it was keeps its
+    check owed, and the activation's own clear after the swap removes it."""
+    from src.safety.file_lock import file_lock
+
+    try:
+        with file_lock(_unverified_activation_path()):
+            prior = unverified_activation()
+            if prior is not None:
+                _write_unverified_activation({**prior, "token": secrets.token_hex(8)})
+    except Exception:  # noqa: BLE001 - the record stays as it was (still owed) and the activation's own clear removes it
+        return
+
+
+def _net_owed_by_unverified_activation() -> str | None:
+    """The file NAME of the safety net an unverified-activation record points at, so the snapshot pruners keep
+    it: it is the state the report tells the operator to return to if the owed check fails. Never raises."""
+    try:
+        net = (unverified_activation() or {}).get("safety_net")
+    except Exception:  # noqa: BLE001 - an unreadable record protects nothing, and prunes nothing extra
+        return None
+    return Path(net).name if isinstance(net, str) and net else None
+
+
+def _clear_unverified_activation(*, owed: dict | None = None) -> bool:
+    """Remove the record. With ``owed`` (the record a check read before it started), only if the record is still that
+    one, under its lock: an activation noted while the check ran wrote a new token, and its check is still owed
+    (security read, 2026-11-24). Returns whether the record is gone. Never raises (a record that stays is the safe
+    side: the check runs again)."""
+    from src.safety.file_lock import file_lock
+
+    path = _unverified_activation_path()
+    try:
+        with file_lock(path):
+            current = unverified_activation()
+            if current is None:
+                return True  # already gone: a passing whole-file check (this one's twin, or a full activation) removed it
+            if owed is not None and current.get("token") != owed.get("token"):
+                return False
+            if owed is not None and "_ident" in owed and _live_file_identity() != owed["_ident"]:
+                return False  # the file this check read is no longer the live one
+            with suppress(FileNotFoundError):
+                path.unlink()
+    except OSError:
+        return False
+    return True
+
+
+def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None = None) -> dict:
+    """The whole-file check owed after an activation checked only on the tables it wrote (R827 R7(a); R830's
+    stop rules): ``PRAGMA quick_check`` and ``PRAGMA foreign_key_check`` of the LIVE corpus, read-only.
+
+    Returns ``{"state": "none"}`` when nothing is owed; ``{"state": "ok"}`` (the record is removed); ``{"state":
+    "failed", "safety_net": <path or None>, "findings": {"quick_check": ..., "foreign_key_violations": n}}`` (the record stays: the corpus is not called complete, and the run's
+    safety net is the state to return to); or ``{"state": "unchecked", "reason": ...}`` when the check could not
+    run or was stopped (the record stays, so the next start runs it). Never raises."""
+    owed = unverified_activation()
+    if owed is None:
+        return {"state": "none"}
+    from src.backup.sqlite_backup import live_db_path
+    from src.database.connect import connect as db_connect
+
+    net = owed.get("safety_net")
+    stopper: threading.Thread | None = None
+    done = threading.Event()
+    # The file this check reads, by identity: a swap (scoped or whole-file) between here and the verdict replaces the file at
+    # the live path, and nothing is then written, latched or cleared, whatever the record's token says (final-head re-read,
+    # 2026-11-24: the token alone could not see a swap whose record was written before this check first read it).
+    read_ident = _live_file_identity()
+    try:
+        con = db_connect(live_db_path(), check_same_thread=False, read_only=True)
+    except Exception:  # noqa: BLE001 - not a verdict: the record stays and the next start tries again
+        return {"state": "unchecked", "reason": "not-opened"}
+    if read_ident is None or _live_file_identity() != read_ident:
+        con.close()
+        return {"state": "unchecked", "reason": "superseded"}
+    owed = {**owed, "_ident": read_ident}
+    try:
+        if should_stop is not None:
+
+            def _watch() -> None:
+                while not done.wait(0.5):
+                    if should_stop():
+                        with suppress(Exception):
+                            con.interrupt()
+                        return
+
+            stopper = threading.Thread(target=_watch, name="oo-import-live-check-stop", daemon=True)
+            stopper.start()
+        qc = con.execute("PRAGMA quick_check").fetchone()[0]
+        fk = con.execute("PRAGMA foreign_key_check").fetchall()
+    except Exception as exc:  # noqa: BLE001 - SQLITE_CORRUPT is a finding; stopped, busy or unread is not a verdict
+        from src.database.damage import is_corruption
+
+        if not is_corruption(exc):
+            return {"state": "unchecked", "reason": "not-finished"}
+        from src.database import damage
+
+        # Latched only while the record is still the one this check read, under its lock: after a swap the live path names
+        # another file, which this connection never read (final-head read, 2026-11-24).
+        try:
+            with _owed_record_held(owed) as still:
+                if still:
+                    damage.registry.note(damage.FILE_CORPUS, exc, statement="PRAGMA quick_check", path=live_db_path())
+        except OSError:
+            return {"state": "unchecked", "reason": "not-finished"}
+        if not still:
+            return {"state": "unchecked", "reason": "superseded"}
+        qc, fk = "latched", []  # the registry has it already
+    finally:
+        done.set()
+        if stopper is not None:
+            stopper.join()
+        con.close()
+    if qc == "ok" and not fk:
+        if not _clear_unverified_activation(owed=owed):
+            # another activation was noted while this ran: what this read may not be the file now live
+            return {"state": "unchecked", "reason": "superseded"}
+        return {"state": "ok"}
+    # Named findings with a count, in the record (so the next start, the status and Field data keep them) and in the
+    # answer. Plan 2026-11-24: damage found here is the same fact as any other integrity finding, so it takes the damage
+    # path (writers paused; the repair and restore offers). Rows that only break a foreign key are not damage to the file
+    # and latch nothing, but they are never dropped: they are counted here, and the run's final whole-file check (which
+    # always runs ``foreign_key_check`` over the whole file) counts them again.
+    findings = {"quick_check": "ok" if qc == "ok" else ("damaged" if qc != "latched" else "latched"), "foreign_key_violations": len(fk)}
+    latch = qc not in ("ok", "latched")
+    # The per-table read that names the damage is slow, so it runs before the record's lock is taken; only the
+    # token comparison, the record write and the latch itself run under it (final-head re-read, 2026-11-24).
+    live = live_db_path()
+    damaged = _name_live_damage(live) if latch else []
+
+    def _record_and_latch() -> None:
+        with suppress(OSError):  # a write that fails keeps the record as it was: still owed
+            _write_unverified_activation(
+                {**{k: v for k, v in owed.items() if k != "_ident"}, "failed_at": datetime.now(UTC).isoformat(), "findings": findings}
+            )
+        if latch:
+            _latch_live_damage(live, damaged)
+
+    # Both under the record's lock and only while it is still the one this check read: a newer activation means the file
+    # read is not the one now live, so nothing is written or latched against it and the newer record stays owed.
+    if not _under_owed_record(owed, _record_and_latch):
+        return {"state": "unchecked", "reason": "superseded"}
+    return {"state": "failed", "safety_net": net, "findings": findings}
+
+
+def _live_file_identity() -> tuple[int, int] | None:
+    """(st_dev, st_ino) of the file at the live corpus path, or None when it cannot be read. A swap replaces the file, so a
+    different identity means a different file."""
+    from src.backup.sqlite_backup import live_db_path
+
+    try:
+        st = os.stat(live_db_path())
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
+
+
+@contextmanager
+def _owed_record_held(owed: dict) -> Iterator[bool]:
+    """Hold the record's lock and say whether the record is still the one a check read (same token); a scoped
+    activation takes the same lock to write a new token, so none can land while this is held. False when the record
+    is gone or newer. Raises ``OSError`` when the lock cannot be taken."""
+    from src.safety.file_lock import file_lock
+
+    with file_lock(_unverified_activation_path()):
+        current = unverified_activation()
+        yield (
+            current is not None
+            and current.get("token") == owed.get("token")
+            and ("_ident" not in owed or _live_file_identity() == owed["_ident"])
+        )
+
+
+def _under_owed_record(owed: dict, action: Callable[[], None]) -> bool:
+    """Run ``action`` under the record's lock, only if the record is still the one a check read. False, and nothing
+    run, when the record is gone or newer, or the lock could not be taken (the record stays owed)."""
+    try:
+        with _owed_record_held(owed) as still:
+            if still:
+                action()
+    except OSError:
+        return False
+    return still
+
+
+def _name_live_damage(live: Path) -> list[str]:
+    """Name the damaged tables by a per-table read of the live corpus (read-only); empty when none can be named.
+    Never raises."""
+    try:
+        return _damaged_tables(live)
+    except Exception:  # noqa: BLE001 - the tables could not be named: the whole file is latched as pages
+        return []
+
+
+def _latch_live_damage(live: Path, tables: list[str]) -> None:
+    """Latch the corpus file through the damage registry, naming ``tables`` (from ``_name_live_damage``); ``(pages)``
+    when no one table reads damaged."""
+    from src.database import damage
+    from src.database.verify import PAGES_ENTRY
+
+    damage.registry.note_import_check_damage(damage.FILE_CORPUS, tables or [PAGES_ENTRY], path=live)
+
+
+def _damaged_tables(live: Path) -> list[str]:
+    from src.database.connect import connect as db_connect
+
+    con = db_connect(live, check_same_thread=False, read_only=True)
+    try:
+        names = [str(r[0]) for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()]
+        return [t for t in names if not _table_reads_ok(con, t)]
+    finally:
+        con.close()
+
+
+def _table_reads_ok(con, table: str) -> bool:
+    from src.database.damage import is_corruption
+
+    try:
+        return con.execute(f"PRAGMA quick_check({_ident(table)})").fetchone()[0] == "ok"  # noqa: S608 - a name from sqlite_master
+    except Exception as exc:  # noqa: BLE001 - only SQLITE_CORRUPT counts as damage; anything else is not a finding
+        return not is_corruption(exc)
 
 
 def _drop_unverified_net(path: Path) -> None:
@@ -7303,8 +7577,62 @@ def _verify_fts(con, has_fts: bool, articles: int) -> dict:
 # --------------------------------------------------------------------------- #
 #  Verification on the working copy (design §3: the merge gate)
 # --------------------------------------------------------------------------- #
-def verify_file(working_copy: Path, *, timings: object = None) -> dict:
+def _scoped_check_tables(con, written: set[str]) -> tuple[list[str], list[str]] | None:
+    """R827 R7(a): ``(tables to quick_check, tables to foreign_key_check)`` for a write set.
+
+    Quick-checked: every written ordinary table (its indexes come with it), the shadow tables of a written
+    virtual table (``<name>_%``), and ``sqlite_master`` when the schema was written. FK-checked: every written
+    table, plus every table whose foreign key points at a written one (a deleted parent row leaves its children
+    dangling in a table the merge never wrote). None when the set names a table the schema does not hold (it
+    was renamed or dropped after the write): the scope is then unknown, and the caller checks the whole file."""
+    rows = con.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table'").fetchall()
+    ordinary = {str(n) for n, sql in rows if not str(sql or "").lstrip().upper().startswith("CREATE VIRTUAL")}
+    virtual = {str(n) for n, sql in rows if str(sql or "").lstrip().upper().startswith("CREATE VIRTUAL")}
+    if any(t not in ordinary and t not in virtual and t not in ("sqlite_master", "sqlite_schema") for t in written):
+        return None
+    check = {t for t in written if t in ordinary}
+    for vt in virtual & written:
+        check |= {t for t in ordinary if t.startswith(vt + "_")}
+    if "sqlite_master" in written or "sqlite_schema" in written:
+        check.add("sqlite_master")
+    # SQLite's own bookkeeping tables are written beside a row with no write the authorizer reports (AUTOINCREMENT's
+    # sqlite_sequence, ANALYZE's statistics): always in scope when present, and they are small (security read).
+    check |= {t for t in ordinary if t in ("sqlite_sequence", "sqlite_stat1", "sqlite_stat4")}
+    fk = {t for t in check if t in ordinary and not t.startswith("sqlite_")}
+    for t in sorted(ordinary):
+        refs = {str(r[2]) for r in con.execute(f"PRAGMA foreign_key_list({_ident(t)})").fetchall()}  # noqa: S608 - a name from sqlite_master
+        if refs & check:
+            fk.add(t)
+    return sorted(check), sorted(fk)
+
+
+def _quick_check_each(con, tables: list[str]) -> int:
+    """How many of ``tables`` fail ``PRAGMA quick_check(<table>)``. A loop of its own, outside the caller's ``try`` (R163)."""
+    bad = 0
+    for t in tables:
+        if con.execute(f"PRAGMA quick_check({_ident(t)})").fetchone()[0] != "ok":  # noqa: S608 - a name from sqlite_master
+            bad += 1
+    return bad
+
+
+def _foreign_key_check_each(con, tables: list[str]) -> list:
+    """The ``PRAGMA foreign_key_check(<table>)`` rows of every one of ``tables`` (R163: outside the caller's ``try``)."""
+    rows: list = []
+    for t in tables:
+        rows.extend(con.execute(f"PRAGMA foreign_key_check({_ident(t)})").fetchall())  # noqa: S608 - a name from sqlite_master
+    return rows
+
+
+def verify_file(
+    working_copy: Path, *, timings: object = None, write_set: set[str] | None = None, full: bool = True
+) -> dict:
     """The whole-FILE structural checks: ``quick_check`` + ``foreign_key_check``.
+
+    R827 R7(a): with ``full=False`` and a KNOWN ``write_set`` (from :func:`src.database.connect.watch_writes`),
+    an intermediate checkpoint checks only the tables the import wrote (:func:`_scoped_check_tables`):
+    ``quick_check(<table>)`` and ``foreign_key_check(<table>)``. The rest of the file is the run's safety net's
+    bytes, unchanged, and the whole-file walk runs before the run's final activation. An unknown write set
+    (None, or one that holds ``"*"``) is always the whole-file walk. ``file_check`` says which ran.
 
     SPLIT OUT of :func:`verify_copy` for the import checkpoint (2026-09-07). These
     two ask nothing about any particular merge -- they ask whether the FILE is
@@ -7333,10 +7661,28 @@ def verify_file(working_copy: Path, *, timings: object = None) -> dict:
         # after the corpus doubles.
         with suppress(OSError):
             v["working_copy_bytes"] = working_copy.stat().st_size
-        with _sub("verify:quick_check"):
-            v["quick_check"] = con.execute("PRAGMA quick_check").fetchone()[0]
-        with _sub("verify:foreign_key_check"):
-            fk = con.execute("PRAGMA foreign_key_check").fetchall()
+        from src.database.connect import WRITE_SET_UNKNOWN
+
+        scope = (
+            _scoped_check_tables(con, write_set)
+            if not full and write_set is not None and WRITE_SET_UNKNOWN not in write_set
+            else None
+        )
+        if scope is not None:
+            qc_tables, fk_tables = scope
+            v["file_check"] = "scoped"
+            v["file_check_tables"] = {"quick_check": len(qc_tables), "foreign_key_check": len(fk_tables)}
+            with _sub("verify:quick_check"):
+                bad = _quick_check_each(con, qc_tables)
+            v["quick_check"] = "ok" if not bad else f"not ok in {bad} table(s)"
+            with _sub("verify:foreign_key_check"):
+                fk = _foreign_key_check_each(con, fk_tables)
+        else:
+            v["file_check"] = "full"
+            with _sub("verify:quick_check"):
+                v["quick_check"] = con.execute("PRAGMA quick_check").fetchone()[0]
+            with _sub("verify:foreign_key_check"):
+                fk = con.execute("PRAGMA foreign_key_check").fetchall()
         v["foreign_key_violations"] = len(fk)
         v["file_ok"] = v["quick_check"] == "ok" and v["foreign_key_violations"] == 0
         return v
@@ -7411,7 +7757,13 @@ def verify_merge(
 
 
 def verify_copy(
-    working_copy: Path, staged_corpus: Path, batch_id: int, *, timings: object = None
+    working_copy: Path,
+    staged_corpus: Path,
+    batch_id: int,
+    *,
+    timings: object = None,
+    write_set: set[str] | None = None,
+    full: bool = True,
 ) -> dict:
     """Post-merge verification, all on the copy. Any failure aborts the restore
     BEFORE the swap -- the live DB never sees an unverified merge.
@@ -7434,7 +7786,7 @@ def verify_copy(
     sample is a bounded join. Optional, so every existing caller and test is
     untouched and a timing failure can never break a restore.
     """
-    v = verify_file(working_copy, timings=timings)
+    v = verify_file(working_copy, timings=timings, write_set=write_set, full=full)
     v.update(verify_merge(working_copy, staged_corpus, batch_id, timings=timings))
     v["ok"] = bool(v["file_ok"] and v["merge_ok"])
     return v
@@ -9012,7 +9364,10 @@ def _prune_snapshots(keep: int = _SNAPSHOT_KEEP) -> list[str]:
 
     snaps = sorted(data_dir().glob("pre-restore-*.db"), key=lambda p: p.name, reverse=True)
     removed = []
+    owed = _net_owed_by_unverified_activation()
     for p in snaps[keep:]:
+        if p.name == owed:
+            continue  # R827 R7(a): the state to return to until the owed whole-file check passes
         if is_active_staging(p):
             # Skeptic fix (2026-07-27, race-concurrency lens): NEVER delete
             # another IN-FLIGHT restore's own snapshot. LIVE-REPRODUCED: this
@@ -9104,6 +9459,7 @@ def prune_pre_restore_snapshots_by_age(max_age_hours: float | None = None) -> li
         # silently disable the very safety net it exists to provide.
         cutoff = datetime.now(UTC) - timedelta(hours=_SNAPSHOT_MAX_AGE_HOURS_DEFAULT)
     removed: list[str] = []
+    owed = _net_owed_by_unverified_activation()
     for p in data_dir().glob("pre-restore-*.db"):
         m = _SNAPSHOT_TS_RE.match(p.name)
         if not m:
@@ -9114,6 +9470,8 @@ def prune_pre_restore_snapshots_by_age(max_age_hours: float | None = None) -> li
             continue
         if created >= cutoff:
             continue
+        if p.name == owed:
+            continue  # R827 R7(a): kept while an activation's whole-file check is owed
         if is_active_staging(p):
             continue  # an in-flight restore's own snapshot -- never touched
         try:
@@ -10358,8 +10716,15 @@ def run_restore(
     working_copy: Path | None = None,
     hold_after_merge: bool = False,
     trust_fetch_history: bool | None = None,
+    final_activation: bool = True,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
+
+    ``final_activation`` (R827 R7(a), default True): False only for an import queue's INTERMEDIATE checkpoint,
+    one after which another backup of the run will merge. Such a commit checks the tables the import wrote
+    (a known write set) instead of walking the whole file, and leaves a durable "unverified activation" record
+    until a whole-file check of the live corpus passes (:func:`check_live_after_scoped_activation`): the run's
+    final activation, the queue's own check when it ends early, or the next start's.
 
     ``reindex_imported`` (default True): after the swap, recompute core-engine
     metadata for the imported articles (P0-4). The MERGE-ENGINE correctness suite
@@ -10622,6 +10987,12 @@ def run_restore(
                     clone_file(_net_here[0], working)
             else:
                 snapshot_preserving(live_db_path(), working, allow_file_copy=exclusive)
+            # R827 R7(a): from here every connection this process opens to the working copy records the tables it
+            # writes (a carried copy keeps the set its group's first item started).
+            from src.database.connect import unwatch_writes, watch_writes
+
+            unwatch_writes(working)
+            watch_writes(working)
 
     meta = {
         "artifact_kind": staged.kind,
@@ -10753,8 +11124,11 @@ def run_restore(
                 "swaps this working copy in; they cover every merge it carries"
             )
         else:
+            from src.database.connect import watched_writes
+
             verification = verify_copy(
-                working, staged.corpus_path, batch_id, timings=timings
+                working, staged.corpus_path, batch_id, timings=timings,
+                write_set=watched_writes(working), full=final_activation or not commit,
             )
 
     report: dict = {
@@ -10980,9 +11354,20 @@ def run_restore(
             why: list[str] = []
             if not _checkpoint_before_swap(why=why):
                 raise RestoreRefused(_swap_refusal(why[0] if why else _CKPT_BLOCKED))
+            # R827 R7(a): an activation checked only on the tables it wrote is written down, durably, BEFORE the
+            # live corpus changes; a whole-file check passing on the corpus is what clears it.
+            _scoped = verification.get("file_check") == "scoped"
+            if _scoped:
+                _note_unverified_activation(_run_scoped_snapshot() or _reuse or snapshot)
+            else:
+                # A whole-file-checked activation also gives the record a new token before the swap, so an owed check
+                # still reading the file this replaces never writes, latches or clears against the new one.
+                _supersede_unverified_activation()
             # The carry and the replace under one hold of settings writes, so a settings save in between waits for the new file.
             _carry_and_swap(working, target, report)
             init_db()
+            if not _scoped:
+                _clear_unverified_activation()  # the corpus now in place passed the whole-file walk
 
         report["committed"] = True
         report["batch_id"] = batch_id
