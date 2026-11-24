@@ -20,6 +20,7 @@ from sqlalchemy import text
 
 from src.database import drive_pin
 from src.safety import data_volume
+from tests.js_source_helper import python_function_source
 
 
 @pytest.fixture(autouse=True)
@@ -222,11 +223,9 @@ def test_a_straggler_the_disposal_leaves_is_pinned_before_its_pool_frees_it(driv
 
 def test_dispose_engine_and_the_watchdog_pin_first():
     src = Path("src/database/session.py").read_text(encoding="utf-8")
-    i = src.index("def dispose_engine()")
-    assert "_drive_pin.pin_if_gone()" in src[i:i + 3000]
+    assert "_drive_pin.pin_if_gone()" in python_function_source(src, "dispose_engine")
     v = Path("src/safety/data_volume.py").read_text(encoding="utf-8")
-    i = v.index("def _trigger(")
-    assert "pin_if_gone()" in v[i:i + 1500]
+    assert "pin_if_gone()" in python_function_source(v, "_trigger")
     assert "atexit.register(pin_if_gone)" in Path("src/database/drive_pin.py").read_text(encoding="utf-8")
 
 
