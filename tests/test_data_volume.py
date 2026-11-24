@@ -18,6 +18,20 @@ from src.safety import data_volume as dv
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def _no_restart_thread_outlives_the_test(monkeypatch):
+    """A tick that reaches the reconnect starts the real ``oo-data-volume-restart`` thread. It is joined here, while the test's
+    patches (``_restart_process`` above all) still hold: left running, it reached the real ``os.execve`` after the test had put the
+    real one back, and replaced the xdist worker in the middle of a later test ("node down: Not properly terminated")."""
+    yield
+    import threading
+
+    for t in threading.enumerate():
+        if t.name == "oo-data-volume-restart":
+            t.join(15)
+            assert not t.is_alive(), "a data-volume restart thread outlived its test"
+
+
 @pytest.fixture()
 def drive(tmp_path, monkeypatch):
     """A marked data folder, with the incident log and oo.env kept in tmp_path."""
@@ -340,6 +354,7 @@ def test_a_failed_restart_does_not_hide_the_next_reconnection(drive, monkeypatch
     monkeypatch.setattr(dv, "_restart_process", lambda: None)
     monkeypatch.setattr(dv.time, "sleep", lambda _s: None)
     monkeypatch.setattr(dv, "_reap", lambda: None)
+    monkeypatch.setattr(dv, "_stop_jobs_before_restart", lambda: None)  # never the suite's own jobs and pool
     marker = drive / dv.MARKER_NAME
     kept = drive / "marker.kept"
     marker.rename(kept)
