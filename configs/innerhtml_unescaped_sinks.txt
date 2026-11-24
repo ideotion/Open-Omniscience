@@ -209,7 +209,7 @@ app-home.js renderWeatherContext 1
 app-insights.js _paintInsStatus 1
 app-insights.js _renderWatches 1
 app-insights.js expandCitedSource 1
-app-insights.js kxRenderTags 1
+app-insights.js kxRenderTags 2
 app-insights.js kxShowTag 1
 app-insights.js loadCitedSources 2
 app-insights.js loadConvergences 1
