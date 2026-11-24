@@ -22,10 +22,11 @@ import sys
 
 #: The CLI's own words (English, like the rest of the CLI). The sentences after "ERASE FAILED: " are the panic page's, as Plan
 #: passed them: S1 for a drive not there, S5 (R812 (a)) for one that is there and cannot be identified.
-ON_THE_DRIVE = "The stores and keys the app keeps on the data drive were not erased: connect the drive and run the erase again."
+ON_THE_DRIVE = ("The stores and keys the app keeps on the data drive were not erased: connect the right drive and run the erase "
+                "again.")
 NOTHING_OUTSIDE = "Nothing the app keeps outside the data drive was found to erase."
-ASK = ("The data drive is not there, so only what the app keeps outside it can be erased now. Irreversibly erase that? "
-       "Type 'wipe' to confirm: ")
+ASK = ("The data drive is not there or could not be identified, so only what the app keeps outside it can be erased now. "
+       "Erase that? It cannot be undone. Type 'wipe' to confirm: ")
 
 
 def drive_failure_for_panic(argv: list[str]) -> str | None:
@@ -69,7 +70,7 @@ def precheck(argv: list[str]) -> None:
     if "--yes" not in argv and "-y" not in argv:
         try:
             answer = input(ASK)
-        except (EOFError, KeyboardInterrupt):
+        except (EOFError, KeyboardInterrupt, UnicodeDecodeError):
             answer = ""
         if answer.strip().lower() != "wipe":
             print("Aborted. Nothing was erased.")
@@ -80,8 +81,9 @@ def precheck(argv: list[str]) -> None:
 
         # off_drive_only: a drive plugged in while the question waited is left whole (the operator agreed to the rest only).
         report = panic_wipe(confirm=True, off_drive_only=True)
-    except Exception as exc:  # noqa: BLE001 - said, never a traceback
-        print(f"The erase of what the app keeps outside the data drive failed ({type(exc).__name__}): it may be partly erased.")
+    except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 - said, never a traceback (a Ctrl-C during the erase too)
+        print(f"The erase of what the app keeps outside the data drive did not finish ({type(exc).__name__}): it may be partly "
+              "erased.")
         print(ON_THE_DRIVE)
         sys.exit(2)
     returned = bool(report.get("drive_returned"))

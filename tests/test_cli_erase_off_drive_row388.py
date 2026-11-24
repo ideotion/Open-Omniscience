@@ -92,7 +92,7 @@ def test_what_is_outside_the_drive_is_erased_and_the_drive_is_untouched(tmp_path
     assert all(_erased(p, b) for p, b in outside.items()), "every store and key file outside the drive is erased"
     assert f"Files erased outside the data drive: {len(outside)} of {len(outside)}." in out
     assert _panic_precheck.ON_THE_DRIVE in out
-    assert "Wiped" not in out and "unrecoverable" not in out
+    assert not any(w in out.lower() for w in ("wiped", "unrecoverable", "destroyed")), out
     if drive == "absent":
         assert not data.exists() and not data.parent.exists(), "nothing is made where the drive should be"
     for p, b in on_drive.items():
@@ -213,6 +213,9 @@ def test_only_the_cli_precheck_limits_the_erase_to_what_is_outside_the_drive():
     for path in ("src/api/main.py", "src/api/safety.py"):
         assert "off_drive_only" not in Path(path).read_text(encoding="utf-8"), path
     assert "panic_wipe(confirm=True, off_drive_only=True)" in Path("src/api/_panic_precheck.py").read_text(encoding="utf-8")
+    # and only the erase names the main store without the database module
+    users = sorted(str(p) for p in Path("src").rglob("*.py") if "without_the_database_module=True" in p.read_text(encoding="utf-8"))
+    assert users == ["src/safety/crypto_erase.py"], users
 
 
 def test_main_db_path_keeps_its_error_for_every_other_caller(monkeypatch, tmp_path):
