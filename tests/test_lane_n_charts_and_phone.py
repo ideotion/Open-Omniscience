@@ -76,4 +76,7 @@ def test_explore_results_stack_on_a_phone():
 
 def test_the_time_scope_bar_has_a_name():
     js = read_static("app-markets.js")
-    assert '<div class="ts-bar" tabindex="-1" role="group" aria-label="${esc(t("Date range"))}">' in function_body(js, "ooTimeScope")
+    body = function_body(js, "ooTimeScope")
+    # row 367: the name is set by the control's held render, so it follows a language switch
+    assert '<div class="ts-bar" tabindex="-1" role="group">' in body
+    assert 'bar.setAttribute("aria-label", t("Date range"));' in body

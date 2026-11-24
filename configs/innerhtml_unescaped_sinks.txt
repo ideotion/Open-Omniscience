@@ -209,7 +209,7 @@ app-home.js renderWeatherContext 1
 app-insights.js _paintInsStatus 1
 app-insights.js _renderWatches 1
 app-insights.js expandCitedSource 1
-app-insights.js kxRenderTags 1
+app-insights.js kxRenderTags 2
 app-insights.js kxShowTag 1
 app-insights.js loadCitedSources 2
 app-insights.js loadConvergences 1
@@ -323,7 +323,7 @@ app-map.js renderStatChart 1
 app-map.js triangulateStatSeries 1
 app-map.js viewWikiDiff 1
 app-markets.js _renderCommodityCatTabs 1
-app-markets.js _renderFeedVerdicts 2
+app-markets.js _renderFeedVerdicts 1
 app-markets.js correlateSymbolInto 1
 app-markets.js drawLegend 1
 app-markets.js importCustomFeed 1
@@ -334,7 +334,7 @@ app-markets.js loadMarketConfig 1
 app-markets.js loadMineralsSupply 2
 app-markets.js loadRules 1
 app-markets.js ooChart 2
-app-markets.js ooTimeScope 1
+app-markets.js ooTimeScope 2
 app-markets.js paintMktRipple 1
 app-markets.js renderDashboard 1
 app-markets.js renderFamilyGraphs 1

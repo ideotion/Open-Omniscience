@@ -66,6 +66,7 @@
     function renderIndicesBoard() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("idx-board");
+      _idxBoardDrawn = true;
       if (!_idxCards.length) { el.innerHTML = '<div class="muted">No index catalog found.</div>'; }
       const byCont = {};
       for (const c of _idxCards) (byCont[_idxContinent(c)] || (byCont[_idxContinent(c)] = [])).push(c);
@@ -123,6 +124,22 @@
       }
       if (_idxView !== "families") applyIndexFilters();   // cards-view filtering only
       renderIdxCompareBar();
+    }
+    // Row 367: a language switch draws both boards again from what they hold -- the cards, the
+    // prices already read, the chosen category, tags, comparison and window -- so their headings,
+    // tabs, buttons and caveats follow it. Called from app-boot's ONE oo:langchange listener. It
+    // never reads: a board not drawn yet is left alone, and the indices families view waits for
+    // its own series read (loadIdxFullSeries) instead of starting one. A chart in a hidden tab
+    // waits for its width (ooChart), so drawing one there is safe.
+    // While loadDashboard reads the prices again (after a refresh or an import emptied them) a board drawn now would
+    // show an empty window, and nothing would draw it again: the switch is owed and drawn when the read ends.
+    // The charts keep the reader's zoom and hidden series (_carryChartViews).
+    let _idxBoardDrawn = false, _mktBoardDrawn = false, _mktPriceRead = 0, _mktRepaintOwed = false;
+    function repaintMarketBoards() {
+      if (_mktPriceRead) { _mktRepaintOwed = true; return; }
+      if (_idxBoardDrawn && _idxCards.length && (_idxView !== "families" || _idxSeriesLoaded))
+        _carryChartViews($("idx-board"), () => renderIndicesBoard());
+      if (_mktBoardDrawn && MKT_SERIES.length) _carryChartViews($("mkt-dashboard"), () => renderDashboard());
     }
     // The Cards/Families view toggle (Slice 6) — mirrors the commodities toggle so
     // the two boards stay near-identical; default Cards (no regression).
@@ -418,8 +435,12 @@
     // is not "robots disallows" is not "dead series". Failures are listed with
     // their honest note, and ONLY honestly-retryable ones get the Retry button.
     function _renderFeedVerdicts(elId, r, category) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $(elId); if (!el) return;
+      // A render (row 367): a language switch redraws the list from this answer.
+      ooLiveHtml(el, () => _feedVerdictsHtml(elId, r, category));
+    }
+    function _feedVerdictsHtml(elId, r, category) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // A Stop ends the batch: the feeds it cut or never reached are not in `results`, so a partial load must say how many (invariant #14e's
       // corollary; the key is the one the law tracker already uses, x12).
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
@@ -429,7 +450,7 @@
         ? `<div><span class="pill warn">offline</span> <span class="muted">${esc(tf("{n} not fetched (airplane mode)", {n: fmtNum(off, 0)}))}</span></div>`
         : "";
       const fails = (r.results || []).filter(x => x.status !== "imported");
-      if (!fails.length) { el.innerHTML = offLine; return; }
+      if (!fails.length) return offLine;
       const rows = fails.map(x =>
         `<div><span class="pill warn">${esc(x.verdict || x.status)}</span> <b>${esc(x.symbol || x.key)}</b>` +
         ` <span class="muted">— ${esc(x.verdict_note || x.detail || "")}</span></div>`).join("");
@@ -438,13 +459,13 @@
         ? `<button class="secondary tiny" style="margin-top:4px" data-on-click="retryFailedFeeds(${esc(JSON.stringify(category||""))}, ${esc(JSON.stringify(retry.join(",")))}, ${esc(JSON.stringify(elId))})">` +
           esc(t("Retry failed feeds")) + ` (${retry.length})</button>`
         : "";
-      el.innerHTML = offLine + rows + btn;
+      return offLine + rows + btn;
     }
     async function retryFailedFeeds(category, keys, elId) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (typeof ensureOnline === "function" &&
           !await ensureOnline(t("Fetch market and index data from the official feeds"))) return;
-      const el = $(elId); if (el) el.textContent = t("Retrying failed feeds…");
+      const el = $(elId); if (el) ooLive(el, () => t("Retrying failed feeds…"));
       try {
         const q = category ? `?category=${encodeURIComponent(category)}&keys=` : "?keys=";
         const r = await api(`/api/markets/feeds/import-all${q}${encodeURIComponent(keys)}`, {method: "POST"});
@@ -455,7 +476,7 @@
         toast(tf("Retry finished — new points: {n} · still failing: {k}", {
           n: fmtNum(r.points_imported || 0, 0), k: fmtNum(r.failed || 0, 0) }));
         _renderFeedVerdicts(elId, r, category);
-      } catch (e) { if (el) el.textContent = e.message; }
+      } catch (e) { const msg = e.message; if (el) ooLive(el, () => msg); }
     }
     async function loadIndicesData(btn) {
       btn.disabled = true;
@@ -617,6 +638,7 @@
 
     async function loadDashboard() {
       const status = $("mkt-dash-status");
+      _mktPriceRead++;
       try {
         const d = await api("/api/markets/series");
         MKT_SERIES = d.series || [];
@@ -632,6 +654,10 @@
         buildMktTimeScope();
         renderDashboard();
       } catch (e) { status.textContent = _failMsg("Could not load series: {error}", e); }
+      finally {
+        _mktPriceRead--;
+        if (!_mktPriceRead && _mktRepaintOwed) { _mktRepaintOwed = false; repaintMarketBoards(); }
+      }
     }
 
     // The commodities board is windowed by ABSOLUTE dates [from,to] (the
@@ -1527,6 +1553,7 @@
     }
     function renderDashboard() {
       if (!MKT_SERIES.length) return;
+      _mktBoardDrawn = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Window by ABSOLUTE dates [from,to] from the ooTimeScope control (no
       // longer a trailing `days` count).
@@ -1940,6 +1967,7 @@
       el.innerHTML = "";
       if (el._ooChartRO) { el._ooChartRO.disconnect(); el._ooChartRO = null; }
       el._ooChartArgs = [seriesList, opts];
+      el._ooChartView = null; el._ooChartSetView = null;
       // The canvas is sized in FIXED px, so it must never be wider than its host:
       // a 320 px hard floor (and a 680 px fallback when the element was not laid
       // out yet) made the chart overflow a narrower tile, with no overflow rule
@@ -1980,7 +2008,7 @@
         return Date.parse(x);
       };
       const all = seriesList.map((s, i) => ({
-        label: s.label || `#${i + 1}`, unit: s.unit || "",
+        label: s.label || `#${i + 1}`, unit: s.unit || "", id: _ooChartSeriesId(s, i),
         // Row 327: a keyword series names itself with data; the legend marks it so the page
         // translator never rewrites it (chrome labels stay translatable).
         labelIsData: !!s.labelIsData,
@@ -2648,9 +2676,50 @@
         if (hovP) { hovP = null; hovS = null; draw(); }
         if (!pinned && dragX == null && !emptyState && bFrom == null && !brushMode) readout.textContent = idleHint;
       });
+      // Row 367: the reader's window and hidden series, read and put back by _carryChartViews when a board is drawn
+      // again (a language switch), so a redraw never resets what the reader chose. A window is put back only inside
+      // this chart's own span, and a series is hidden again only if it is still drawn.
+      el._ooChartView = () => ({t0, t1, full: t0 === tMin && t1 === tMax,
+                                 hidden: all.filter((s) => s.hidden).map((s) => s.id)});
+      const setView = (v) => {
+        if (!v) return;
+        if (!v.full) {
+          const a = Math.max(tMin, v.t0), b = Math.min(tMax, v.t1);
+          if (b > a) { t0 = a; t1 = b; }
+        }
+        const hid = new Set(v.hidden || []);
+        all.forEach((s) => { s.hidden = hid.has(s.id); });
+      };
+      el._ooChartSetView = (v) => { setView(v); hovP = null; hovS = null; draw(); };
+      if (el._ooChartViewToTake) { setView(el._ooChartViewToTake); el._ooChartViewToTake = null; }
       draw();
       _ooChartWatch(el, W);
       return {redraw: draw};
+    }
+    function _ooChartSeriesId(s, i) { return String(s.symbol || s.key || s.label || `#${i + 1}`); }
+    // Row 367: draw a board again without losing the reader's chart state. Every ooChart under `host` is keyed by the
+    // series it draws (their symbols, in order); after `redraw`, a chart drawing the same series gets the same window
+    // and hidden series back. A chart not laid out yet (a hidden tab) takes them when it gains a width.
+    function _carryChartViews(host, redraw) {
+      if (!host) { redraw(); return; }
+      const keyOf = (el) => (el._ooChartArgs[0] || []).map(_ooChartSeriesId).join("\u0001");
+      const charts = () => Array.from(host.getElementsByTagName("*")).filter((el) => el._ooChartArgs);
+      const views = new Map();
+      for (const el of charts()) {
+        const v = el._ooChartView ? el._ooChartView() : el._ooChartViewToTake;
+        if (!v) continue;
+        const k = keyOf(el);
+        if (!views.has(k)) views.set(k, []);
+        views.get(k).push(v);
+      }
+      redraw();
+      if (!views.size) return;
+      for (const el of charts()) {
+        const list = views.get(keyOf(el));
+        const v = list && list.shift();
+        if (!v) continue;
+        if (el._ooChartSetView) el._ooChartSetView(v); else el._ooChartViewToTake = v;
+      }
     }
 
     function sparkSvg(points) {
@@ -2904,9 +2973,12 @@
       opts = opts || {};
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
       const min = _tsParse(opts.min), max = _tsParse(opts.max);
+      // Row 367: every word the control shows is drawn by a held render, so a language switch redraws it in place;
+      // a control built again on the same container lets the previous one's hold go first.
+      ooLive(container, null);
       // Degrade loudly if the span is unusable (no/identical bounds).
       if (min == null || max == null || max <= min) {
-        container.innerHTML = `<span class="hint muted">${esc(t("not enough data for a time range"))}</span>`;
+        ooLiveHtml(container, () => `<span class="hint muted">${esc(t("not enough data for a time range"))}</span>`);
         return { set: () => {}, get: () => ({from: opts.from || null, to: opts.to || null, scale: "day"}),
                  bounds: () => ({min: null, max: null}) };
       }
@@ -2918,26 +2990,22 @@
       if (from > to) { const s = from; from = to; to = s; }
 
       container.classList.add("ts");
+      // The control draws its own words (below), attributes included, so the page walker stays out of it: a title or
+      // aria-label it saw first in one language would otherwise be put back over every later one.
+      container.setAttribute("data-i18n-dyn", "");
       container.innerHTML =
         `<div class="ts-dates">
-           <label>${esc(t("From"))} <input type="date" class="ts-from"></label>
-           <label>${esc(t("To"))} <input type="date" class="ts-to"></label>
+           <label><span class="ts-l-from"></span> <input type="date" class="ts-from"></label>
+           <label><span class="ts-l-to"></span> <input type="date" class="ts-to"></label>
          </div>
-         <div class="ts-bar" tabindex="-1" role="group" aria-label="${esc(t("Date range"))}">
+         <div class="ts-bar" tabindex="-1" role="group">
            <div class="ts-track"></div><div class="ts-sel"></div>
-           <div class="ts-handle ts-h-from" role="slider" tabindex="0"
-                aria-label="${esc(t("From"))}"></div>
-           <div class="ts-handle ts-h-to" role="slider" tabindex="0"
-                aria-label="${esc(t("To"))}"></div>
+           <div class="ts-handle ts-h-from" role="slider" tabindex="0"></div>
+           <div class="ts-handle ts-h-to" role="slider" tabindex="0"></div>
          </div>
-         <div class="ts-presets">` +
-        _TS_PRESETS.map(([k]) =>
-          `<button type="button" data-preset="${esc(k)}">${esc(t(k))}</button>`).join("") +
-        `</div>
-         <label class="ts-scale-l" title="${esc(t("Reads the range in whole days, weeks, months or years: each bound snaps to the start or end of its period. The data inside the range is never thinned."))}">${esc(t("Snap range to"))}
-           <select class="ts-scale">` +
-        TS_SCALES.map((k) => `<option value="${k}"${k === scale ? " selected" : ""}>${esc(t(_TS_SCALE_LABEL[k]))}</option>`).join("") +
-        `</select></label>`;
+         <div class="ts-presets"></div>
+         <label class="ts-scale-l"><span class="ts-l-scale"></span>
+           <select class="ts-scale"></select></label>`;
       const inScale = container.querySelector(".ts-scale");
 
       const inFrom = container.querySelector(".ts-from");
@@ -2946,6 +3014,24 @@
       const sel    = container.querySelector(".ts-sel");
       const hFrom  = container.querySelector(".ts-h-from");
       const hTo    = container.querySelector(".ts-h-to");
+      const scaleL = container.querySelector(".ts-scale-l");
+      // The attributes have no node of their own to hold, so the presets' render sets them as it draws: one switch,
+      // one pass over everything the control says.
+      function relabel() {
+        bar.setAttribute("aria-label", t("Date range"));
+        hFrom.setAttribute("aria-label", t("From"));
+        hTo.setAttribute("aria-label", t("To"));
+        scaleL.setAttribute("title", t("Reads the range in whole days, weeks, months or years: each bound snaps to the start or end of its period. The data inside the range is never thinned."));
+      }
+      ooLive(container.querySelector(".ts-l-from"), () => t("From"));
+      ooLive(container.querySelector(".ts-l-to"), () => t("To"));
+      ooLive(container.querySelector(".ts-l-scale"), () => t("Snap range to"));
+      ooLiveHtml(container.querySelector(".ts-presets"), () => {
+        relabel();
+        return _TS_PRESETS.map(([k]) => `<button type="button" data-preset="${esc(k)}">${esc(t(k))}</button>`).join("");
+      });
+      // the options name the scale in use (`scale`, below), so a redraw keeps the choice
+      ooLiveHtml(inScale, () => TS_SCALES.map((k) => `<option value="${k}"${k === scale ? " selected" : ""}>${esc(t(_TS_SCALE_LABEL[k]))}</option>`).join(""));
       // date inputs carry the absolute bounds so the native picker is bounded.
       const minIso = _tsIso(min), maxIso = _tsIso(max);
       [inFrom, inTo].forEach(el => { el.min = minIso; el.max = maxIso; });

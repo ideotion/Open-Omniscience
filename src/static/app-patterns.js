@@ -456,7 +456,8 @@
         if (!ev.isTrusted) return;
         try {
           await api("/api/insights/include", {method: "POST", body: JSON.stringify({term: term})});
-          if (hiddenBtn) { hiddenBtn.textContent = t("Hide"); hiddenBtn.disabled = false; }
+          // row 367: held like the "hidden" it replaces (kxHide), so it follows a language switch
+          if (hiddenBtn) { ooLive(hiddenBtn, () => _patT()("Hide")); hiddenBtn.disabled = false; }
           undo.remove();
         } catch (e) { toast(_failMsg("Could not show the keyword again: {error}", e), "err"); }
       });

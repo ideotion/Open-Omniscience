@@ -58,7 +58,9 @@ function makeRenderer(code) {
     const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
       c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c])));
     const fmtNum = (n) => String(n);
+    const ooLiveHtml = (el, render) => { el.innerHTML = render(); };   // row 367: the list is a held render
     ${extract("_renderFeedVerdicts")}
+    ${extract("_feedVerdictsHtml")}
     return { render: _renderFeedVerdicts };
   `;
   const api = new Function("OOI18N", "elements", src)(OOI18N, elements);
