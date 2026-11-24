@@ -80,7 +80,8 @@ def test_installOneModel_asks_consent_and_repaints():
 #  the default model becomes a picker over what is actually downloaded
 # --------------------------------------------------------------------------- #
 def test_the_default_model_block_is_a_picker_over_downloaded_models():
-    body = function_body(APP, "_paintDefaultModel")
+    # read in _paintDefaultModel, drawn by _defaultModelHtml (row 367: a switch redraws it with no request)
+    body = function_body(APP, "_paintDefaultModel") + function_body(APP, "_defaultModelHtml")
     assert 'id="llm-model-pick"' in body
     assert 'data-on-change="setActiveModel(' in body
     # ONLY downloaded ones — the whole point of the ask.
@@ -94,7 +95,7 @@ def test_the_default_model_block_is_a_picker_over_downloaded_models():
 def test_the_picker_falls_back_to_a_download_when_nothing_is_downloaded():
     """With an empty disk there is nothing to choose BETWEEN, so the honest control is
     the one that gets you a first model — not an empty dropdown."""
-    body = function_body(APP, "_paintDefaultModel")
+    body = function_body(APP, "_defaultModelHtml")
     assert "installDefaultModel(this)" in body
 
 

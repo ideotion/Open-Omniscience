@@ -338,21 +338,31 @@
       if (s.ollama_present) { box.style.display = "none"; box.innerHTML = ""; return; }
       const p = s.platform || {};
       box.style.display = "";
+      // The panel is drawn bare and each of its lines is held on its own through ooLive (row 367): the prepare and run
+      // steps write into #llm-install-detail and #llm-install-log inside it, and a hold on the whole box would be
+      // dropped by the first of those writes. So the title, the lead and the action each follow a language switch.
       if (!p.scripted) {
         // macOS/Windows: honest pointer to the graphical installer, no fake auto-install.
         const url = p.download_url || "https://ollama.com/download";
         box.innerHTML = `<div class="panel" style="border-color:var(--accent)">` +
-          `<strong>${esc(t("Install Ollama"))}</strong>` +
-          `<p class="muted" style="margin:6px 0">${esc(p.reason || t("Download and run the official installer for your system, then return here."))}</p>` +
-          `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(t("Open ollama.com/download ↗"))}</a></div>`;
+          `<strong id="llm-install-title"></strong>` +
+          `<p id="llm-install-lead" class="muted" style="margin:6px 0"></p>` +
+          `<a id="llm-install-link" href="${esc(url)}" target="_blank" rel="noopener"></a></div>`;
+        ooLive($("llm-install-title"), () => t("Install Ollama"));
+        // the platform's own reason, as the server wrote it
+        ooLive($("llm-install-lead"), () => p.reason || t("Download and run the official installer for your system, then return here."));
+        ooLive($("llm-install-link"), () => t("Open ollama.com/download ↗"));
         return;
       }
       box.innerHTML = `<div class="panel" style="border-color:var(--accent)">` +
-        `<strong>${esc(t("Install Ollama"))}</strong>` +
-        `<p class="muted" style="margin:6px 0">${esc(t("Ollama is not installed yet. The app can download the official installer, verify its checksum against the publisher's attestation, and run it. Installing needs administrator rights and downloads over the clear internet (not this app's Tor proxy)."))}</p>` +
-        `<button id="llm-install-prepare-btn" data-on-click="prepareOllamaInstall()">${esc(t("Download & verify the official installer"))}</button>` +
+        `<strong id="llm-install-title"></strong>` +
+        `<p id="llm-install-lead" class="muted" style="margin:6px 0"></p>` +
+        `<button id="llm-install-prepare-btn" data-on-click="prepareOllamaInstall()"></button>` +
         `<div id="llm-install-detail" class="hint" style="margin-top:8px"></div>` +
         `<pre id="llm-install-log" style="display:none;max-height:220px;overflow:auto;background:var(--bg2);padding:8px;border-radius:6px;margin-top:8px;font:12px ui-monospace,monospace;white-space:pre-wrap"></pre></div>`;
+      ooLive($("llm-install-title"), () => t("Install Ollama"));
+      ooLive($("llm-install-lead"), () => t("Ollama is not installed yet. The app can download the official installer, verify its checksum against the publisher's attestation, and run it. Installing needs administrator rights and downloads over the clear internet (not this app's Tor proxy)."));
+      ooLive($("llm-install-prepare-btn"), () => t("Download & verify the official installer"));
     }
     async function prepareOllamaInstall(opts) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -363,25 +373,33 @@
       if (!await ensureAiEgress(t("Download and verify the official Ollama installer (downloads over the clear internet)"),
         {alreadyAsked: !!(opts && opts.alreadyAsked)})) return;
       if (btn) { btn.disabled = true; }
-      if (detail) detail.textContent = t("Downloading and verifying…");
+      // #llm-install-detail is drawn through ooLive/ooLiveHtml from what this step holds, so it follows a language
+      // switch with no second download (row 367).
+      if (detail) ooLive(detail, () => t("Downloading and verifying…"));
       let d;
       try { d = await api("/api/llm/install/prepare", {method: "POST"}); }
-      catch (e) { if (detail) detail.textContent = ooLabelText(t("Could not prepare the installer"), e.message); if (btn) btn.disabled = false; return; }
+      catch (e) {
+        const why = e.message;
+        if (detail) ooLive(detail, () => ooLabelText(t("Could not prepare the installer"), why));
+        if (btn) btn.disabled = false;
+        return;
+      }
       if (btn) btn.style.display = "none";
       // Show the verified version + checksum + how to run it. The checksum is the
       // publisher's own attestation we verified the bytes against — show it so the
       // user can cross-check; never present an unverified script.
       let st = {};
       try { st = await api("/api/llm/install/status"); } catch (_e) {}
-      const runNow = st.can_run_unattended
-        ? `<button data-on-click="runOllamaInstall(${esc(JSON.stringify(d.path))})" style="margin-top:8px">${esc(t("Install now"))}</button>`
-        : "";
-      const manual = `<p class="muted" style="margin:8px 0 2px">${esc(st.can_run_unattended ? t("Or run it yourself in a terminal:") : t("Administrator rights are needed and the app cannot ask for your password. Run this in a terminal:"))}</p>` +
-        `<pre style="background:var(--bg2);padding:8px;border-radius:6px;font:12px ui-monospace,monospace;white-space:pre-wrap">${esc(d.manual_command)}</pre>`;
-      if (detail) detail.innerHTML =
-        `<div>${esc(t("Verified Ollama"))} <code>${esc(d.version)}</code> · SHA-256 <code>${esc((d.sha256||"").slice(0,16))}…</code></div>` +
-        runNow + manual +
-        `<p class="muted" style="margin-top:6px">${esc(t("After installing, click Recheck below."))} <button class="tiny secondary" data-on-click="recheckOllama()">${esc(t("Recheck"))}</button></p>`;
+      if (detail) ooLiveHtml(detail, () => {
+        const runNow = st.can_run_unattended
+          ? `<button data-on-click="runOllamaInstall(${esc(JSON.stringify(d.path))})" style="margin-top:8px">${esc(t("Install now"))}</button>`
+          : "";
+        const manual = `<p class="muted" style="margin:8px 0 2px">${esc(st.can_run_unattended ? t("Or run it yourself in a terminal:") : t("Administrator rights are needed and the app cannot ask for your password. Run this in a terminal:"))}</p>` +
+          `<pre style="background:var(--bg2);padding:8px;border-radius:6px;font:12px ui-monospace,monospace;white-space:pre-wrap">${esc(d.manual_command)}</pre>`;
+        return `<div>${esc(t("Verified Ollama"))} <code>${esc(d.version)}</code> · SHA-256 <code>${esc((d.sha256||"").slice(0,16))}…</code></div>` +
+          runNow + manual +
+          `<p class="muted" style="margin-top:6px">${esc(t("After installing, click Recheck below."))} <button class="tiny secondary" data-on-click="recheckOllama()">${esc(t("Recheck"))}</button></p>`;
+      });
     }
     async function runOllamaInstall(path) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -395,7 +413,18 @@
       // online, which starts the collector.
       if (!await ensureAiEgress(t("Run the verified Ollama installer"))) return;
       _ollamaInstalling = true;
-      log.style.display = ""; log.textContent = "";
+      // The log is ONE list drawn by one render through ooLive (row 367): the installer's own lines as they came, and
+      // this app's error and end lines in the page's language, so a switch mid-install redraws ours and keeps theirs.
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const entries = [];
+      const draw = () => {
+        ooLive(log, () => entries.map((x) => x.kind === "line" ? x.text + "\n"
+          : x.kind === "error" ? "\n" + ooLabelText(t("Error"), x.error) + "\n"
+          : "\n" + (x.code === 0 ? t("Installation finished.") : tf("Installer exited with code {code}.", {code: String(x.code)})) + "\n").join(""));
+        log.scrollTop = log.scrollHeight;
+      };
+      log.style.display = ""; draw();
       try {
         const resp = await fetch("/api/llm/install/run", {
           method: "POST", headers: {"Content-Type": "application/json"},
@@ -411,14 +440,14 @@
             const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
             if (!line.trim()) continue;
             let o; try { o = JSON.parse(line); } catch (_e) { continue; }
-            if (o.event === "line") { log.textContent += o.text + "\n"; log.scrollTop = log.scrollHeight; }
-            else if (o.event === "error") { log.textContent += "\n" + ooLabelText(t("Error"), o.error) + "\n"; }
+            if (o.event === "line") { entries.push({kind: "line", text: o.text}); draw(); }
+            else if (o.event === "error") { entries.push({kind: "error", error: o.error}); draw(); }
             else if (o.event === "done") { exitCode = o.exit_code; }
           }
         }
-        log.textContent += "\n" + (exitCode === 0 ? t("Installation finished.") : t("Installer exited with code") + " " + exitCode) + "\n";
+        entries.push({kind: "end", code: exitCode}); draw();
       } catch (e) {
-        log.textContent += "\n" + ooLabelText(t("Error"), e.message) + "\n";
+        entries.push({kind: "error", error: e.message}); draw();
       } finally {
         _ollamaInstalling = false;
         recheckOllama();
@@ -440,22 +469,41 @@
     // table is the dated, verified catalog, and this entry carries its own licence
     // provenance, which is shown here rather than only in the confirm dialog so the
     // user reads it before clicking, not after.
-    function _miniBlockHtml(d, t) {
+    // Drawn bare, then each part held on its own (row 367): #llm-default-model is repainted by _paintDefaultModel,
+    // so the box around it is never held as a whole.
+    function _miniBlockHtml(d) {
       const mini = d && d.ministral && d.ministral.tag ? d.ministral : null;
       if (!mini) return "";
       // The artifact + mechanism are filled in by _paintDefaultModel from
       // /api/llm/default-model, which resolves WHICH backend will actually serve.
       // Rendered as a placeholder first so the block exists even if that call fails,
       // rather than silently vanishing.
-      return `<h3 style="margin:14px 0 4px">${esc(t("Default model"))}</h3>` +
-        `<div id="llm-default-model"><p class="muted">${esc(t("Checking which backend will be used…"))}</p></div>`;
+      return `<h3 id="llm-default-model-h" style="margin:14px 0 4px"></h3><div id="llm-default-model"></div>`;
+    }
+    function _miniBlockHold() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      ooLive($("llm-default-model-h"), () => t("Default model"));
+      _dmRender = null;
+      const host = $("llm-default-model");
+      if (host) ooLiveHtml(host, () => `<p class="muted">${esc(t("Checking which backend will be used…"))}</p>`);
     }
 
     // Paint the default-model block from the SERVER's plan. The two backends download
     // differently -- Ollama pulls an image with real byte progress, vLLM fetches the
     // weights when its server starts -- so the button says which one it is about to do
     // instead of implying a single uniform "download".
-    let _dlModelPoll = null;
+    //
+    // The reads and the drawing are split (row 367): this reads the plan, the catalogue and the vLLM job once, and
+    // _defaultModelHtml draws them through ooLiveHtml, so a language switch redraws the block with no request.
+    // `_dmStarting` is a download being started from the block's own button: the render draws that button as
+    // "Starting…" and disabled, so nothing writes inside the held block.
+    // `_dmFresh` marks the draw that follows a new read: that one shows what the server says is in use; a redraw from
+    // what is already held (a language switch, the Starting… button) keeps the operator's pick on the page.
+    let _dlModelPoll = null, _dmRender = null, _dmStarting = false, _dmFresh = false;
+    function _dmRedraw() {
+      const host = $("llm-default-model");
+      if (host && _dmRender) ooLiveHtml(host, _dmRender);
+    }
     async function _paintDefaultModel() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("llm-default-model");
@@ -463,10 +511,11 @@
       let p = null;
       try { p = await api("/api/llm/default-model"); }
       catch (e) {
-        host.innerHTML = `<p class="muted">${ooLabelHtml(esc(t("Could not determine the default model")), esc(e.message || e))}</p>`;
+        const why = e.message || e;
+        _dmRender = null;
+        ooLiveHtml(host, () => `<p class="muted">${ooLabelHtml(esc(t("Could not determine the default model")), esc(why))}</p>`);
         return;
       }
-      const already = p.installed === true;
       // A PICKER OVER WHAT IS ACTUALLY DOWNLOADED (maintainer 2026-08-09: "replace the
       // bla bla about default model with a drop down menu with only the readily
       // downloaded models"). The list comes from the CATALOGUE, not from
@@ -477,24 +526,51 @@
       // The prose that used to fill this block (the resolver's reason and its
       // mechanism note) has not been deleted -- it moved into the picker's hover,
       // which is where the layering convention puts a long explanation.
-      let picker = "";
+      let have = [], cur = null;
       try {
         const c = await api("/api/llm/models/catalog");
-        const have = (c.models || []).filter((m) => m.available && m.installed === true);
-        if (have.length) {
-          const cur = c.active || p.artifact;
-          const opts = have.map((m) =>
-            `<option value="${esc(m.artifact)}"${m.artifact === cur ? " selected" : ""}>` +
-            `${esc(m.label)}${m.is_default ? " — " + esc(t("default")) : ""}</option>`).join("");
-          picker =
-            `<div class="row" style="gap:8px;align-items:center">` +
-            `<label for="llm-model-pick" style="flex:0 0 auto;margin:0">${esc(t("Model in use"))}</label>` +
-            `<select id="llm-model-pick" style="flex:1;max-width:420px"` +
-            ` title="${esc(ooSaidText(p, "reason") + " " + (p.mechanism_note || ""))}"` +
-            ` data-on-change="setActiveModel(this.value)">${opts}</select>` +
-            `<span class="pill">${esc(p.backend)}</span></div>`;
-        }
+        have = (c.models || []).filter((m) => m.available && m.installed === true);
+        cur = c.active || p.artifact;
       } catch (e) { /* fall through to the download line below */ }
+      // A live line while the vLLM weights come down. The pull queue already has its
+      // own live surface for the Ollama half, so this only fills the gap that existed
+      // for vLLM -- where "download" used to mean "the server will fetch it later".
+      let job = null;
+      if (p.backend === "vllm" && p.installed !== true) {
+        try {
+          const st = await api("/api/llm/default-model/status");
+          job = (st && st.job) || {};
+          if (job.running) {
+            clearTimeout(_dlModelPoll);
+            _dlModelPoll = setTimeout(_paintDefaultModel, 3000);
+          }
+        } catch (e) { /* the block still renders without the live line */ }
+      }
+      _dmRender = () => _defaultModelHtml(p, have, cur, job);
+      _dmFresh = true;
+      ooLiveHtml(host, _dmRender);
+    }
+    function _defaultModelHtml(p, have, cur, job) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const already = p.installed === true;
+      const fresh = _dmFresh;
+      _dmFresh = false;
+      let picker = "";
+      if (have.length) {
+        // a redraw keeps the model picked on the page; a new read (the 3 s poll, a reload) shows the server's own
+        const live = $("llm-model-pick");
+        const sel = !fresh && live && live.value ? live.value : cur;
+        const opts = have.map((m) =>
+          `<option value="${esc(m.artifact)}"${m.artifact === sel ? " selected" : ""}>` +
+          `${esc(m.label)}${m.is_default ? " — " + esc(t("default")) : ""}</option>`).join("");
+        picker =
+          `<div class="row" style="gap:8px;align-items:center">` +
+          `<label for="llm-model-pick" style="flex:0 0 auto;margin:0">${esc(t("Model in use"))}</label>` +
+          `<select id="llm-model-pick" style="flex:1;max-width:420px"` +
+          ` title="${esc(ooSaidText(p, "reason") + " " + (p.mechanism_note || ""))}"` +
+          ` data-on-change="setActiveModel(this.value)">${opts}</select>` +
+          `<span class="pill">${esc(p.backend)}</span></div>`;
+      }
 
       const lines = [];
       if (picker) {
@@ -507,31 +583,22 @@
           ` <span class="pill">${esc(p.backend)}</span>` +
           (already
             ? ` <span class="pill ok">${esc(t("Downloaded"))}</span>`
-            : ` <button data-on-click="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
+            : _dmStarting
+              ? ` <button data-on-click="installDefaultModel(this)" disabled>${esc(t("Starting…"))}</button>`
+              : ` <button data-on-click="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
           `</p>`,
           `<p class="hint">${ooSaidHtml(p, "reason")}</p>`);
         if (p.installed === null && !already) {
           lines.push(`<p class="hint">${esc(t("Whether it is already present here could not be read — downloading again is harmless."))}</p>`);
         }
       }
-      // A live line while the vLLM weights come down. The pull queue already has its
-      // own live surface for the Ollama half, so this only fills the gap that existed
-      // for vLLM -- where "download" used to mean "the server will fetch it later".
-      if (p.backend === "vllm" && !already) {
-        try {
-          const st = await api("/api/llm/default-model/status");
-          const j = (st && st.job) || {};
-          if (j.running) {
-            lines.push(`<p class="hint">${esc(t("Downloading…"))} ${esc((j.progress && j.progress.detail) || "")}</p>`);
-            clearTimeout(_dlModelPoll);
-            _dlModelPoll = setTimeout(_paintDefaultModel, 3000);
-          } else if (j.error) {
-            lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Download failed")), esc(j.error))}</p>`);
-          }
-        } catch (e) { /* the block still renders without the live line */ }
+      if (job && job.running) {
+        lines.push(`<p class="hint">${esc(t("Downloading…"))} ${esc((job.progress && job.progress.detail) || "")}</p>`);
+      } else if (job && job.error) {
+        lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Download failed")), esc(job.error))}</p>`);
       }
       lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Licence")), esc(p.license || ""))}. ${esc((p.caveats || []).join(" "))}</p>`);
-      host.innerHTML = lines.join("");
+      return lines.join("");
     }
 
     // ONE button for both backends. The server decides which artifact and how; this
@@ -564,8 +631,9 @@
       // (opts.confirmed) and so is not asked again for the same bytes.
       if (!await ensureAiEgress(t("Download the default model (several GB over the clear internet)"),
         {alreadyAsked: !!(opts && opts.confirmed)})) return;
-      const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      // The button sits inside the held default-model block, so it is redrawn as "Starting…" by that block's render
+      // rather than written into (row 367); the setup chain passes no button and the block says the same.
+      _dmStarting = true; _dmRedraw();
       try {
         const r = await api("/api/llm/default-model/install", {method: "POST"});
         toast(r.action === "queued"
@@ -577,7 +645,7 @@
       } catch (e) {
         toast(ooLabelText(t("Download failed"), e.message || e), "err");
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was; }
+        _dmStarting = false; _dmRedraw();
       }
     }
 
@@ -586,8 +654,14 @@
       const box = $("llm-models-box");
       if (!box) return;
       let d;
+      // #llm-models-box is drawn through ooLiveHtml from this read (row 367). When Ollama is not answering it holds
+      // #llm-default-model, which _paintDefaultModel repaints, so then its parts are held one by one instead.
       try { d = await api("/api/llm/models"); }
-      catch (e) { box.innerHTML = `<p class="muted">${ooLabelHtml(esc(t("Model info unavailable")), esc(e.message))}</p>`; return; }
+      catch (e) {
+        const why = e.message;
+        ooLiveHtml(box, () => `<p class="muted">${ooLabelHtml(esc(t("Model info unavailable")), esc(why))}</p>`);
+        return;
+      }
       if (!d.available) {
         // Ollama is not answering. This used to return HERE, which hid the Launch
         // control and the one-click model install in the EXACT state where they are
@@ -601,14 +675,21 @@
         // one action. Nothing is lost -- the sentence now POINTS AT the control
         // instead of duplicating it, which is also the only way a reader learns
         // the pill is clickable at all.
-        box.innerHTML = `<p class="muted">${esc(t("Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers."))}</p>`
-          + _miniBlockHtml(d, t);
+        ooLive(box, null);
+        box.innerHTML = `<p id="llm-models-note" class="muted"></p>` + _miniBlockHtml(d);
+        ooLive($("llm-models-note"), () => t("Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers."));
+        _miniBlockHold();
         _paintDefaultModel();
         return;
       }
       // A keyed frame with the size written by the one localised writer (Y9): this was
       // "15.5 GB RAM detected" in English in every locale. `total_ram_gb` is psutil's
       // total / 1024**3, the binary step `_sizeText` divides by, so the figure is unchanged.
+      ooLiveHtml(box, () => _llmModelsHtml(d));
+      _paintDefaultModel();
+    }
+    function _llmModelsHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const ram = d.total_ram_gb
         ? tf("{size} RAM detected", { size: _sizeText(d.total_ram_gb * 1073741824, (i, v) => (v % 1 ? 1 : 0)) })
@@ -638,8 +719,7 @@
       //
       // What stays here is the half that only Ollama can answer: what is ACTUALLY
       // installed right now, with set-active and remove.
-      box.innerHTML = `<p class="muted">${esc(ram)}.</p>` + installed;
-      _paintDefaultModel();
+      return `<p class="muted">${esc(ram)}.</p>` + installed;
     }
     async function setActiveModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -754,12 +834,14 @@
       // Every line in #llm-pull-progress is drawn through ooLive from what this pull holds, so it follows a language
       // switch with no second request (row 367); the job's own progress words are the server's, shown as they came.
       const say = (render) => { const el = $("llm-pull-progress"); if (el) ooLive(el, render); };
+      const sayHtml = (render) => { const el = $("llm-pull-progress"); if (el) ooLiveHtml(el, render); };
       if (_ooIsCloudModel(tag)) {
         say(() => t("That model runs on Ollama's cloud, not on this computer, so it is refused: the text you give it would leave the machine. Choose a local model."));
         return;
       }
       if (!await ensureAiEgress(t("Download a model you named (over the clear internet)"))) return;
-      say(() => t("Queued") + " " + tag + "…");  // instant feedback
+      // instant feedback: "Queued: {tag}" through the reader's own label frame, the tag never translated (row 367)
+      sayHtml(() => ooLabelHtml(esc(t("Queued")), `<span translate="no">${esc(tag)}</span>`));
       try {
         const r = await api("/api/llm/models/pull-custom",
           {method: "POST", body: JSON.stringify({identifier: tag})});
@@ -923,20 +1005,35 @@
     // job (also visible in the task manager) that (per the 2026-07-24 field-feedback ruling)
     // AUTO-STARTS itself in the background whenever there is work to do, so this panel's ONE
     // button just toggles "start" <-> "stop" and reflects whatever is already happening. ---- //
+    // (The manual start/stop button and its runLangDetect/_paintLangDetectButton were removed in row 367: the
+    // button left the page on 2026-08-04, when the background-AI checkbox became the one control, and nothing called
+    // them. The poll below stays: it keeps the count's status line live.)
     let _langDetectPolling = false;
-    function _paintLangDetectButton(running) {
-      const btn = $("langdetect-btn");
-      if (!btn) return;
+    // #langdetect-status: the count, then the poll's lines, each drawn through ooLiveHtml (row 367) inside a span that
+    // carries the count's hover (a title is an attribute, so the render draws it), so both follow a language switch.
+    let _langDetectCount = null;   // null = not read yet: no hover
+    function _langDetectSay(render) {
+      const el = $("langdetect-status");
+      if (!el) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      btn.textContent = running ? t("Language detection ongoing — click to stop") : t("Detect languages");
-      btn.dataset.running = running ? "1" : "";
+      ooLiveHtml(el, () => {
+        const n = _langDetectCount;
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+        // a labelled count, never a number welded to "article(s)" (row 367)
+        const tip = n == null ? "" : n ? tf("Articles still in an unknown language after the offline detector: {n}.", {n: String(n)})
+          : t("No articles are missing a language — nothing to detect.");
+        return tip ? `<span title="${esc(tip)}">${esc(render())}</span>` : esc(render());
+      });
     }
     async function pollLangDetect() {
       if (_langDetectPolling) return;
       _langDetectPolling = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
-      const el = $("langdetect-status");
+      // Every line is drawn through _langDetectSay from what this poll read, so it follows a language switch between
+      // polls (row 367). The job's own detail is the server's words, escaped as text.
+      const say = _langDetectSay;
       let fails = 0;
       try {
         for (;;) {
@@ -944,37 +1041,37 @@
           // JOB-STATE-AS-TRUTH: a dropped status poll never reads as failure while the job runs.
           try { s = await api("/api/ai/detect-language/status"); fails = 0; }
           catch (_e) {
-            if (++fails > 30) { if (el) el.textContent = t("Lost contact with the job — see the task manager."); break; }
-            if (el) el.textContent = t("Connection hiccup — retrying…");
+            if (++fails > 30) { say(() => t("Lost contact with the job — see the task manager.")); break; }
+            say(() => t("Connection hiccup — retrying…"));
             await new Promise((r) => setTimeout(r, Math.min(2000 * fails, 8000))); continue;
           }
           const st = s.state, p = s.progress || {}, res = s.result || {};
           if (st === "running") {
-            _paintLangDetectButton(true);
-            if (el) el.textContent = `${p.done || 0}/${p.total || 0}` + (s.detail ? ` · ${esc(s.detail)}` : "");
+            // escaped ONCE, by _langDetectSay: esc() here as well showed an "&" as "&amp;"
+            const line = `${p.done || 0}/${p.total || 0}` + (s.detail ? ` · ${s.detail}` : "");
+            say(() => line);
             await new Promise((r) => setTimeout(r, 2000)); continue;
           }
-          _paintLangDetectButton(false);
           if (st === "done") {
             // Loopback, so airplane mode never stops it (the kill switch refuses only a
             // non-loopback model address): unavailable means not running, and saying
             // "or airplane mode" sent the reader online to fix a local problem.
-            if (res.ran === false) el.textContent = t("The local model is unavailable: the local AI is not running.");
+            if (res.ran === false) say(() => t("The local model is unavailable: the local AI is not running."));
             // ONE keyed sentence, so each locale joins "Done." to its tally its own way:
             // welded with a Latin space it read "完成。 3 已标注" (2026-09-27 re-walk O-5).
-            else el.textContent = tf("Done. {stored} labelled · {none} unclear · {total} scanned",
-              { stored: fmtNum(res.stored || 0, 0), none: fmtNum(res.none || 0, 0), total: fmtNum(res.total || 0, 0) });
-          } else if (st === "cancelled") el.textContent = t("Cancelled.");
-          else if (st === "error") el.textContent = ooLabelText(t("Failed"), s.error || "");
+            else say(() => tf("Done. {stored} labelled · {none} unclear · {total} scanned",
+              { stored: fmtNum(res.stored || 0, 0), none: fmtNum(res.none || 0, 0), total: fmtNum(res.total || 0, 0) }));
+          } else if (st === "cancelled") say(() => t("Cancelled."));
+          else if (st === "error") say(() => ooLabelText(t("Failed"), s.error || ""));
           else if (s.last_run) {
             // Idle in THIS process, but a previous process's run left an honest trace
             // (§1 item 3 — the status line must stay honest about what happened after a
             // restart, not read as blank/never-run).
             const lr = s.last_run;
-            if (lr.state === "error") el.textContent = ooLabelText(t("Last run failed"), lr.error || "");
-            else el.textContent = tf("Last run: {stored} labelled · {none} unclear · {total} scanned",
-              { stored: fmtNum(lr.stored || 0, 0), none: fmtNum(lr.none || 0, 0), total: fmtNum(lr.total || 0, 0) });
-          } else el.textContent = "";
+            if (lr.state === "error") say(() => ooLabelText(t("Last run failed"), lr.error || ""));
+            else say(() => tf("Last run: {stored} labelled · {none} unclear · {total} scanned",
+              { stored: fmtNum(lr.stored || 0, 0), none: fmtNum(lr.none || 0, 0), total: fmtNum(lr.total || 0, 0) }));
+          } else say(() => "");
           break;
         }
       } finally { _langDetectPolling = false; }
@@ -992,39 +1089,15 @@
           // useful half -- it says whether ticking the box has anything to do -- and a
           // full sentence beside a checkbox reads as clutter. Empty when there is
           // nothing to detect, rather than a reassurance nobody asked for.
-          el.textContent = n ? `(${n})` : "";
-          el.title = n
-            ? `${n} ${t("article(s) still unknown after the offline detector.")}`
-            : t("No articles are missing a language — nothing to detect.");
+          _langDetectCount = n;
+          _langDetectSay(() => (n ? `(${n})` : ""));
         } catch (e) { /* the count is a hint; leave it blank on error */ }
       }
       // Reflect reality: a job may already be running (auto-started in the background,
       // or by another tab) even though this panel was just opened.
       let s;
       try { s = await api("/api/ai/detect-language/status"); } catch (e) { return; }
-      _paintLangDetectButton(s.state === "running");
       if (s.state === "running") pollLangDetect();
-    }
-    async function runLangDetect(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const el = $("langdetect-status");
-      if (btn && btn.dataset.running === "1") {
-        // Currently running -> this click means STOP.
-        try { await api("/api/ai/detect-language/cancel", { method: "POST" }); }
-        catch (e) { if (el) el.textContent = ooLabelText(t("Failed"), e.message || e); }
-        pollLangDetect(); // in case no poll loop is live yet (e.g. a fresh tab), pick up the cancel
-        return;
-      }
-      if (btn) btn.disabled = true;
-      if (el) el.textContent = t("Starting…");
-      try {
-        // Always continuous now — the checkbox is gone (the job auto-retries transient
-        // model outages and keeps going until the backlog is drained or cancelled).
-        await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({ continuous: true }) });
-        _paintLangDetectButton(true);
-      } catch (e) { if (el) el.textContent = ooLabelText(t("Failed"), e.message || e); }
-      if (btn) btn.disabled = false;
-      pollLangDetect();
     }
 
     // --- Custom extractors (Settings → Models) — a managed list of user-defined AI

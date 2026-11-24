@@ -93,12 +93,22 @@ def _store_path() -> tuple[Path | None, str | None]:
     return Path(DB_FILE), None
 
 
+def _on_gone_drive(db: Path) -> bool:
+    """Row 390: the store is on a data drive that is not the marked one right now (src/database/drive_pin.py). Not knowing is on it."""
+    try:
+        from src.database.drive_pin import on_frozen_drive
+
+        return on_frozen_drive(db)
+    except Exception:  # noqa: BLE001 - not knowing is on it
+        return True
+
+
 def checkpoint_before_dispose(path: Path | str | None = None) -> dict[str, Any]:
     """Write the log back into the database without waiting for anyone, and say what happened.
 
     ``outcome`` is ``done`` (the TRUNCATE ran and nothing held the log), ``busy`` (a reader, a writer or another checkpoint held it, and the
     row cannot say which: see ``copied_all``), ``failed`` (``error`` is the exception class) or ``skipped`` (``why`` is a short code: ``not sqlite``, ``no file``,
-    ``locked``, ``fresh``). ``truncate`` is the three numbers the PRAGMA answered (busy, log frames, checkpointed; the last two are -1
+    ``locked``, ``fresh``, ``drive-changed``). ``truncate`` is the three numbers the PRAGMA answered (busy, log frames, checkpointed; the last two are -1
     when the checkpoint lock itself was busy); ``copied_all`` is, for ``busy``, whether every frame of the log was written back anyway
     (a reader's snapshot newer than the frames, or a writer mid-write: it says nothing about frames committed after the step) and ``None``
     otherwise. ``wal_bytes_before`` / ``wal_bytes_after`` are the file's size
@@ -126,6 +136,8 @@ def checkpoint_before_dispose(path: Path | str | None = None) -> dict[str, Any]:
             out["wal_path"] = str(db) + "-wal"
         if db is None:
             out["why"] = why
+        elif _on_gone_drive(db):
+            out["why"] = "drive-changed"  # row 390: the file at that path is another drive's now; opening and closing it deletes its log
         elif not db.exists():
             out["why"] = "no file"
         elif (state := locked_state(db)) not in ("unlocked-plaintext", "unlocked-encrypted"):

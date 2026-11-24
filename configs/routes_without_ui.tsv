@@ -4,6 +4,8 @@
 # tests/test_routes_have_a_caller.py keeps this file exact and lets the feature count only go down.
 method	path	class	value	surface	reason
 GET	/	internal		page	the app page itself, opened by the launcher
+POST	/api/ai/detect-language	superseded			the scheduler starts the job itself while 'Language detection' is ticked in Settings > AI coordinator (advance_langdetect_auto_start); the manual Run's last caller, runLangDetect, had no button and was removed in row 367 batch 4
+POST	/api/ai/detect-language/cancel	internal		api	no Stop button existed before row 367 batch 4 removed its last (dead) caller; unticking 'Language detection' stops new runs, and a task-manager Stop for the running job is a separate ask
 GET	/api/ai/translation-sweep	internal		diagnostics	KPI K6 read for the maintainer; the sweeps run from Settings
 POST	/api/analysis/anova/one-way	internal		api	statistics calculator over posted numbers ([analysis] extra); programmatic API, no corpus surface
 POST	/api/analysis/articles/similarity	internal		api	statistics calculator over posted numbers ([analysis] extra); programmatic API, no corpus surface
