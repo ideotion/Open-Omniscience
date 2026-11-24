@@ -145,10 +145,7 @@
             // Opening the section on a job that never ran says nothing: the line is for a
             // job, and there is none. A refusal is still named, as the button would.
             const idle = !s.state || s.state === "idle" || s.state === "cancelled";
-            if (st && !(me.quietIdle && idle && !s.refusal)) {
-              st.textContent = render(s, report, t);
-              _jobLast[key] = {s, report, render, st, drawn: st.textContent};
-            }
+            if (st && !(me.quietIdle && idle && !s.refusal)) _drawJobLine(key, st, render, s, report, t);
             const running = s.state === "running" && !!s.running;
             // A start came in while this read was in flight: read again before deciding.
             if (gen !== me.gen) continue;
@@ -164,6 +161,18 @@
         }
       })();
       return me;
+    }
+    // Draw a job line and keep the reading it was drawn from, so repaintDiagnosticsJobsFromCache can redraw it in a new
+    // language. Every write of a reading into a job line goes through here: one written past it would freeze in the
+    // language it was drawn in (row 361: foldKeywords drew a refusal that way).
+    function _drawJobLine(key, st, render, s, report, t) {
+      st.textContent = render(s, report, t);
+      _jobLast[key] = {s, report, render, st, drawn: st.textContent};
+    }
+    // A job line that shows an error the server or the browser sent, as it was sent: data, not chrome, so nothing here
+    // is translated and nothing is kept to redraw. As text, never escaped: textContent shows "&amp;" as typed.
+    function _jobLineError(st, e) {
+      if (st) st.textContent = String((e && e.message) || e || "");
     }
     // A live language switch (the one oo:langchange listener in app-boot.js): redraw each
     // job line from the reading it last drew, in the new language. Never a fetch. A line
@@ -317,7 +326,7 @@
         // keywords on completion — survives a tab close, resumes from its cursor.
         await _startReindexJob(true, "keywords");
         await _pollReindexJob(st, t);
-      } catch (e) { if (st) st.textContent = esc(e.message); }
+      } catch (e) { _jobLineError(st, e); }
       finally { if (btn) btn.disabled = false; }
     }
 
@@ -373,7 +382,7 @@
       let s0 = null;
       try { s0 = await api("/api/insights/keyword-fold-job/status"); }
       catch (_e) { /* status is a courtesy here; never block the action on it */ }
-      if (s0 && s0.refusal) { if (st) st.textContent = _foldStatusText(s0, null, t); return; }
+      if (s0 && s0.refusal) { if (st) _drawJobLine("fold", st, _foldStatusText, s0, null, t); return; }
       // A PAUSED RUN IS CONTINUED, AND THE CONFIRM SAYS SO (the re-index job's lesson).
       const paused = s0 && (s0.state === "paused" || s0.state === "error");
       const ask = paused
