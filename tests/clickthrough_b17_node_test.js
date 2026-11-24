@@ -429,7 +429,9 @@ async function run() {
     const I = i18n(lang);
     const box = {innerHTML: ""};
     const src = [ESC, extract("ooLabelHtml", null, CORE), extract("_sizeText", null, CORE), extract("_fmtBytes", null, CORE),
-      extract("loadAiStore", "async function loadAiStore(", AI), "return loadAiStore;"].join("\n");
+      // the store is read, then drawn through ooLiveHtml (row 367): the draw is what is checked here
+      "let _aiStoreRender = null, _aiStoreBusy = null; function ooLiveHtml(el, render) { el.innerHTML = render(); }",
+      extract("loadAiStore", "async function loadAiStore(", AI), extract("_aiStoreHtml", null, AI), "return loadAiStore;"].join("\n");
     // eslint-disable-next-line no-new-func
     const fn = new Function("window", "OOI18N", "$", "api", src)({OOI18N: I}, I,
       (id) => (id === "ai-store-box" ? box : null), () => Promise.resolve(payload));
@@ -527,7 +529,10 @@ async function run() {
     // B19 (Q12): the progress line and the ending reason go through _framedText/_jobLabel.
     const src = [FMTNUM, extract("_qualTf", null, AI), extract("_qualDeclinedText", null, AI),
       extract("_jobStillRunning", null, CORE), extract("_jobLabel", null, CORE), extract("_framedText", null, CORE),
-      extract("qualifyBulkStart", "async function qualifyBulkStart(", AI), "return qualifyBulkStart;"].join("\n");
+      extract("qualifyBulkStart", "async function qualifyBulkStart(", AI),
+      "function ooLive(el, render) { if (render) el.textContent = render(); }",   // row 367: the status line is a held render
+      "let _qualifyBulkDone = null;",   // row 367: a run's last line, kept for the read after it
+      "return qualifyBulkStart;"].join("\n");
     // eslint-disable-next-line no-new-func
     const fn = new Function("window", "OOI18N", "$", "api", "ensureOnline", "pollJobStatus", "loadQualifyBulk", src)(
       {OOI18N: I}, I, (id) => els[id] || null, () => Promise.resolve({started: true}),

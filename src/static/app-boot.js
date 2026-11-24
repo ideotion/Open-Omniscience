@@ -68,6 +68,10 @@
       try { if (typeof esStatusRepaint === "function") esStatusRepaint(); } catch (_e) {}
       // Row 352 fix: the corpus-integrity (fixity) result redraws from its last report; never re-hashes.
       try { if (typeof fixityRepaint === "function") fixityRepaint(); } catch (_e) {}
+      // Row 361: the chronology summary and timeline (Diagnostics) redraw from the reading they hold; never fetch.
+      try { if (typeof chronoRepaint === "function") chronoRepaint(); } catch (_e) {}
+      // Row 367: the Climate tab's charts (legend and axis words) redraw from the points they hold; never fetch.
+      try { if (typeof climateChartsRepaint === "function") climateChartsRepaint(); } catch (_e) {}
       // Row 364: every node drawn through ooLive/ooLiveHtml (app-core.js) redraws from the render it keeps; never fetches.
       try { if (typeof ooLiveRepaint === "function") ooLiveRepaint(); } catch (_e) {}
       // The rest of the Home at-a-glance strip -- its counts and their labels, the "as
@@ -121,7 +125,8 @@
         const qd = document.querySelector('#set-advanced details.adv-sec[data-adv="qualification"]');
         if (qd && qd.dataset.advLoaded === "1" && typeof loadQualificationGates === "function") {
           loadQualificationGates();
-          if (typeof loadQualifyBulk === "function") loadQualifyBulk();
+          // The backlog line (loadQualifyBulk) is a held render now (row 367): ooLiveRepaint redraws it, and a re-read
+          // here would replace a finished run's tally, which belongs to the read after the run, with the backlog.
           // The queue panel picks its list separator from the page direction, so it has to be
           // redrawn on a switch too (found in the R95 follow-up review: en -> ar kept the ASCII comma).
           if (typeof loadQualQueue === "function") loadQualQueue();

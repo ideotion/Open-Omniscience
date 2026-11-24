@@ -19,5 +19,7 @@ def test_the_log_notes_say_what_the_view_leaves_out():
 
 
 def test_the_server_log_panel_renders_the_notes():
-    panel = function_body(app_js(), "loadVllmStatusPanel")
+    # the status box draws through ooLiveHtml over `_vllmStatusHtml` (row 367); the panel hands it the status
+    assert "_vllmStatusHtml(s)" in function_body(app_js(), "loadVllmStatusPanel")
+    panel = function_body(app_js(), "_vllmStatusHtml")
     assert "vllmLogNotes(s)" in panel and "notes +" in panel, "the notes must reach the page, not only exist as a function"

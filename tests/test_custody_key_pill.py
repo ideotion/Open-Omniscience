@@ -112,7 +112,12 @@ def test_the_old_instruction_is_gone():
 
 
 def test_a_value_with_no_entry_gets_no_title():
-    body = function_body(app_js(), "renderCustodyStatus")
+    # renderCustodyStatus draws through ooLiveHtml from _custodyStatusHtml (row 367), so the pill is built there.
+    body = function_body(app_js(), "renderCustodyStatus") + function_body(
+        app_js(), "_custodyStatusHtml"
+    )
     assert "Object.prototype.hasOwnProperty.call(_KEY_PROTECTION_TIPS, s.key_protection)" in body
-    assert '(keyTip ? ` title="${esc(keyTip)}"` : "")' in body
+    # The pill writes a title only when it has one, and the key pill hands it keyTip ("" for a value with no entry).
+    assert '${title ? ` title="${esc(title)}"` : ""}' in body
+    assert "keyTip);" in body
     assert 'title="Set' not in body

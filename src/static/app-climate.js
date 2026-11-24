@@ -26,6 +26,21 @@
     const _climatePick = { gistemp: "GLB", nsidc: "N", owid: "co2", ghcnd: "" };
     const _climateOwid = { area: "World", column: "" };
     const _CLIMATE_IDS = ["gistemp", "nsidc", "oni", "usgs", "owid", "ghcnd", "place"];
+    // Row 367: the tab draws through ooLive/ooLiveHtml, so a language switch redraws it from what it holds, with no
+    // request. A view is built bare once per read and its parts are held one by one, so the charts, the OWID pickers
+    // and the place result are never wiped by a repaint. A field the operator types in keeps its live value on a
+    // repaint; only a fresh draw (`_climateFresh`) writes the stored one.
+    let _climateFresh = false;
+    let _climateCharts = [];   // the charts on screen, as drawn: [{el, series}], redrawn on a switch (climateChartsRepaint)
+    function _climateSay(render) {
+      const st = $("climate-status");
+      if (st) ooLive(st, render);
+    }
+    // The live value of a field inside a held part, or the stored one on a fresh draw.
+    function _climateLive(id, stored, fresh) {
+      const el = $(id);
+      return !fresh && el && el.value != null ? String(el.value) : stored;
+    }
 
     function _climateT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
     function _climateTf() {
@@ -262,8 +277,8 @@
         _climateHosts = d.hosts || {};
         renderClimate();
       } catch (e) {
-        const body = $("climate-body");
-        if (body) body.innerHTML = `<div class="muted">${esc(ooLabelText(t("Could not load"), e.message))}</div>`;
+        const body = $("climate-body"), msg = e.message;
+        if (body) ooLiveHtml(body, () => `<div class="muted">${esc(ooLabelText(t("Could not load"), msg))}</div>`);
       }
     }
 
@@ -276,13 +291,34 @@
     }
 
     function renderClimate() {
-      const t = _climateT(), tf = _climateTf();
+      const t = _climateT();
       const body = $("climate-body");
       if (!body) return;
-      const id = _climateView, txt = climateText(id, t);
+      const id = _climateView;
       let p = _climatePick[id];
       if (id === "ghcnd" && !p) { const st = _climateParams("ghcnd"); p = _climatePick.ghcnd = st[0] || ""; }
       const unit = climateUnit(id, id === "oni" || id === "usgs" ? null : p);
+      const owid = id === "owid" && unit && unit.stored && unit.stored.stored_rows;
+      ooLive(body, null);
+      body.innerHTML = `<div id="climate-main"></div>` +
+        (owid ? `<div class="row" style="gap:8px;align-items:center;margin:6px 0"><label class="muted" for="climate-owid-col" id="climate-owid-col-l"></label><select id="climate-owid-col"></select>
+          <label class="muted" for="climate-owid-area" id="climate-owid-area-l"></label><select id="climate-owid-area"></select></div>` : "") +
+        `<div id="climate-charts"></div>`;
+      _climateFresh = true;
+      ooLiveHtml($("climate-main"), () => climateMainHtml(id, p, unit));
+      if (owid) {
+        ooLive($("climate-owid-col-l"), () => t("Figure"));
+        ooLive($("climate-owid-area-l"), () => t("Country or region"));
+      }
+      if (unit && unit.stored && unit.stored.stored_rows) climateDrawCharts(unit);
+    }
+
+    // The view's text, parameter buttons, facts and fetch buttons: a render, redrawn on a switch. The station field
+    // keeps what the operator typed (only a fresh draw empties it).
+    function climateMainHtml(id, p, unit) {
+      const t = _climateT(), tf = _climateTf();
+      const fresh = _climateFresh; _climateFresh = false;
+      const txt = climateText(id, t);
       let html = `<h3 class="lib-sub">${esc(txt.title)}</h3><p class="hint" title="${esc(txt.method)}">${esc(txt.desc)}</p>`;
       html += `<div class="card-caveat">${esc(txt.caveat)}</div>`;
       const params = _climateParams(id);
@@ -290,7 +326,7 @@
         html += `<div class="row" style="align-items:center;gap:8px;margin:8px 0">
           <label for="climate-station" class="muted">${esc(t("Station id"))}</label>
           <input id="climate-station" type="text" maxlength="11" autocomplete="off" spellcheck="false" style="max-width:12em"
-            placeholder="USW00094728" title="${esc(t("An 11-character GHCN-Daily station id. USW00094728 is New York, Central Park; NOAA lists every station in ghcnd-stations.txt."))}">
+            placeholder="USW00094728" value="${esc(_climateLive("climate-station", "", fresh))}" title="${esc(t("An 11-character GHCN-Daily station id. USW00094728 is New York, Central Park; NOAA lists every station in ghcnd-stations.txt."))}">
           <button type="button" data-climate-fetch="station">${esc(t("Fetch station"))}</button></div>`;
       }
       if (params.length > 1 || (id === "ghcnd" && params.length)) {
@@ -304,13 +340,7 @@
       } else if (id === "ghcnd") {
         html += `<div class="muted">${esc(t("No station fetched yet. Type a station id above and fetch it."))}</div>`;
       }
-      if (id === "owid" && unit && unit.stored && unit.stored.stored_rows) {
-        html += `<div class="row" style="gap:8px;align-items:center;margin:6px 0"><label class="muted" for="climate-owid-col">${esc(t("Figure"))}</label><select id="climate-owid-col"></select>
-          <label class="muted" for="climate-owid-area">${esc(t("Country or region"))}</label><select id="climate-owid-area"></select></div>`;
-      }
-      html += `<div id="climate-charts"></div>`;
-      body.innerHTML = html;
-      if (unit && unit.stored && unit.stored.stored_rows) climateDrawCharts(unit);
+      return html;
     }
 
     async function _climateOwidPickers(unit, gen) {
@@ -319,7 +349,8 @@
       if (!colSel || !areaSel) return null;
       const cols = (unit.charts || []).map((c) => c[0]);
       if (!cols.some((c) => c.series_id === _climateOwid.column)) _climateOwid.column = cols.length ? cols[0].series_id : "";
-      colSel.innerHTML = cols.map((c) => `<option value="${esc(c.series_id)}"${c.series_id === _climateOwid.column ? " selected" : ""}>${esc(climateSeriesLabel(c.series_id, t))}</option>`).join("");
+      // the figure names are translated: held, so a switch redraws them (the choice is read from _climateOwid)
+      ooLiveHtml(colSel, () => cols.map((c) => `<option value="${esc(c.series_id)}"${c.series_id === _climateOwid.column ? " selected" : ""}>${esc(climateSeriesLabel(c.series_id, t))}</option>`).join(""));
       const a = await api("/api/climate/areas?dataset=owid&param=" + encodeURIComponent(unit.param));
       if (gen !== _climateDrawGen) return null;  // a newer draw owns the pickers now
       const areas = (a.areas || []).slice().sort((x, y) => String(x.name).localeCompare(String(y.name)));
@@ -347,6 +378,7 @@
         area = _climateOwid.area;
       }
       host.innerHTML = charts.map((_c, i) => `<div class="climate-chart" style="margin-top:12px"><div id="climate-chart-${i}"></div><div class="hint" id="climate-note-${i}"></div></div>`).join("");
+      _climateCharts = [];
       for (let i = 0; i < charts.length; i++) {
         const group = charts[i];
         const loaded = await Promise.all(group.map((s) => api("/api/climate/series?" + new URLSearchParams({
@@ -357,13 +389,28 @@
         const el = $("climate-chart-" + i), note = $("climate-note-" + i);
         if (!el) continue;
         if (!withData.length) {
-          el.innerHTML = `<div class="muted">${esc(t("Nothing stored for this series yet."))}</div>`;
+          ooLiveHtml(el, () => `<div class="muted">${esc(t("Nothing stored for this series yet."))}</div>`);
           continue;
         }
-        ooChart(el, withData.map((x) => ({
-          label: climateSeriesLabel(x.s.series_id, t), unit: climateUnitLabel(x.s.unit, t), points: x.d.points,
-        })), { height: 240, maxWidth: 1100 });
-        if (note) note.textContent = withData.map((x) => climateSeriesLabel(x.s.series_id, t) + ": " + climateSeriesNote(x.d, t, tf)).join(" · ");
+        const series = withData.map((x) => ({ sid: x.s.series_id, unit: x.s.unit, points: x.d.points }));
+        _climateCharts.push({ el, series });
+        _climateChartDraw(el, series);
+        if (note) ooLive(note, () => withData.map((x) => climateSeriesLabel(x.s.series_id, t) + ": " + climateSeriesNote(x.d, t, tf)).join(" · "));
+      }
+    }
+
+    // One chart, its legend and axis words in the active language. The points are the ones read for it.
+    function _climateChartDraw(el, series) {
+      const t = _climateT();
+      ooChart(el, series.map((x) => ({ label: climateSeriesLabel(x.sid, t), unit: climateUnitLabel(x.unit, t), points: x.points })),
+        { height: 240, maxWidth: 1100 });
+    }
+    // Called from app-boot's ONE oo:langchange listener: the charts on screen are drawn again from the points they hold,
+    // with no request (the canvas and its legend are drawn, not walked).
+    function climateChartsRepaint() {
+      _climateCharts = _climateCharts.filter((c) => c.el && c.el.isConnected);
+      for (const c of _climateCharts) {
+        try { _climateChartDraw(c.el, c.series); } catch (e) { if (window.console) console.warn("climateChartsRepaint", e); }
       }
     }
 
@@ -469,13 +516,25 @@
     }
 
     function renderClimatePlace() {
-      const t = _climateT(), tf = _climateTf();
       const body = $("climate-body");
       if (!body) return;
       const saved = _climatePlaceSaved() || {};
       const dflt = climatePlaceDefaults(new Date());
       const q = {lat: saved.lat ?? "", lon: saved.lon ?? "", start: saved.start || dflt.start, end: saved.end || dflt.end};
-      body.innerHTML = `<h3 class="lib-sub">${esc(t("Your place: temperature and precipitation against 1991-2020"))}</h3>
+      // Built bare (row 367): the form is held and keeps what the operator typed on a repaint; the result has its own
+      // held node below it, so a switch never wipes it.
+      ooLive(body, null);
+      body.innerHTML = `<div id="climate-place-form"></div><div id="climate-place-out"></div>`;
+      _climateFresh = true;
+      ooLiveHtml($("climate-place-form"), () => climatePlaceFormHtml(q));
+      if (q.lat !== "" && q.lon !== "") climatePlaceShow(false, true);
+    }
+    function climatePlaceFormHtml(stored) {
+      const t = _climateT(), tf = _climateTf();
+      const fresh = _climateFresh; _climateFresh = false;
+      const q = {lat: _climateLive("climate-place-lat", stored.lat, fresh), lon: _climateLive("climate-place-lon", stored.lon, fresh),
+                 start: _climateLive("climate-place-start", stored.start, fresh), end: _climateLive("climate-place-end", stored.end, fresh)};
+      return `<h3 class="lib-sub">${esc(t("Your place: temperature and precipitation against 1991-2020"))}</h3>
         <p class="hint" title="${esc(t("For each day of the window, the same calendar day in each year from 1991 to 2020 is averaged. Temperatures compare the mean of the window with the mean of those days; precipitation compares the window's total with the average total. A baseline year with a missing day is left out and counted."))}">${esc(t("Type a place and a window of up to a year. The difference from the 1991-2020 average of the same calendar days is shown for the daily highest and lowest temperature and for precipitation."))}</p>
         <div class="card-caveat">${esc(t("Reanalysis is a weather model's reconstruction for an area of about 11 km, not a station's measurement. A difference is a fact about these days, not a forecast, a trend or a verdict."))}</div>
         <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0">
@@ -486,26 +545,26 @@
         </div>
         <div class="hint">${esc(tf("What leaves this machine: the place, rounded to 0.1 degree (about 11 km), and the dates, sent to {host}. The first time for a place, it also downloads the 1991-2020 daily values for that place, about 11,000 days; they are kept in this app's database (encrypted unless you chose to keep it unencrypted), so other windows for the same place need one small request. This browser remembers the rounded place for next time.", {host: _PLACE_HOST}))}</div>
         <div class="row" style="gap:8px;margin:8px 0"><button type="button" data-climate-place="show">${esc(t("Show"))}</button>
-          <button type="button" class="secondary" data-climate-place="again" title="${esc(t("Downloads both again, for example once the latest days have been finalised."))}">${esc(t("Fetch again"))}</button></div>
-        <div id="climate-place-out"></div>`;
-      if (q.lat !== "" && q.lon !== "") climatePlaceShow(false, true);
+          <button type="button" class="secondary" data-climate-place="again" title="${esc(t("Downloads both again, for example once the latest days have been finalised."))}">${esc(t("Fetch again"))}</button></div>`;
     }
 
     async function climatePlaceShow(again, quiet) {
       const t = _climateT(), tf = _climateTf();
-      const out = $("climate-place-out"), st = $("climate-status");
-      const say = (s) => { if (st) st.textContent = s; };
+      const out = $("climate-place-out");
+      const say = _climateSay;   // a render (row 367): the status line follows a switch
       const val = (id) => { const el = $(id); return el ? String(el.value).trim() : ""; };
       const q = {lat: val("climate-place-lat"), lon: val("climate-place-lon"), start: val("climate-place-start"), end: val("climate-place-end")};
       const bad = climatePlaceProblem(q, new Date(), t);
-      if (bad) { if (!quiet) say(bad); return; }
+      if (bad) { if (!quiet) say(() => climatePlaceProblem(q, new Date(), t)); return; }
       const lat = climatePlaceRound(q.lat), lon = climatePlaceRound(q.lon);
       const params = new URLSearchParams({lat: String(lat), lon: String(lon), start_date: q.start, end_date: q.end});
       try {
         if (!again) {
           const held = await api("/api/weather/anomaly/held?" + params.toString());
-          if (held && held.held) { _climatePlaceSave(q); if (out) out.innerHTML = climatePlaceResultHtml(held, t, tf); say(t("Read from this machine; nothing was sent.")); return; }
-          if (quiet) { if (out) out.innerHTML = `<div class="muted">${esc(t("Not fetched on this machine yet for this place and window."))}</div>`; return; }
+          // the read the view starts by itself answers that view only: left meanwhile, it draws nothing
+          if (quiet && _climateView !== "place") return;
+          if (held && held.held) { _climatePlaceSave(q); if (out) ooLiveHtml(out, () => climatePlaceResultHtml(held, t, tf)); say(() => t("Read from this machine; nothing was sent.")); return; }
+          if (quiet) { if (out) ooLiveHtml(out, () => `<div class="muted">${esc(t("Not fetched on this machine yet for this place and window."))}</div>`); return; }
         }
         // The ONE consent (invariant #14); it names what leaves the machine. A place is personal,
         // so it is asked for EVERY request (R675): when the app is already online the consent
@@ -514,18 +573,20 @@
         if (!await ooAskToSendPlace(lat, lon, {shadow: t("This browser also keeps the rounded place, unencrypted, to fill it in next time.")})) return;
         // Kept only once the person agreed (or the place was already held above), never before the question.
         _climatePlaceSave(q);
-        say(t("Fetching…"));
+        say(() => t("Fetching…"));
         const d = await api("/api/weather/anomaly", {method: "POST", body: JSON.stringify({
           lat: lat, lon: lon, start_date: q.start, end_date: q.end, force: !!again, consent: true,
         })});
         if (!d || d.ok === false) {
-          say(ooLabelText(t("Could not fetch"), (d && (d.verdict_note || d.verdict)) || ""));
+          const why = (d && (d.verdict_note || d.verdict)) || "";
+          say(() => ooLabelText(t("Could not fetch"), why));
           return;
         }
-        if (out) out.innerHTML = climatePlaceResultHtml(d, t, tf);
-        say("");
+        if (out) ooLiveHtml(out, () => climatePlaceResultHtml(d, t, tf));
+        say(() => "");
       } catch (e) {
-        say(ooLabelText(t("Could not fetch"), e.message));
+        const msg = e.message;
+        say(() => ooLabelText(t("Could not fetch"), msg));
       }
     }
 
@@ -542,29 +603,29 @@
 
     async function climateFetch(id, param) {
       const t = _climateT(), tf = _climateTf();
-      const st = $("climate-status");
-      const say = (s) => { if (st) st.textContent = s; };
+      const say = _climateSay;   // a render (row 367): the status line follows a switch
       if (id === "ghcnd") {
-        if (!climateStationOk(param)) { say(t("A GHCN station id is 11 characters: two letters, then nine letters or digits (for example USW00094728).")); return; }
+        if (!climateStationOk(param)) { say(() => t("A GHCN station id is 11 characters: two letters, then nine letters or digits (for example USW00094728).")); return; }
         param = String(param).trim().toUpperCase();
       }
       const title = climateText(id, t).title;
       // The ONE consent (invariant #14); its answer is USED, and without the popup nothing is sent (fails closed).
       if (typeof ensureOnline !== "function"
           || !await ensureOnline(tf("Fetch {dataset} from {host}, over your transport", {dataset: title, host: _climateHost(id)}))) return;
-      say(t("Fetching in the background…"));
+      say(() => t("Fetching in the background…"));
       try {
         const started = await api("/api/climate/fetch", {method: "POST", body: JSON.stringify({dataset: id, param: param, consent: true})});
-        if (started && started.started === false) { say(t("Another climate fetch is already running; try again when it finishes.")); return; }
+        if (started && started.started === false) { say(() => t("Another climate fetch is already running; try again when it finishes.")); return; }
         const job = await pollJobStatus("/api/climate/fetch/status");
-        if (job.state === "error") { say(ooLabelText(t("Climate fetch failed"), job.error || "")); return; }
-        if (_jobStillRunning(job)) { say(t("Still running in the background — check the task manager for the result.")); return; }
+        if (job.state === "error") { const why = job.error || ""; say(() => ooLabelText(t("Climate fetch failed"), why)); return; }
+        if (_jobStillRunning(job)) { say(() => t("Still running in the background — check the task manager for the result.")); return; }
         const r = job.result || {}, tally = r.tally || {};
-        say(tf("Fetched {n} values: {new} new, {revised} revised, {unchanged} unchanged.",
+        say(() => tf("Fetched {n} values: {new} new, {revised} revised, {unchanged} unchanged.",
           {n: fmtNum(r.figures || 0, 0), new: fmtNum(tally.new || 0, 0), revised: fmtNum(tally.revised || 0, 0), unchanged: fmtNum(tally.unchanged || 0, 0)}));
         if (id === "ghcnd") _climatePick.ghcnd = param;
         await loadClimateUnits();
       } catch (e) {
-        say(ooLabelText(t("Climate fetch failed"), e.message));
+        const msg = e.message;
+        say(() => ooLabelText(t("Climate fetch failed"), msg));
       }
     }

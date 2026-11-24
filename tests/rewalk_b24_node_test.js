@@ -70,7 +70,7 @@ const NAMES = [
   // app-analysis
   "commodityOverlaySvg", "_anPriceHtml", "_anLensSuffix", "commoditiesForTerm",
   "renderAnTrend", "_anCtlLabel", "drawAnTrend", "renderAnMindmap",
-  "_anLinksHtml", "_anFurnitureHtml", "_anSentimentHtml", "_anSourcesHtml", "_anSourceCatalogHtml",
+  "_anLinksHtml", "_anFurnitureHtml", "_anSentimentHtml", "_anSourcesHtml", "_anSourceCatalogHtml", "_anSourcesCutHtml",
   "_anRepaintOnLangChange", "_anFormCountsHtml", "_anFormCountsFailedHtml",
   "_anRefillFormSlots",
   // the panels a switch also redraws (the round-2 review of N-4)
