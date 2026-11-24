@@ -2499,6 +2499,43 @@ class ArticleWwwStamp(Base):
     )
 
 
+class CorpusSegment(Base):
+    """One file of the split corpus (R826, row 409, stage 1): the REGISTRY of the segment files and the article-id
+    range each one owns.
+
+    STAGE 1 WRITES NOTHING ON ITS OWN. An empty table means one thing: the corpus is a single file, which is legacy
+    segment 0 (``src/database/segments.py`` answers that without writing a row), so an existing corpus keeps working
+    untouched (R826 g). A row is written only by :func:`src.database.segments.reserve_segment`, which nothing in the app
+    calls yet.
+
+    ``file_name`` NULL is the shared file itself (segment 0); any other value is an exact ``seg-<n>.db`` name in the
+    corpus folder. ``state``: ``reserved`` (the range is committed here, the file is not proven yet), ``open``,
+    ``closed``, ``abandoned`` (a reservation whose segment never committed; its range is never given out again).
+    ``id_hi`` NULL means the range is open-ended, which only segment 0 may be. The registry is never erase evidence by
+    itself (R826 e)."""
+
+    __tablename__ = "corpus_segments"
+
+    seg_no: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    file_name: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    id_lo: Mapped[int] = mapped_column(Integer, nullable=False)
+    id_hi: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    state_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CorpusIdCounter(Base):
+    """The one counter the split corpus's article-id ranges are given out from (R826 Q3). At most one row
+    (``id`` = 1). ``next_id`` only ever grows: a range is reserved and COMMITTED here before any segment uses it, so a
+    crash can waste ids and never reuse them."""
+
+    __tablename__ = "corpus_id_counter"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    next_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class HazardEventDetail(Base):
     """Provider-ASSERTED event metadata for a hazard ingested as an Article
     (2026-07-24 field-feedback Session A §6, ruled: hazards ingest AS Articles).

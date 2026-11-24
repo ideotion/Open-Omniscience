@@ -2625,6 +2625,10 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # is exactly what the note forbids. It now has a handler (`_merge_fetch_history`)
     # whose adoption the operator's trust toggle gates.
     "stat_snapshots": "local hourly counters; recording resumes, history is machine-local",
+    # R826 (row 409, stage 1): the split corpus's registry and id counter describe THIS machine's own files. Another
+    # corpus's rows would name files that are not here and ranges this counter never gave out.
+    "corpus_segments": "this machine's segment files and their id ranges (R826)",
+    "corpus_id_counter": "this machine's article-id range counter (R826)",
     # Q1101 = a (2026-09-15). An admission event records that THIS instance's engine
     # enabled THIS instance's row, and its prior_enabled/prior_status describe that row
     # before the flip. Carrying another corpus's events would offer an undo that restores
