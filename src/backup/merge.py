@@ -7792,13 +7792,14 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
         # here without its marker would read as this installation's own); the evidence key's marker is written above.
         with restored_marker_lock(keys_dir / f"{who}_ed25519.pem") if who != "evidence" else nullcontext():
             if who != "evidence":
-                here = [name for name in names if os.path.lexists(base / name)]
+                here = kept(names, lambda name: os.path.lexists(base / name))
                 if here:
                     # a signer made a key of its own since the look above: theirs wins, and no half of this pair goes beside it
                     out["kept_local"].extend(here)
                     for name in names:
-                        if name not in here:
-                            out["not_placed"].append({"name": name, "reason": _KEY_PAIR_RACED})
+                        if name in here:
+                            continue  # the guard-clause form (src/utils/interrupts.py): the loop's back-edge stays inside the lock
+                        out["not_placed"].append({"name": name, "reason": _KEY_PAIR_RACED})
                     continue
                 try:
                     pair_marker = mark_key_as_restored(keys_dir / f"{who}_ed25519.pem", backup_key=staged.origin_fingerprint)

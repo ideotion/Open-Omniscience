@@ -22,6 +22,7 @@ from src.custody import signing
 from src.reporting import evidence as ev
 from src.safety import data_scope
 from tests.backup_helper import staged_artifact
+from tests.os_scope import scope_os
 from tests.test_restore_key_rewrap import _FakeMldsa
 
 SUFFIX = ev.RESTORED_KEY_MARKER_SUFFIX
@@ -186,7 +187,7 @@ def test_an_unreadable_marker_state_is_never_this_installations(tmp_path, monkey
             raise PermissionError("cannot look")
         return real_lstat(p, *a, **k)
 
-    monkeypatch.setattr(ev.os, "lstat", odd)
+    scope_os(monkeypatch, ev, lstat=odd)
     assert ev.is_this_installations_key(pub, _keys(tmp_path) / "custody_ed25519.pem") is False
 
 
