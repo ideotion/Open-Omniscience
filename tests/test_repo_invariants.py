@@ -2112,7 +2112,8 @@ def test_no_print_in_library_code():
     """
     import ast
 
-    CLI_MODULES = {"src/diagnostics.py"}
+    # src/api/_panic_precheck.py: the panic CLI's R809 refusal, printed before the app opens anything (exit 2).
+    CLI_MODULES = {"src/diagnostics.py", "src/api/_panic_precheck.py"}
     CLI_FUNCTIONS = {
         "main",
         "_panic_cli",

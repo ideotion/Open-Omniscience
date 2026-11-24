@@ -71,6 +71,10 @@ async function run({counts, post}) {
     fmtNum: (x) => String(x),
     esc: (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
     ooLabelText: (label, text) => label + ": " + text,
+    // The panel lines are drawn through ooLive/ooLiveHtml (row 367); a stand-in that draws once, as the real helper
+    // does at the call (its repaint on a language switch is driven in settings_imports_live_node_test.js).
+    ooLive: (node, render) => { if (node) node.textContent = render ? String(render()) : ""; },
+    ooLiveHtml: (node, render) => { if (node) node.innerHTML = render ? String(render()) : ""; },
     window: {},
     OOI18N: undefined,
   };

@@ -100,7 +100,10 @@ const src = [
   "function api(u){H.api.push(u); return H.respond(u);}",
   "function ooChart(host, list, opts){H.charts.push({host, list, opts});}",
   "function _anRepaintArticles(){H.articlesRepainted++;}",
-  "function _exploreSync(){}",   // Explore's note (R47), redrawn from state; tested in test_explore_merge.py
+  "function _exploreSync(){}",
+  // ooLive/ooLiveHtml (app-core.js, row 364): draw the render now; their repaint is tested in oo_live_node_test.js
+  "function ooLiveHtml(el, render){ if (el) el.innerHTML = String(render()); }",
+  "function ooLive(el, render){ if (el && render) el.textContent = String(render()); }",   // Explore's note (R47), redrawn from state; tested in test_explore_merge.py
   "var _SPARSE_BAR_MAX = 10;",
   "var COMMODITY_QUERY = {WTI: 'crude oil'};",
   "var _anCommodity = null, _anExpand = true;",
