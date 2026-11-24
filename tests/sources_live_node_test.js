@@ -48,6 +48,12 @@ class Text {
 }
 // A small element: markup written into it makes a child element for every tag with a class, found again by
 // querySelector(".cls"); those children leave the page when the markup is replaced. Its text is the markup's text.
+// The text of markup: tags removed until none is left (one pass can leave a tag that two halves made).
+function stripTags(html) {
+  let h = String(html), prev;
+  do { prev = h; h = h.replace(/<[^>]*>/g, ""); } while (h !== prev);
+  return h;
+}
 class El {
   constructor(tag, cls) {
     this.nodeName = tag; this.childNodes = []; this.attrs = {}; this.parentNode = null; this._html = null;
@@ -70,7 +76,7 @@ class El {
   set innerHTML(v) {
     const html = String(v);
     this._drop();
-    this.replaceChildren(...(html === "" ? [] : [new Text(html.replace(/<[^>]*>/g, ""))])); this._html = html;
+    this.replaceChildren(...(html === "" ? [] : [new Text(stripTags(html))])); this._html = html;
     for (const m of html.matchAll(/<(\w+)([^>]*)>/g)) {
       const cl = /\bclass="([^"]+)"/.exec(m[2]);
       if (cl) this._kids.push(new El(m[1].toUpperCase(), cl[1].split(/\s+/)));

@@ -46,6 +46,12 @@ class Text {
   get textContent() { return this.nodeValue; }
   set textContent(v) { this.nodeValue = String(v); }
 }
+// The text of markup: tags removed until none is left (one pass can leave a tag that two halves made).
+function stripTags(html) {
+  let h = String(html), prev;
+  do { prev = h; h = h.replace(/<[^>]*>/g, ""); } while (h !== prev);
+  return h;
+}
 class El {
   constructor(tag) {
     this.nodeName = tag; this.childNodes = []; this.attrs = {}; this.parentNode = null; this._html = null;
@@ -67,7 +73,7 @@ class El {
   set innerHTML(v) {
     const html = String(v);
     // the text a browser would read out of the markup, so a foreign write is told by its text, as in app-core.js
-    this.replaceChildren(...(html === "" ? [] : [new Text(html.replace(/<[^>]*>/g, ""))])); this._html = html;
+    this.replaceChildren(...(html === "" ? [] : [new Text(stripTags(html))])); this._html = html;
   }
   closest() { return null; }
 }
