@@ -1430,7 +1430,7 @@
     async function unattendedStart(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("unatt-status");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361/365: the line follows a language switch
       const note = (($("unatt-note") && $("unatt-note").value) || "").trim();
       // Invariant #14: the arming goes ONLINE (the server clears the kill switch), so the
       // press passes the ONE consent popup like every other offline->online transition.
@@ -1438,7 +1438,7 @@
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Start the unattended run (goes online: continuous collection and the qualification drain)"))) return;
       if (btn) btn.disabled = true;
-      set(t("Arming…"));
+      set(() => t("Arming…"));
       try {
         const r = await api("/api/system/unattended/start", {
           method: "POST", body: JSON.stringify({ note }),
@@ -1446,12 +1446,13 @@
         const q = (r && r.qualification) || {};
         // Say what it DECIDED, not just that it started — a run that declined to
         // qualify must read as a decision, never as one that found nothing to do.
-        const qtxt = q.started
+        const qtxt = () => (q.started
           ? t("source qualification running")
-          : t("source qualification not started") + " — " + (q.reason || "");
-        set(t("Armed.") + " " + t("Collecting") + " · " + qtxt);
+          : t("source qualification not started") + " — " + (q.reason || ""));
+        set(() => t("Armed.") + " " + t("Collecting") + " · " + qtxt());
       } catch (e) {
-        set(t("Could not arm:") + " " + ((e && e.message) || ""));
+        const msg = (e && e.message) || "";   // the server's words are data
+        set(() => t("Could not arm:") + " " + msg);
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1460,9 +1461,9 @@
     async function unattendedLog(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("unatt-status"); const box = $("unatt-log");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361/365: the line follows a language switch
       if (btn) btn.disabled = true;
-      set(t("Reading…"));
+      set(() => t("Reading…"));
       try {
         const r = await api("/api/system/unattended/log");
         const text = (r && r.text) || "";
@@ -1477,9 +1478,10 @@
             copied = true;
           }
         } catch (_e) { copied = false; }
-        set(copied ? t("Copied to the clipboard.") : t("Ready below — select and copy."));
+        set(() => (copied ? t("Copied to the clipboard.") : t("Ready below — select and copy.")));
       } catch (e) {
-        set(t("Could not read the log:") + " " + ((e && e.message) || ""));
+        const msg = (e && e.message) || "";   // the server's words are data
+        set(() => t("Could not read the log:") + " " + msg);
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1897,7 +1899,11 @@
 
     function _chronoRender(d) {
       const sum = $("chrono-summary");
-      if (sum) sum.innerHTML = _chronoSummaryHtml(d);
+      // Row 361: the summary is built from t()/tf() frames and the timeline below it too, so both
+      // keep out of the walker and are drawn again on a switch (chronoRepaint, from app-boot's
+      // oo:langchange listener). Not through ooLive: the live counter inside the summary is written
+      // every second, which the helper would read as a foreign write and stop following the switch.
+      if (sum) { sum.setAttribute("data-i18n-dyn", ""); sum.innerHTML = _chronoSummaryHtml(d); }
       _chronoDraw(d);
       // The live counter: the fetched figure plus the seconds since it was read.
       if (_chronoTimer) clearInterval(_chronoTimer);
@@ -1909,6 +1915,13 @@
           el.textContent = _chronoDur(base + (Date.now() - _chronoReadAt) / 1000);
         }, 1000);
       }
+    }
+
+    // Row 361: the summary and the timeline redraw from the reading they hold; never fetches, and
+    // only once a reading has been drawn (a panel nobody opened stays as it is).
+    function chronoRepaint() {
+      const sum = $("chrono-summary");
+      if (_chronoData && sum && sum.children.length) _chronoRender(_chronoData);
     }
 
     function _chronoDraw(d) {
@@ -3413,7 +3426,7 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const out = $("field-data-status");
-      const say = (m) => { if (out) out.textContent = m; };
+      const say = (render) => ooLive(out, render);   // row 361/365: the line follows a language switch
       if (btn) btn.disabled = true;
       let files = 0;
       const pause = () => new Promise((res) => setTimeout(res, 400));   // let the browser take each download
@@ -3426,7 +3439,7 @@
       try {
         for (const ex of FIELD_DATA_EXPORTS) {
           if (ex.kind === "file") {
-            say(tf("Saving… {files} files so far.", {files}));
+            { const n = files; say(() => tf("Saving… {files} files so far.", {files: n})); }
             const r = await fetch(ex.url, ex.method ? {method: ex.method} : undefined);
             if (!r.ok) throw new Error("HTTP " + r.status);
             files += await _fieldSaveParts(await r.blob(), named(ex.name, r), pause);
@@ -3435,7 +3448,7 @@
           }
           let after = 0, part = 0;
           for (;;) {
-            say(tf("Saving… {files} files so far.", {files}));
+            { const n = files; say(() => tf("Saving… {files} files so far.", {files: n})); }
             const r = await fetch(ex.url + after);
             if (!r.ok) throw new Error("HTTP " + r.status);
             part += 1;
@@ -3446,9 +3459,10 @@
             await pause();
           }
         }
-        say(tf("Done: {files} files.", {files}));
+        { const n = files; say(() => tf("Done: {files} files.", {files: n})); }
       } catch (e) {
-        say(tf("Stopped after {files} files: {why}", {files, why: (e && e.message) || t("unknown error")}));
+        const n = files, msg = e && e.message;   // the server's words are data
+        say(() => tf("Stopped after {files} files: {why}", {files: n, why: msg || t("unknown error")}));
       } finally {
         if (btn) btn.disabled = false;
       }

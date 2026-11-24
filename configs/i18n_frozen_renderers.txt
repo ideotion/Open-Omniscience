@@ -18,6 +18,7 @@ app-ai-tools.js loadModelCatalog
 app-ai-tools.js loadVllmStatusPanel
 app-ai-tools.js migrateOllamaStore
 app-ai-tools.js overlayMerge
+app-ai-tools.js qualifyBulkStart
 app-ai-tools.js renderCustodyStatus
 app-ai-tools.js runAiSetup
 app-ai-tools.js uninstallAi
@@ -49,6 +50,7 @@ app-claim.js claimRun
 app-claim.js claimVerify
 app-claim.js claimWeather
 app-climate.js climateDrawCharts
+app-climate.js climateFetch
 app-climate.js climatePlaceShow
 app-climate.js loadClimateUnits
 app-climate.js renderClimate

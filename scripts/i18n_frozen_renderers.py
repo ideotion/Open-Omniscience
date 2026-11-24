@@ -26,6 +26,11 @@ METHOD (source only; nothing is executed):
 * Hit: a unit whose own code has BOTH a sink (``.innerHTML``/``.textContent``/``.innerText``/
   ``.outerHTML`` assigned with ``=`` or ``+=``, or ``.insertAdjacentHTML(``) AND a translator call
   (``t(``, ``tf(``, ``tr(``, ``trf(``, ``_t(``, ``_tf(``, ``_custT(``, ``OOI18N.t(``, ``OOI18N.tf(``).
+  (row 365) A unit is ALSO a hit when it hands translator output to a closure of its own that writes
+  it: ``const say = (m) => { out.textContent = m; }; say(t("Saving…"))``. The closure (a unit
+  declared inside the caller, with a sink and no marker) has no translator and the caller no sink,
+  so neither counted before. Only a call whose arguments hold a translator call charges the caller:
+  ``say(n)`` or ``say(e.message)`` charges nothing.
 * Exempt, any one of:
   0. (row 364) the node and the render passed to ``ooLive(el, render)``/``ooLiveHtml(el, render)``
      are not looked at: those arguments are blanked before sinks and translators are matched (unless
@@ -63,6 +68,12 @@ BLIND SPOTS -- absence of a hit is weaker evidence than a hit:
   modelled), and a ``setAttribute("data-i18n-dyn")`` on some other element still exempts the unit.
 * Translator aliases other than the ones listed are not seen, nor is output from a helper that
   calls ``t()`` itself (``custodyActionHtml(e.action, tr)``) unless a listed call is also in the unit.
+  So ``sum.innerHTML = _chronoSummaryHtml(d)`` (app-diagnostics.js ``_chronoRender``) is not counted:
+  the builder is a top-level function that translates inside itself, not a closure handed t() output.
+* A render handed to ``ooLive`` that returns text translated ONCE, outside the call
+  (``const msg = t("Saved"); ooLive(el, () => msg)``), is blanked like any render and so exempt, yet
+  it redraws the same words in the old language: only a translator called INSIDE the render follows
+  a switch, and no source scan can tell the two apart without running them.
 * Exemption 2 is unit-wide: a unit that names one dyn id and also writes another, unmarked node
   is wrongly exempt.
 * Exemption 3 is static reachability, not runtime: a repaint that reaches the unit only while a
@@ -377,22 +388,58 @@ def scan_sources(
         repainted |= frontier
 
     ids = dyn_ids(index_html)
-    hits = []
-    for u in units:
-        own_code, own_skel = u["own_code"], _blank_live_calls(u["own_skel"])
-        if not (_SINK.search(own_skel) and _TRANSLATOR.search(own_skel)):
-            continue
-        if u["id"] in repainted or _MARKS_DYN.search(own_code):
-            continue
+
+    def marked(own_code: str, own_skel: str) -> bool:
+        """The code marks its output off the walker, or names a node ``index.html`` marks."""
+        if _MARKS_DYN.search(own_code):
+            return True
         if any(own_skel[m.start()] == " " for m in _DYN_TAG.finditer(own_code)):
-            continue
-        if any(
+            return True
+        return any(
             re.search(
                 rf"(?:\$|getElementById)\(\s*[\"']{re.escape(i)}[\"']\s*\)|[\"']#{re.escape(i)}(?![\w-])",
                 own_code,
             )
             for i in ids
-        ):
+        )
+
+    for u in units:
+        u["live_skel"] = _blank_live_calls(u["own_skel"])
+
+    def charged(u: dict) -> bool:
+        """Row 365: ``u`` hands t()/tf() output to a closure of its own that writes it into a node.
+
+        A closure (a unit declared inside ``u``) whose own code has a sink and no marker, called
+        from ``u``'s own code with a translator call among its ARGUMENTS, writes translated text
+        just as an inline sink would -- yet the closure alone has no translator and ``u`` alone no
+        sink, so neither was counted. A call that hands the closure anything else (a number, the
+        server's words, a render for ooLive) charges nothing.
+        """
+        writers = {
+            v["name"]
+            for v in by_file[u["file"]]
+            if v is not u
+            and u["a"] < v["a"]
+            and v["e"] <= u["e"]
+            and _SINK.search(v["live_skel"])
+            and not marked(v["own_code"], v["live_skel"])
+        }
+        if not writers:
+            return False
+        skel = u["live_skel"]
+        for m in _CALL.finditer(skel):
+            if m.group(1) in writers and _TRANSLATOR.search(
+                skel, m.end(), _close(skel, m.end() - 1, "(", ")")
+            ):
+                return True
+        return False
+
+    hits = []
+    for u in units:
+        own_code, own_skel = u["own_code"], u["live_skel"]
+        if not ((_SINK.search(own_skel) and _TRANSLATOR.search(own_skel)) or charged(u)):
+            continue
+        if u["id"] in repainted or marked(own_code, own_skel):
             continue
         hits.append(Hit(u["file"], u["name"], u["line"]))
     return sorted(hits, key=lambda h: (h.key, h.line))
