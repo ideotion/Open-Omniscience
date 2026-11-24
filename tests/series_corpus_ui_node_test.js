@@ -55,6 +55,9 @@ async function drive(statuses) {
       return statuses.length > 1 ? statuses.shift() : statuses[0];
     },
     _failMsg: (tpl, e) => tpl.replace("{error}", (e && e.message) || String(e)),
+    // Row 372(b): the line is drawn through ooLive (app-core.js); drawn once here, the live
+    // repaint itself is driven by app_map_live_i18n_node_test.js.
+    ooLive: (node, render) => { if (node && render) node.textContent = render(); },
     setTimeout: (fn) => fn(),            // collapse the poll delay
     window: {},
   };
