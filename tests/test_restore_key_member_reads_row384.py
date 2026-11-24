@@ -58,6 +58,7 @@ def _swap(staged, name: str, make) -> None:
             id="link-to-a-regular-file",
             marks=posix_only,
         ),
+        pytest.param(lambda p: os.symlink(p.with_name("gone.key"), p), id="broken-link", marks=posix_only),
     ],
 )
 def test_an_app_name_that_is_no_key_file_is_refused_unread(tmp_path, monkeypatch, make):

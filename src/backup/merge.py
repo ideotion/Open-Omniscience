@@ -7636,7 +7636,7 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
             "backup's keys folder carried (the first ones are listed in not_placed)"
         ),
     }
-    members = staged.member_paths("keys")
+    members = staged.member_paths("keys", keep_links=True)  # row 384: a broken link is listed as not read, never dropped
     if not members:
         return out
     held: bytes | None = None
