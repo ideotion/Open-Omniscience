@@ -126,9 +126,9 @@
     async function loadGovCountry(iso) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("gov-country-data"); if (!host || !iso) return;
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       let d; try { d = await api("/api/governments/country/" + encodeURIComponent(iso)); }
-      catch (e) { _govCountryLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not load this country."))}</div>`; return; }
+      catch (e) { _govCountryLast = null; ooLiveHtml(host, () => `<div class="muted">${esc(t("Could not load this country."))}</div>`); return; }
       _govCountryLast = {d, iso};
       host.innerHTML = _govCountryHtml(d, iso);
     }
@@ -802,6 +802,9 @@
       const indicator = sel.value || (_govInds && _govInds[0] && _govInds[0].id);
       if (!indicator) return;
       const host = $("gov-map-host");
+      // The previous indicator's map is no longer the one shown: a language switch while this one loads must not
+      // draw it back over the loading line (repaintGovViewsFromCache redraws _govMapLast).
+      _govMapLast = null;
       if (host) ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try { _govMapData = await api("/api/governments/map?indicator=" + encodeURIComponent(indicator)); }
       catch (e) { _govMapData = null; }
@@ -889,7 +892,8 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // The ONE consent, naming the action like every other gated button (invariant #14):
       // called bare, the popup read "This action needs the network:" and then nothing.
-      if (typeof ensureOnline === "function" && !(await ensureOnline(t("Load standard country data")))) return;
+      // Fails closed: without the consent popup there is no load.
+      if (typeof ensureOnline !== "function" || !(await ensureOnline(t("Load standard country data")))) return;
       // The button's words are held while the load runs, so they follow a language switch; the
       // progress is kept as numbers and put into words at each draw. Released at the end, which
       // brings back the button's own label.
@@ -1074,7 +1078,7 @@
     // A toast's words, apart from lawSummarize so its button holds are the only words that function draws.
     function _lawFailedText(why) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      return t("Failed:") + " " + esc(why);
+      return t("Failed:") + " " + String(why);   // toast() writes text, so escaping would show "&#39;" as is
     }
     async function lawSummarize(revId, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);

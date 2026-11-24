@@ -74,7 +74,7 @@ class El {
 
 const CORE = ["_ooLiveWatch", "_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml",
   "ooLiveRepaint"];
-const FNS = ["_govTf", "loadGovCountries", "renderGovCompare", "loadGovAggregate", "renderGovGroup", "loadGovMap", "renderGovMap",
+const FNS = ["_govTf", "loadGovCountries", "loadGovCountry", "renderGovCompare", "loadGovAggregate", "renderGovGroup", "loadGovMap", "renderGovMap",
   "govLoadStandard", "_lawPointerLine", "loadLawPointer", "_lawFailedText", "lawSummarize", "lawVerdictLabel", "lawAddDocument"];
 const IDS = ["gov-country", "gov-country-data", "gov-law-pointer", "gov-cmp-a", "gov-cmp-b", "gov-cmp-body", "gov-agg-body",
   "gov-grp-pick", "gov-grp-ind", "gov-grp-year", "gov-grp-body", "gov-map-ind", "gov-map-year", "gov-map-host",
@@ -103,12 +103,12 @@ function harness(answers, extra) {
     "let _govCountriesInit = false, _govCountryLast = null, _govCmpLast = null, _govAggLast = null, _govGrpLast = null;",
     "let _govMapLast = null, _govMapData = null, _govMapInit = true, _govInds = [], _govSubtabs = null;",
     ...CORE.map(extract), ...FNS.map(extract),
-    "return { fns: {" + FNS.join(",") + ", ooLiveRepaint} };",
+    "return { fns: {" + FNS.join(",") + ", ooLiveRepaint}, mapLast: (v) => { if (v !== undefined) _govMapLast = v; return _govMapLast; } };",
   ].join("\n");
   const env = Object.assign({
     window, OOI18N, document, MutationObserver: undefined, console, esc, $: (id) => nodes[id] || null, api,
     toast() {}, fmtNum: (x) => String(x), ooCountryCompare: (a, b) => (a < b ? -1 : 1), _govPickLabel: (c) => c,
-    loadGovIndicators: async () => {}, loadGovCountry() {}, _govCompareHtml: () => "<table>CMP</table>",
+    loadGovIndicators: async () => {}, _govCountryHtml: () => "<div>COUNTRY</div>", _govCompareHtml: () => "<table>CMP</table>",
     _govAggHtml: () => "<div>AGG</div>", _govGroupHtml: () => "<div>GRP</div>", _govMapDraw: async () => {},
     lawAiSummaryHtml: () => "SUMMARY", loadLaw() {}, ensureOnline: async () => { calls.push("consent"); return true; },
     pollJobStatus: async () => ({ state: "done", result: { stored: 1 } }), _jobStillRunning: () => false,
@@ -116,7 +116,7 @@ function harness(answers, extra) {
   }, extra || {});
   const out = new Function(...Object.keys(env), src)(...Object.values(env));
   return {
-    fns: out.fns, nodes, held, calls, $: (id) => nodes[id],
+    fns: out.fns, mapLast: out.mapLast, nodes, held, calls, $: (id) => nodes[id],
     switchTo(l) {
       lang = l; for (const k of Object.keys(map)) delete map[k]; Object.assign(map, locale(l));
       out.fns.ooLiveRepaint();   // app-boot's ONE oo:langchange listener
@@ -143,6 +143,17 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     await h2.fns.renderGovCompare();
     h2.switchTo("fr");
     assert.strictEqual(h2.$("gov-cmp-body").innerHTML, "<table>CMP</table>", "a table drawn over the hold is not redrawn by it");
+  }
+
+  // 1b. One country: its loading and failure lines follow a switch.
+  {
+    const h = harness({ "GET /api/governments/country/FRA": "hold" });
+    const p = h.fns.loadGovCountry("FRA");
+    h.switchTo("fr");
+    assert.ok(has(h.$("gov-country-data"), esc(FR["Loading…"])), "the country's loading line follows a switch");
+    h.held[0].reject(new Error("x")); await p;
+    h.switchTo("de");
+    assert.ok(has(h.$("gov-country-data"), esc(DE["Could not load this country."])), "the country's failure line follows a switch");
   }
 
   // 2. Aggregates and Groups: their failure lines follow a switch.
@@ -190,6 +201,12 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     h.switchTo("fr");
     assert.ok(ysel.innerHTML.includes(`<option value="">${esc(FR["Latest available"])}</option>`), "the first option follows a switch");
     assert.ok(ysel.innerHTML.includes('<option value="2020" selected>2020</option>'), "the picked year stays picked: " + ysel.innerHTML);
+    // A new indicator forgets the previous one's map, so a switch while it loads cannot draw the old map back.
+    const h3 = harness({ "GET /api/governments/map?indicator=B": "hold" });
+    h3.mapLast({ meta: {}, data: {} });
+    h3.$("gov-map-ind").value = "B";
+    h3.fns.loadGovMap();
+    assert.strictEqual(h3.mapLast(), null, "the previous indicator's map is forgotten when a new one loads");
     const h2 = harness({ "GET /api/governments/map?indicator=X": { by_country: [] } });
     h2.$("gov-map-ind").value = "X";
     await h2.fns.loadGovMap();
@@ -223,6 +240,15 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     assert.strictEqual(btn.textContent, "Load standard country data", "a released button is the walker's again, not the hold's");
   }
 
+  // 5b. Without the consent popup there is no load: it fails closed.
+  {
+    const h = harness({}, { ensureOnline: undefined });
+    const btn = button("Load standard country data");
+    await h.fns.govLoadStandard(btn);
+    assert.deepStrictEqual(h.calls, [], "no request is made without the consent popup");
+    assert.strictEqual(btn.textContent, "Load standard country data");
+  }
+
   // 6. Summarize this change: the busy word follows a switch; a failure gives the button its label back.
   {
     const h = harness({ "POST /api/law/revisions/7/summarize": "hold" });
@@ -233,6 +259,8 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     h.held[0].reject(new Error("x")); await p;
     assert.strictEqual(btn.textContent, "Summarize this change");
     assert.strictEqual(btn.disabled, false);
+    // toast() writes text, so the reason is not escaped (an apostrophe would show as "&#39;").
+    assert.strictEqual(h.fns._lawFailedText("can't"), FR["Failed:"] + " can't");
   }
 
   // 7. Add & track: the required line, the busy word and the result line (its robots words included) follow a switch.
