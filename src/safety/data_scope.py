@@ -59,6 +59,8 @@ APP_FILES: frozenset[str] = frozenset({
     ".oo-instance-id", "card_quality_selfcheck.jsonl",
     # R729: which backups still owe this machine a living-source merge (src/backup/lane_merge.py)
     "lane_merge_pending.json",
+    # R827 R7(a): an import activation whose whole-file check is still owed (src/backup/merge.py)
+    "import-unverified-activation.json",
 })
 
 #: Top-level FOLDERS the app writes into its data folder.

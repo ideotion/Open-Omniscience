@@ -585,6 +585,7 @@ class VolumeBackupManager:
         force: bool = False,
         working_copy: Path | None = None,
         hold_after_merge: bool = False,
+        final_activation: bool = True,
         already_merged_digests: Collection[str] = (),
         trust_fetch_history: bool | None = None,
         place_hf_models: bool = False,
@@ -633,6 +634,10 @@ class VolumeBackupManager:
                 kwargs={
                     "working_copy": Path(working_copy) if working_copy is not None else None,
                     "hold_after_merge": bool(hold_after_merge),
+                    # R7a: False when another item of the same group will merge
+                    # after this one, so this activation is an intermediate
+                    # checkpoint and may take the scoped file check.
+                    "final_activation": bool(final_activation),
                     "already_merged_digests": frozenset(already_merged_digests or ()),
                     # The Q701-note per-import answer. None = "this import did not
                     # choose", which run_restore resolves to the operator's stored
@@ -664,6 +669,7 @@ class VolumeBackupManager:
         place_hf_models: bool = False,
         working_copy: Path | None = None,
         hold_after_merge: bool = False,
+        final_activation: bool = True,
         already_merged_digests: frozenset[str] = frozenset(),
     ):
         from src.backup.merge import (
@@ -1005,6 +1011,7 @@ class VolumeBackupManager:
                         # path is unchanged.
                         working_copy=working_copy,
                         hold_after_merge=hold_after_merge,
+                        final_activation=final_activation,
                     )
                     # S6.2: an artifact that CARRIES the large public files puts them
                     # back once the corpus merge has committed -- after, because a
