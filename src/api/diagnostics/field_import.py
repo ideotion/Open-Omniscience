@@ -17,14 +17,14 @@ count is a read of the corpus.
 WHAT LEAVES THE MACHINE: NUMBERS AND THE APP'S OWN TOKENS, NOTHING ELSE (R734, R736, R114). Every value goes through
 :func:`projected`, an allowlist rather than a mask:
 
-* numbers, booleans and ``None`` are kept;
-* a string is kept only when it is one token of letters, digits, ``_``, ``:`` and ``-`` (an outcome, a stage, an engine stamp),
-  an ISO timestamp, or one of a few fixed sentences the app writes under a named key (``reason``, a stage name); a space-free
-  token cannot be an address, a path or a file name, since each of those needs a ``/``, a ``.`` or a ``\\``;
-* every string, whatever it is, is withheld under a key that names a title, an address, a path, a file, a label, a message or a
-  text, and every kept string is passed through the shared scrubber (``scrubbed_value``) for the passphrases the process holds;
-* a dict key is kept only when it is a short token-like name and the scrubber leaves it unchanged; a key that is not (a domain, a
-  file name used as a key) is withheld with its whole value;
+* numbers, booleans and ``None`` are kept (a float that is not finite is withheld: a JSON response cannot carry it);
+* a string is kept ONLY under one of the keys in :data:`_FI_STRING_KEYS`, and only in the one shape that key allows: a
+  lower-case word for an outcome or a state, a lower-case stage name, one of the app's lower-case reasons, an engine stamp, an
+  import run's id, an ISO time. Every other string is withheld, however harmless it looks: a backup's folder name, a
+  correspondent's public key and a label copied under a new key are all well-formed tokens, so shape alone is never the test;
+* every kept string and every kept key passes the shared scrubber (``scrubbed_value``) for the passphrases the process holds;
+* a dict key is kept only when it is a lower-case word as the app writes its fields (or a stage name under a stage prefix); any
+  other key (a domain, a name, a file, a CamelCase field) is withheld with its whole value;
 * a list longer than :data:`FIELD_IMPORT_MAX_LIST` is replaced by its length.
 
 What was withheld is COUNTED in each file (``withheld``), never silently dropped. The rule fails closed: a string that matches
@@ -38,6 +38,7 @@ the serialised bytes: entries are newest first and the OLDEST are dropped until 
 from __future__ import annotations
 
 import json
+import math
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -56,73 +57,66 @@ FIELD_IMPORT_MAX_LIST = 64
 #: A report larger than this is listed with its size and not parsed (the listing's own bound in ``import_reports``).
 FIELD_IMPORT_REPORT_PARSE_MAX = 4 * 1024 * 1024
 
-_FI_TOKEN = re.compile(r"\A[A-Za-z0-9_:\-]{1,80}\Z")
 _FI_ISO_TIME = re.compile(
     r"\A\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})?\Z"
 )
-_FI_KEY = re.compile(r"\A[A-Za-z0-9_:\- ]{1,80}\Z")
-#: Keys whose string value may be one of the app's own sentences (a stage name has a space; a reason is a fixed phrase).
-_FI_SENTENCE_KEYS = frozenset(
-    {"reason", "www_reason", "died_in_stage", "died_after_stage", "last_phase", "phase", "stage"}
-)
-_FI_SENTENCE = re.compile(r"\A[A-Za-z0-9_:,()\- ]{1,160}\Z")
-#: Words that, as a part of a key, withhold every string under it.
-_FI_SENSITIVE_PARTS = frozenset(
-    {
-        "title",
-        "titles",
-        "url",
-        "urls",
-        "uri",
-        "href",
-        "link",
-        "address",
-        "host",
-        "hostname",
-        "domain",
-        "path",
-        "paths",
-        "file",
-        "files",
-        "filename",
-        "dir",
-        "folder",
-        "dest",
-        "label",
-        "name",
-        "names",
-        "msg",
-        "message",
-        "messages",
-        "text",
-        "body",
-        "content",
-        "excerpt",
-        "snippet",
-        "sample",
-        "samples",
-        "traceback",
-        "query",
-        "email",
-        "user",
-        "username",
-        "detail",
-        "note",
-        "error",
-        "errors",
-        "cls",
-        "passphrase",
-        "password",
-        "secret",
-        "key",
-        "token",
-    }
-)
-_FI_KEY_SPLIT = re.compile(r"[_:\- ]+")
+#: A word the app writes: lower case, digits, ``_``, ``:`` and ``-``. An outcome, a state, a stage.
+_FI_WORD = re.compile(r"\A[a-z][a-z0-9_:\-]{0,63}\Z")
+#: A stage as the app names it, which may hold a space ("merge_step:country codes"); lower case only.
+_FI_STAGE = re.compile(r"\A[a-z][a-z0-9_:\- ]{0,79}\Z")
+#: One of the app's own fixed reasons: a lower-case sentence with no punctuation that a path, an address or a quote needs.
+_FI_REASON = re.compile(r"\A[a-z][a-z0-9 ,:()\-]{0,159}\Z")
+#: An extraction engine's stamp (``e1-<hex>``, ``w1-<hex>``) and an import run's id (``imp-20261115T112935Z-476095``).
+_FI_ENGINE = re.compile(r"\A[a-z]\d-[0-9a-f]{8,64}\Z")
+_FI_RUN_ID = re.compile(r"\A[a-z]{2,12}-\d{8}T\d{6}Z-[0-9a-f]{4,12}(-\d{1,4})?\Z")
 
-
-def _fi_sensitive(key: str) -> bool:
-    return any(part.lower() in _FI_SENSITIVE_PARTS for part in _FI_KEY_SPLIT.split(key) if part)
+#: THE ONLY KEYS A STRING IS KEPT UNDER, each with the one shape it may have. A string under any other key is withheld,
+#: whatever it looks like: a backup's folder name, a correspondent's public key or a label copied under a new key is a
+#: perfectly well-formed token, so the shape alone can never be the test (security read of row 414, 2026-11-24).
+_FI_STRING_KEYS: dict[str, re.Pattern[str]] = {
+    **dict.fromkeys(
+        (
+            "outcome",
+            "kind",
+            "state",
+            "status",
+            "mode",
+            "ev",
+            "phase_kind",
+            "basis",
+            "articles_basis",
+        ),
+        _FI_WORD,
+    ),
+    **dict.fromkeys(
+        ("phase", "stage", "last_phase", "died_in_stage", "died_after_stage"), _FI_STAGE
+    ),
+    **dict.fromkeys(("reason", "www_reason"), _FI_REASON),
+    **dict.fromkeys(("engine", "www_engine", "baseline_engine"), _FI_ENGINE),
+    **dict.fromkeys(("run_id", "id"), _FI_RUN_ID),
+    **dict.fromkeys(
+        (
+            "t",
+            "at",
+            "written",
+            "started_at",
+            "ended_at",
+            "finished_at",
+            "created_at",
+            "last_seen_at",
+            "generated_at",
+            "state_at",
+            "since",
+        ),
+        _FI_ISO_TIME,
+    ),
+}
+#: A dict key is kept when it is a word as the app writes them, or a stage with a space under a stage prefix; any other key
+#: (a domain, a name, a file, a CamelCase field) is withheld with its whole value.
+_FI_KEY = re.compile(r"\A[a-z0-9][a-z0-9_:\-]{0,79}\Z")
+_FI_STAGE_KEY = re.compile(
+    r"\A(merge_step|stage_a|prepare_staged|verify|snapshot_working_copy):[a-z0-9_\- ]{1,64}\Z"
+)
 
 
 def projected(value: Any, *, key: str = "", counts: dict[str, int] | None = None) -> Any:
@@ -138,25 +132,27 @@ def projected(value: Any, *, key: str = "", counts: dict[str, int] | None = None
         if depth > 24:
             withhold("too_deep")
             return None
-        if v is None or isinstance(v, bool | int | float):
+        if v is None or isinstance(v, bool | int):
             return v
+        if isinstance(v, float):
+            if math.isfinite(v):
+                return v
+            withhold("not_finite")
+            return None
         if isinstance(v, str):
-            if _fi_sensitive(k):
-                withhold("strings")
-                return None
-            ok = bool(
-                _FI_TOKEN.match(v)
-                or _FI_ISO_TIME.match(v)
-                or (k in _FI_SENTENCE_KEYS and _FI_SENTENCE.match(v))
-            )
-            if not ok or scrubbed_value(v) != v:
+            shape = _FI_STRING_KEYS.get(k)
+            if shape is None or not shape.match(v) or scrubbed_value(v) != v:
                 withhold("strings")
                 return None
             return v
         if isinstance(v, dict):
             out: dict[str, Any] = {}
             for kk, vv in v.items():
-                if not isinstance(kk, str) or not _FI_KEY.match(kk) or scrubbed_value(kk) != kk:
+                if (
+                    not isinstance(kk, str)
+                    or not (_FI_KEY.match(kk) or _FI_STAGE_KEY.match(kk))
+                    or scrubbed_value(kk) != kk
+                ):
                     withhold("keys")
                     continue
                 out[kk] = walk(vv, kk, depth + 1)

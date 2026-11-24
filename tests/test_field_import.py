@@ -75,11 +75,11 @@ def test_numbers_and_the_apps_own_tokens_pass_and_text_does_not():
 
 
 def test_a_held_passphrase_is_withheld_even_when_it_looks_like_a_token():
-    secret = "Corr3ct_Horse_Battery"
+    secret = "corr3ct-horse-battery"
     with holding(secret):
         counts: dict[str, int] = {}
-        out = fi.projected({"outcome": secret, secret: 1, "ok": "fine"}, counts=counts)
-    assert out == {"outcome": None, "ok": "fine"}
+        out = fi.projected({"outcome": secret, secret: 1, "state": "fine"}, counts=counts)
+    assert out == {"outcome": None, "state": "fine"}
     assert counts == {"strings": 1, "keys": 1}
     assert secret not in json.dumps(out)
 
@@ -87,6 +87,48 @@ def test_a_held_passphrase_is_withheld_even_when_it_looks_like_a_token():
 def test_a_value_that_matches_nothing_is_withheld():
     out = fi.projected({"stage": "x" * 500, "phase": "café", "outcome": b"bytes", "n": object()})
     assert out == {"stage": None, "phase": None, "outcome": None, "n": None}
+
+
+def test_a_well_formed_token_under_a_key_not_on_the_list_is_withheld():
+    """Security read, 2026-11-24: a backup's folder name copied under ``by_item`` is a perfect token. Shape is never the test."""
+    counts: dict[str, int] = {}
+    out = fi.projected(
+        {
+            "committed_at_checkpoint": {"by_item": "Backup_JaneDoe_PanamaLeak", "n": 2},
+            "held_note": "backup_janedoe",
+            "annotations": {"trust_withheld": {"authors": ["ab" * 32], "signer": "cd" * 32}},
+            "custody": {"origin_fingerprint": "ef" * 16},
+        },
+        counts=counts,
+    )
+    text = json.dumps(out)
+    for leak in ("JaneDoe", "janedoe", "abab", "cdcd", "efef"):
+        assert leak not in text
+    assert out["committed_at_checkpoint"]["n"] == 2
+    assert counts["strings"] == 5
+
+
+def test_a_reason_or_key_that_carries_a_name_is_withheld():
+    out = fi.projected(
+        {
+            "reason": "ValueError: Jane Doe page missing",
+            "by_source": {"Le Monde diplomatique": 3, "lemonde": 2},
+            "sourceUrl": "x",
+            "rates": [1.5, float("nan"), float("inf")],
+        }
+    )
+    assert out["reason"] is None
+    assert out["by_source"] == {"lemonde": 2}
+    assert "sourceUrl" not in out
+    assert out["rates"] == [1.5, None, None]
+
+
+def test_a_not_finite_float_never_breaks_the_route():
+    body = json.loads(fi.bounded(fi._fi_envelope("t", [fi.projected({"rate": float("nan")})], {})))
+    assert body["entries"] == [{"rate": None}]
+    fi._fi_response(
+        fi._fi_envelope("t", [fi.projected({"rate": float("nan")})], {}), "t"
+    )  # renders, no ValueError
 
 
 # --- the size rule --------------------------------------------------------------------------------------------------
