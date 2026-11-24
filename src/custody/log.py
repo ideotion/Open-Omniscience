@@ -659,12 +659,13 @@ class CustodyLog:
         report = self.verify_report()
         return report["verified"], report["issues"]
 
-    def verify_report(self) -> dict:
+    def verify_report(self, entries: list[CustodyEntry] | None = None) -> dict:
         """``{"verified", "issues", "notes"}`` for the full chain held in this database: hashes, links and signatures
         (:func:`verify_entries`), and the signing key followed through its key-rotation records. A key change with no
         record is refused; an unendorsed rotation is accepted on its record's word -- this is the operator's own store --
-        and named in the notes, with every other rotation."""
-        entries = self.all_entries()
+        and named in the notes, with every other rotation. ``entries``: the log as the caller already read it
+        (:meth:`all_entries`), so what it goes on to say about those entries is about the ones verified here (row 382)."""
+        entries = self.all_entries() if entries is None else entries
         ok, issues = verify_entries(entries)
         notes: list[str] = []
         if entries:
@@ -1348,6 +1349,38 @@ def _is_yours(signer: tuple[str, str | None], local: PublicIdentity) -> bool:
     if not ed or ed != local.ed25519_pub:
         return False
     return ml is None or ml == local.ml_dsa_pub  # a hybrid half this install does not hold is not this install's
+
+
+def item_signer(
+    entries: list[CustodyEntry], item_id: str, local: PublicIdentity | None, *, held_ml: str | None = None
+) -> tuple[str | None, str | None]:
+    """``(signed_by, signer_key)`` for ``item_id`` in this installation's own VERIFIED log (row 382, R800).
+
+    The chain verified against the keys its entries carry, which shows only that it is unchanged since they signed it.
+    Who signed the item is said by the rule POST /verify uses for a whole-log bundle: each of the item's entries is this
+    installation's only where :func:`_own_positions` places one of its identities (both halves; an earlier key only
+    through ENDORSED rotations) and the entry carries it (:func:`_is_yours`). ``"this-installation"`` when every one of
+    the item's entries is; ``"another-installation"`` when none is and none even carries this installation's Ed25519
+    key; ``"not-compared"`` otherwise (some are, some are not; an entry under this installation's Ed25519 key that is
+    not credited, such as one stripped of its post-quantum half; or no identity to compare with). ``signer_key`` is the
+    Ed25519 key of the item's last entry. Says nothing about what the chain is accepted as."""
+    idx = [i for i, e in enumerate(entries) if e.item_id == item_id]
+    if not idx:
+        return None, None
+    key = _sig_ed25519_pub(entries[idx[-1]].signature) or None
+    if local is None or not local.ed25519_pub:
+        return "not-compared", key
+    try:
+        owns = _own_positions(entries, local, chained=True, held_ml=held_ml)
+        signers = [_signer_of(entries[i]) for i in idx]
+    except Exception:  # noqa: BLE001 - a verified log has well-formed signatures; anything else is not answered
+        return "not-compared", key
+    mine = [(own := owns[i]) is not None and _is_yours(s, own) for i, s in zip(idx, signers, strict=True)]
+    if all(mine):
+        return "this-installation", key
+    if not any(mine) and all(ed != local.ed25519_pub for ed, _ml in signers):
+        return "another-installation", key
+    return "not-compared", key
 
 
 def _own_positions(

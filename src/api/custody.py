@@ -309,36 +309,39 @@ def verify_item(item_id: str) -> dict:
     try:
         if not log.entries_for(item_id):
             raise HTTPException(status_code=404, detail=_NO_ENTRIES)
-        # The chain's links and signatures, and its signing key followed through every key-rotation record.
-        report = log.verify_report()
+        # The chain's links and signatures, and its signing key followed through every key-rotation record. One read of
+        # the log: what is said below about who signed it is about the entries verified here (row 382).
+        all_entries = log.all_entries()
+        report = log.verify_report(all_entries)
         # R716: an accepted unendorsed or unrecorded key change says so beside the verdict, as on POST /verify.
         report["accepted_unendorsed_note"] = ACCEPTED_UNENDORSED_NOTE if report.get("accepted_unendorsed") else None
         # Row 382 (R800): the chain is checked against the keys its entries carry, which proves only that it is unchanged
         # since they signed it. Who signed it is the one comparison the app can make, with its OWN custody key.
-        report.update(_chain_signer(log.all_entries()) if report.get("verified") else {"signed_by": None, "signer_key": None})
+        report.update(_chain_signer(all_entries, item_id) if report.get("verified") else {"signed_by": None, "signer_key": None})
         return report
     finally:
         log.close()
 
 
-def _chain_signer(entries: list) -> dict:
-    """``{"signed_by", "signer_key"}`` for a verified chain (row 382, R800): its lineage is anchored on the last entry's
-    Ed25519 key, and that key is compared with this installation's custody key, never created to answer. ``signed_by``
-    is ``"this-installation"``, ``"another-installation"`` or ``"not-compared"`` (no custody key here yet, or it cannot
-    be read). The comparison is R801's one place, ``evidence.is_this_installations_key``, asked about the custody key
-    file so a restore marker beside it would count. What the chain is accepted as is unchanged."""
+def _chain_signer(entries: list, item_id: str) -> dict:
+    """``{"signed_by", "signer_key"}`` for ``item_id`` in a verified log (row 382, R800): the rule POST /verify uses for a
+    whole-log bundle (:func:`src.custody.log.item_signer`), held to this installation's custody identity as it signs now,
+    read without creating anything (:func:`_local_identity`). A custody key a restore placed (its R801 marker beside the
+    key file, asked through ``evidence.is_this_installations_key``) is never this installation's. What the chain is
+    accepted as is unchanged."""
+    from src.custody.log import item_signer
     from src.paths import data_dir
     from src.reporting.evidence import is_this_installations_key
 
-    anchor = str(((entries[-1].signature or {}).get("ed25519") or {}).get("pub") or "") if entries else ""
-    if not anchor:
-        return {"signed_by": None, "signer_key": None}
     local = _local_identity()
-    if local is None or not local.ed25519_pub:
-        return {"signed_by": "not-compared", "signer_key": anchor}
-    same = is_this_installations_key(anchor, data_dir() / "keys" / "custody_ed25519.pem", own=local.ed25519_pub)
-    relation = "not-compared" if same is None else "this-installation" if same else "another-installation"
-    return {"signed_by": relation, "signer_key": anchor}
+    if local is not None and local.ed25519_pub:
+        own = is_this_installations_key(local.ed25519_pub, data_dir() / "keys" / "custody_ed25519.pem", own=local.ed25519_pub)
+        if own is not True:  # a restored key (or no answer): the comparison is with a key this installation did not make
+            relation, key = item_signer(entries, item_id, None)
+            return {"signed_by": "another-installation" if own is False and key else relation, "signer_key": key}
+    held = _held_ml_dsa_pub() if local is not None and not local.ml_dsa_pub else None
+    relation, key = item_signer(entries, item_id, local, held_ml=held)
+    return {"signed_by": relation, "signer_key": key}
 
 
 class VerifyBundleRequest(BaseModel):
