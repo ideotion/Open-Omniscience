@@ -46,6 +46,8 @@ app-ai-tools.js verifyChain 1
 app-analysis.js _advHistRender 1
 app-analysis.js _advRenderChips 1
 app-analysis.js _advRenderLegacySrc 1
+app-analysis.js _aiProgSet 1
+app-analysis.js _aiRunFrame 1
 app-analysis.js _anDrawArticles 1
 app-analysis.js _anFillLangSelect 1
 app-analysis.js _anFormCounts 2
@@ -59,10 +61,9 @@ app-analysis.js _anRepaintXLang 1
 app-analysis.js _bulkRenderQueue 1
 app-analysis.js _concept 1
 app-analysis.js _drawAnTrendByLang 1
-app-analysis.js _synthRenderResult 1
-app-analysis.js _synthRenderSelect 1
-app-analysis.js aiRunPrompt 1
-app-analysis.js aiRunPromptStart 1
+app-analysis.js _synthRenderResult 2
+app-analysis.js _synthRenderSelect 2
+app-analysis.js aiRunPrompt 2
 app-analysis.js anApplyArticlesFilter 2
 app-analysis.js asc 1
 app-analysis.js bulkLlm 1
@@ -351,6 +352,7 @@ app-settings.js _paintDefaultModel 2
 app-settings.js _paintLaneStorage 3
 app-settings.js _rbPaint 1
 app-settings.js _rbPaintLanes 1
+app-settings.js cardSetEnabled 1
 app-settings.js highlightProse 1
 app-settings.js importNewsletters 2
 app-settings.js importPdfFolder 2
