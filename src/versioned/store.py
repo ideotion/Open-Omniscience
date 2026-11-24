@@ -66,6 +66,7 @@ from typing import Any, cast
 from sqlalchemy import Engine, Table, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+from src.database import drive_pin as _drive_pin  # noqa: F401 - R812: tracks every pool connection from the first
 from src.database import file_identity
 from src.database.file_identity import Identity
 from src.monitoring.secret_scrub import log_failure

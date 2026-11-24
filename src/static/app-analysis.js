@@ -190,8 +190,10 @@
       $("an-adv-query").value = tb.query || "";
       _advWrite(tb.adv);
       _advRenderChips();
-      $("an-query").textContent = tb.label ? `“${tb.label}”` : (tb.query ? `“${tb.query}”` : t("(the selected article set)"));
-      $("an-adv-note").textContent = (tb.kind === "ids") ? t("Showing the exact article set behind this Lead.") : "";
+      // Row 361: both lines follow a language switch (ooLive); the label and the query are the person's own words.
+      const label = tb.label, query = tb.query, isIds = tb.kind === "ids";
+      ooLive($("an-query"), () => label ? `“${label}”` : (query ? `“${query}”` : t("(the selected article set)")));
+      ooLive($("an-adv-note"), () => isIds ? t("Showing the exact article set behind this Lead.") : "");
       _anRenderProvenance(tb.prov || null);
       if (_exploreFromSearch) { _exploreSearchKey = tb.key; _exploreListAll = false; }
       _exploreSync();
@@ -256,13 +258,19 @@
       const host = $("an-prov"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!prov || !(prov.card || prov.producer || prov.method || prov.caveat)) {
-        host.hidden = true; host.innerHTML = ""; host.style.removeProperty("--fam");
+        host.hidden = true; ooLiveHtml(host, () => ""); host.style.removeProperty("--fam");
         return;
       }
       // The family colour comes from the same famHue as Home, keyed on the same stable
       // bucket name, so a Lead and its analysis are recognisably the same family.
       if (prov.bucket) host.style.setProperty("--fam", famHue(prov.bucket));
       else host.style.removeProperty("--fam");
+      // Row 361: the panel follows a language switch (ooLiveHtml), drawn again from the provenance it was given.
+      ooLiveHtml(host, () => _anProvenanceHtml(prov));
+      host.hidden = false;
+    }
+    function _anProvenanceHtml(prov) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const famLabel = prov.family || prov.bucket || "";
       const bits = [];
       if (famLabel) {
@@ -294,13 +302,12 @@
         ? `<div class="mc">${ooLabelHtml(`<b>${esc(t("Method"))}</b>`, esc(t(prov.method)))}</div>` : "";
       // The reader's own separator after each label, through the ONE keyed frame
       // (`ooLabelHtml`; the 2026-09-27 re-walk, N-5) -- never a ": " welded after t().
-      host.innerHTML = `<div class="an-prov-top">`
+      return `<div class="an-prov-top">`
         + ooLabelHtml(`<span class="an-prov-from">${esc(t("From this Lead"))}</span>`,
                       `<b class="an-prov-card">${esc(prov.card || "")}</b>`) + ` ${bits.join(" ")}</div>`
         + caveat + method
         + ((why || math) ? `<div class="why-mathlabel">${esc(t("Why am I seeing this?"))}</div>` : "")
         + why + math;
-      host.hidden = false;
     }
     function _anActivate(id) {
       const tb = _anTabs.find(x => x.id === id); if (!tb) return;
@@ -335,10 +342,11 @@
     function _anShowEmpty() {
       // No tabs: the surface is a launcher (the empty singleton #an is retired).
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      _anIds = null; _anCommodity = null; $("an-query").textContent = "";
+      _anIds = null; _anCommodity = null; ooLive($("an-query"), () => "");
       _anRenderProvenance(null);
       const ov = $("an-overview");
-      if (ov) ov.innerHTML = `<div class="muted">${esc(t("Search above, or open a Lead or keyword, to start an analysis. Each opens its own tab here."))}</div>`;
+      // Row 361: the launcher line follows a language switch (ooLiveHtml) until an analysis draws over it.
+      if (ov) ooLiveHtml(ov, () => `<div class="muted">${esc(t("Search above, or open a Lead or keyword, to start an analysis. Each opens its own tab here."))}</div>`);
       if (_anSubtabs) _anSubtabs.select("overview"); else anSelectTab("overview");
       _exploreSync();
     }
@@ -483,15 +491,15 @@
       const key = p.toString();
       if (_anOverviewKey === key && host.dataset.done === "1") return;  // already shown for this set
       _anOverviewKey = key; host.dataset.done = "";
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       // Honest slow-load notice (field test 2026-06-24, remark 8: a keyword's analysis
       // hung on a bare "Loading…" at 60K). After a few seconds we say it's a large-corpus
       // aggregation and how to speed it up (narrow the window) — never a fake spinner and
       // never a hard abort that would discard the in-flight result.
       const slow = setTimeout(() => {
         if (host.dataset.done !== "1") {
-          host.innerHTML = `<div class="muted">${esc(t("Loading…"))} `
-            + `<span class="bp-detail">${esc(t("still computing over your full corpus — narrow the time window to speed this up"))}</span></div>`;
+          ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))} `
+            + `<span class="bp-detail">${esc(t("still computing over your full corpus — narrow the time window to speed this up"))}</span></div>`);
         }
       }, 6000);
       const qs = p.toString();
@@ -562,7 +570,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("an-price"); if (!el || !_anCommodity) return;
       const c = _anCommodity;
-      el.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(el, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       const term = anQuery() || c.name || c.symbol;
       try {
         // Price (the commodity's own series) + corpus coverage (this term's article
@@ -742,8 +750,8 @@
       // cache -- which reads as the toggle being broken rather than as a stale cache.
       const key = term + "\u0000" + lens;
       if (_anTrend.key === key && _anTrend.counts.length) { drawAnTrend(); return; }
-      if (!term) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search to see its combined trend."))}</div>`; return; }
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (!term) { ooLiveHtml(host, () => `<div class="muted">${esc(t("Open the analysis from a keyword or a search to see its combined trend."))}</div>`); return; }
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       _anTrend.key = key; _anTrend.term = term; _anTrend.counts = []; _anTrend.suggested = []; _anTrend.picked = {}; _anTrend.mode = "counts"; _anTrend.autoIndexed = false;
       try {
         const [main, assoc] = await Promise.all([
@@ -992,7 +1000,7 @@
       const host = $("an-related"); if (!host) return;
       const key = (p && p.toString && p.toString()) || "";
       if (_anRelated.key === key && host.dataset.done === "1") return;   // cached on this corpus
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       _anRelated.key = key; host.dataset.done = "";
       const qs = p ? p.toString() : "";
       try {
@@ -1667,6 +1675,10 @@
     }
     function _anRenderArtFacetChips() {
       const host = $("an-art-facets"); if (!host) return;
+      // Row 361: the chips' labels follow a language switch (ooLiveHtml), drawn from the facets this list holds.
+      ooLiveHtml(host, _anArtFacetChipsHtml);
+    }
+    function _anArtFacetChipsHtml() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const srcChips = (_anArtFacetData.sources || []).slice(0, 20).map(s => {
         // Selection/drill key is source_id (never name) -- Source.name carries no
@@ -1683,8 +1695,8 @@
           + `data-on-click="_anToggleArtFacetChip('language', ${esc(JSON.stringify(l.language))})">${ooLangCell(l.language)} `
           + `<span class="muted">${l.n}</span></button>`;
       }).join(" ");
-      if (!srcChips && !langChips) { host.innerHTML = ""; return; }
-      host.innerHTML = `<div style="margin:4px 0 8px">`
+      if (!srcChips && !langChips) return "";
+      return `<div style="margin:4px 0 8px">`
         + (srcChips ? `<div style="margin-bottom:4px">${_anCtlLabel(t("source"), ".85em")} ${srcChips}</div>` : "")
         + (langChips ? `<div>${_anCtlLabel(t("language"), ".85em")} ${langChips}</div>` : "")
         + `<button class="tiny" style="margin-top:4px" data-on-click="anApplyArticlesFilter()">${esc(t("Apply filter"))}</button>`
@@ -1724,9 +1736,10 @@
         if (tb) { tb.ids = ids.slice(); tb.kind = "ids"; _anRenderStrip(); _anSaveTabs(); }
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const fs = _anFilterSummary();
-        $("an-adv-note").innerHTML = fs.length
+        // Row 361: the note follows a language switch (ooLiveHtml); the filter values are data.
+        ooLiveHtml($("an-adv-note"), () => fs.length
           ? `<span class="pill">${esc(t("Filtered"))}</span> ${fs.map(esc).join(" · ")}`
-          : "";
+          : "");
         loadAnalysis(anParams());
       } else {
         // A query-seeded corpus: the chips narrow the tab's own filter set, by source ID
@@ -1741,8 +1754,8 @@
         _advWrite(tb.adv);
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const fs = _anFilterSummary();
-        $("an-adv-note").innerHTML = fs.length
-          ? `<span class="pill">${esc(t("Filtered"))}</span> ${fs.map(esc).join(" · ")}` : "";
+        ooLiveHtml($("an-adv-note"), () => fs.length
+          ? `<span class="pill">${esc(t("Filtered"))}</span> ${fs.map(esc).join(" · ")}` : "");
         loadAnalysis(anParams());
       }
     }
@@ -2123,7 +2136,8 @@
       Object.keys(_anSenses).forEach((k) => q.append("sense", k + ":" + _anSenses[k]));
       const id = "an-xforms-" + _anSlug(key == null ? term : key);
       const slot = $(id);
-      if (slot) slot.innerHTML = ` <span class="muted">${esc(t("Counting…"))}</span>`;
+      // Row 361: the waiting line follows a language switch (ooLiveHtml); the answer is drawn over it as before.
+      if (slot) ooLiveHtml(slot, () => ` <span class="muted">${esc(t("Counting…"))}</span>`);
       // The slot is looked up AGAIN when the answer lands: a redraw of the rail in the
       // meantime (a page turn, a language switch) replaced the one above. An answer that
       // lands after a NEW run (a lens change) describes the old lens and is dropped.
@@ -2304,7 +2318,8 @@
       const arts = $("an-art-list") || $("an-articles"); if (!arts) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anArtParams = p; _anArtPage = Math.max(0, page | 0);
-      arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Row 361: the loading and failure lines follow a language switch (ooLiveHtml); the list is drawn over them.
+      ooLiveHtml(arts, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const q = _articleQuery(p);
         q.set("limit", String(_AN_ART_PAGE));
@@ -2340,7 +2355,7 @@
         // boot-time deep link (?corpus=/?analyze=, app-boot.js._hydrateCardCorpus),
         // so a refusal here deserves the same disclosure, not a bare exception string.
         _anArtLast = null;
-        arts.innerHTML = `<div class="note err">${esc(_articleFailureMessage(e))}</div>`;
+        ooLiveHtml(arts, () => `<div class="note err">${esc(_articleFailureMessage(e))}</div>`);
       }
     }
     // The last /api/articles page the list drew -- see `_anRepaintArticles`.
@@ -2516,8 +2531,8 @@
       // concept while looking like one view.
       p = _anApplyLens(new URLSearchParams(p));
       const kw = $("an-keywords"), arts = $("an-art-list") || $("an-articles");
-      kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(kw, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
+      ooLiveHtml(arts, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       _anProvenance = ""; _anKwSort = false; _anKwForCount = "";   // fresh corpus -> reset the Articles-list lenses
       _anArtFacetSel = { source: "", language: "" };   // fresh corpus -> reset the staged facet selection too
       _anLastParams = p; _anTrend.key = null; _anRelated.key = null; _anCompetitive.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
@@ -2544,13 +2559,13 @@
       // renderer — never touches the Insights mind-map state. Window params pass
       // through (the /graph endpoint accepts start/end/days, like _mmWindowQS).
       const mm = $("an-mindmap");
-      mm.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(mm, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const dk = await api("/api/insights/corpus-keywords?" + p.toString());
         if (stale()) return;
         const top = (dk.terms && dk.terms.length) ? dk.terms[0].term : null;
         if (!top) {
-          mm.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
+          ooLiveHtml(mm, () => `<div class="muted">${esc(t("No strong associations yet."))}</div>`);
         } else {
           // an-mindmap-wrong-corpus-scope (P1): clone the analysis window's OWN scope
           // (article_ids, or query/source/language/date-range) instead of a fresh,
@@ -2849,10 +2864,10 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("an-competitive"); if (!host) return;
       p = p || _anLastParams;
-      if (!p) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search first."))}</div>`; return; }
+      if (!p) { ooLiveHtml(host, () => `<div class="muted">${esc(t("Open the analysis from a keyword or a search first."))}</div>`); return; }
       const key = p.toString();
       if (_anCompetitive.key === key) return;   // already rendered for this corpus
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       const query = p.get("query");   // framing is query-only; absent for an article-set corpus
       let cs, fr;
       try {
@@ -4028,7 +4043,7 @@
       fill("adv-regions", d.regions || [], (r) => r.region, (r) => r.region + " · " + n(r.sources || 0));
       const cav = d.caveats || {};
       for (const k of ["words", "sentiment", "mentions", "quarantine"]) {
-        const el = $("adv-cav-" + k); if (el) el.textContent = cav[k] ? t(cav[k]) : "";
+        const el = $("adv-cav-" + k); if (el) ooLive(el, () => cav[k] ? t(cav[k]) : "");
       }
       const nd = $("adv-near-default");
       if (nd && d.near) { nd.min = d.near.min; nd.max = d.near.max; if (nd.value === "") nd.value = d.near.default; }
@@ -4136,20 +4151,20 @@
       // would re-run wider than the search it claims to be.
       if (adv.source) {
         const ids = ((_advFacets && _advFacets.sources) || []).filter((s) => s.name === adv.source).map((s) => s.id);
-        if (!ids.length) { if (note) note.textContent = t("Pick the source from the Sources list first: a saved search keeps sources by their identity, not by name."); return; }
+        if (!ids.length) { if (note) ooLive(note, () => t("Pick the source from the Sources list first: a saved search keeps sources by their identity, not by name.")); return; }
         adv.sources = ids.join(","); delete adv.source;
       }
       const filters = _advToWatchFilters(adv);
-      if (!q && !Object.keys(filters).length) { if (note) note.textContent = t("Type a search or pick a filter first."); return; }
+      if (!q && !Object.keys(filters).length) { if (note) ooLive(note, () => t("Type a search or pick a filter first.")); return; }
       const name = prompt(t("Name this saved search:"), q || t("Filtered search"));
       if (name == null) return;
       try {
         await api("/api/watches", {method: "POST", body: JSON.stringify({
           name: name.trim() || q || t("Filtered search"), query: q, threshold: 0, window_days: 7, filters})});
-        if (note) note.textContent = t("Saved. Find it in Insights → Watches; it never fires a Lead.");
+        if (note) ooLive(note, () => t("Saved. Find it in Insights → Watches; it never fires a Lead."));
         if (typeof loadWatches === "function" && $("wt-list")) loadWatches();
       } catch (e) {
-        if (note) note.textContent = tf("Could not save: {error}", {error: e.message});
+        if (note) ooLive(note, () => tf("Could not save: {error}", {error: e.message}));
       }
     }
     async function _advCopyLink() {
@@ -4159,7 +4174,7 @@
       const url = location.origin + "/?" + _advPermalink(q, _advRead(),
         {sort_by: sb && sb.value, sort_dir: dr && dr.value, view: _anArtView});
       const note = $("an-adv-note");
-      try { await navigator.clipboard.writeText(url); if (note) note.textContent = t("Link copied. It opens this search on this machine."); }
+      try { await navigator.clipboard.writeText(url); if (note) ooLive(note, () => t("Link copied. It opens this search on this machine.")); }
       catch (_e) { prompt(t("Copy this link:"), url); }
     }
     async function _advSaveNearDefault() {
@@ -4170,8 +4185,8 @@
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({search_near_default: v})});
         if (_advFacets && _advFacets.near) _advFacets.near.default = v;
-        if (note) note.textContent = tf("Saved: a NEAR without its own number now means {n} words.", {n: v});
-      } catch (e) { if (note) note.textContent = tf("Could not save: {error}", {error: e.message}); }
+        if (note) ooLive(note, () => tf("Saved: a NEAR without its own number now means {n} words.", {n: v}));
+      } catch (e) { if (note) ooLive(note, () => tf("Could not save: {error}", {error: e.message})); }
     }
 
     // -- the local history (Q614 = a + its note) ---------------------------------- //
@@ -4215,11 +4230,11 @@
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({search_history_enabled: !!on})});
       } catch (e) {
-        const n = $("an-adv-note"); if (n) n.textContent = tf("Could not save: {error}", {error: e.message});
+        const n = $("an-adv-note"); if (n) ooLive(n, () => tf("Could not save: {error}", {error: e.message}));
       }
       await _advHistLoad();
       const n = $("an-adv-note");
-      if (n) n.textContent = on ? t("Search history is on. It stays on this machine.") : t("Search history is off. Nothing new is kept.");
+      if (n) ooLive(n, () => on ? t("Search history is on. It stays on this machine.") : t("Search history is off. Nothing new is kept."));
     }
     async function _advHistClear() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

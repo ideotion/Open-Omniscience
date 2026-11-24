@@ -44,13 +44,21 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
         raise PermissionError("panic_wipe requires confirm=True (this is irreversible)")
     from src.paths import data_dir_path
     from src.safety.crypto_erase import (
+        _drive_state,
         _latch,
+        _pin_drive,
         finish_holder_check,
         new_hold_generation,
         quick_crypto_erase,
     )
 
     _latch(Path(data_dir) if data_dir is not None else data_dir_path())  # R802: from the wipe's first step, not from the erase's
+    # R812 (coordinator decision 1): the drive's state is read BEFORE the first close: a drive not there or not identifiable gets its
+    # connections pinned, never closed (closing the last one deletes <db>-wal / -shm BY PATH, on whatever drive is there now). The
+    # erase then takes the drive's identity and re-checks it before each of its own close points; a swap between this read and
+    # that one is the window left for this close.
+    if data_dir is None and _drive_state(data_dir_path()) in ("absent", "unidentified"):
+        _pin_drive(data_dir_path())
     _close_database_now()
     generation = new_hold_generation()  # this wipe's own kept descriptors, closed by its own late pass (row 36)
     failed: list[str] = []
@@ -76,7 +84,10 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
             try:
                 _tidy_after_erase(failed)
             finally:
-                own_open = _dispose_after_erase(generation)  # whatever the tidying above did: the late-commit rewrite must still run
+                # whatever the tidying above did: the late-commit rewrite must still run. R813, stated: a drive found absent,
+                # unidentified, changed or lost had its connections pinned by the erase, and this close skips them; a drive swapped
+                # after the erase's last re-check and before this close is the window left for it (follow-up row 390).
+                own_open = _dispose_after_erase(generation)
     # R792: only now, with the app offline and this process's own pool closed (its close would undo the lock this takes), look
     # for ANOTHER process still holding the store and rewrite while it does, within the bound; the report says what was found.
     from src.paths import erase_owned
