@@ -683,6 +683,51 @@ def test_a_whole_file_activation_supersedes_the_record_before_its_swap():
     assert "_supersede_unverified_activation()" in src[head:swap]
 
 
+def test_a_swap_while_the_check_reads_supersedes_it_whatever_the_token_says(data, monkeypatch):
+    """Final-head re-read 2026-11-24: an activation that wrote its record BEFORE this check first read it leaves the token
+    unchanged, so only the file's identity can tell that the live path now names another file. Nothing is written,
+    latched or cleared against it."""
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.backup import merge
+
+    live = _schema(data / "live.db")
+    con = sqlite3.connect(live)
+    con.execute("DELETE FROM sources WHERE id = 2")
+    con.commit()
+    con.close()
+    _live(monkeypatch, live)
+    merge._note_unverified_activation(None)
+    before = merge.unverified_activation()
+    real = merge._live_file_identity
+    calls = {"n": 0}
+
+    def _swapped_after_open():
+        calls["n"] += 1
+        got = real()
+        return got if calls["n"] <= 2 else (got[0], got[1] + 1)
+
+    monkeypatch.setattr(merge, "_live_file_identity", _swapped_after_open)
+    monkeypatch.setattr(merge, "_latch_live_damage", lambda *_a: pytest.fail("nothing is latched against another file"))
+    assert merge.check_live_after_scoped_activation() == {"state": "unchecked", "reason": "superseded"}
+    assert merge.unverified_activation() == before
+
+
+def test_a_failing_check_writes_its_findings_and_never_the_file_identity(data, monkeypatch):
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.backup import merge
+
+    live = _schema(data / "live.db")
+    con = sqlite3.connect(live)
+    con.execute("DELETE FROM sources WHERE id = 2")
+    con.commit()
+    con.close()
+    _live(monkeypatch, live)
+    merge._note_unverified_activation(None)
+    assert merge.check_live_after_scoped_activation()["state"] == "failed"
+    rec = merge.unverified_activation()
+    assert rec["findings"]["foreign_key_violations"] >= 1 and "_ident" not in rec
+
+
 def test_a_record_already_removed_by_a_passing_twin_reads_as_ok(data, monkeypatch):
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
     from src.backup import merge

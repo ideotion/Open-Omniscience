@@ -1015,7 +1015,7 @@ def _supersede_unverified_activation() -> None:
             prior = unverified_activation()
             if prior is not None:
                 _write_unverified_activation({**prior, "token": secrets.token_hex(8)})
-    except OSError:
+    except Exception:  # noqa: BLE001 - the record stays as it was (still owed) and the activation's own clear removes it
         return
 
 
@@ -1044,6 +1044,8 @@ def _clear_unverified_activation(*, owed: dict | None = None) -> bool:
                 return True  # already gone: a passing whole-file check (this one's twin, or a full activation) removed it
             if owed is not None and current.get("token") != owed.get("token"):
                 return False
+            if owed is not None and "_ident" in owed and _live_file_identity() != owed["_ident"]:
+                return False  # the file this check read is no longer the live one
             with suppress(FileNotFoundError):
                 path.unlink()
     except OSError:
@@ -1068,10 +1070,18 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
     net = owed.get("safety_net")
     stopper: threading.Thread | None = None
     done = threading.Event()
+    # The file this check reads, by identity: a swap (scoped or whole-file) between here and the verdict replaces the file at
+    # the live path, and nothing is then written, latched or cleared, whatever the record's token says (final-head re-read,
+    # 2026-11-24: the token alone could not see a swap whose record was written before this check first read it).
+    read_ident = _live_file_identity()
     try:
         con = db_connect(live_db_path(), check_same_thread=False, read_only=True)
     except Exception:  # noqa: BLE001 - not a verdict: the record stays and the next start tries again
         return {"state": "unchecked", "reason": "not-opened"}
+    if read_ident is None or _live_file_identity() != read_ident:
+        con.close()
+        return {"state": "unchecked", "reason": "superseded"}
+    owed = {**owed, "_ident": read_ident}
     try:
         if should_stop is not None:
 
@@ -1128,7 +1138,9 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
 
     def _record_and_latch() -> None:
         with suppress(OSError):  # a write that fails keeps the record as it was: still owed
-            _write_unverified_activation({**owed, "failed_at": datetime.now(UTC).isoformat(), "findings": findings})
+            _write_unverified_activation(
+                {**{k: v for k, v in owed.items() if k != "_ident"}, "failed_at": datetime.now(UTC).isoformat(), "findings": findings}
+            )
         if latch:
             _latch_live_damage(live, damaged)
 
@@ -1137,6 +1149,18 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
     if not _under_owed_record(owed, _record_and_latch):
         return {"state": "unchecked", "reason": "superseded"}
     return {"state": "failed", "safety_net": net, "findings": findings}
+
+
+def _live_file_identity() -> tuple[int, int] | None:
+    """(st_dev, st_ino) of the file at the live corpus path, or None when it cannot be read. A swap replaces the file, so a
+    different identity means a different file."""
+    from src.backup.sqlite_backup import live_db_path
+
+    try:
+        st = os.stat(live_db_path())
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
 
 
 @contextmanager
@@ -1148,7 +1172,11 @@ def _owed_record_held(owed: dict) -> Iterator[bool]:
 
     with file_lock(_unverified_activation_path()):
         current = unverified_activation()
-        yield current is not None and current.get("token") == owed.get("token")
+        yield (
+            current is not None
+            and current.get("token") == owed.get("token")
+            and ("_ident" not in owed or _live_file_identity() == owed["_ident"])
+        )
 
 
 def _under_owed_record(owed: dict, action: Callable[[], None]) -> bool:
