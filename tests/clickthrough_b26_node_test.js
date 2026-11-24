@@ -211,6 +211,7 @@ test("J-1: 'Copy the large-data files now' resumes the export job in the SAME fo
 test("J-2/J-4: the picker draws the path and each folder name as LTR runs, and the rows wrap", async () => {
   const dom = { "fp-path": el(), "fp-list": el(), "fp-use": el(), "fp-note": el() };
   dom["fp-list"].querySelectorAll = () => [];
+  dom["fp-list"].querySelector = () => null;   // row 372(b): the chrome lines are found and drawn through ooLive
   const listing = {
     path: "/tmp/claude-0/rewalk/J/drive", parent: "/tmp/claude-0/rewalk/J",
     entries: [
@@ -223,6 +224,7 @@ test("J-2/J-4: the picker draws the path and each folder name as LTR runs, and t
     "var _fpState = { inputId: 'ux-dest', requireWritable: true, current: null };\n" +
     "function $(id){ return DOM[id] || null; }\n" +
     "async function api(){ return LISTING; }\n" +
+    "function ooLive(el, r){ if (el && r) el.textContent = r(); }\n" +   // row 372(b): the live helper, drawn once here
     "async " + extract("_fpNav") + "\n" +
     "return { nav: _fpNav };";
   const I18N = { t: plainT, tf: plainTf };
