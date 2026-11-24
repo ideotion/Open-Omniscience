@@ -16,13 +16,16 @@ listed place, fails, and a fixed one has to leave the list.
 
 METHOD (source only; nothing is executed):
 
-* Files: every ``.js`` under ``src/static`` except vendored code (any ``vendor`` folder) and ``sw.js``.
+* Files: every ``.js`` under ``src/static`` (sub-folders included).
 * Lexing: the row 352 lexer (``scripts/i18n_frozen_renderers.py`` ``lex``): comments are blanked, and string,
   template and regex TEXT is blanked, ``${...}`` code inside a template kept. So a comment or a string that SAYS
   ``esc(`` exempts nothing, and markup inside a string literal is never a value.
-* Sink: ``.innerHTML`` / ``.outerHTML`` assigned with ``=`` or ``+=``, or the arguments of ``.insertAdjacentHTML(``.
-  The right-hand side runs to a ``;`` or ``,`` at its own depth, a bracket that closes past it, or a line end where
-  the expression does not go on (neither the line's last character nor the next line's first is an operator).
+* Files: ``simple/vendor`` and ``guis/vendor`` (vendored, sha256-pinned) and the top-level ``sw.js`` are left out,
+  by exact path.
+* Sink: ``.innerHTML`` / ``.outerHTML`` assigned with ``=``, ``+=``, ``||=``, ``&&=`` or ``??=``, or the arguments of
+  ``.insertAdjacentHTML(``. The right-hand side runs to a ``;`` or ``,`` at its own depth, a bracket that closes past
+  it, or a line end outside a template literal where the expression does not go on (neither the line's last character
+  nor the next line's first is an operator); a template's own line breaks never end it (a security read of row 376).
 * Taken out as safe, and nothing else:
   1. a call to an escaper, ``esc(...)`` or ``escHtml(...)`` (whatever its argument);
   2. ``t("...")`` / ``OOI18N.t("...")`` with one string literal: a translation of the app's own text (the locale
@@ -41,12 +44,21 @@ what has not been cleared by reading; a sink rewritten to escape at the point of
 
 BLIND SPOTS -- absence of a hit is weaker evidence than a hit:
 
+* THE COUNT IS PER SINK, NOT PER VALUE: a raw value added to a sink that is already counted, or upstream into the
+  variable a listed ``el.innerHTML = html`` writes, changes nothing. That is most listed units: the ratchet catches a
+  new SINK with a raw value, not a new raw value in an old one.
+* An escaper is recognised by its name: a parameter or local named ``esc`` that does not escape clears too. The test
+  pins where ``esc``/``escHtml`` are defined, so a new definition is seen in review.
+
 * A value escaped in the wrong context passes: ``esc()`` inside ``href="..."`` does not stop a ``javascript:`` URL,
   and ``escHtml`` (unlock.js) leaves ``'``, so it is not safe inside a single-quoted attribute. Context is not read.
 * Any argument of ``esc()`` clears the call, and any ``t("...")`` clears, even where a locale string carries markup.
 * ``tf(...)`` is always a value (its variables are inserted raw), even when every variable is a number.
-* Sinks reached another way are not seen: ``document.write``, ``DOMParser``, ``Range.createContextualFragment``,
-  ``srcdoc``, ``setAttribute("on...")``, jQuery-style helpers, or a property set through a computed name.
+* Sinks reached another way are not seen: ``document.write`` (one today, the print view in ``app-analysis.js``),
+  ``DOMParser``, ``Range.createContextualFragment``, ``setHTMLUnsafe``/``setHTML``, ``srcdoc``, ``setAttribute("on...")``,
+  ``Object.assign(el, {innerHTML})``, Alpine ``x-html`` or Preact ``dangerouslySetInnerHTML`` (none today), inline
+  ``<script>`` in the ``.html`` files, or a property set through a computed name.
+* ``t("...")`` clears however ``t`` is reached (``obj.t("a")`` too); the receiver's name is still counted.
 * A name used only to choose between literals (``bad ? "<b>x</b>" : ""``) is counted like a value (the strict side).
 * Attribute sinks (``href``, ``src``) and ``textContent`` are not sinks here: ``textContent`` cannot parse markup.
 * The right-hand-side end is a heuristic; a statement continued in an unusual way (a line ending in a name and the
@@ -70,10 +82,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from i18n_frozen_renderers import _DECL, _close, bracket_balance, lex  # noqa: E402
 
 STATIC = Path(__file__).resolve().parent.parent / "src" / "static"
+#: Vendored code, sha256-pinned and read upstream (simple mode's Preact + htm, the GUI gallery's Alpine): exactly these
+#: folders, so a hand-written file put in a new folder named "vendor" is still read. And the service worker.
+VENDOR_DIRS = ("simple/vendor", "guis/vendor")
 SKIPPED_FILES = ("sw.js",)
 TOP = "(top level)"
 
-_SINK = re.compile(r"\.(?:innerHTML|outerHTML)\s*\+?=(?!=)|\.insertAdjacentHTML\s*\(")
+_SINK = re.compile(r"\.(?:innerHTML|outerHTML)\s*(?:\+|\|\||&&|\?\?)?=(?!=)|\.insertAdjacentHTML\s*\(")
 _ESCAPER = re.compile(r"(?<![\w$.])(?:esc|escHtml)\s*\(")
 # One string literal (its text is already blanked in the skeleton, so only the quotes and spaces are left).
 _T_LITERAL = re.compile(r"(?<![\w$])(?:OOI18N\.)?t\s*\(\s*([\"'`])\s*\1\s*\)")
@@ -129,9 +144,14 @@ def _unit_at(units: list[tuple[int, int, str]], at: int) -> str:
 
 def _rhs_end(skel: str, start: int) -> int:
     depth, i, n = 0, start, len(skel)
+    in_template = False  # a template's text keeps its newlines: none of them ends the statement
     while i < n:
         c = skel[i]
-        if c in "([{":
+        if c == "`" and depth == 0:
+            in_template = not in_template  # a backtick inside a ${ } hole sits at depth 1 or more
+        elif in_template and c not in "{}":
+            pass
+        elif c in "([{":
             depth += 1
         elif c in ")]}":
             if depth == 0:
@@ -211,7 +231,7 @@ def static_sources(static_dir: Path = STATIC) -> dict[str, str]:
     out = {}
     for p in sorted(static_dir.rglob("*.js")):
         rel = p.relative_to(static_dir).as_posix()
-        if "vendor" in p.relative_to(static_dir).parts or p.name in SKIPPED_FILES:
+        if any(rel.startswith(d + "/") for d in VENDOR_DIRS) or rel in SKIPPED_FILES:
             continue
         out[rel] = p.read_text(encoding="utf-8")
     return out

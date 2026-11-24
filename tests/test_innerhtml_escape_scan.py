@@ -66,11 +66,25 @@ def test_the_list_is_sorted_and_has_no_duplicate_unit():
     assert len(units) == len(set(units))
 
 
-def test_vendored_code_and_the_service_worker_are_not_scanned():
+def test_only_the_two_vendored_folders_and_the_service_worker_are_left_out(tmp_path):
     names = ih.static_sources()
-    assert names and not any("vendor" in n.split("/") for n in names)
+    assert names and not any(n.startswith(("simple/vendor/", "guis/vendor/")) for n in names)
     assert "sw.js" not in names
-    assert any("/" in n for n in names), "sub-folders other than vendor (guis, simple) are scanned"
+    assert any("/" in n for n in names), "sub-folders other than the vendored ones (guis, simple) are scanned"
+    for rel in ("simple/vendor/x.js", "guis/vendor/x.js", "sw.js", "vendor/glue.js", "simple/sw.js", "a/vendor/b.js"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("x.innerHTML = y;\n", encoding="utf-8")
+    assert sorted(ih.static_sources(tmp_path)) == ["a/vendor/b.js", "simple/sw.js", "vendor/glue.js"]
+
+
+def test_the_escapers_are_defined_only_where_they_were_read():
+    """An escaper is cleared by its name; a new function, parameter or variable of that name could make a raw sink
+    look escaped, so where they are defined is pinned and a new one is read in review (the security read of row 376)."""
+    import re
+
+    decl = re.compile(r"(?:function\s+(?:esc|escHtml)\s*\(|(?:const|let|var)\s+(?:esc|escHtml)\s*=)")
+    where = sorted(n for n, js in ih.static_sources().items() if decl.search(ih.lex(js)[0]))
+    assert where == ["app-core.js", "guis/gallery.js", "investigate.js", "reader.js", "taskmanager.js", "unlock.js"], where
 
 
 # ---- exemptions: what the scan clears ---------------------------------------------------------
@@ -118,6 +132,11 @@ def test_an_empty_insert_with_a_literal_position_is_no_hit():
         "el.innerHTML = a.length + row.name;",  # so does a number
         "el.innerHTML = '<b>'\n  + row.name;",  # a statement going on over a line
         "el.innerHTML = '<b>' +\n  row.name;",
+        "el.innerHTML = `<div>\n${row.name}</div>`;",  # a template over lines (the security read's must-fix)
+        "el.innerHTML = `<div>\n  <b>x</b>\n</div>` + row.name;",
+        "el.innerHTML ||= row.name;",
+        "el.innerHTML ??= row.name;",
+        "el.innerHTML &&= row.name;",
     ],
 )
 def test_a_raw_value_is_a_hit(stmt):

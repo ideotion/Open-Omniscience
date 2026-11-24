@@ -6,6 +6,8 @@
 # the same PR; a new unescaped sink would have to add one, in plain sight in the diff.
 app-agenda.js _agFillCountryOptions 1
 app-agenda.js _agRenderMentions 1
+app-agenda.js _bulPaintEditions 1
+app-agenda.js _bulPaintEvidence 1
 app-agenda.js _bulPaintPrivacy 1
 app-agenda.js _bulRender 1
 app-agenda.js dow 2
@@ -57,9 +59,13 @@ app-analysis.js _anRepaintXLang 1
 app-analysis.js _bulkRenderQueue 1
 app-analysis.js _concept 1
 app-analysis.js _drawAnTrendByLang 1
+app-analysis.js _synthRenderResult 1
+app-analysis.js _synthRenderSelect 1
+app-analysis.js aiRunPrompt 1
 app-analysis.js aiRunPromptStart 1
 app-analysis.js anApplyArticlesFilter 2
 app-analysis.js asc 1
+app-analysis.js bulkLlm 1
 app-analysis.js doSearch 2
 app-analysis.js drawAnTrend 2
 app-analysis.js fill 1
@@ -267,21 +273,25 @@ app-maintenance.js maintPairAct 1
 app-maintenance.js maintRender 2
 app-map.js _fpNav 1
 app-map.js _insMapTables 2
-app-map.js _ooMapCountryDetail 1
+app-map.js _ooMapCountryDetail 2
 app-map.js _ooMapFocusRedraw 2
 app-map.js _ooMapLayoutLabels 1
+app-map.js _ooMapSignalDetail 1
 app-map.js _osmGeoRender 1
 app-map.js _osmPaintUpdates 1
 app-map.js _osmProfileFill 1
 app-map.js _renderDumpIndexStatus 3
+app-map.js _renderDumpPage 1
 app-map.js _renderMapBasis 1
+app-map.js _renderOoMapLensBar 1
 app-map.js _renderOsmCompleteness 2
 app-map.js _renderOsmGeography 1
+app-map.js _renderOsmHistory 1
 app-map.js _renderOsmList 1
-app-map.js _renderOsmPicker 2
+app-map.js _renderOsmPicker 3
 app-map.js _renderOsmProfile 1
 app-map.js _renderOsmTrends 1
-app-map.js _renderStatAgencies 1
+app-map.js _renderStatAgencies 2
 app-map.js _renderWikiTC 1
 app-map.js _statMapDraw 1
 app-map.js dumpFtsSearch 1
@@ -294,12 +304,15 @@ app-map.js loadMap 3
 app-map.js loadOsmVintage 1
 app-map.js loadReadableDumps 1
 app-map.js loadRevisionAnomalies 1
+app-map.js loadStatFigures 1
 app-map.js loadStatSubs 1
 app-map.js loadWikiChanges 1
 app-map.js loadWikiDumps 1
 app-map.js loadWikiPages 1
+app-map.js ooMap 1
 app-map.js renderStatChart 1
 app-map.js triangulateStatSeries 1
+app-map.js viewWikiDiff 1
 app-markets.js _renderCommodityCatTabs 1
 app-markets.js _renderFeedVerdicts 2
 app-markets.js correlateSymbolInto 1
@@ -312,6 +325,7 @@ app-markets.js loadMarketConfig 1
 app-markets.js loadMineralsSupply 2
 app-markets.js loadRules 1
 app-markets.js ooChart 2
+app-markets.js ooTimeScope 1
 app-markets.js paintMktRipple 1
 app-markets.js renderDashboard 1
 app-markets.js renderFamilyGraphs 1
@@ -377,7 +391,7 @@ app-sources.js renderSchedStatus 2
 app-sources.js toggleSourceTrail 1
 app-tour.js _tourShow 1
 guis/gallery.js renderGallery 1
-investigate.js (top level) 1
+investigate.js (top level) 2
 ooversions.js paint 4
 reader.js renderAiLens 1
 reader.js renderAnalyses 1
