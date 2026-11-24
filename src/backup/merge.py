@@ -7636,32 +7636,40 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
 
     pairs: dict[str, list[tuple[str, Path, str]]] = {}
     not_app = 0
+
+    def refuse(name: str, reason: dict) -> None:
+        # R808: every member refused by its name (not a key this app creates, a marker, an unsafe spelling) is counted,
+        # and only the first few are listed, under a name made printable and cut, since whoever made the backup chose it
+        nonlocal not_app
+        not_app += 1
+        if not_app <= _KEY_NOT_APP_LISTED:
+            out["not_placed"].append({"name": _shown_key_name(name), **reason})
+
     for name, path in members:
         rel = Path(name)
         canon = rel.name.casefold().rstrip(" .")
         if rel.parent == Path("keys") and canon.endswith(_RESTORED_MARKER_SUFFIX.casefold()):
             # R801: the restored-key marker, or any other spelling of a name beside the evidence key, is this install's
             # own: a backup never places, replaces or removes one
-            out["not_placed"].append({"name": name, **said("reason", _KEY_MARKER_CARRIED)})
+            refuse(name, said("reason", _KEY_MARKER_CARRIED))
             continue
         # another spelling of a key file this app writes (case, trailing dot or space) is refused like an unsafe name:
-        # on a filesystem that ignores them it IS that key, placed past every check made by name
+        # on a filesystem that ignores them it IS that key, placed past every check made by name; so is a name that
+        # is not written the one way a path is ("keys/./x", "keys//x"), which reaches the same file by another spelling
         if (
             rel.is_absolute()
             or ".." in rel.parts
             or rel.parent != Path("keys")
+            or rel.as_posix() != name
             or (canon != rel.name and canon in _APP_KEY_FILES)
         ):
-            out["not_placed"].append({"name": name, "reason": _KEY_UNSAFE_NAME})
+            refuse(name, {"reason": _KEY_UNSAFE_NAME})
             continue
         slot = _key_slot(rel.name) if rel.name in _APP_KEY_FILES else None
         if slot is None:
             # R808: not a key this app creates (another name, or a file that is no key at all): never placed, so the
-            # keys folder an erase finds holds only the app's own names; counted, and the first few listed by a name
-            # made printable and cut, since whoever made the backup chose it
-            not_app += 1
-            if not_app <= _KEY_NOT_APP_LISTED:
-                out["not_placed"].append({"name": _shown_key_name(name), **said("reason", _KEY_NOT_APP)})
+            # keys folder an erase finds holds only the app's own names
+            refuse(name, said("reason", _KEY_NOT_APP))
             continue
         pairs.setdefault(slot[0], []).append((name, path, slot[1]))
 

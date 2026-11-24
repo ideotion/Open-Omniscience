@@ -98,3 +98,23 @@ def test_the_reason_is_translated_in_every_locale():
     root = Path(__file__).resolve().parent.parent / "src" / "static" / "locales"
     for f in sorted(root.glob("*.json")):
         assert merge._KEY_NOT_APP in json.loads(f.read_text(encoding="utf-8")), f.name
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        [f"keys/d{i}/x" for i in range(merge._KEY_NOT_APP_LISTED + 3)],  # outside keys/: refused as unsafe
+        [f"keys/a{i}\u202e.restored-from-backup" for i in range(merge._KEY_NOT_APP_LISTED + 3)],  # marker spellings
+    ],
+)
+def test_every_name_refusal_is_counted_capped_and_shown_printable(tmp_path, names):
+    out = _restore(tmp_path, {n: b"x" for n in names})
+    assert out["not_app_keys"] == {"count": len(names), "listed": merge._KEY_NOT_APP_LISTED}
+    assert len(out["not_placed"]) == merge._KEY_NOT_APP_LISTED
+    assert all("\u202e" not in e["name"] for e in out["not_placed"])
+
+
+@pytest.mark.parametrize("name", ["keys/./evidence_ed25519.pem", "keys//evidence_ed25519.pem"])
+def test_another_spelling_of_a_path_is_refused(tmp_path, name):
+    out = _restore(tmp_path, {name: _pem(Ed25519PrivateKey.generate())})
+    assert out["restored"] == [] and out["not_placed"][0]["reason"] == merge._KEY_UNSAFE_NAME, out

@@ -411,12 +411,17 @@ def test_an_mldsa_copy_that_does_not_read_back_as_the_same_pair_is_not_written(t
 
 def test_a_key_file_the_library_cannot_parse_is_reported_and_the_import_goes_on(tmp_path, monkeypatch):
     _hold(monkeypatch, HERE)
-    staged, live = _stage(tmp_path, {EVIDENCE: _unknown_algorithm_pem(), "keys/notes.txt": b"kept"}, SOURCE)
+    # the annotation key cannot be read and sorts before the evidence key, so the evidence key being placed shows the
+    # step went on past it (a second security read of row 379: a file judged by its name proves nothing here)
+    staged, live = _stage(
+        tmp_path,
+        {"keys/annotations_ed25519.pem": _unknown_algorithm_pem(), EVIDENCE: _wrapped(Ed25519PrivateKey.generate(), HERE)},
+        SOURCE,
+    )
     out = merge.merge_side_files(staged)["keys"]
-    # the step went on past the file it could not read: notes.txt was judged too (R808: not a key this app creates)
-    assert {e["name"]: e["reason"] for e in out["not_placed"]}["keys/notes.txt"] == merge._KEY_NOT_APP, out
-    assert [e["name"] for e in out["not_placed"]] == ["keys/notes.txt", EVIDENCE], out
-    assert not (live / EVIDENCE).exists()
+    assert [e["name"] for e in out["not_placed"]] == ["keys/annotations_ed25519.pem"], out
+    assert out["restored"] == [EVIDENCE], "the step went on past the file it could not read"
+    assert not (live / "keys" / "annotations_ed25519.pem").exists()
 
 
 def test_a_write_failure_placing_a_key_fails_the_stage(tmp_path, monkeypatch):
