@@ -1581,7 +1581,7 @@
         if (!r.online) {
           toast(t("Still offline — the request was accepted but airplane mode is still on. Try again."), "err");
         }
-        return r.online;
+        return r.online === true;   // only a real true counts as online (R822)
       } catch (e) { toast(e.message, "err"); return false; }
     }
     // ---- the consent popup's per-lane host disclosure (Q1001 + Q1002) ------
@@ -1862,7 +1862,25 @@
       });
     }
 
+    // R822: THE ONE consent gate every action that starts network activity awaits, and it fails CLOSED. Only an
+    // explicit yes (true) from the consent step lets the action start. A step that throws, or answers anything but
+    // true or false, starts nothing, and the reader is told why; "Stay offline" (false) is the reader's own answer and
+    // needs no message. A held job or queue stays held, with its partial kept: the caller simply does not resume it.
     async function ensureOnline(reason, opts) {
+      let answer;
+      try { answer = await _ensureOnlineAsk(reason, opts); }
+      catch (_e) { answer = undefined; }
+      if (answer === true) return true;
+      if (answer !== false) {
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        try { toast(t("The network consent step did not complete, so nothing was started."), "err"); } catch (_e) { /* no toast: still nothing started */ }
+      }
+      return false;
+    }
+
+    // The consent step itself (the popup, the already-online confirmation, the skip-dialog go-online). Never called
+    // directly: every caller goes through ensureOnline above, so none can treat a failure here as a yes.
+    async function _ensureOnlineAsk(reason, opts) {
       opts = opts || {};
       try {
         const nm = await api("/api/system/network");
@@ -1949,7 +1967,20 @@
     // Ask before an AI install step. Returns true when the step may proceed: the operator consented just now (R763: the
     // dialog is shown every time, online or not), or, with opts.alreadyAsked, a chain that showed this dialog for all of
     // its steps still has the network it was given. Refused outright in protected mode.
+    // R822: fails closed the same way as ensureOnline -- only an explicit yes starts the install step; a dialog that
+    // throws or answers anything else starts nothing and says so.
     async function ensureAiEgress(reason, opts) {
+      let answer;
+      try { answer = await _ensureAiEgressAsk(reason, opts); }
+      catch (_e) { answer = undefined; }
+      if (answer === true) return true;
+      if (answer !== false) {
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        try { toast(t("The network consent step did not complete, so nothing was started."), "err"); } catch (_e) { /* no toast: still nothing started */ }
+      }
+      return false;
+    }
+    async function _ensureAiEgressAsk(reason, opts) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // R763: the dialog is shown EVERY time, online or not, because what it says (the download leaves outside this
       // app, not through your proxy) is true either way. Only the go-online part of it depends on the state.
@@ -1977,7 +2008,7 @@
       // One dialog for a whole chain: its later steps do not ask again while what it allowed is still in place.
       if (opts && opts.alreadyAsked && (online || windowOpen)) return true;
       const dlg = document.getElementById("ai-egress-consent");
-      if (!dlg) return false;         // no dialog -> never silently proceed
+      if (!dlg) return undefined;     // no dialog -> never silently proceed; the gate says why (R822)
       const needsWindow = !online && !windowOpen;
       const slot = dlg.querySelector("#ai-egress-reason b");
       if (slot) ooLive(slot, () => reason || t("Install the local AI"));   // held (row 367)
@@ -3160,7 +3191,7 @@
       // (invariant #14; a no-op when already online). The download path itself
       // still refuses while the kill switch is engaged. A LOCAL job (`local`: a
       // re-index or the keyword fold) opens no connection, so it asks nothing.
-      if (!local && typeof ensureOnline === "function" && !await ensureOnline(t("Resume a paused download"))) return;
+      if (!local && (typeof ensureOnline !== "function" || !await ensureOnline(t("Resume a paused download")))) return;
       try {
         const r = await api(`/api/jobs/${encodeURIComponent(id)}/resume`, {method: "POST"});
         toast(r.detail ? t(r.detail) : t("Resumed."));
@@ -3178,7 +3209,7 @@
     // ``token`` is the transport the button named (R772): the server refuses the click if the transport changed since.
     async function jobResumeQueue(token) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      if (typeof ensureOnline === "function" && !await ensureOnline(t("Resume the queue"))) return;
+      if (typeof ensureOnline !== "function" || !await ensureOnline(t("Resume the queue"))) return;
       try {
         await api("/api/jobs/queue/resume", {method: "POST", body: JSON.stringify({transport: String(token || "")})});
         toast(t("Resumed."));

@@ -54,8 +54,8 @@
     const inp = document.getElementById("medical-files");
     const files = Math.max(1, Math.min(30, parseInt(inp && inp.value, 10) || 7));
     // The ONE consent (invariant #14); its answer is USED.
-    if (typeof ensureOnline === "function"
-        && !await ensureOnline(_t("Fetch PubMed update files from ftp.ncbi.nlm.nih.gov (tens of megabytes each, over your transport)"))) return;
+    if (typeof ensureOnline !== "function"
+        || !await ensureOnline(_t("Fetch PubMed update files from ftp.ncbi.nlm.nih.gov (tens of megabytes each, over your transport)"))) return;
     if (statusEl) statusEl.textContent = _t("Fetching in the background…");
     try {
       const started = await api("/api/medical/fetch",
