@@ -244,7 +244,10 @@ def test_every_weather_button_asks_through_the_one_helper_naming_place_and_host(
     assert 'if (typeof ensureOnline !== "function") return false;' in ask
     card = function_body(home, "cardWeatherFetch")
     assert card.index('"/api/weather/context/held?"') < card.index("!await ooAskToSendPlace(") < card.index('"/api/weather/context"')
-    assert "consent: true" in card and "Dates sent: {start} to {end}." in card
+    assert "consent: true" in card
+    # The dates sent are named in the question (the line is built by its own helper, row 367).
+    assert "{shadow: _wxDatesSentLine(body.start_date, body.end_date)}" in card
+    assert '"Dates sent: {start} to {end}."' in function_body(home, "_wxDatesSentLine")
     claim = function_body((_ROOT / "src" / "static" / "app-claim.js").read_text(encoding="utf-8"), "claimWeather")
     assert claim.index('"/api/weather/context/held?"') < claim.index("!await ooAskToSendPlace(") < claim.index('"/api/weather/context"')
     assert "consent: true" in claim and "consent: false" not in claim

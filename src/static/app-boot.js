@@ -140,6 +140,10 @@
       // English beside chips that translated, while booting straight into `ar` rendered
       // it correctly. Repaints from the CACHED payload, so a switch costs no request.
       try { if (typeof _renderHomeChannels === "function") _renderHomeChannels(); } catch (_e) {}
+      // Row 367: Home's alert strip and the Leads carousel draw their words with t() at render time. Each redraws
+      // from what it last drew (the alerts payload; the cards, position and pause state) -- never a fetch.
+      try { if (typeof repaintHomeAlerts === "function") repaintHomeAlerts(); } catch (_e) {}
+      try { if (typeof repaintLeadsCarousel === "function") repaintLeadsCarousel(); } catch (_e) {}
       // Home's "Most recent" and "Latest in your corpus" panels and the Settings
       // Collection toggle are the same class, seen only on a switch that STARTS in a
       // non-English locale: the walker had recorded their French text as "the English",
