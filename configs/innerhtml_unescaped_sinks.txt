@@ -344,9 +344,11 @@ app-patterns.js _whoPaint 1
 app-patterns.js loadWho 2
 app-patterns.js ooPaintBriefDismissed 1
 app-patterns.js openPatternList 2
+app-settings.js _dmRedraw 1
 app-settings.js _filterDocNow 1
 app-settings.js _fixityPaint 2
 app-settings.js _folderImportRefresh 1
+app-settings.js _langDetectSay 1
 app-settings.js _llmPullRefresh 1
 app-settings.js _paintDefaultModel 2
 app-settings.js _paintLaneStorage 3
@@ -371,6 +373,7 @@ app-settings.js renderCardCatalog 1
 app-settings.js renderWikiLanguages 1
 app-settings.js saveCardSettings 1
 app-settings.js saveKeywordFilter 1
+app-settings.js sayHtml 1
 app-settings.js vacuumNow 1
 app-shell.js buildDrawer 5
 app-shell.js loadShortcuts 1

@@ -350,9 +350,10 @@ const catalogue = () => ({ families: [
     reply = new Promise((r) => { finish = r; });
     const run = h.fns.pullModel("owner/name");
     await tick();
-    assert.strictEqual(prog.textContent, FR["Queued"] + " owner/name…");
+    const queued = (L) => esc(L["{prefix}: {text}"]).replace("{prefix}", esc(L["Queued"])).replace("{text}", '<span translate="no">owner/name</span>');
+    assert.strictEqual(prog.innerHTML, queued(FR), "Queued: {tag} through the label frame, the tag never translated");
     h.switchTo("de");
-    assert.strictEqual(prog.textContent, DE["Queued"] + " owner/name…", "the queued line follows a switch while the request runs");
+    assert.strictEqual(prog.innerHTML, queued(DE), "the queued line follows a switch while the request runs");
     finish({ backend: "vllm" }); await run;
     assert.strictEqual(prog.textContent, "fetching 2/5 <shards>", "the job's own words, as text");
     h.switchTo("fr");

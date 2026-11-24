@@ -170,16 +170,6 @@ app-observatory.js loadObservatory
 app-patterns.js ooCardDismissedUndo
 app-patterns.js ooKeywordUndoButton
 app-patterns.js openPatternList
-app-settings.js _installDefaultModel
-app-settings.js _paintDefaultModel
-app-settings.js _paintLangDetectButton
-app-settings.js loadLangDetectCount
-app-settings.js loadLlmModels
-app-settings.js loadOllamaInstall
-app-settings.js pollLangDetect
-app-settings.js prepareOllamaInstall
-app-settings.js runLangDetect
-app-settings.js runOllamaInstall
 app-shell.js kbRecord
 app-shell.js loadShortcuts
 app-shell.js renderPalette
