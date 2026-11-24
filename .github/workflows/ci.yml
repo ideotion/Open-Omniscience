@@ -1258,6 +1258,19 @@ jobs:
           python -m pip check
           python -m mypy src/
 
+      # R824 (row 405): the golden-corpus OUTPUT digest of each extraction stage is recorded under THIS job's environment (the
+      # lock's pinned dictionaries), the one environment CI holds still: the test job resolves the newest release of every
+      # unbounded dependency, so a digest recorded there would move with an upstream release and with no change here. Required
+      # here (never skipped), so an output change under an unchanged INDEXER_VERSION / WWW_INDEXER_VERSION fails this job.
+      - name: Extraction output digests match their versions (golden corpus, lock environment)
+        env:
+          OO_GOLDEN_OUTPUT_REQUIRED: "1"
+          OO_DB_PLAINTEXT: "1"
+          OO_NO_SCHEDULER: "1"
+        run: |
+          python -m pip install pytest==9.2.0
+          python -m pytest -q -p no:cacheprovider tests/test_extraction_golden_output.py
+
       # R380 (R353). The wheel is built only by release.yml, at tag time, so a data file the code reads and the wheel does not carry
       # (pyproject lists the data by glob and MANIFEST.in by graft, and a file kind nobody remembered to list simply does not ship) used to
       # be found after the tag. Build it here with the command release.yml runs (python -m build: the sdist first, then the wheel FROM the

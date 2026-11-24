@@ -1,16 +1,16 @@
 {
   "kw": {
     "version": 3,
-    "output_digest": "77be66c154e02ac0ae33729a53f99c3d0ecb0dd3018c9217d41e8957f1513e40",
+    "output_digest": "77c6016f66494e925a16cf4f17a5610d026dff0ac04fa19fa8371c84057faab7",
     "environment": {
       "data": "6eb2efdab4a8a7bceac41ae3752d978a87cd0b55f89353d33e5cf5c824b460c0",
       "distributions": {
-        "simplemma": "2.0.0",
+        "simplemma": "1.2.0",
         "vaderSentiment": "3.3.2",
-        "py3langid": "0.4.0",
+        "py3langid": "0.3.0",
         "jieba": "0.42.1",
-        "janome": "0.5.2",
-        "pythainlp": "5.4.0",
+        "janome": null,
+        "pythainlp": null,
         "spacy": null
       },
       "switches": {
@@ -23,8 +23,8 @@
     },
     "articles": 207,
     "rows": {
-      "keyword_mentions": 3015,
-      "keywords": 2801,
+      "keyword_mentions": 2855,
+      "keywords": 2651,
       "articles": 207,
       "article_mentioned_dates": 240
     },

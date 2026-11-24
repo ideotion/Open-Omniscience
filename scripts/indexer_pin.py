@@ -105,7 +105,9 @@ def _refuse_same_on_output(engine: str) -> None:
     if diffs:
         raise SystemExit(
             "--same refused: cannot judge here. The output digest was recorded in another environment "
-            f"(differs in: {', '.join(diffs)}); run this where the recorded digest was made, or in that CI job"
+            f"(differs in: {', '.join(diffs)}); run it in a venv installed from requirements.lock "
+            "(pip install --require-hashes -r requirements.lock; pip install -e . --no-deps), the environment CI's "
+            "lockfile-install job checks the digest in"
         )
     if golden["output_digest"] != rec["output_digest"]:
         raise SystemExit(
@@ -179,6 +181,19 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--same refused: the engine files have not changed since the last judgement")
     if a.same:
         _refuse_same_on_output(a.engine)
+    golden = _golden(a.engine) if a.bump else None
+    if golden is not None:
+        # The digest is checked in the lock environment (CI's lockfile-install job); one recorded anywhere else would be red there.
+        from src.analytics.golden_output import environment_differences
+
+        rec_env = ((json.loads(_digests_path().read_text(encoding="utf-8")) if _digests_path().exists() else {}).get(a.engine) or {}).get("environment")
+        diffs = environment_differences(rec_env or {}, golden["environment"]) if rec_env else []
+        if diffs:
+            raise SystemExit(
+                f"--bump refused: this environment differs from the one the output digest is recorded in ({', '.join(diffs)}); "
+                "run it in a venv installed from requirements.lock (pip install --require-hashes -r requirements.lock; "
+                "pip install -e . --no-deps)"
+            )
     version = int(pin.get("version", 0)) + (1 if a.bump else 0)
     if a.bump:
         _set_version(a.engine, version)
@@ -186,7 +201,6 @@ def main(argv: list[str] | None = None) -> int:
     pin.setdefault("log", []).append(
         {"version": version, "digest": digest, "kind": "bump" if a.bump else "same", "note": note}
     )
-    golden = _golden(a.engine) if a.bump else None
     pin_path.write_text(json.dumps(pin, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     print(f"{'bumped to' if a.bump else 'kept'} {ENGINES[a.engine][1]} {version}; digest {digest[:12]}")
     if golden is not None:
