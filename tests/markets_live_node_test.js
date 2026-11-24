@@ -96,6 +96,7 @@ class El {
   addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); }
   fire(ev, target) { (this.listeners[ev] || []).forEach((fn) => fn({ target: target || this, preventDefault() {} })); }
   focus() {}
+  getElementsByTagName() { return this._all().filter((k) => k.isConnected); }
   getBoundingClientRect() { return { left: 0, width: 100 }; }
 }
 let REGISTRY = null;
@@ -110,7 +111,7 @@ function harness(answers) {
   const nodes = {};
   REGISTRY = { fresh(id, el) { if (nodes[id]) nodes[id]._connected = false; nodes[id] = el; } };
   for (const id of ["idx-board", "indices-cats", "indices-tags", "idx-compare-bar", "idx-timescope", "idx-timescope-row",
-    "idx-viewtoggle", "mkt-dashboard", "commodities-cats", "mkt-viewtoggle", "mkt-timescope", "mkt-verdicts", "box"]) nodes[id] = new El("DIV");
+    "idx-viewtoggle", "mkt-dashboard", "mkt-dash-status", "commodities-cats", "mkt-viewtoggle", "mkt-timescope", "mkt-verdicts", "box"]) nodes[id] = new El("DIV");
   const calls = { api: [], charts: [], subtabs: 0 };
   const api = async (url, o) => {
     const key = ((o && o.method) || "GET") + " " + url;
@@ -126,11 +127,15 @@ function harness(answers) {
     ...CORE.map(extract),
     "function fmtNum(x) { return String(x); }",
     MARKETS_JS,
-    // the canvas is not what is tested: the chart records the labels it was handed
-    "ooChart = (el, series) => { __calls.charts.push(series.map((s) => s.label)); };",
-    "return { renderIndicesBoard, renderDashboard, repaintMarketBoards, _renderFeedVerdicts, retryFailedFeeds, ooTimeScope," +
+    // the canvas is not what is tested: the chart records the labels it was handed, and keeps a view the way the
+    // shipped one does (_ooChartArgs, _ooChartView, _ooChartSetView, a pending view taken at build)
+    "ooChart = (el, series) => { __calls.charts.push(series.map((s) => s.label)); el._ooChartArgs = [series];" +
+    " el.__view = el._ooChartViewToTake || null; el._ooChartViewToTake = null;" +
+    " el._ooChartView = () => el.__view || { t0: 0, t1: 1, full: true, hidden: [] }; el._ooChartSetView = (v) => { el.__view = v; }; };",
+    "return { renderIndicesBoard, renderDashboard, repaintMarketBoards, loadDashboard, _renderFeedVerdicts, retryFailedFeeds, ooTimeScope," +
     " ooLiveRepaint, set(o) { if ('cards' in o) _idxCards = o.cards; if ('idxView' in o) _idxView = o.idxView;" +
-    " if ('series' in o) MKT_SERIES = o.series; if ('prices' in o) Object.assign(MKT_PRICES, o.prices); if ('loaded' in o) _idxSeriesLoaded = o.loaded; } };",
+    " if ('series' in o) MKT_SERIES = o.series; if ('prices' in o) Object.assign(MKT_PRICES, o.prices); if ('loaded' in o) _idxSeriesLoaded = o.loaded;" +
+    " if (o.clear) for (const k in MKT_PRICES) delete MKT_PRICES[k]; } };",
   ].join("\n");
   const document = { createElement: (tag) => new El(tag.toUpperCase()), documentElement: { dir: "ltr" }, querySelectorAll: () => [] };
   const window = { OOI18N, addEventListener() {}, devicePixelRatio: 1 };
@@ -183,7 +188,7 @@ const PRICES = {
     assert.ok(cats.innerHTML.includes(">All</button>"), cats.innerHTML);
     const sent = h.calls.api.length, drawn = h.calls.charts.length;
     h.switchTo("fr");
-    assert.ok(idx.innerHTML.includes(`<span>${esc(FR["Europe"])} `), "the indices families follow a switch: " + idx.innerHTML);
+    assert.ok(idx.innerHTML.includes(`<span>${esc(FR["Asia"])} `), "the indices families follow a switch: " + idx.innerHTML);
     assert.ok(dash.innerHTML.includes(esc(FR["Indexed to 100 at the window start — relative moves, not absolute levels; the hover shows the real value."])),
       "the commodities caveat follows a switch");
     assert.ok(cats.innerHTML.includes(">" + esc(FR["All"]) + "</button>"), "the category tabs follow a switch: " + cats.innerHTML);
@@ -200,6 +205,56 @@ const PRICES = {
     const sent = h.calls.api.length;
     h.switchTo("fr");
     assert.strictEqual(h.calls.api.length, sent, "a switch starts no read of its own");
+  }
+
+  {
+    // a switch keeps the reader's zoom and hidden series on each chart, matched by the series it draws
+    const h = harness({});
+    h.fns.set({ cards: CARDS, idxView: "families", loaded: true, prices: PRICES, series: [] });
+    h.fns.renderIndicesBoard();
+    const charts = () => h.$("idx-board").getElementsByTagName("*").filter((el) => el._ooChartArgs);
+    const europe = () => charts().find((el) => el._ooChartArgs[0][0].symbol === "^A");
+    const asia = () => charts().find((el) => el._ooChartArgs[0][0].symbol === "^B");
+    assert.ok(europe() && asia(), "one chart per family");
+    const old = europe();
+    old.__view = { t0: 5, t1: 6, full: false, hidden: ["^A"] };
+    h.switchTo("fr");
+    assert.notStrictEqual(europe(), old, "the chart was drawn again");
+    assert.deepStrictEqual(europe().__view, { t0: 5, t1: 6, full: false, hidden: ["^A"] }, "the window and hidden series come back");
+    assert.ok(!asia().__view || (asia().__view.full && !asia().__view.hidden.length), "another chart's view is not handed over");
+    // matched by series, not by place: with the first family gone the Europe chart still gets its own view
+    h.fns.set({ cards: [CARDS[0]] });
+    h.switchTo("en");
+    assert.strictEqual(charts().length, 1);
+    assert.deepStrictEqual(europe().__view, { t0: 5, t1: 6, full: false, hidden: ["^A"] }, "matched by the series drawn");
+    h.fns.set({ cards: CARDS });
+    h.switchTo("fr");
+    // a chart not laid out yet keeps the view it was waiting with
+    const wait = europe(); wait.__view = null; wait._ooChartView = null; wait._ooChartViewToTake = { t0: 7, t1: 8, full: false, hidden: [] };
+    h.switchTo("de");
+    assert.deepStrictEqual(europe().__view, { t0: 7, t1: 8, full: false, hidden: [] }, "a pending view is carried too");
+  }
+  {
+    // a switch while the prices are being read again draws nothing then, and is drawn when the read ends
+    let answer;
+    const h = harness({
+      "GET /api/markets/series": new Promise((r) => { answer = r; }),
+      "GET /api/commodities/%5EA/prices": { prices: PRICES["^A"] }, "GET /api/commodities/%5EB/prices": { prices: PRICES["^B"] },
+      "GET /api/commodities/GOLD/prices": { prices: PRICES.GOLD }, "GET /api/commodities/OIL/prices": { prices: PRICES.OIL },
+    });
+    h.fns.set({ cards: CARDS, idxView: "families", loaded: true, prices: PRICES, series: [] });
+    h.fns.renderIndicesBoard();
+    const idx = h.$("idx-board"), before = idx.innerHTML;
+    h.fns.set({ clear: true });           // a refresh or an import empties the prices, then reads them again
+    const run = h.fns.loadDashboard();
+    h.switchTo("fr");
+    assert.strictEqual(idx.innerHTML, before, "nothing is drawn from emptied prices");
+    answer({ series: [{ symbol: "^A", category: "index" }, { symbol: "^B", category: "index" },
+      { symbol: "GOLD", name: "Gold", category: "metals" }, { symbol: "OIL", name: "Oil", category: "energy" }] });
+    await run;
+    assert.notStrictEqual(FR["Asia"], "Asia");
+    assert.ok(idx.innerHTML.includes(`<span>${esc(FR["Asia"])} `), "the owed switch is drawn when the read ends: " + idx.innerHTML);
+    assert.ok(!idx.innerHTML.includes(esc(FR["No data in this window yet."])), idx.innerHTML);
   }
 
   // 2. The feed verdicts and the retry line are held.
@@ -250,7 +305,12 @@ const PRICES = {
     assert.strictEqual(q("ts-h-to").getAttribute("aria-label"), FR["To"]);
     assert.ok(q("ts-scale-l").getAttribute("title").startsWith(FR["Reads the range in whole days, weeks, months or years: each bound snaps to the start or end of its period. The data inside the range is never thinned."].slice(0, 20)));
     assert.ok(scale.innerHTML.includes(`<option value="month" selected>${esc(FR["Months"])}</option>`), "the scale in use stays chosen: " + scale.innerHTML);
-    assert.ok(q("ts-presets").innerHTML.includes(">" + esc(FR["All"] || "All") + "</button>") || q("ts-presets").innerHTML.includes("data-preset"), q("ts-presets").innerHTML);
+    assert.ok(q("ts-presets").innerHTML.includes(`data-preset="All">${esc(FR["All"])}</button>`), "the presets follow a switch: " + q("ts-presets").innerHTML);
+    // a scale the reader picks is the one still chosen after a switch
+    scale.value = "year"; scale.fire("change");
+    h.switchTo("de");
+    assert.ok(scale.innerHTML.includes(`<option value="year" selected>${esc(DE["Years"])}</option>`), scale.innerHTML);
+    h.switchTo("fr");
     // a control built again on the same box: the earlier holds go with it, and the degraded form is held too
     h.fns.ooTimeScope(box, {});
     assert.ok(box.innerHTML.includes(esc(FR["not enough data for a time range"])), box.innerHTML);

@@ -131,10 +131,15 @@
     // never reads: a board not drawn yet is left alone, and the indices families view waits for
     // its own series read (loadIdxFullSeries) instead of starting one. A chart in a hidden tab
     // waits for its width (ooChart), so drawing one there is safe.
-    let _idxBoardDrawn = false, _mktBoardDrawn = false;
+    // While loadDashboard reads the prices again (after a refresh or an import emptied them) a board drawn now would
+    // show an empty window, and nothing would draw it again: the switch is owed and drawn when the read ends.
+    // The charts keep the reader's zoom and hidden series (_carryChartViews).
+    let _idxBoardDrawn = false, _mktBoardDrawn = false, _mktPriceRead = 0, _mktRepaintOwed = false;
     function repaintMarketBoards() {
-      if (_idxBoardDrawn && _idxCards.length && (_idxView !== "families" || _idxSeriesLoaded)) renderIndicesBoard();
-      if (_mktBoardDrawn && MKT_SERIES.length) renderDashboard();
+      if (_mktPriceRead) { _mktRepaintOwed = true; return; }
+      if (_idxBoardDrawn && _idxCards.length && (_idxView !== "families" || _idxSeriesLoaded))
+        _carryChartViews($("idx-board"), () => renderIndicesBoard());
+      if (_mktBoardDrawn && MKT_SERIES.length) _carryChartViews($("mkt-dashboard"), () => renderDashboard());
     }
     // The Cards/Families view toggle (Slice 6) — mirrors the commodities toggle so
     // the two boards stay near-identical; default Cards (no regression).
@@ -633,6 +638,7 @@
 
     async function loadDashboard() {
       const status = $("mkt-dash-status");
+      _mktPriceRead++;
       try {
         const d = await api("/api/markets/series");
         MKT_SERIES = d.series || [];
@@ -648,6 +654,10 @@
         buildMktTimeScope();
         renderDashboard();
       } catch (e) { status.textContent = _failMsg("Could not load series: {error}", e); }
+      finally {
+        _mktPriceRead--;
+        if (!_mktPriceRead && _mktRepaintOwed) { _mktRepaintOwed = false; repaintMarketBoards(); }
+      }
     }
 
     // The commodities board is windowed by ABSOLUTE dates [from,to] (the
@@ -1957,6 +1967,7 @@
       el.innerHTML = "";
       if (el._ooChartRO) { el._ooChartRO.disconnect(); el._ooChartRO = null; }
       el._ooChartArgs = [seriesList, opts];
+      el._ooChartView = null; el._ooChartSetView = null;
       // The canvas is sized in FIXED px, so it must never be wider than its host:
       // a 320 px hard floor (and a 680 px fallback when the element was not laid
       // out yet) made the chart overflow a narrower tile, with no overflow rule
@@ -1997,7 +2008,7 @@
         return Date.parse(x);
       };
       const all = seriesList.map((s, i) => ({
-        label: s.label || `#${i + 1}`, unit: s.unit || "",
+        label: s.label || `#${i + 1}`, unit: s.unit || "", id: _ooChartSeriesId(s, i),
         // Row 327: a keyword series names itself with data; the legend marks it so the page
         // translator never rewrites it (chrome labels stay translatable).
         labelIsData: !!s.labelIsData,
@@ -2665,9 +2676,50 @@
         if (hovP) { hovP = null; hovS = null; draw(); }
         if (!pinned && dragX == null && !emptyState && bFrom == null && !brushMode) readout.textContent = idleHint;
       });
+      // Row 367: the reader's window and hidden series, read and put back by _carryChartViews when a board is drawn
+      // again (a language switch), so a redraw never resets what the reader chose. A window is put back only inside
+      // this chart's own span, and a series is hidden again only if it is still drawn.
+      el._ooChartView = () => ({t0, t1, full: t0 === tMin && t1 === tMax,
+                                 hidden: all.filter((s) => s.hidden).map((s) => s.id)});
+      const setView = (v) => {
+        if (!v) return;
+        if (!v.full) {
+          const a = Math.max(tMin, v.t0), b = Math.min(tMax, v.t1);
+          if (b > a) { t0 = a; t1 = b; }
+        }
+        const hid = new Set(v.hidden || []);
+        all.forEach((s) => { s.hidden = hid.has(s.id); });
+      };
+      el._ooChartSetView = (v) => { setView(v); hovP = null; hovS = null; draw(); };
+      if (el._ooChartViewToTake) { setView(el._ooChartViewToTake); el._ooChartViewToTake = null; }
       draw();
       _ooChartWatch(el, W);
       return {redraw: draw};
+    }
+    function _ooChartSeriesId(s, i) { return String(s.symbol || s.key || s.label || `#${i + 1}`); }
+    // Row 367: draw a board again without losing the reader's chart state. Every ooChart under `host` is keyed by the
+    // series it draws (their symbols, in order); after `redraw`, a chart drawing the same series gets the same window
+    // and hidden series back. A chart not laid out yet (a hidden tab) takes them when it gains a width.
+    function _carryChartViews(host, redraw) {
+      if (!host) { redraw(); return; }
+      const keyOf = (el) => (el._ooChartArgs[0] || []).map(_ooChartSeriesId).join("\u0001");
+      const charts = () => Array.from(host.getElementsByTagName("*")).filter((el) => el._ooChartArgs);
+      const views = new Map();
+      for (const el of charts()) {
+        const v = el._ooChartView ? el._ooChartView() : el._ooChartViewToTake;
+        if (!v) continue;
+        const k = keyOf(el);
+        if (!views.has(k)) views.set(k, []);
+        views.get(k).push(v);
+      }
+      redraw();
+      if (!views.size) return;
+      for (const el of charts()) {
+        const list = views.get(keyOf(el));
+        const v = list && list.shift();
+        if (!v) continue;
+        if (el._ooChartSetView) el._ooChartSetView(v); else el._ooChartViewToTake = v;
+      }
     }
 
     function sparkSvg(points) {
