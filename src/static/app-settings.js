@@ -1705,15 +1705,17 @@
       try {
         const r = await api("/api/database/rebuild/remove-kept", {method: "POST", body: JSON.stringify({name, store, confirm: true})});
         toast(_rbTf("Removed. {size} freed.", {size: _fmtBytes(r.bytes || 0)}), "ok");
-      } catch (e) { toast(ooLabelText(t("Could not remove the file"), e.message), "err"); }
-      finally {
+      } catch (e) {
         _rbRemoving.delete(key);
+        toast(ooLabelText(t("Could not remove the file"), e.message), "err");
         // re-enable the button now on the page: a language switch may have redrawn the list mid-remove
         document.querySelectorAll("[data-rebuild-remove]").forEach((b) => {
           if (b.dataset.rebuildRemove === name && (b.dataset.rebuildStore || "library") === store) b.disabled = false;
         });
       }
-      loadRebuild();
+      // After a removal the key is held until the reload has dropped the row, so a redraw from the older answer
+      // in between still draws its button disabled.
+      try { await loadRebuild(); } finally { _rbRemoving.delete(key); }
     }
 
     // Local fixity audit (B-2): re-hash the corpus vs the capture-time hash. Loud,

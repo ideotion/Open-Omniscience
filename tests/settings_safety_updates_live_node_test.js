@@ -259,6 +259,23 @@ const tick = () => new Promise((r) => setImmediate(r));
     h.switchTo("de");
     assert.ok(!h.nodes["rebuild-kept"].innerHTML.includes(" disabled>"), h.nodes["rebuild-kept"].innerHTML);
   }
+  // 2d'. A Remove that SUCCEEDED keeps its row's button disabled until the reload has answered: a switch in between
+  //      redraws from the older answer, which still lists the removed file.
+  {
+    let reloaded;
+    const status = base();
+    const h = harness({ "POST /api/database/rebuild/remove-kept": { bytes: 7 },
+      "GET /api/database/rebuild": () => new Promise((r) => { reloaded = r; }) });
+    h.fns._rbPaint(status);
+    const run = h.fns.rebuildRemoveKept({ dataset: { rebuildRemove: "lib.<img src=x>.db" }, disabled: false });
+    await tick(); await tick();   // the remove answered; the reload has not
+    h.switchTo("fr");
+    assert.ok(/data-rebuild-remove="lib\.&lt;img src=x&gt;\.db" disabled>/.test(h.nodes["rebuild-kept"].innerHTML),
+      "a removed file's button came back before the reload: " + h.nodes["rebuild-kept"].innerHTML);
+    reloaded(status); await run;
+    h.switchTo("de");
+    assert.ok(!h.nodes["rebuild-kept"].innerHTML.includes(" disabled>"), h.nodes["rebuild-kept"].innerHTML);
+  }
   // 2e. A FAILED Remove whose list a switch redrew mid-flight: the button now on the page is enabled again, not only the
   //     detached one the click came from (only that store's file of that name: a namesake in another store is left alone).
   {
