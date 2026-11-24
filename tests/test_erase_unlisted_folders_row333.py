@@ -99,10 +99,16 @@ def test_a_clean_erase_still_reads_clean(tmp_path):
 def test_a_held_store_and_an_unlisted_folder_are_both_said(monkeypatch):
     monkeypatch.setattr(crypto_erase, "shut_out_held", lambda g: None)
     monkeypatch.setattr(crypto_erase, "settle_other_holders", lambda g: crypto_erase.HOLDER_HELD)
-    report = {"unlisted_folders": 2, "limit": crypto_erase._LIMIT_NOTE_UNLISTED}
+    # an erase of a main database known to be encrypted (R815: only then is the held-store note the crypto-erase one)
+    report = {"unlisted_folders": 2, "limit": crypto_erase._LIMIT_NOTE_UNLISTED, "encrypted_corpus": True}
     assert crypto_erase.finish_holder_check(report, 1) == crypto_erase.HOLDER_HELD
     assert report["limit"].startswith(crypto_erase._LIMIT_NOTE_NOT_CLEAN)
     assert crypto_erase._UNLISTED_SENTENCE in report["limit"]
+    # not known to be encrypted: both still said, and the guarantee never (R815 (3), fail closed)
+    report = {"unlisted_folders": 2, "limit": crypto_erase._LIMIT_NOTE_UNLISTED}
+    assert crypto_erase.finish_holder_check(report, 1) == crypto_erase.HOLDER_HELD
+    assert report["limit"].startswith(crypto_erase._NOT_CLEAN_PLAIN_SENTENCE)
+    assert crypto_erase._UNLISTED_SENTENCE in report["limit"] and "permanently unrecoverable" not in report["limit"]
 
 
 def test_the_masking_withholds_a_path_when_it_fails(monkeypatch):

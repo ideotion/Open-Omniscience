@@ -361,11 +361,17 @@
       return (label || "").toLowerCase().includes(_conceptFilterQ);
     }
 
+    // Row 367: the browse is drawn from what it holds (the super-groups, the rings, the bucket and ring chosen), so a
+    // language switch draws it again through repaintConceptBrowse, from app-boot's ONE oo:langchange listener; a browse
+    // never drawn is left alone and nothing is read.
+    let _conceptDrawn = false;
+    function repaintConceptBrowse() { if (_conceptDrawn) renderConceptBrowse(); }
     function renderConceptBrowse() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const supersHost = $("sg-concept-supers"), groupsHost = $("sg-concept-groups"),
         crumbHost = $("sg-concept-crumb");
       if (!supersHost || !groupsHost) return;
+      _conceptDrawn = true;
       const ringToSupers = _conceptRingToSupers();
       const groupedRingIds = new Set(Object.keys(ringToSupers));
       const ungrouped = _conceptRings.filter((r) => !groupedRingIds.has(r.id));
@@ -604,7 +610,8 @@
     async function loadSuperGroups() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("sg-list");
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Row 367: the list, its basis chip and its loading and failure lines are held, so they follow a language switch.
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         // series_top: only the top-mentioned groups get a windowed rate + sparkline
         // (S1.5, bounded — never all ~77 groups on every load).
@@ -626,10 +633,13 @@
         _conceptSupergroups = sgs.supergroups || [];
         _conceptRings = rings.rings || [];
         renderConceptBrowse();
-        box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
-          : `<div class="muted">${esc(t("No super-groups yet. Create one above, then add families or groups to it."))}</div>`;
-        const bc = $("sg-basis"); if (bc) bc.innerHTML = basisChip(sgs.counts);
-      } catch (e) { box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`; }
+        ooLiveHtml(box, () => (sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
+          : `<div class="muted">${esc(t("No super-groups yet. Create one above, then add families or groups to it."))}</div>`));
+        const bc = $("sg-basis"); if (bc) ooLiveHtml(bc, () => basisChip(sgs.counts));
+      } catch (e) {
+        const msg = e.message;
+        ooLiveHtml(box, () => `<div class="muted">${esc(t("Could not load") + ": " + msg)}</div>`);
+      }
       _sgScrollToTarget();  // S3: land on the deep-linked group after it renders
       _conceptApplyPending();  // §D: land on the deep-linked concept-map ring, if any
     }
@@ -690,7 +700,7 @@
         return `<button class="chip${isRing ? " lvl-group" : ""}" data-on-click="openCorpus(${esc(JSON.stringify(m.normalized))})"
            title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${kwSensesAfterHtml(m)}${kwQidHtml(m, {noDossier: true})}${mapLink}`;
       }).join("")
-        : '<span class="muted">No members yet.</span>';
+        : `<span class="muted">${esc(t("No members yet."))}</span>`;
       const tf = (s2, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s2, v)
         : String(s2).replace(/\{(\w+)\}/g, (m0, k) => (v && v[k] != null) ? String(v[k]) : m0);
       const zeroChip = zeroCount > 0
@@ -851,8 +861,10 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("kx-facets");
       if (!box) return;
-      box.innerHTML = '<div class="muted">' + esc(t("Loading…")) + '</div>';
-      $("kx-keywords").innerHTML = "";
+      // Row 367: every line this explorer draws is held, so it follows a language switch.
+      ooLiveHtml(box, () => '<div class="muted">' + esc(t("Loading…")) + '</div>');
+      const kwBox = $("kx-keywords");
+      if (kwBox) { ooLive(kwBox, null); kwBox.innerHTML = ""; }
       try {
         const f = await api("/api/insights/keyword-tags/facets");
         // §3.H: tagging at ingest is forward-only, so a pre-existing corpus shows no
@@ -864,42 +876,55 @@
         const empty = (f.axes || ["type", "topic"]).every(ax => !((f.facets && f.facets[ax]) || []).length);
         if (empty && !_kxAutoBackfilled) {
           _kxAutoBackfilled = true;
-          box.innerHTML = '<div class="muted">' + esc(t("Applying baseline tags in the background…")) + '</div>';
+          ooLiveHtml(box, () => '<div class="muted">' + esc(t("Applying baseline tags in the background…")) + '</div>');
           try {
             await api("/api/insights/keyword-tags/backfill?limit=0", {method: "POST"});
             await pollJobStatus("/api/insights/keyword-tags/backfill/status");
           } catch (e) {}
           return loadKeywordExplorer();  // re-render with the freshly applied tags (guard prevents a loop)
         }
-        box.innerHTML = (f.axes || ["type", "topic"]).map(ax => {
+        ooLiveHtml(box, () => (f.axes || ["type", "topic"]).map(ax => {
           const tags = (f.facets && f.facets[ax]) || [];
-          const chips = tags.length ? tags.map(t =>
-            `<button class="fam-chip" data-ax="${esc(ax)}" data-tag="${esc(t.tag)}" data-on-click="kxShowTag(this)">${esc(t.tag)} <span class="muted">${t.keywords}</span></button>`).join("")
-            : '<span class="muted">none yet — click “Apply baseline tags” above</span>';
+          const chips = tags.length ? tags.map(tg =>
+            `<button class="fam-chip" data-ax="${esc(ax)}" data-tag="${esc(tg.tag)}" data-on-click="kxShowTag(this)">${esc(tg.tag)} <span class="muted">${tg.keywords}</span></button>`).join("")
+            : `<span class="muted">${esc(t("none yet — click “Apply baseline tags” above"))}</span>`;
           return `<div style="margin-bottom:8px"><b>${esc(ax)}</b><div class="fam-chips" style="margin-top:4px">${chips}</div></div>`;
-        }).join("");
-      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+        }).join(""));
+      } catch (e) {
+        const msg = e.message;
+        ooLiveHtml(box, () => `<div class="muted">${esc(t("Could not load:"))} ${esc(msg)}</div>`);
+      }
     }
 
     async function kxShowTag(btn) {
       const ax = btn.dataset.ax, tag = btn.dataset.tag;
       const box = $("kx-keywords");
-      box.innerHTML = '<div class="muted">Loading…</div>';
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const r = await api(`/api/insights/keyword-tags/keywords?axis=${encodeURIComponent(ax)}&tag=${encodeURIComponent(tag)}&limit=200`);
-        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+        // Row 367: the rows are drawn once (a row's open tag editor and a hidden keyword stay as they are); only the
+        // buttons' words are held, each by its own button.
+        ooLive(box, null);
         box.innerHTML = `<div class="muted" style="margin:6px 0">${r.total} keyword(s) tagged ${esc(ax)}=${esc(tag)}</div>` +
           (r.keywords || []).map(k =>
             `<div style="padding:3px 0;border-bottom:1px solid var(--line)">
                <div style="display:flex;gap:8px;align-items:center">
                  <span style="flex:1"><span translate="no">${esc(k.term)}</span> <span class="muted">${k.language ? ooLangCell(k.language) : "?"} · ${k.articles}a/${k.mentions}m · ${esc(k.source)}</span></span>
-                 <button class="ghost tiny" data-norm="${esc(k.normalized)}" data-on-click="kxToggleTags(this)"
-                   title="${esc(t("Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score."))}">${esc(t("Tags"))}</button>
-                 <button class="ghost tiny" data-norm="${esc(k.normalized)}" data-on-click="kxHide(this)">Hide</button>
+                 <button class="ghost tiny kx-tags-b" data-i18n-dyn data-norm="${esc(k.normalized)}" data-on-click="kxToggleTags(this)"></button>
+                 <button class="ghost tiny kx-hide-b" data-norm="${esc(k.normalized)}" data-on-click="kxHide(this)"></button>
                </div>
                <div class="kx-tagbox" data-norm="${esc(k.normalized)}" hidden style="margin:4px 0 6px 2px"></div>
              </div>`).join("");
-      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+        box.querySelectorAll(".kx-tags-b").forEach((b) => ooLive(b, () => {
+          b.setAttribute("title", t("Show this keyword's tags, and add or remove your own. A tag is a LABEL you assert, never a score."));
+          return t("Tags");
+        }));
+        box.querySelectorAll(".kx-hide-b").forEach((b) => ooLive(b, () => t("Hide")));
+      } catch (e) {
+        const msg = e.message;
+        ooLiveHtml(box, () => `<div class="muted">${esc(t("Could not load:"))} ${esc(msg)}</div>`);
+      }
     }
 
     // -- Per-keyword TAG editor (the docket's REMAINING half of Item AC) ------ //
@@ -923,34 +948,43 @@
 
     async function kxRenderTags(boxEl, norm) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      boxEl.innerHTML = `<span class="muted">${esc(t("Loading…"))}</span>`;
+      // Row 367: the editor draws its own words through held renders, so the page walker stays out of it; a tag being
+      // typed is never redrawn.
+      boxEl.setAttribute("data-i18n-dyn", "");
+      ooLiveHtml(boxEl, () => `<span class="muted">${esc(t("Loading…"))}</span>`);
       try {
         const d = await api(`/api/insights/keyword-tags?normalized=${encodeURIComponent(norm)}`);
         const tags = d.tags || {}, srcs = d.sources || {};
-        const chips = [];
-        for (const ax of Object.keys(tags)) {
-          for (const tg of (tags[ax] || [])) {
-            // The endpoint keys provenance as "axis:tag" -> "baseline" | "user".
-            const who = srcs[`${ax}:${tg}`] === "user" ? t("you") : t("baseline");
-            chips.push(`<span class="pill" style="margin:0 4px 4px 0">${esc(ax)}=${esc(tg)}`
-              + ` <span class="muted">· ${esc(who)}</span>`
-              + ` <button class="ghost tiny" style="padding:0 4px" data-norm="${esc(norm)}"`
-              + ` data-ax="${esc(ax)}" data-tag="${esc(tg)}" data-on-click="kxRemoveTag(this)"`
-              + ` title="${esc(t("Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied."))}"`
-              + ` aria-label="${esc(t("Remove"))}">×</button></span>`);
-          }
-        }
         const axisOpts = ["type", "topic"].map(a => `<option value="${a}">${esc(a)}</option>`).join("");
+        ooLive(boxEl, null);
         boxEl.innerHTML =
-          (chips.length ? chips.join("") : `<span class="muted">${esc(t("No tags yet."))}</span>`)
+          `<span class="kx-tag-chips"></span>`
           + `<div class="row" style="gap:4px;margin-top:5px;align-items:center">
                <select class="kx-tag-ax" style="width:auto">${axisOpts}</select>
-               <input class="kx-tag-val" type="text" maxlength="64" style="width:12em"
-                 placeholder="${esc(t("new tag"))}">
-               <button class="ghost tiny" data-norm="${esc(norm)}" data-on-click="kxAddTag(this)">${esc(t("Add"))}</button>
+               <input class="kx-tag-val" type="text" maxlength="64" style="width:12em">
+               <button class="ghost tiny kx-tag-add" data-norm="${esc(norm)}" data-on-click="kxAddTag(this)"></button>
              </div>`;
+        const valEl = boxEl.querySelector(".kx-tag-val"), addEl = boxEl.querySelector(".kx-tag-add");
+        ooLiveHtml(boxEl.querySelector(".kx-tag-chips"), () => {
+          const chips = [];
+          for (const ax of Object.keys(tags)) {
+            for (const tg of (tags[ax] || [])) {
+              // The endpoint keys provenance as "axis:tag" -> "baseline" | "user".
+              const who = srcs[`${ax}:${tg}`] === "user" ? t("you") : t("baseline");
+              chips.push(`<span class="pill" style="margin:0 4px 4px 0">${esc(ax)}=${esc(tg)}`
+                + ` <span class="muted">· ${esc(who)}</span>`
+                + ` <button class="ghost tiny" style="padding:0 4px" data-norm="${esc(norm)}"`
+                + ` data-ax="${esc(ax)}" data-tag="${esc(tg)}" data-on-click="kxRemoveTag(this)"`
+                + ` title="${esc(t("Remove this tag. Reversible — re-add it any time; a removed baseline tag is not re-applied."))}"`
+                + ` aria-label="${esc(t("Remove"))}">×</button></span>`);
+            }
+          }
+          return chips.length ? chips.join("") : `<span class="muted">${esc(t("No tags yet."))}</span>`;
+        });
+        ooLive(addEl, () => { if (valEl) valEl.setAttribute("placeholder", t("new tag")); return t("Add"); });
       } catch (e) {
-        boxEl.innerHTML = `<span class="muted">${esc(t("Could not load:"))} ${esc(e.message)}</span>`;
+        const msg = e.message;
+        ooLiveHtml(boxEl, () => `<span class="muted">${esc(t("Could not load:"))} ${esc(msg)}</span>`);
       }
     }
 
@@ -981,7 +1015,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         await api("/api/insights/exclude", {method: "POST", body: JSON.stringify({term: btn.dataset.norm})});
-        btn.textContent = t("hidden"); btn.disabled = true;
+        ooLive(btn, () => t("hidden")); btn.disabled = true;
         // R685: the hidden keyword gets its undo right beside it (POST /api/insights/include).
         if (typeof ooKeywordUndoButton === "function" && !(btn.nextElementSibling && btn.nextElementSibling.classList.contains("kx-undo"))) {
           btn.insertAdjacentElement("afterend", ooKeywordUndoButton(btn.dataset.norm, btn));
@@ -1021,7 +1055,8 @@
       const box = $("ring-gaps");
       if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      box.innerHTML = '<div class="muted">' + esc(t("Loading…")) + "</div>";
+      // Row 367: every state of the gap line is held, so it follows a language switch.
+      ooLiveHtml(box, () => '<div class="muted">' + esc(t("Loading…")) + "</div>");
       try {
         const d = await api("/api/insights/ring-gaps");
         const per = d.per_language || {};
@@ -1029,11 +1064,11 @@
         if (!d.candidates) {
           // An honest empty state, and it says WHICH of the two reasons it is: an
           // unindexed corpus and a fully covered one are different facts.
-          box.innerHTML = '<div class="muted">'
-            + esc(t("No keyword in this corpus is missing a ring right now.")) + "</div>";
+          ooLiveHtml(box, () => '<div class="muted">'
+            + esc(t("No keyword in this corpus is missing a ring right now.")) + "</div>");
           return;
         }
-        const chips = langs.slice(0, 12).map((code) => '<span class="pill">'
+        const chips = () => langs.slice(0, 12).map((code) => '<span class="pill">'
           + esc((typeof ooLangName === "function" ? ooLangName(code, code) : code))
           + " · " + per[code] + "</span>").join(" ");
         // THE RATE, NOT AN ETA. Invariant #20's rule for jobs is that a duration is drawn
@@ -1041,15 +1076,16 @@
         // constant, which is a guess wearing a number, and the first slow response makes
         // it wrong. So the cost is stated as the rate it actually is, and the method
         // travels in the hover (invariant #17) rather than being dropped.
-        box.innerHTML =
+        ooLiveHtml(box, () =>
           '<div><strong>' + d.candidates + "</strong> " + esc(t("concepts have no ring")) + " · "
           + '<span title="' + esc(ooSaidText(d, "method")) + '">'
           + esc(t("two Wikidata requests each, one request every 10 seconds"))
           + "</span></div>"
-          + '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">' + chips + "</div>";
+          + '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">' + chips() + "</div>");
       } catch (e) {
-        box.innerHTML = '<div class="muted">' + esc(t("Could not read the ring gap:")) + " "
-          + esc(e.message) + "</div>";
+        const msg = e.message;
+        ooLiveHtml(box, () => '<div class="muted">' + esc(t("Could not read the ring gap:")) + " "
+          + esc(msg) + "</div>");
       }
     }
 
@@ -1061,29 +1097,39 @@
       // app-ai-tools defect where an awaited ensureOnline's answer was thrown away.
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Load keyword translations from Wikidata (one request every 10 seconds, over your transport)"))) return;
-      if (st) st.textContent = t("Loading in the background…");
+      // Row 367: the status line is held in each of its states, so it follows a language switch; a later write by
+      // anything else lets it go.
+      const say = (render) => { if (st) ooLive(st, render); };
+      say(() => t("Loading in the background…"));
       try {
         await api("/api/insights/ring-load?limit=" + limit, {method: "POST"});
         const job = await pollJobStatus("/api/insights/ring-load/status");
         if (job.state === "error") {
-          if (st) st.textContent = t("Ring load failed:") + " " + (job.error || "");
+          const why = job.error || "";
+          say(() => t("Ring load failed:") + " " + why);
           return;
         }
         if (_jobStillRunning(job)) {
           // Never report the start-state's zeros as a result (the recorded shape).
-          if (st) st.textContent = t("Still running in the background — check the task manager for the result.");
+          say(() => t("Still running in the background — check the task manager for the result."));
           return;
         }
         const res = job.result || {};
         if (st) {
-          st.textContent = t("Rings loaded:") + " " + (res.written || 0) + "/" + (res.requested || 0)
-            + (res.stopped ? " · " + t("stopped early") : "");
-          // The result's own caveat, shown verbatim rather than re-worded: it is a caveat.
-          st.title = ooSaidText(res, "method") + (res.caveat ? "\n\n" + ooSaidText(res, "caveat") : "");
+          // The result's own caveat, shown verbatim rather than re-worded: it is a caveat. The line is marked out of the
+          // page walker's reach so the hover is drawn only here, in the language of the draw.
+          ooLive(st, null);   // a fresh hold keeps the marker (a held text line otherwise drops a marker it did not find)
+          st.setAttribute("data-i18n-dyn", "");
+          ooLive(st, () => {
+            st.title = ooSaidText(res, "method") + (res.caveat ? "\n\n" + ooSaidText(res, "caveat") : "");
+            return t("Rings loaded:") + " " + (res.written || 0) + "/" + (res.requested || 0)
+              + (res.stopped ? " · " + t("stopped early") : "");
+          });
         }
         loadRingGaps();
       } catch (e) {
-        if (st) st.textContent = t("Ring load failed:") + " " + e.message;
+        const msg = e.message;
+        say(() => t("Ring load failed:") + " " + msg);
       }
     }
 
@@ -1261,7 +1307,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("cs-promote-result");
       try {
-        if (out) out.textContent = t("Scanning citations…");
+        if (out) ooLive(out, () => t("Scanning citations…"));   // row 367: held until the result replaces it
         const preview = await api("/api/sources/promote-cited?dry_run=true", {method: "POST"});
         const cands = preview.candidates || [];
         const gate = preview.min_source_citers;
@@ -1310,20 +1356,21 @@
       const box = $("cv-list"), meth = $("cv-method");
       const wEl = $("cv-window");
       const w = wEl ? (Math.max(1, parseInt(wEl.value, 10) || 7)) : 7;
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      if (meth) meth.textContent = "";
+      // Row 367: the list and its lines are held, so they follow a language switch.
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
+      if (meth) ooLive(meth, () => "");
       try {
         const d = await api("/api/insights/convergences?window_days=" + w + "&limit=20");
         const clusters = d.clusters || [];
         if (!clusters.length) {
           // Honest empty state: state the gate (≥min_articles AND ≥min_sources).
-          box.innerHTML = `<div class="muted">` + esc(
+          ooLiveHtml(box, () => `<div class="muted">` + esc(
             _tfn("No convergences yet. A cluster needs at least {a} articles AND at least {s} sources sharing a place within the window.",
-              { a: String(d.min_articles), s: String(d.min_sources) })) + `</div>`;
-          if (meth && d.caveat) meth.textContent = ooSaidText(d, "caveat");
+              { a: String(d.min_articles), s: String(d.min_sources) })) + `</div>`);
+          if (meth && d.caveat) ooLive(meth, () => ooSaidText(d, "caveat"));
           return;
         }
-        const rows = clusters.map(c => {
+        const rows = () => clusters.map(c => {
           const place = esc(c.place || "—") + (c.place_country ? ` <span class="muted">(${ooCountryCell(c.place_country)})</span>` : "");
           const win = esc(ooIsoDate(c.window_start)) + " → " + esc(ooIsoDate(c.window_end));
           const srcNames = (c.source_names || []).map(esc).join(", ");
@@ -1350,21 +1397,22 @@
             ${srcLine}${warn}${furn}</div>`;
         }).join("");
         const total = d.clusters_total != null ? d.clusters_total : clusters.length;
-        const more = (total > clusters.length)
+        const more = () => ((total > clusters.length)
           ? `<div class="muted" style="margin-top:8px">${esc(
               _tfn("Showing {n} of {t} clusters.", { n: String(clusters.length), t: String(total) }))}</div>`
-          : "";
-        box.innerHTML = rows + more;
+          : "");
+        ooLiveHtml(box, () => rows() + more());
         // Method + caveat VISIBLE by default (never behind a toggle).
         if (meth) {
           const parts = [];
           if (d.method) parts.push(d.method);
           if (d.caveat) parts.push(d.caveat);
-          meth.textContent = parts.join(" — ");
+          ooLive(meth, () => parts.join(" — "));   // the server's own words, held like the line's other states
         }
       } catch (e) {
         // Additive panel — degrade quietly, never throw.
-        box.innerHTML = `<div class="muted">${esc(t("Could not load:") + " " + e.message)}</div>`;
+        const msg = e.message;
+        ooLiveHtml(box, () => `<div class="muted">${esc(t("Could not load:") + " " + msg)}</div>`);
       }
     }
 
@@ -1382,27 +1430,28 @@
       const lim = Math.min(200, Math.max(1, parseInt(limEl ? limEl.value : "40", 10) || 40));
       let q = parseFloat(fdrEl ? fdrEl.value : "0.05");
       if (!(q > 0 && q <= 1)) q = 0.05;
-      box.innerHTML = `<div class="muted">${esc(t("Screening the corpus… a permutation test runs per keyword, so this can take a few seconds."))}</div>`;
+      // Row 367: the screen's lines and table are held, so they follow a language switch.
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Screening the corpus… a permutation test runs per keyword, so this can take a few seconds."))}</div>`);
       try {
         const d = await api(`/api/insights/lunar-correlation?limit=${lim}&fdr_q=${q}`);
         const results = d.results || [];
         // Honest summary — counts only (tested · skipped · survivors).
-        const summary = `<div class="muted" style="margin-bottom:8px">${d.tested || 0} ${esc(t("tested"))} · ${d.skipped || 0} ${esc(t("skipped"))} · <strong>${d.survivors || 0}</strong> ${esc(t("survivors"))}</div>`;
+        const summary = () => `<div class="muted" style="margin-bottom:8px">${d.tested || 0} ${esc(t("tested"))} · ${d.skipped || 0} ${esc(t("skipped"))} · <strong>${d.survivors || 0}</strong> ${esc(t("survivors"))}</div>`;
         if (!results.length) {
           // tested==0 -> too few active days; state it, never a blank pane.
-          box.innerHTML = summary + `<div class="muted">${esc(t("No series had enough active days to test."))}</div>`;
+          ooLiveHtml(box, () => summary() + `<div class="muted">${esc(t("No series had enough active days to test."))}</div>`);
           return;
         }
         // Never hide an empty result: when nothing survives, say so prominently.
-        const noneNote = (d.survivors === 0)
+        const noneNote = () => ((d.survivors === 0)
           ? `<div class="card-caveat" style="margin-bottom:8px">${esc(t("No series survived the multiple-testing correction — the honest, expected result."))}</div>`
-          : "";
-        const header = `<tr>
+          : "");
+        const header = () => `<tr>
           <th>${esc(t("Term"))}</th><th style="text-align:right">r</th>
           <th style="text-align:right">${esc(t("p-value"))}</th><th style="text-align:right">n</th>
           <th style="text-align:right">${esc(t("active days"))}</th>
           <th style="text-align:right">${esc(t("q-value"))}</th><th>${esc(t("survived"))}</th></tr>`;
-        const rows = results.map(r => {
+        const rows = () => results.map(r => {
           // The survivor flag is the FDR verdict, never a ranking.
           const surv = r.survives
             ? `<span class="pill ok">${esc(t("survived"))}</span>`
@@ -1418,10 +1467,11 @@
             <td style="text-align:right">${qv}</td>
             <td>${surv}</td></tr>`;
         }).join("");
-        box.innerHTML = summary + noneNote + `<div style="overflow:auto"><table>${header}${rows}</table></div>`;
+        ooLiveHtml(box, () => summary() + noneNote() + `<div style="overflow:auto"><table>${header()}${rows()}</table></div>`);
       } catch (e) {
         // Additive panel — degrade quietly, never throw.
-        box.innerHTML = `<div class="muted">${esc(t("Could not load:") + " " + e.message)}</div>`;
+        const msg = e.message;
+        ooLiveHtml(box, () => `<div class="muted">${esc(t("Could not load:") + " " + msg)}</div>`);
       }
     }
 
@@ -1438,24 +1488,26 @@
       const out = $("lunar-single"); if (!out) return;
       const termEl = $("lunar-term");
       const term = (termEl ? termEl.value : "").trim();
-      if (!term) { out.textContent = ""; return; }
+      if (!term) { ooLive(out, null); out.textContent = ""; return; }
+      // Row 367: each line the single test draws is held, so it follows a language switch.
       const dirEl = $("lunar-direction");
       const dir = dirEl ? dirEl.value : "";
       if (!dir) {
         // Mirrors the backend's 400 rather than sending a request it will refuse.
-        out.innerHTML = `<div class="muted">${esc(t("Declare the direction you expect before running a single test."))}</div>`;
+        ooLiveHtml(out, () => `<div class="muted">${esc(t("Declare the direction you expect before running a single test."))}</div>`);
         return;
       }
-      out.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(out, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const d = await api("/api/insights/lunar-correlation?term=" + encodeURIComponent(term)
           + "&expected_direction=" + encodeURIComponent(dir));
         const r = d.result;
         if (!r) {
           // Honest skip: too few active days to test this one keyword.
-          out.innerHTML = `<div class="muted">${esc(t("Too few active days to test this keyword honestly."))}</div>`;
+          ooLiveHtml(out, () => `<div class="muted">${esc(t("Too few active days to test this keyword honestly."))}</div>`);
           return;
         }
+        ooLiveHtml(out, () => {
         const stat = `<strong translate="no">${esc(r.term)}</strong> · r ${(+r.r).toFixed(3)} · ${esc(t("p-value"))} ${(+r.p_value).toFixed(4)} · n ${r.n} · ${r.active_days} ${esc(t("active days"))}`;
         // The pre-registered outcome, stated either way. A CONTRADICTED expectation is
         // reported exactly as plainly as a matched one -- reporting only the matches is
@@ -1466,11 +1518,13 @@
           : `<div style="margin-top:4px">${esc(t("You declared:"))} <strong>${decl}</strong> · `
             + `${esc(r.matches_expectation ? t("the measured sign MATCHES your declaration.")
                                            : t("the measured sign CONTRADICTS your declaration."))}</div>`;
-        out.innerHTML = `<div>${stat}</div>${verdict}`
+        return `<div>${stat}</div>${verdict}`
           + (d.preregistration ? `<div class="card-caveat" style="margin-top:4px">${esc(d.preregistration)}</div>` : "")
           + `<div class="card-caveat" style="margin-top:4px">${esc(t("A single test, not corrected for multiple comparisons — screen many keywords for an honest, FDR-corrected result."))}</div>`;
+        });
       } catch (e) {
-        out.innerHTML = `<div class="muted">${esc(t("Could not load:") + " " + e.message)}</div>`;
+        const msg = e.message;
+        ooLiveHtml(out, () => `<div class="muted">${esc(t("Could not load:") + " " + msg)}</div>`);
       }
     }
 
@@ -1562,20 +1616,22 @@
       const box = $("wt-list"); if (!box) return;
       _wtWireOpen();
       const t = _wt(), tf = _wtf();
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       _wtFull = {};
       try {
         _wtLast = await api("/api/watches");
         _renderWatches();
       } catch (e) {
         _wtLast = null;
-        box.innerHTML = `<div class="muted">${esc(tf("Could not load watches: {error}", {error: e.message}))}</div>`;
+        const error = e.message;
+        ooLiveHtml(box, () => `<div class="muted">${esc(tf("Could not load watches: {error}", {error}))}</div>`);
       }
     }
     // Registered in app-boot's ONE `oo:langchange` listener. Redraws from the retained
     // payload only -- it never fetches, so a switch cannot ask the backend anything.
     function _renderWatches() {
       const box = $("wt-list"); if (!box || !_wtLast) return;
+      ooLive(box, null);   // the loading line's hold (loadWatches) goes before the list is drawn
       const t = _wt(), tf = _wtf();
       const d = _wtLast;
       const ws = d.watches || [];
@@ -1650,14 +1706,16 @@
       const threshold = parseInt($("wt-threshold").value || "3", 10);
       const window_days = parseInt($("wt-window").value || "7", 10);
       const msg = $("wt-msg");
-      if (!query) { if (msg) msg.textContent = t("Enter a condition (search query) first."); return; }
+      // Row 367: the line is held, so it follows a language switch until something else writes it.
+      if (!query) { if (msg) ooLive(msg, () => t("Enter a condition (search query) first.")); return; }
       try {
         await api("/api/watches", { method: "POST", body: JSON.stringify({ name, query, threshold, window_days }) });
         $("wt-name").value = ""; $("wt-query").value = "";
-        if (msg) msg.textContent = t("Watch added. It runs after every collection pass, or use “Check now”.");
+        if (msg) ooLive(msg, () => t("Watch added. It runs after every collection pass, or use “Check now”."));
         loadWatches();
       } catch (e) {
-        if (msg) msg.innerHTML = `<span class="note err">${esc(tf("Could not add: {error}", {error: e.message}))}</span>`;
+        const error = e.message;
+        if (msg) ooLiveHtml(msg, () => `<span class="note err">${esc(tf("Could not add: {error}", {error}))}</span>`);
       }
     }
     async function toggleWatch(id, enabled) {
@@ -1688,17 +1746,19 @@
     async function evaluateWatches() {
       const t = _wt(), tf = _wtf();
       const msg = $("wt-msg");
-      if (msg) msg.textContent = t("Checking…");
+      if (msg) ooLive(msg, () => t("Checking…"));
       try {
         const d = await api("/api/watches/evaluate", { method: "POST" });
+        const n = d.count;
         if (msg) {
-          msg.textContent = d.count
-            ? tf("{n} watch(es) fired — see Home, or the history below.", {n: d.count})
-            : t("No watches fired (no new matching articles).");
+          ooLive(msg, () => (n
+            ? tf("{n} watch(es) fired — see Home, or the history below.", {n})
+            : t("No watches fired (no new matching articles).")));
         }
         loadWatches();
       } catch (e) {
-        if (msg) msg.innerHTML = `<span class="note err">${esc(tf("Check failed: {error}", {error: e.message}))}</span>`;
+        const error = e.message;
+        if (msg) ooLiveHtml(msg, () => `<span class="note err">${esc(tf("Check failed: {error}", {error}))}</span>`);
       }
     }
 

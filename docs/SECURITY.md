@@ -902,7 +902,33 @@ imply a protection we cannot deliver.
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
   a folder `DATABASE_URL` points to: an encrypted one loses its head and is unlinked before the slow rewrite, a plaintext
   one is rewritten whole (a copy of a store not known to be encrypted always is, since a damaged copy's page 1 can stop reading
-  as SQLite with plaintext behind it). **A data folder the app does not own (R711).** Ownership is where the app put the
+  as SQLite with plaintext behind it). **A plaintext main database (R815, R817, row 392).** A main database
+  known to be plaintext, in the data folder or where `DATABASE_URL` keeps it, has no key to destroy, so it leaves step 1's
+  head-only passes. Its identity (device, inode, its folder's device, read with `lstat`) is read before anything of it is
+  opened, and a file that is gone, cannot be identified, is a link or is another file is never touched; on the data drive the
+  drive checks (R802/R805/R812) apply too. In pass 3's place each of its files (main, `-wal`, `-journal`, `-shm`) is opened
+  no-follow through a handle on its folder, checked to be a regular file (a `-wal`, `-journal` or `-shm` with other names, on another device or unreadable is never written, and the result is never "in full"), its handle kept with the wipe's kept descriptors,
+  what step 1 always destroyed at once destroyed through that handle (page 1 random, a `-wal`/`-journal` whole, the `-shm` head
+  zeroed; R818), and unlinked at once. Only at the very end of the erase, after every key, salt page and unlink, and only once
+  the app's own pool on the store is disposed (R818 (b): disposal failed or unconfirmed leaves the body, said as "had its
+  first page overwritten. The rest was not overwritten." with the reason), is every byte of each that holds data rewritten
+  through the kept handle (`SEEK_DATA`/`SEEK_HOLE`, else the logical size stopping before the 64 MiB reserve, R797), after a
+  `fstat` check that it is the same regular file, and fsynced; there is no deadline: the CLI prints, and the page shows before
+  the request (only where the body is rewritten, not on Windows), that it may take several minutes, that closing the page
+  does not stop it and quitting the app does, by when the file is already deleted, and a stop
+  partway is said as "only partially overwritten" wherever a report is still made. The late pass, armed only after the body rewrite and the
+  holder check (both use the kept handles), then rewrites page 1 again and closes the handles (R789); another holder is said under R792. Where
+  an open file cannot be unlinked (Windows: no share-delete open here) the order is the old one, the first page then the
+  unlink, said as "had its first page overwritten". A stated limit there: the fallback checks the pin and then writes by
+  path, so a file swapped in at that name between the two can get its head written. It is never counted in "Wiped n/n": the result says it was overwritten in
+  full, only partially overwritten or not overwritten, with the reason, whether it was deleted, and how many other names (hard
+  links) for it remain; once it is overwritten in full or in part the result says those names now lead to the overwritten
+  content, so a copy kept under another name is no longer usable; after a partial overwrite, that parts of the old
+  content may still be readable through them. The crypto-erase guarantee (`_LIMIT_NOTE`, the page's "permanently
+  unrecoverable") is said only when the main database is positively known to be encrypted; a plaintext one fails closed to
+  "not encrypted, old pages may remain on the disk, full-disk encryption is the remedy", one whose state could not be read to
+  "could not be confirmed as encrypted", on the CLI, the HTTP answer, the page and the free-space overwrite after it.
+  **A data folder the app does not own (R711).** Ownership is where the app put the
   folder, never what is in it (the app writes its own files at every start): the default location and the first-launch
   `OOS data` folder are the app's; a folder set by hand in `OO_DATA_DIR` is shared when it is, on the path it leads to, the
   home folder, a folder above it or one of its standard folders such as Documents, a drive root or a mount point, or when it

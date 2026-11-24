@@ -2725,16 +2725,23 @@
             + `aria-label="${esc(t("Open the place card"))}" title="${esc(t("Open the place card"))}">&#9678;</button>`;
         }).join(" ");
       };
-      const col = (title, group) =>
+      // Row 397 (anti-capping): a column cut to its biggest values says how many the
+      // matched set holds -- the same x12 line as the Sources table (row 395). An older
+      // payload without ``total`` says nothing rather than guess.
+      const cut = (f, shown) => (f && f.truncated && f.total != null)
+        ? `<div class="hint muted">${esc(_tfn("{shown} of {total} shown.", { shown: fmtNum(shown, 0), total: fmtNum(f.total, 0) }))}</div>`
+        : "";
+      const col = (title, group, f) =>
         `<div style="min-width:200px;flex:1"><div class="vsect">${esc(title)}</div>`
         + `<div class="an-facet-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`
-        + `${chips(group)}</div></div>`;
+        + `${chips(group)}</div>${cut(f, _anFacets[group].length)}</div>`;
       // A fixed server sentence, keyed x12 like the Links / Sentiment / Sources caveats
       // below (the 2026-09-27 re-walk, N-2) -- verbatim it read English everywhere.
       return `<div class="hint muted">${esc(d.caveat ? t(d.caveat) : "")} `
         + `${esc(t("Click a value to narrow the corpus to articles that mention it."))}</div>`
         + `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:8px">`
-        + col(t("Who"), "who") + col(t("Where"), "where") + col(t("When"), "when") + `</div>`;
+        + col(t("Who"), "who", d.who) + col(t("Where"), "where", d.where)
+        + col(t("When"), "when", d.when) + `</div>`;
     }
     function _anLinksHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

@@ -90,9 +90,12 @@ def test_what_is_outside_the_drive_is_erased_and_the_drive_is_untouched(tmp_path
     assert "Traceback" not in run.stderr
     assert out.startswith("ERASE FAILED: " + (S5 if drive == "unreadable" else S1)), out
     assert all(_erased(p, b) for p, b in outside.items()), "every store and key file outside the drive is erased"
-    assert f"Files erased outside the data drive: {len(outside)} of {len(outside)}." in out
+    # R815: the plaintext main store (main.db) is said apart, never counted with the files erased.
+    assert f"Files erased outside the data drive: {len(outside) - 1} of {len(outside) - 1}." in out
+    assert crypto_erase.PLAIN_STORE_STATE["overwritten"] in out
     assert _panic_precheck.ON_THE_DRIVE in out
-    assert not any(w in out.lower() for w in ("wiped", "unrecoverable", "destroyed")), out
+    claims = out.replace(crypto_erase._PLAINTEXT_SENTENCE, "")  # R815: "no key was destroyed" is the one use of the word allowed
+    assert not any(w in claims.lower() for w in ("wiped", "unrecoverable", "destroyed")), out
     if drive == "absent":
         assert not data.exists() and not data.parent.exists(), "nothing is made where the drive should be"
     for p, b in on_drive.items():
@@ -100,8 +103,8 @@ def test_what_is_outside_the_drive_is_erased_and_the_drive_is_untouched(tmp_path
     assert _tree(data) == before, "nothing at the drive's path is made, changed or removed"
     # No other program holds a store, and this process has no pool of its own: the erase checked, so it says nothing about one.
     assert _panic_precheck.HELD not in out and _panic_precheck.UNKNOWN not in out
-    # The store DATABASE_URL names is plaintext: its pages may outlive the unlink, and that is said (second security read).
-    assert _panic_precheck.PLAINTEXT in out
+    # The store DATABASE_URL names is plaintext: its pages may outlive the delete, and that is said (second security read; R815).
+    assert crypto_erase._PLAINTEXT_SENTENCE in out
 
 
 def test_asked_first_and_a_no_erases_nothing(tmp_path):

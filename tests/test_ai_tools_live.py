@@ -1,6 +1,7 @@
 """Settings -> AI tools and custody: the setup card, the hero card, the model store, the uninstall panel, the custody
 status and verify lines and the overlay merge line follow a language switch (row 367, app-ai-tools.js batch A), and so
-do the model catalogue, the backend panel with its Ollama buttons and the vLLM status and install boxes (batch B).
+do the model catalogue, the backend panel with its Ollama buttons and the vLLM status and install boxes (batch B),
+and the source-qualification line, whose run result is now kept for the status read that follows the run.
 
 These renderers wrote translated text once into ordinary nodes, so it stayed in the language that was active when it
 was drawn. They now draw through ooLive/ooLiveHtml from what they already hold; a click's state ("Starting…",
@@ -28,3 +29,11 @@ def test_the_ai_tools_lines_in_node():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "ai_tools_live_node_test.js: OK" in proc.stdout
+
+
+def test_a_language_switch_does_not_re_read_the_qualification_line():
+    """The line is a held render; a re-read on a switch would replace a finished run's tally with the backlog."""
+    boot = (_ROOT / "src" / "static" / "app-boot.js").read_text(encoding="utf-8")
+    code = "\n".join(line.split("//", 1)[0] for line in boot.splitlines())
+    assert "loadQualificationGates();" in code
+    assert "loadQualifyBulk(" not in code

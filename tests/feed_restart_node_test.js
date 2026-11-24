@@ -69,7 +69,7 @@ function harness() {
   new Function(
     "ctx", "$", "esc", "api", "window", "OOI18N", "localStorage",
     "_feedControls", "_feedOrder", "_feedSeed", "_feedMark", "_feedSetMark",
-    "_feedCard", "_feedNote", "URLSearchParams",
+    "_feedCard", "_feedNote", "URLSearchParams", "ooLiveHtml",
     // The module-level state the two functions close over in app.js. _feedRows /
     // _feedLast / _feedErr are what the language-switch repaint redraws from, so an
     // abandoned page must reach none of them either.
@@ -90,7 +90,8 @@ function harness() {
     (o, v) => { store["mark:" + o] = v; },      // _feedSetMark
     (a) => `<article data-id="${a.id}"></article>`,
     () => {},                                   // _feedNote
-    URLSearchParams
+    URLSearchParams,
+    (el, render) => { el.innerHTML = render(); }   // ooLiveHtml (app-core.js): the held "Loading…" line, drawn once here
   );
   return { ctx, list, more, store, state, pending };
 }

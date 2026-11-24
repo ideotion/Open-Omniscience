@@ -110,7 +110,7 @@ const document = {
 
 const NAMES_FN = ["_figStyle", "_figMarkerPath", "_figMarkerCanvas", "_figGlyph",
                   "_tfn", "_chartAria", "_chartSrTable", "_allInteger", "honestTicks", "_msTickSnap", "_msLabel", "_msRowLabel", "_seriesRuns",
-                  "_stackSeries", "_stackPick", "_ooChartWatch", "_figTf", "ooChart"];
+                  "_stackSeries", "_stackPick", "_ooChartWatch", "_figTf", "_ooChartSeriesId", "ooChart"];
 const NAMES_CONST = ["esc", "_SPARSE_BAR_MAX", "_FIG_STYLES", "_FIG_STROKE_MARKERS", "_missing",
                      "_GAP_FACTOR"];
 const src = NAMES_CONST.map(extractConst).join("\n") + "\n"
@@ -262,6 +262,39 @@ const pts = (n, base) => Array.from({length: n}, (_, i) =>
   click(brushBtn);                                     // brush mode OFF: the idle line returns
   fire(el, "pointerleave", {});
   assert.strictEqual(readoutOf(el).textContent, HINT, "switching brush mode off left the hint blank");
+}
+
+// ------------------------------------------- row 367: the reader's view, read and put back
+// A board drawn again on a language switch builds new charts; the view the reader chose (the window and the hidden
+// series) is read from the old chart and handed to the new one by series id, inside the new chart's own span.
+{
+  const day = (i) => Date.UTC(2026, 0, 1 + i);
+  const el = host(700);
+  ooChart(el, [{label: "Alpha", symbol: "^A", points: pts(12, 5)}, {label: "Beta", symbol: "^B", points: pts(12, 1)}], {height: 200});
+  assert.deepStrictEqual(el._ooChartView(), {t0: day(0), t1: day(11), full: true, hidden: []}, "a fresh chart shows everything");
+  el._ooChartSetView({t0: day(3), t1: day(6), full: false, hidden: ["^B"]});
+  assert.deepStrictEqual(el._ooChartView(), {t0: day(3), t1: day(6), full: false, hidden: ["^B"]}, "the view is put back");
+  assert.strictEqual(chips(el)[1].getAttribute("aria-pressed"), "false", "the hidden series' chip says so");
+  assert.strictEqual(chips(el)[0].getAttribute("aria-pressed"), "true");
+  // a chart built with a pending view (one that was not laid out when the board was drawn again) takes it
+  const el2 = host(700);
+  el2._ooChartViewToTake = {t0: day(-40), t1: day(4), full: false, hidden: ["^A", "gone"]};
+  ooChart(el2, [{label: "Alpha", symbol: "^A", points: pts(12, 5)}, {label: "Beta", symbol: "^B", points: pts(12, 1)}], {height: 200});
+  assert.strictEqual(el2._ooChartViewToTake, null, "a pending view is taken once");
+  assert.deepStrictEqual(el2._ooChartView(), {t0: day(0), t1: day(4), full: false, hidden: ["^A"]},
+    "the window is kept inside the chart's own span, and only a series it draws is hidden");
+  // a full window stays full when the new chart's span is wider; a window wholly outside the span is not taken
+  const el3 = host(700);
+  ooChart(el3, [{label: "Alpha", symbol: "^A", points: pts(20, 5)}], {height: 200});
+  el3._ooChartSetView({t0: day(0), t1: day(11), full: true, hidden: []});
+  assert.deepStrictEqual(el3._ooChartView(), {t0: day(0), t1: day(19), full: true, hidden: []});
+  el3._ooChartSetView({t0: day(50), t1: day(60), full: false, hidden: []});
+  assert.deepStrictEqual(el3._ooChartView(), {t0: day(0), t1: day(19), full: true, hidden: []}, "a window outside the span leaves the chart's own");
+  // a chart with nothing to draw has no view to give
+  const el4 = host(700);
+  el4._ooChartView = () => ({});
+  ooChart(el4, [{label: "none", points: []}], {height: 200});
+  assert.strictEqual(el4._ooChartView, null, "an empty chart keeps no stale view");
 }
 
 console.log("oochart_legend_resize_node_test: all assertions passed");

@@ -4030,7 +4030,8 @@ def _panic_cli(*, force: bool) -> None:
     import sys
 
     from src.paths import data_dir_path
-    from src.safety import panic_wipe
+    from src.safety import crypto_erase, panic_wipe
+    from src.safety.crypto_erase import _PLAINTEXT_SENTENCE, plaintext_store_sentences
 
     target = data_dir_path()  # named, never made or checked: data_dir() raises when the marked drive is not there (R809)
     if not force:
@@ -4038,15 +4039,23 @@ def _panic_cli(*, force: bool) -> None:
         if ans.strip().lower() != "wipe":
             print("Aborted.")
             return
+    # R818 (a): said as the body rewrite of an unencrypted main database starts; information only, nothing to answer.
+    crypto_erase.plain_rewrite_notice = lambda: print(crypto_erase.PLAIN_STORE_NOTICE, flush=True)
     report = panic_wipe(confirm=True)
     if report.get("drive_absent"):
         # R809: a failure state. What was erased elsewhere (stores kept outside the data folder, the passphrase in memory) is said
         # apart, and nothing reassures: the keys are on the drive, so nothing erased here makes it unreadable.
         print("ERASE FAILED: " + report["limit"])
         print(f"Files erased outside the data drive: {report['files_wiped']} of {report['files_seen']}.")
+        for line in plaintext_store_sentences(report):  # R815 (2): the plaintext main database, never in the count above
+            print(line)
+        if report.get("plaintext_store"):
+            print(_PLAINTEXT_SENTENCE)  # R815 (3)
         sys.exit(2)
     if not report.get("drive_lost"):  # R809: a drive that went away is never "wiped"; its sentence leads report["limit"] below
         print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
+    for line in plaintext_store_sentences(report):  # R815 (2): the plaintext main database outside the folder, never in "Wiped"
+        print(line)
     if report.get("scope") == "app-only":
         # R711: a folder the app does not own keeps everything that is not the app's, and the folder itself.
         print(f"The data folder is not the app's own ({report.get('scope_reason')}): only the app's files were removed; "
