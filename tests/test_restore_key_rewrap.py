@@ -1260,7 +1260,7 @@ def test_r811_a_key_file_listed_twice_places_nothing_and_says_so(tmp_path, monke
         SOURCE,
     )
     twice = [*staged.member_paths("keys"), (CUSTODY_ED, staged.member_paths("keys")[0][1])]
-    monkeypatch.setattr(type(staged), "member_paths", lambda self, role: twice if role == "keys" else [])
+    monkeypatch.setattr(type(staged), "member_paths", lambda self, role, **_kw: twice if role == "keys" else [])
     out = merge.merge_side_files(staged)["keys"]
     why = {e["name"]: e["reason"] for e in out["not_placed"]}
     assert why == {CUSTODY_ED: merge._KEY_LISTED_TWICE, CUSTODY_ML: merge._KEY_PAIR_HALF}, out

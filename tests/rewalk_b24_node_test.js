@@ -130,7 +130,11 @@ const M = (() => {
 })();
 
 function el(extra) {
+  // Attributes are kept as a real element keeps them: the mind map marks its host off the walker (row 361).
+  const attrs = {};
   return Object.assign({ innerHTML: "", offsetParent: {}, dataset: {},
+    setAttribute(k, v) { attrs[k] = String(v); }, getAttribute(k) { return k in attrs ? attrs[k] : null; },
+    hasAttribute(k) { return k in attrs; }, removeAttribute(k) { delete attrs[k]; },
     querySelector() { return null; }, querySelectorAll() { return []; } }, extra || {});
 }
 function reset(lang) {

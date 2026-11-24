@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import threading
+import time
 from pathlib import Path
 
 # Re-exported for callers/tests that referenced the honest-limit note here.
@@ -243,3 +245,40 @@ def _dispose_after_erase(generation: int | None = None) -> int | None:
     except Exception:  # noqa: BLE001 - never raises  # nosec B110
         pass
     return still_open
+
+
+#: R813 row 389: how long after a panic result that keeps a drive's key in memory the app starts closing (the response is sent and
+#: the page has drawn it first), and how long the graceful stop may take before the process ends without it.
+PANIC_EXIT_DELAY_S = 3.0
+PANIC_EXIT_HARD_AFTER_S = 60.0  # past the graceful stop (30 s uvicorn + 10 s scheduler join + 5 s job wait)
+
+
+def _hard_exit() -> None:  # pragma: no cover - ends the process
+    os._exit(1)  # non-zero: the stop was forced
+
+
+def exit_after_panic(*, delay: float = PANIC_EXIT_DELAY_S, hard_after: float = PANIC_EXIT_HARD_AFTER_S,
+                     _arm=None, _exit=_hard_exit) -> None:
+    """R813 row 389: the panic wipe left the key to a data drive's data in this process's memory (its connections on a drive found
+    absent, unidentified or changed are pinned, never closed: src/database/drive_pin.py), so the app closes itself rather than wait
+    for the operator to. The graceful stop is the same one the power button takes (the pinned connections are skipped by every
+    close on the way out); if the process is still running ``hard_after`` seconds later, it ends without it, the operating system
+    then releasing the descriptors without SQLite's own close. Never raises."""
+    from src.monitoring.secret_scrub import log_failure
+    from src.safety.shutdown import _default_arm, _reap_worker_processes
+
+    try:
+        (_arm or _default_arm)(delay)
+    except Exception as exc:  # noqa: BLE001 - the hard stop below still ends the process
+        log_failure(_LOG, "panic: the graceful stop could not be armed", exc, level=logging.WARNING)
+
+    def _watchdog() -> None:
+        time.sleep(delay + hard_after)
+        _LOG.warning("panic: the app did not stop within %.0f s; ending the process", delay + hard_after)
+        _reap_worker_processes()
+        _exit()
+
+    try:
+        threading.Thread(target=_watchdog, name="oo-panic-exit", daemon=True).start()
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "panic: the hard stop could not be armed", exc, level=logging.WARNING)
