@@ -413,7 +413,47 @@ def _probe(path: Path, key: str) -> dict[str, Any]:
     return out
 
 
-def _store_row(name: str, path: Path, key: str | None, probe_ok: bool) -> dict[str, Any]:
+def _evidence(name: str, path: Path, record: dict[str, Any]) -> str | None:
+    """R821 (1)/(2): what makes a store with a header that is not SQLite's "encrypted" rather than "looks encrypted": ``"key"`` when
+    this process read the very file under a key (the corpus: :func:`src.database.connect.opened_with_key`), ``"record"`` when this
+    installation's record names its (device, inode) as read back with the key (R820), else None. The header alone never is. A
+    ``stat`` and a set lookup: no store is opened here (R789)."""
+    ident = _identity(path)
+    if ident is None:
+        return None
+    if name == "corpus":
+        from src.database.connect import opened_with_key
+
+        if opened_with_key(ident):
+            return "key"
+    entry = record["stores"].get(name)
+    if not isinstance(entry, dict) or entry.get("read_back_with_key") is not True:
+        return None
+    dev, ino = entry.get("dev"), entry.get("ino")
+    if type(dev) is not int or type(ino) is not int or (dev, ino) != ident:
+        return None
+    return "record"
+
+
+def _with_evidence(row: dict[str, Any], name: str, path: Path, record: dict[str, Any]) -> dict[str, Any]:
+    """R821 (1): a row whose header is not SQLite's and that no key opened here is "encrypted" only with :func:`_evidence`, and says
+    which; otherwise it is ``looks_encrypted`` ("looks encrypted; not yet checked with your key"), never "encrypted"."""
+    if row["state"] != "encrypted":
+        return row
+    if row.get("key_checked") is True:
+        row["evidence"] = "key"
+        return row
+    ev = _evidence(name, path, record)
+    if ev is None:
+        row["state"] = "looks_encrypted"
+        row["evidence"] = "header"
+    else:
+        row["evidence"] = ev
+    return row
+
+
+def _store_row(name: str, path: Path, key: str | None, probe_ok: bool, record: dict[str, Any] | None = None) -> dict[str, Any]:
+    record = record if record is not None else {"stores": {}}
     state, reason = _read_header(path)
     row: dict[str, Any] = {"store": name, "state": state}
     if reason is not None:
@@ -421,15 +461,15 @@ def _store_row(name: str, path: Path, key: str | None, probe_ok: bool) -> dict[s
     if state != "encrypted" or name == "corpus":
         # The corpus is the file the app is open with (an unlocked encrypted app opened it with the key it holds): it is not
         # opened a second time here, where a probe could straddle a swap of the library.
-        return row
+        return _with_evidence(row, name, path, record)
     if key is None or not probe_ok:
         row["key_checked"] = False
-        return row
+        return _with_evidence(row, name, path, record)
     row.update(_probe(path, key))
     if row["state"] in ("busy", "unreadable"):
         # The header says encrypted; only the check with the passphrase did not run to its end. Never "still unencrypted" (row 153).
         row["key_checked"] = False
-    return row
+    return _with_evidence(row, name, path, record)
 
 
 def status(main: Path | None = None) -> dict[str, Any]:
@@ -452,7 +492,7 @@ def status(main: Path | None = None) -> dict[str, Any]:
     record = read_record(rows[0][1]) if rows else {"stores": {}}
     probe_ok = key is not None and _PROBE_LOCK.acquire(timeout=PROBE_WAIT_S)
     try:
-        out_rows = _rows_of(rows, key, probe_ok)
+        out_rows = _rows_of(rows, key, probe_ok, record)
     finally:
         if probe_ok:
             _PROBE_LOCK.release()
@@ -463,11 +503,15 @@ def status(main: Path | None = None) -> dict[str, Any]:
     busy = [r["store"] for r in out_rows if r["state"] == "busy"]
     not_this_key = [r["store"] for r in out_rows if r["state"] == "not_this_key"]
     unchecked = [r["store"] for r in out_rows if r.get("key_checked") is False]
+    looks = [r["store"] for r in out_rows if r["state"] == "looks_encrypted"]
     return {
         "corpus_encrypted": corpus_encrypted,
         # With a key held, never said over a store it was not tried on (a swap in progress): "encrypted" by its header is not
-        # "encrypted with yours". With no key held (locked) there is nothing to try, and the headers alone answer, as the rows say.
-        "complete": corpus_encrypted and not pending and not busy and not not_this_key and not (key is not None and unchecked),
+        # "encrypted with yours". With no key held (locked) there is nothing to try: R821, a store is "encrypted" there only by this
+        # installation's record, and one that only LOOKS encrypted (its header) keeps "complete" false.
+        "complete": corpus_encrypted and not pending and not busy and not not_this_key and not looks
+        and not (key is not None and unchecked),
+        "looks_encrypted": looks,
         "key_held": key is not None,
         "pending": pending,
         "busy": busy,
@@ -484,9 +528,26 @@ def _pending_of(rows: list[dict[str, Any]]) -> list[str]:
     return [r["store"] for r in rows if r["state"] == "plaintext" or (r["state"] == "unreadable" and "key_checked" not in r)]
 
 
-def _rows_of(rows: list[tuple[str, Path]], key: str | None, probe_ok: bool) -> list[dict[str, Any]]:
+def _rows_of(rows: list[tuple[str, Path]], key: str | None, probe_ok: bool, record: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """One row per store (a function of its own: the loop is not inside ``status``'s ``try``, R163)."""
-    return [_store_row(name, path, key, probe_ok) for name, path in rows]
+    return [_store_row(name, path, key, probe_ok, record) for name, path in rows]
+
+
+def _corpus_opens_with(st: dict[str, Any], main: Path | None, key: str) -> bool:
+    """Whether the corpus whose header only looks encrypted opens READ-ONLY with ``key`` (the probe, under the probe lock: never
+    beside a swap of it). Never raises."""
+    rows = st.get("stores") or []
+    if not rows or rows[0].get("state") != "looks_encrypted" or not key:
+        return False
+    corpus = stores(main)[0][1]
+    if not _PROBE_LOCK.acquire(timeout=PROBE_WAIT_S):
+        return False
+    try:
+        return _probe(corpus, key).get("state") == "encrypted"
+    except Exception:  # noqa: BLE001 - not proven is "not proven", never an error here
+        return False
+    finally:
+        _PROBE_LOCK.release()
 
 
 def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[..., dict] | None = None) -> dict[str, Any]:
@@ -502,6 +563,11 @@ def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[...,
     from src.scheduler.runner import exclusive_window
 
     st = status(main)
+    if not st["corpus_encrypted"] and _corpus_opens_with(st, main, key):
+        # R821 (1): a corpus that only LOOKED encrypted (no keyed open on record in this process, no record naming it) is proven
+        # here by a keyed read with the key this process holds, and recorded (R820 (4)); only then is anything finished under it.
+        record_encrypted("corpus", main)
+        st = status(main)
     if st["corpus_encrypted"]:
         remove_leftover_replaced(main, key=key)
     if st["corpus_encrypted"] and st["busy"]:

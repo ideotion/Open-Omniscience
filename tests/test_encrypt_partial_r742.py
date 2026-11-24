@@ -264,8 +264,11 @@ def test_an_install_that_hit_the_old_failure_has_no_record_and_is_still_found_an
     encrypt_tool.encrypt_database(stores, _KEY, library=True)
     assert not (stores.parent / at_rest_state.RECORD_NAME).exists()
     st = at_rest_state.status(stores)
-    assert st["corpus_encrypted"] and set(st["pending"]) == {n for n, _p in at_rest_state.stores(stores)} - {"corpus"}
+    # R821: its header alone only LOOKS encrypted, so the status claims nothing and names nothing pending...
+    assert st["stores"][0]["state"] == "looks_encrypted" and not st["corpus_encrypted"] and st["pending"] == []
+    # ...until the finish proves it with the key it holds, records it, and finishes the others under it
     out = at_rest_state.finish_pending(_KEY, stores)
+    assert _record(stores)["corpus"]["read_back_with_key"] is True
     assert out["still_pending"] == [] and at_rest_state.status(stores)["complete"] is True
 
 
@@ -294,7 +297,8 @@ def test_a_crash_after_a_swap_before_the_record_is_found_from_the_file_and_recor
         encrypt_tool.encrypt_store("corpus", stores, _KEY, main=stores, library=True)
     monkeypatch.setattr(at_rest_state, "record_encrypted", _REAL_RECORD)
     assert is_encrypted_file(stores) is True and not (stores.parent / at_rest_state.RECORD_NAME).exists()
-    assert at_rest_state.status(stores)["corpus_encrypted"] is True, "the file, not the record, says it is encrypted"
+    # R821: with no record and no keyed open held, the file's header only LOOKS encrypted: never "encrypted"
+    assert at_rest_state.status(stores)["stores"][0]["state"] == "looks_encrypted"
     encrypt_tool.encrypt_store("corpus", stores, _KEY, main=stores, library=True)
     assert _record(stores)["corpus"]["read_back_with_key"] is True
 

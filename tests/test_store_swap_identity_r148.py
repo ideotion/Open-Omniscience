@@ -275,6 +275,9 @@ def _all_encrypted(data: Path, key: str, lane_key: str | None = None) -> None:
         lp = data / spec.filename
         _plain_table(lp)
         _encrypt_file(lp, lane_key if (lane_key and spec.kind == "wiki") else key)
+    # R821: what the encrypt tool does once the library read back with the key; the corpus is "encrypted" on that record (or a
+    # keyed open held in this process), never on its header alone
+    at_rest_state.record_encrypted("corpus", main)
 
 
 def test_a_lane_under_another_passphrase_reads_as_that_and_is_never_complete(data, monkeypatch):
@@ -361,7 +364,8 @@ def test_the_probe_stands_aside_while_a_store_is_swapped(data):
     try:
         assert entered.wait(10)
         st = at_rest_state.status()
-        assert _row(st, "custody") == {**_row(st, "custody"), "state": "encrypted", "key_checked": False}
+        # R821: not tried with the key and not on the record: it only LOOKS encrypted
+        assert _row(st, "custody") == {**_row(st, "custody"), "state": "looks_encrypted", "key_checked": False}
         assert "custody" in st["unchecked"]
         assert st["complete"] is False, "with a key held, a store it was not tried on is never counted as complete"
     finally:
