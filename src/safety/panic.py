@@ -250,11 +250,11 @@ def _dispose_after_erase(generation: int | None = None) -> int | None:
 #: R813 row 389: how long after a panic result that keeps a drive's key in memory the app starts closing (the response is sent and
 #: the page has drawn it first), and how long the graceful stop may take before the process ends without it.
 PANIC_EXIT_DELAY_S = 3.0
-PANIC_EXIT_HARD_AFTER_S = 20.0
+PANIC_EXIT_HARD_AFTER_S = 60.0  # past the graceful stop (30 s uvicorn + 10 s scheduler join + 5 s job wait)
 
 
 def _hard_exit() -> None:  # pragma: no cover - ends the process
-    os._exit(0)
+    os._exit(1)  # non-zero: the stop was forced
 
 
 def exit_after_panic(*, delay: float = PANIC_EXIT_DELAY_S, hard_after: float = PANIC_EXIT_HARD_AFTER_S,

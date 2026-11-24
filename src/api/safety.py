@@ -189,7 +189,11 @@ def panic(body: PanicBody) -> dict:
 
         exit_after_panic()
         report["app_closing"] = True
-        report["limit"] = f"{report.get('limit') or ''} {APP_CLOSING_SENTENCE}".strip()
+        # S7 keeps the cost and drops "close the app now": the app is closing itself, said right after it.
+        from src.safety.crypto_erase import _DRIVE_KEY_IN_MEMORY_SENTENCE as S7
+
+        limit = str(report.get("limit") or "").replace(S7, S7.split(": ")[0] + ".")
+        report["limit"] = f"{limit} {APP_CLOSING_SENTENCE}".strip()
     return report
 
 

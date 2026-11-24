@@ -18,6 +18,8 @@ import pytest
 
 from src.safety import data_volume
 
+S7 = "The key to the data on that drive stays in this app’s memory until the app is closed: close the app now."
+S7_COST = "The key to the data on that drive stays in this app’s memory until the app is closed."
 S8 = "The app is closing itself now, so that the key leaves its memory. Open the app again to go on."
 
 
@@ -56,18 +58,19 @@ def test_the_endpoint_closes_the_app_only_when_the_key_stays_in_memory(monkeypat
     from src.safety import panic as shutdown
 
     armed: list[bool] = []
-    monkeypatch.setattr(safety_pkg, "panic_wipe", lambda confirm: {"drive_key_in_memory": kept, "limit": "S7."})
+    s7 = S7.replace("’", "'")  # the report's English record uses a plain apostrophe; the page, a typographic one
+    monkeypatch.setattr(safety_pkg, "panic_wipe", lambda confirm: {"drive_key_in_memory": kept, "limit": "S1. " + s7})
     monkeypatch.setattr(shutdown, "exit_after_panic", lambda: armed.append(True))
     out = api_safety.panic(api_safety.PanicBody(confirm=True))
     if kept:
-        assert armed == [True] and out["app_closing"] is True and out["limit"] == "S7. " + S8
+        assert armed == [True] and out["app_closing"] is True and out["limit"] == "S1. " + S7_COST.replace("’", "'") + " " + S8, out["limit"]
     else:
-        assert armed == [] and "app_closing" not in out and out["limit"] == "S7."
+        assert armed == [] and "app_closing" not in out and out["limit"] == "S1. " + s7
 
 
 def test_the_page_says_the_app_is_closing():
     js = Path("src/static/app-backup.js").read_text(encoding="utf-8")
-    assert "r.app_closing === true" in js and S8 in js
+    assert "r.app_closing === true" in js and S8 in js and S7_COST in js and S7 in js
     from src.api.safety import APP_CLOSING_SENTENCE
 
     assert APP_CLOSING_SENTENCE == S8
@@ -112,3 +115,4 @@ def test_the_real_panic_ends_the_process_by_itself(tmp_path):
     assert report == {"drive_absent": True, "drive_unidentified": True, "drive_key_in_memory": True, "app_closing": True}, report
     assert run.returncode != 0 and took < 100, (run.returncode, took)
     assert (data / "open_omniscience.db").exists(), "nothing on the drive was erased"
+
