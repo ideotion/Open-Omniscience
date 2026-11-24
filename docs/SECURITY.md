@@ -950,10 +950,15 @@ imply a protection we cannot deliver.
   "unencrypted" in words. The in-process evidence counts only while the process still holds a descriptor on that very file
   (POSIX: listed from the process's own descriptors, a `fstat` each, never a read), since only then can the file system not
   hand its inode to another file; a disposal of the app's pool forgets it all (restore, repair, unlock and power dispose
-  before they swap files), and a plaintext open of the corpus removes any identity the record names. An encrypted main
+  before they swap files; an erase that disposes the pool itself takes the evidence first and keeps a descriptor on that file
+  until the end), and an open of the corpus known to be plaintext removes any identity the record names (an open whose kind
+  this process cannot tell, after a disposal on another thread, leaves the record as it is). Where the file at the store's
+  path is not the store, the record goes only from the pinned folder, through its handle: a link or another drive at that
+  place holds another store's record, never removed. An encrypted main
   database whose first page could not be overwritten is said as such, and neither the result nor the free-space scrub
   after it calls it unrecoverable. The record's `.lock` goes with the record. LIMIT (Windows): the in-process evidence has no
-  descriptor check there (an open file is not deleted or replaced while held, and the disposal forgets it), and the
+  descriptor check there (an open file is not deleted or replaced while held, and the disposal forgets it; an NTFS file ID
+  could be reused after a delete the app did not make while no pool was disposed, which is not guarded), and the
   first-page fallback never reaches "encrypted" from the record, so an erase there without in-process evidence says "could
   not be determined".
   **A data folder the app does not own (R711).** Ownership is where the app put the

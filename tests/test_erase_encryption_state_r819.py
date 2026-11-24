@@ -36,7 +36,9 @@ def _no_evidence_from_other_tests():
     """The in-process evidence is process-wide: each test starts with none, and leaves none."""
     with connect_module._lock:
         saved = set(connect_module._opened_with_key)
+        saved_plain = set(connect_module._opened_plain)
         connect_module._opened_with_key.clear()
+        connect_module._opened_plain.clear()
     with at_rest_state._NOTE_LOCK:
         keyed, plain = set(at_rest_state._NOTED_KEYED), set(at_rest_state._NOTED_PLAIN)
         at_rest_state._NOTED_KEYED.clear()
@@ -45,6 +47,8 @@ def _no_evidence_from_other_tests():
     with connect_module._lock:
         connect_module._opened_with_key.clear()
         connect_module._opened_with_key.update(saved)
+        connect_module._opened_plain.clear()
+        connect_module._opened_plain.update(saved_plain)
     with at_rest_state._NOTE_LOCK:
         at_rest_state._NOTED_KEYED.clear()
         at_rest_state._NOTED_KEYED.update(keyed)
@@ -88,6 +92,7 @@ def _encrypted_db(path: Path) -> None:
 def _forget_evidence() -> None:
     with connect_module._lock:
         connect_module._opened_with_key.clear()
+        connect_module._opened_plain.clear()
 
 
 def _data(tmp_path: Path) -> Path:
@@ -440,3 +445,83 @@ def test_the_record_s_lock_goes_with_it(tmp_path):
     lock.write_bytes(b"")
     crypto_erase._drop_record_beside(main)
     assert not lock.exists() and not (main.parent / at_rest_state.RECORD_NAME).exists()
+
+
+# ---------------------------------------------------------------- the delta security read (row 396)
+
+
+def test_an_open_of_unknown_kind_leaves_the_record_as_it_is(tmp_path):
+    """The record loses its identity only on POSITIVE evidence of a plaintext open; an open this process cannot tell (its keyed read
+    forgotten by a disposal on another thread, or descriptors that cannot be listed) leaves it as it is."""
+    db = tmp_path / "open_omniscience.db"
+    db.write_bytes(os.urandom(8192))
+    _record(tmp_path, _ident(db))
+    assert connect_module.last_open_of(_ident(db)) is None
+    at_rest_state.note_main_open(db)
+    assert at_rest_state.record_names_identity((tmp_path / at_rest_state.RECORD_NAME).read_bytes(), _ident(db))
+    connect_module._note_open(db, keyed=False)  # positive evidence: a plaintext open
+    assert connect_module.last_open_of(_ident(db)) == "plain"
+    at_rest_state.note_main_open(db)
+    assert not at_rest_state.record_names_identity((tmp_path / at_rest_state.RECORD_NAME).read_bytes(), _ident(db))
+
+
+def test_a_disposal_forgets_the_plaintext_opens_too(tmp_path):
+    db = tmp_path / "plain.db"
+    _plain_db(db)
+    connect_module._note_open(db, keyed=False)
+    connect_module.forget_keyed_reads()
+    assert connect_module.last_open_of(_ident(db)) is None
+
+
+@posix_only
+def test_the_record_is_removed_only_from_the_pinned_folder(tmp_path):
+    """Where the file at the store's path is not the store, the record goes only from the pinned folder, through its handle: another
+    folder at that place (a link, another drive) holds another store's record, never removed."""
+    folder = tmp_path / "store"
+    folder.mkdir()
+    main = folder / crypto_erase._MAIN_DB
+    main.write_bytes(os.urandom(4096))
+    rec_path = _record(folder, _ident(main))
+    pin = crypto_erase._pin_file(main)
+    assert isinstance(pin, tuple)
+    other = tmp_path / "other"
+    other.mkdir()
+    ost = os.stat(other)
+    wrong = (pin[0], pin[1], ost.st_dev, ost.st_ino, pin[4])  # the folder at the place is not the one pinned
+    rec = crypto_erase._open_and_unlink_plain(main, wrong, 396_001, [])
+    assert rec["touched"] is False and rec["reason"] == "changed"
+    assert rec_path.exists(), "a folder that is not the pinned one keeps its record"
+    main.unlink()  # the pinned folder, its store gone: the app's record goes, through the folder's handle
+    rec = crypto_erase._open_and_unlink_plain(main, pin, 396_002, [])
+    assert rec["touched"] is False and rec["reason"] == "absent"
+    assert not rec_path.exists()
+
+
+@posix_only
+def test_the_evidence_is_taken_before_the_erase_disposes_its_own_pool(tmp_path, monkeypatch):
+    """Disposing the app's own pool forgets every keyed read: the erase takes the evidence first and keeps a descriptor on that very
+    file among its own (never closed there, R789), so the inode cannot pass to another file before the pin."""
+    main = tmp_path / crypto_erase._MAIN_DB
+    main.write_bytes(os.urandom(4096))
+    ident = _ident(main)
+    monkeypatch.setattr(connect_module, "opened_with_key", lambda i: tuple(i) == ident)
+    gen = 396_003
+    try:
+        assert crypto_erase._keyed_evidence_kept(main, gen) == ident
+        assert len(crypto_erase._HELD.get(gen, [])) == 1
+        monkeypatch.setattr(connect_module, "opened_with_key", lambda i: False)
+        assert crypto_erase._keyed_evidence_kept(main, gen) is None
+        assert crypto_erase._keyed_evidence_kept(tmp_path / "missing.db", gen) is None
+    finally:
+        for fd, _kind, _cap in crypto_erase._HELD.pop(gen, []):
+            with contextlib.suppress(OSError):
+                os.close(fd)
+
+
+def test_the_main_database_s_head_is_matched_by_its_real_path_never_its_name():
+    """A lane or custody file of the same name whose head was written never makes the main one count as destroyed (security read)."""
+    import inspect
+
+    src = inspect.getsource(crypto_erase._quick_crypto_erase)
+    assert "str(_real(main_db)) in head_reals" in src
+    assert "_real(main_db).name in headers" not in src

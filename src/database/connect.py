@@ -143,6 +143,9 @@ _last_good_page_size: dict[str, int | None] = {}
 # same identity forgets it, so an inode the file system hands to a plaintext file later never carries the evidence over. The
 # erase reads it (:func:`opened_with_key`) as positive evidence that a store is encrypted; a header alone never is.
 _opened_with_key: set[tuple[int, int]] = set()
+# The identities this process opened as plaintext (and has not opened under a key since): POSITIVE evidence of a plaintext open,
+# which is all the at-rest record's bookkeeping acts on. The absence of keyed evidence never is (delta security read, row 396).
+_opened_plain: set[tuple[int, int]] = set()
 
 
 def _note_open(p: Path, keyed: bool) -> None:
@@ -156,8 +159,20 @@ def _note_open(p: Path, keyed: bool) -> None:
     with _lock:
         if keyed:
             _opened_with_key.add(ident)
+            _opened_plain.discard(ident)
         else:
             _opened_with_key.discard(ident)
+            _opened_plain.add(ident)
+
+
+def last_open_of(ident: tuple[int, int]) -> str | None:
+    """How this process last opened the file with this (device, inode): ``"keyed"``, ``"plain"``, or None (not since the last pool
+    disposal, or the evidence could not be taken). A plain membership read, no descriptor test: for the at-rest record's
+    bookkeeping right after an open, never for the erase (which asks :func:`opened_with_key`)."""
+    with _lock:
+        if ident in _opened_with_key:
+            return "keyed"
+        return "plain" if ident in _opened_plain else None
 
 
 def opened_with_key(ident: tuple[int, int]) -> bool:
@@ -196,6 +211,7 @@ def forget_keyed_reads() -> None:
     which the store at the path may be another file. The next keyed read records it again."""
     with _lock:
         _opened_with_key.clear()
+        _opened_plain.clear()
 
 
 def _guard_the_key() -> None:

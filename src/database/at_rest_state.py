@@ -167,16 +167,19 @@ def _read_record_at(path: Path) -> dict[str, Any]:
 
 def note_main_open(path: Path | str) -> None:
     """R820 (4): called after the app's own engine opened a connection on the corpus at ``path``. Opened with the app's key (a real
-    keyed page read: :func:`src.database.connect.opened_with_key`), its (device, inode) is written into the record once per process;
+    keyed page read: :func:`src.database.connect.last_open_of`), its (device, inode) is written into the record once per process;
     opened as plaintext, an identity the record holds for it is removed. A failed write never fails the open. Never raises."""
     try:
         p = Path(path)
         ident = _identity(p)
         if ident is None:
             return
-        from src.database.connect import opened_with_key
+        from src.database.connect import last_open_of
 
-        keyed = opened_with_key(ident)
+        how = last_open_of(ident)
+        if how is None:
+            return  # no positive evidence either way (a disposal on another thread, say): the record is left as it is
+        keyed = how == "keyed"
         with _NOTE_LOCK:
             seen = _NOTED_KEYED if keyed else _NOTED_PLAIN
             if ident in seen:
