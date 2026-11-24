@@ -306,6 +306,21 @@ def restored_marker_lock(path: Path | None = None) -> Iterator[None]:
             held.discard(key)
 
 
+def _key_file_state(path: Path) -> str:
+    """``"absent"``, ``"present"`` or ``"unreadable"`` for the key file at ``path`` (row 403); never writes.
+
+    ``Path.exists()`` swallows only a missing path: a keys folder that cannot be searched (EACCES) raised out of the
+    callers below, which promise an answer. Only "not there" is absent; any other failure to look is "unreadable", so a
+    key whose state cannot be read is never counted as this installation's own and never as no key at all."""
+    try:
+        os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent"
+    except (OSError, ValueError):
+        return "unreadable"
+    return "present"
+
+
 def _marker_present(marker: Path) -> bool:
     """True unless the marker is plainly absent: a link, a folder, an unreadable or odd file all count as present, and
     so does a check that fails (R801 (3)). Only its presence is read, never its content."""
@@ -362,8 +377,11 @@ def is_this_installations_key(public_key: object, path: Path | None = None, *, o
     marker exists (:func:`restored_key_marker`); every caller asks here and none compares keys itself."""
     path = path or _default_key_path()
     if own is None:  # ``own``: this installation's public key the caller already read (a list compares many keys)
-        if not path.exists():
+        state = _key_file_state(path)
+        if state == "absent":
             return False  # no key yet: nothing this installation signed can exist
+        if state == "unreadable":
+            return None  # row 403: a keys folder that cannot be opened is no answer, never "no key" and never "own"
         own = existing_public_key_hex(path)
         if own is None:
             return None
@@ -389,8 +407,11 @@ def signing_key_state(path: Path | None = None) -> tuple[str, str | None]:
     must not promise a key is created: it is not, and saving fails).
     """
     path = path or _default_key_path()
-    if not path.exists():
+    state = _key_file_state(path)
+    if state == "absent":
         return "none", None
+    if state == "unreadable":
+        return "unreadable", None  # row 403: never "none" (an export would promise to create a key it cannot write)
     pub = existing_public_key_hex(path)
     return ("ok", pub) if pub is not None else ("unreadable", None)
 
