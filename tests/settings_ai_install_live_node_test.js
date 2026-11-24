@@ -97,7 +97,7 @@ function harness(answers, opts = {}) {
     ...["_ooLiveWatch", "_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml", "ooLiveRepaint",
       "ooLabelHtml", "ooLabelText"].map(extract),
     "let _ollamaInstalling = false;",
-    "let _dlModelPoll = null, _dmRender = null, _dmStarting = false;",
+    "let _dlModelPoll = null, _dmRender = null, _dmStarting = false, _dmFresh = false;",
     "let _langDetectPolling = false; let _langDetectCount = null;",
     ...["loadOllamaInstall", "prepareOllamaInstall", "runOllamaInstall", "_miniBlockHtml", "_miniBlockHold", "_dmRedraw",
       "_paintDefaultModel", "_defaultModelHtml", "installDefaultModel", "_installDefaultModel", "loadLlmModels", "_llmModelsHtml",
@@ -302,6 +302,11 @@ const stream = (lines) => {
     assert.ok(host.innerHTML.includes(`<option value="b" selected>B</option>`) && !host.innerHTML.includes(`value="a" selected`), host.innerHTML);
     assert.ok(host.innerHTML.includes(">" + esc(FR["Model in use"]) + "</label>") && host.innerHTML.includes(" — " + esc(FR["default"]) + "</option>"), host.innerHTML);
     assert.ok(host.innerHTML.includes(`<p class="hint">${esc(FR["Downloading…"])} 3/5 shards</p>`), host.innerHTML);
+    // a NEW read (the 3 s poll) shows the model the server says is in use, never the older pick left on the page:
+    // a failed switch or a change made elsewhere is not hidden behind it (the page's select still reads B)
+    h.$("llm-model-pick").value = "b";
+    await h.fns._paintDefaultModel();
+    assert.ok(host.innerHTML.includes(`value="a" selected`) && !host.innerHTML.includes(`value="b" selected`), host.innerHTML);
   }
 
   // 6. Language detection: the count's hover and each poll line follow a switch; the job's detail is escaped ONCE.

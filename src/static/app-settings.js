@@ -497,7 +497,9 @@
     // _defaultModelHtml draws them through ooLiveHtml, so a language switch redraws the block with no request.
     // `_dmStarting` is a download being started from the block's own button: the render draws that button as
     // "Starting…" and disabled, so nothing writes inside the held block.
-    let _dlModelPoll = null, _dmRender = null, _dmStarting = false;
+    // `_dmFresh` marks the draw that follows a new read: that one shows what the server says is in use; a redraw from
+    // what is already held (a language switch, the Starting… button) keeps the operator's pick on the page.
+    let _dlModelPoll = null, _dmRender = null, _dmStarting = false, _dmFresh = false;
     function _dmRedraw() {
       const host = $("llm-default-model");
       if (host && _dmRender) ooLiveHtml(host, _dmRender);
@@ -545,16 +547,19 @@
         } catch (e) { /* the block still renders without the live line */ }
       }
       _dmRender = () => _defaultModelHtml(p, have, cur, job);
+      _dmFresh = true;
       ooLiveHtml(host, _dmRender);
     }
     function _defaultModelHtml(p, have, cur, job) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const already = p.installed === true;
+      const fresh = _dmFresh;
+      _dmFresh = false;
       let picker = "";
       if (have.length) {
-        // the model picked since the read, if any: a redraw never puts the older choice back under the operator's eyes
+        // a redraw keeps the model picked on the page; a new read (the 3 s poll, a reload) shows the server's own
         const live = $("llm-model-pick");
-        const sel = live && live.value ? live.value : cur;
+        const sel = !fresh && live && live.value ? live.value : cur;
         const opts = have.map((m) =>
           `<option value="${esc(m.artifact)}"${m.artifact === sel ? " selected" : ""}>` +
           `${esc(m.label)}${m.is_default ? " — " + esc(t("default")) : ""}</option>`).join("");
