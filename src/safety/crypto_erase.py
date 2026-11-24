@@ -113,6 +113,14 @@ _FOLDER_BACK_SENTENCE = (
 _NOT_REMOVED_SENTENCE = (
     "The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."
 )
+# R809: the marked data drive was not there (or a different drive was at its path) when the erase ran: nothing on it was touched.
+_DRIVE_ABSENT_SENTENCE = (
+    "The data drive was not present. Nothing on it was checked or erased. The data on that drive still exists."
+)
+# R809 / R797 / R798: the data drive went away while the erase ran.
+_DRIVE_LOST_SENTENCE = (
+    "The data drive disconnected during the erase: it was only partially erased, and what was left on it could not be checked."
+)
 _KEYS_LEFT_SENTENCE = (
     "Some of the app's own key files could not be removed from the keys folder, so the erase may be incomplete: remove them by hand."
 )
@@ -127,6 +135,9 @@ def settle_removed(report: dict) -> bool:
     that is there again makes ``removed`` False, sets ``folder_back`` and puts the "may be incomplete" sentence first in ``limit``.
     Logs nothing (a log line after the measure is what this measure is for). Returns ``removed``. Never raises."""
     try:
+        if report.get("drive_absent") or report.get("drive_lost"):
+            report["removed"] = False  # R809: a drive that was not there, or went away, is never measured as "removed"
+            return False
         if report.get("scope") != "data-folder" or not report.get("data_dir"):
             return bool(report.get("removed"))
         if report.get("folder_kept_foreign"):
@@ -664,6 +675,56 @@ def _destroy_app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str
     return seen, wiped
 
 
+def _drive_state(base: Path) -> str:
+    """R809: ``unwatched`` (no drive was marked for this folder), ``ok`` (the marked drive is there with its own marker) or
+    ``absent`` (the folder or its marker cannot be read, or the marker is another drive's: src/safety/data_volume.py probe). Reads
+    only; never makes anything. A question that cannot be answered for a marked folder is ``absent``: nothing on it is touched."""
+    try:
+        from src.safety import data_volume
+
+        if not data_volume.watched():
+            return "unwatched"
+        chosen = data_volume.configured_folder()
+        if chosen is None or os.path.abspath(chosen) != os.path.abspath(base):
+            return "unwatched"
+        return "ok" if data_volume.probe().get("state") == "ok" else "absent"
+    except Exception:  # noqa: BLE001 - not knowing whether the drive is there never lets the erase touch what is at its path
+        return "absent"
+
+
+def _drive_anchor(base: Path) -> tuple[Path, int] | None:
+    """R809: a folder that stays on the data drive through the erase, with the drive's device id: the data folder's parent when it
+    is on the same drive (the erase removes the folder itself), else the folder (it is the drive's mount point, which stays)."""
+    try:
+        dev = os.lstat(base).st_dev
+    except OSError:
+        return None
+    try:
+        if os.lstat(base.parent).st_dev == dev:
+            return base.parent, dev
+    except OSError:
+        pass
+    return base, dev
+
+
+def _drive_lost(anchor: tuple[Path, int] | None) -> bool:
+    """R809: the drive whose ``anchor`` was taken before the erase is gone, or another device is at its place, after it."""
+    if anchor is None:
+        return False
+    try:
+        return os.lstat(anchor[0]).st_dev != anchor[1]
+    except OSError:
+        return True
+
+
+def _under(p: Path | None, base: Path) -> bool:
+    """``p`` is the data folder or inside it, by its spelling (never resolved: the folder may not be there)."""
+    if p is None:
+        return False
+    a, b = os.path.abspath(p), os.path.abspath(base)
+    return a == b or a.startswith(b.rstrip(os.sep) + os.sep)
+
+
 def _app_keys_left(keys_dir: Path) -> list[str]:
     """The app's own key files and private copies still in ``keys`` after step 2 (as ``keys/<the app's own name>``: never a name
     of the operator's), and ``keys/.pending`` itself when it is a link or a junction, which is never entered."""
@@ -997,8 +1058,13 @@ def finish_holder_check(report: dict, generation: int) -> str:
     elif own_open:
         state = HOLDER_HELD
     report["other_holder"] = state
+    if state != HOLDER_NONE and report.get("drive_absent"):
+        return state  # R809: the drive's own sentence stands alone; the store this would speak of is on the drive, untouched
     if state != HOLDER_NONE:
-        report["limit"] = _LIMIT_NOTE_NOT_CLEAN + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
+        report["limit"] = (
+            (_DRIVE_LOST_SENTENCE + " " if report.get("drive_lost") else "")  # R809: said first, whatever else is said
+            + _LIMIT_NOTE_NOT_CLEAN + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
+        )
         _LOG.warning("CRYPTO-ERASE: %s", "another program had the database open during the erase; the erase may be "
                      "incomplete" if state == HOLDER_HELD else "could not check whether another program had the database open")
     return state
@@ -1030,6 +1096,17 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
 
     paths = _resolve(data_dir)
     base: Path = paths["base"]
+    # R809: a marked data drive that is not there (or a different drive at its path) is never touched: nothing under the data folder
+    # is read, erased, scoped or removed. What the overrides keep elsewhere (DATABASE_URL, OO_COLUMNAR_DIR) and the passphrase held
+    # in memory are still erased, and counted apart. A drive that IS there has its device read now and again at the end (R809).
+    drive = _drive_state(base) if data_dir is None else "unwatched"
+    drive_absent = drive == "absent"
+    anchor = _drive_anchor(base) if drive == "ok" else None
+    if drive_absent:
+        paths = {**paths, "lane_dbs": [], "custody_db": None, "anchors_db": None,
+                 "main_db": None if _under(paths["main_db"], base) else paths["main_db"],
+                 "store_dir": None if _under(paths["store_dir"], base) else paths["store_dir"]}
+        _LOG.error("CRYPTO-ERASE: the data drive was not present; nothing on it was checked or erased, and its data still exists")
     _latch(base)  # R802: before a byte is touched; for the rest of the process
     _latch_outside(paths, base)  # a store the overrides put outside the folder is latched too (its exact files only)
     own_open = _close_own_pool() if close_own_pool else 0  # R805 (a): after the latch, so no new connection opens on the store
@@ -1043,7 +1120,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     try:
         from src.safety.data_scope import folder_scope
 
-        scope = folder_scope(base)
+        scope = {"broad": False, "reason": "drive_absent"} if drive_absent else folder_scope(base)
     except Exception as exc:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
         log_failure(_LOG, "could not read the data folder's scope; erasing the app's own files only", exc, level=logging.WARNING)
         scope = {"broad": True, "reason": "unknown"}
@@ -1053,7 +1130,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # app's key files in it go, the rest is left, and so is the data folder. One that cannot be listed is "could not check" (R798) and
     # is left the same way. (In a folder the app does not own, keys is a common name and already handled that way.) Read-only.
     keys_state = "absent"
-    if not app_only:
+    if not app_only and not drive_absent:
         try:
             from src.safety.data_scope import keys_folder_state
 
@@ -1132,6 +1209,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # A database reached through a link (a corpus kept on another drive and linked into place) is erased where it really
     # is: these are the app's own files, the one place a link is followed. Every other file is never written through one.
     dbs = [_real(db) for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())) if db is not None]
+    if drive_absent:
+        dbs = [db for db in dbs if not _under(db, base)]  # R809: a store reached through a link into the absent drive is not touched
     head_ok: dict[Path, bool] = {}
     # The -shm head is written with ZEROS, never random bytes: it holds no page data, and a connection that rolls back
     # after the erase reads its frame count from that header and grows the mapped file toward it -- a random count grew
@@ -1188,11 +1267,13 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     keys_dir: Path = paths["keys_dir"]
     # R806 (5) never follows a ``keys`` that is a link; the app's own signers write THROUGH one (signing.py makes its folder with
     # exist_ok), so the app's keys may be where it points and are not destroyed here: said, and the result is never clean.
-    keys_link = _kind(keys_dir) == "link"
+    keys_link = not drive_absent and _kind(keys_dir) == "link"
     if keys_state == "unlisted":
         _unlisted(OSError(errno.EACCES, "could not list the keys folder", str(keys_dir)))
     with _key_files_lock():
-        if keys_foreign or app_only:  # R807 (3): in shared scope the app's key files are matched by exact name, never by suffix
+        if drive_absent:
+            _s = _w = 0  # R809: the keys folder is on the drive that is not there
+        elif keys_foreign or app_only:  # R807 (3): in shared scope the app's key files are matched by exact name, never by suffix
             _s, _w = _destroy_app_keys_in_foreign(keys_dir, _track, keys_destroyed, _unlisted, _unreached)
         else:
             _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, unreached=_unreached)
@@ -1203,9 +1284,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    salt in that sidecar, so with the sidecar destroyed the key is underivable even from the right passphrase;
     #    the cache is a derived copy, so this is defence-in-depth beside step 1 and the passphrase clearing in
     #    step 5 + the free-space scrub).
-    store_dir: Path = paths["store_dir"]
-    for name in _DUCK_FILES:
-        _s, _overwritten, _w = _track(store_dir / name, head_bytes=_SQLCIPHER_PAGE1)
+    store_dir: Path | None = paths["store_dir"]  # None: on a data drive that is not there (R809)
+    for duck in [store_dir / name for name in _DUCK_FILES] if store_dir is not None else []:
+        _s, _overwritten, _w = _track(duck, head_bytes=_SQLCIPHER_PAGE1)
         seen += _s
         wiped += _w
 
@@ -1213,7 +1294,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    L1, 2026-07-17 -- it used to be always-plaintext regardless of the corpus).
     #    A full overwrite destroys it either way (it is small, so this is cheap
     #    even though a head-only pass would already crypto-erase it if encrypted).
-    anchors_seen, _anchors_overwritten, anchors_wiped = _track(paths["anchors_db"])
+    anchors_seen, _anchors_overwritten, anchors_wiped = _track(paths["anchors_db"]) if paths["anchors_db"] is not None else (False, False, False)
     seen += anchors_seen
     wiped += anchors_wiped
 
@@ -1253,7 +1334,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    copy of a plaintext store) has no salt to lose: it is rewritten whole, after 5b, wherever it is.
     copies_destroyed: list[str] = []
     plain_copies: list[Path] = []
-    for folder in dict.fromkeys([base, *(db.parent for db in dbs)]):
+    for folder in dict.fromkeys([*([] if drive_absent else [base]), *(db.parent for db in dbs)]):
         for p in _db_copies(folder, base, dbs, _unlisted):
             mode = _copy_mode(p, encrypted_store=encrypted is True)
             if mode == "plain":
@@ -1280,7 +1361,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    sits past its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a
     #    failure. In a folder the app does not own, only the app's entries are reached.
     heads_elsewhere = 0
-    roots = _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)
+    roots = [] if drive_absent else _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)
     for p in _files_under(roots, base, _unlisted, skip=paths["keys_dir"], unreached=_unreached):
         if _kind(p, _unreached) != "file":
             continue
@@ -1313,9 +1394,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         from src.safety.data_volume import configured_folder, forget_volume_id
 
         chosen = configured_folder()
-        if chosen is not None and chosen.resolve() == base.resolve():
-            forget_volume_id()
-    roots = _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)  # listed again: a file the app wrote since 5b is the app's too
+        if not drive_absent and chosen is not None and chosen.resolve() == base.resolve():
+            forget_volume_id()  # R809: a drive that was not there keeps its id: its data still exists
+    roots = [] if drive_absent else _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)  # listed again: a file the app wrote since 5b is the app's too
     # R806: a foreign keys folder is left out of the walk (its app key files went in step 2), never followed when it is a link.
     for p in _files_under(roots, base, _unlisted, skip=keys_dir if keys_foreign else None, unreached=_unreached):  # never follows a symlinked folder or a junction
         kind = _kind(p, _unreached)
@@ -1342,7 +1423,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}
     removed_at_rmtree = False
     kept_items = 0
-    if app_only:
+    if drive_absent:
+        pass  # R809: nothing on the absent drive is removed
+    elif app_only:
         _remove_app_folders(roots)
         left = _left_entries(base)
         kept_items = len(left["others"])
@@ -1357,7 +1440,12 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             shutil.rmtree(base, ignore_errors=True)
         removed_at_rmtree = not _present(base)  # before any log line: one that makes it again then reads "came back", never "not removed"
     # Kept ON PURPOSE: in shared scope for the entries that are not the app's (R711), else for a keys folder that is not (R806).
-    kept_foreign = _present(base) and (bool(kept_items) if app_only else keys_foreign and _kind(keys_dir) != "absent")
+    # R809: the drive went away while this erase ran: partially erased, the rest could not be checked (R797 / R798), never "removed".
+    drive_lost = _drive_lost(anchor)
+    if drive_lost:
+        unlisted_folders.append(str(base))
+        _LOG.error("CRYPTO-ERASE: the data drive disconnected during the erase; it was only partially erased")
+    kept_foreign = not drive_absent and _present(base) and (bool(kept_items) if app_only else keys_foreign and _kind(keys_dir) != "absent")
     # An app key or private copy still in a kept keys folder (its unlink failed), or a ``.pending`` that is a link the app's
     # copies may have gone through: never hidden by "kept", said as such (R806 / R807; the delta security reads). A count in the
     # report; the app's own names only in the log's count, never an operator's.
@@ -1415,7 +1503,11 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "left_untouched": left["others"],
         "left_common_names": left["common"],
         "not_removed": left["not_removed"],
-        "removed": not _present(base),
+        "removed": not drive_absent and not drive_lost and not _present(base),
+        # R809: the marked drive was not there (nothing on it touched; the counts above are what was erased elsewhere), or it went
+        # away during the erase. Either is a failure state: never "removed", never clean.
+        "drive_absent": drive_absent,
+        "drive_lost": drive_lost,
         "removed_at_rmtree": removed_at_rmtree,
         # R806 (4): the folder was kept ON PURPOSE because it holds items the app did not create (a count, never their names), so
         # the report says "folder kept because it holds items the app did not create", never "could not be removed" or "destroyed".
@@ -1431,7 +1523,11 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "unlisted_folders": len(unlisted_folders),
         # R805 (a): this process's own connections on the store still open when the erase ran (None: could not tell).
         "own_connections_open": own_open,
-        "limit": (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
+        # R809: no reassurance at all for a drive that was not there (its keys are on it: nothing erased here makes it unreadable),
+        # and none for one that went away during the erase.
+        "limit": _DRIVE_ABSENT_SENTENCE if drive_absent
+        else (_DRIVE_LOST_SENTENCE + _DEFENCE_TAIL) if drive_lost
+        else (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
         + (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
         + (_LIMIT_NOTE_UNLISTED if unlisted_folders else _LIMIT_NOTE),
     }

@@ -4021,17 +4021,26 @@ def main() -> None:
 
 
 def _panic_cli(*, force: bool) -> None:
-    """Wipe the data dir from the CLI (confirmed unless --yes)."""
-    from src.paths import data_dir
+    """Wipe the data dir from the CLI (confirmed unless --yes). R809: a marked data drive that is not there is a failure, said
+    as one, with exit status 2 (1 when it went away during the erase); never a traceback and never "wiped"."""
+    import sys
+
+    from src.paths import data_dir_path
     from src.safety import panic_wipe
 
-    target = data_dir()
+    target = data_dir_path()  # named, never made or checked: data_dir() raises when the marked drive is not there (R809)
     if not force:
         ans = input(f"Irreversibly wipe the app's data under {target}? Type 'wipe' to confirm: ")
         if ans.strip().lower() != "wipe":
             print("Aborted.")
             return
     report = panic_wipe(confirm=True)
+    if report.get("drive_absent"):
+        # R809: a failure state. What was erased elsewhere (stores kept outside the data folder, the passphrase in memory) is said
+        # apart, and nothing reassures: the keys are on the drive, so nothing erased here makes it unreadable.
+        print("ERASE FAILED: " + report["limit"])
+        print(f"Files erased outside the data drive: {report['files_wiped']} of {report['files_seen']}.")
+        sys.exit(2)
     print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
     if report.get("scope") == "app-only":
         # R711: a folder the app does not own keeps everything that is not the app's, and the folder itself.
@@ -4054,13 +4063,15 @@ def _panic_cli(*, force: bool) -> None:
         # R798: the files in a folder the erase could not list were never checked.
         print(f"THE ERASE MAY BE INCOMPLETE: it could not list {report['unlisted_folders']} of the folders it was to erase, so it "
               "could not check the files in them. Make those folders readable (the app log names them), then run the wipe again.")
-    if report.get("scope") == "data-folder" and report.get("removed") is False and not report.get("folder_back"):
+    if report.get("scope") == "data-folder" and report.get("removed") is False and not report.get("folder_back") and not report.get("drive_lost"):
         print("The data folder itself could not be removed, so something may be left in it: check it and remove it by hand.")
     if report.get("folder_back"):
         # R802 (5): measured after the wipe's last log line.
         print("THE ERASE MAY BE INCOMPLETE: the data folder existed again when the erase ended, although the erase had removed it: "
               "something recreated it afterwards. Restart the app, then run the wipe again.")
     print(report["limit"])
+    if report.get("drive_lost"):
+        sys.exit(1)  # R809: the data drive went away during the erase (its sentence leads report["limit"] above)
 
 
 def _terms_cli() -> None:

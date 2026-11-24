@@ -854,6 +854,14 @@ imply a protection we cannot deliver.
   only by its exact name plus the generated tail (`<key file>.<pid>.<thread>.<token>.new|rewrap`), so an operator's own
   `foo_ed25519.pem` stays byte for byte. The secure-uninstall watcher applies the same rules. The other folder names the app
   owns are still owned by name (row 378).
+  R809 (row 381): a data folder on a drive the first-launch step marked (`OO_DATA_VOLUME_ID`) that is not there when the erase
+  runs, or that holds another drive's marker, is never touched: nothing under it is read, erased, scoped or removed, the drive's
+  id is kept (its data still exists), and the result is a FAILURE ("The data drive was not present. Nothing on it was checked or
+  erased. The data on that drive still exists."), never "removed" and never clean, with no reassurance at all (the keys are on
+  that drive, so nothing erased elsewhere makes it unreadable) and no free-space overwrite offered. What the overrides keep
+  elsewhere (`DATABASE_URL`, `OO_COLUMNAR_DIR`) and the passphrase in memory are still erased, and counted apart ("Files erased
+  outside the data drive"). A drive that is there has its device read before the erase and again after it: gone or changed is
+  "partially erased, what was left could not be checked" (R797 / R798). The CLI says the same and exits 2 (absent) or 1 (lost).
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or

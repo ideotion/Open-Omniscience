@@ -4334,13 +4334,17 @@
         const keptForeign = r.folder_kept_foreign === true;
         const keptCount = Number(r.kept_items) || 0;  // 0 when keys could not be listed: then the "could not list" notice speaks
         // ...but anything ELSE left at its top is a removal that failed, and "kept" never hides it (R806 / R807).
-        const notRemoved = !back && r.scope === "data-folder" && r.removed === false && (!keptForeign || (r.not_removed || []).length > 0);
+        const notRemoved = !back && r.scope === "data-folder" && r.removed === false && r.drive_absent !== true && r.drive_lost !== true && (!keptForeign || (r.not_removed || []).length > 0);
         // R806 (5) never follows a keys folder that is a link; the app's own keys may be where it points, so the result is never clean.
         const keysLink = r.keys_link === true;
         // Anything of the app's whose removal failed (a key file in a kept keys folder, an entry in a folder it does not own) is never clean.
         const keysLeft = Number(r.keys_left) || 0;  // the app's own key files still in keys (their unlink failed): a count only
         const leftOver = (r.not_removed || []).length > 0 || keysLeft > 0;
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver;
+        // R809: the marked data drive was not there (nothing on it touched: a FAILURE, never "removed", never clean), or it went away
+        // during the erase (partially erased, the rest not checked).
+        const driveAbsent = r.drive_absent === true;
+        const driveLost = r.drive_lost === true;
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost;
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
         // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
         const rec = plaintext
@@ -4359,7 +4363,11 @@
           ? t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer, then run a full overwrite of free disk space below.")
           : t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer, then run a full overwrite of free disk space below.");
         $("panic-result").innerHTML =
-          `<span class="pill warn">${esc(t(clean ? "crypto-erased" : "erase may be incomplete"))}</span> ${esc(tfw("{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
+          `<span class="pill warn">${esc(t(driveAbsent ? "erase failed" : clean ? "crypto-erased" : "erase may be incomplete"))}</span> ` +
+          // R809: with the drive absent the count is only what was erased ELSEWHERE, said as that, never as the erase's success.
+          `${esc(tfw(driveAbsent ? "Files erased outside the data drive: {done} of {total}." : "{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
+          (driveAbsent ? `<div class="card-caveat">${esc(t("The data drive was not present. Nothing on it was checked or erased. The data on that drive still exists."))}</div>` : "") +
+          (driveLost ? `<div class="card-caveat">${esc(t("The data drive disconnected during the erase: it was only partially erased, and what was left on it could not be checked."))}</div>` : "") +
           (clean ? `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` : "") +
           `<span class="muted">${esc(r.limit)}</span>` +
           (holder === "none" ? "" : `<div class="card-caveat">${esc(holderNote)}</div>`) +
@@ -4381,12 +4389,13 @@
                 ? `<div class="card-caveat">${esc(tfw("Also left, because the name is common and may be yours: {names}. Check them and remove what is the app’s.", { names: r.left_common_names.join(", ") }))}</div>`
                 : "")
             : "") +
-          `<div class="hint" style="margin-top:8px">${esc(rec)}` +
+          // R809: no free-space overwrite is offered for a drive that is not there: it would write to whatever disk is at its place.
+          (driveAbsent ? "" : `<div class="hint" style="margin-top:8px">${esc(rec)}` +
           `<div class="row" style="gap:6px;margin-top:6px">` +
           `<button class="danger" data-on-click="secureErase(1)">${esc(t("Single pass"))}</button>` +
           `<button class="danger" data-on-click="secureErase(3)">${esc(t("Triple pass"))}</button>` +
           `<button class="danger" data-on-click="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
-          `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`;
+          `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`);
         toast(clean ? t("Local data crypto-erased. Restart the app.") : t("The erase may be incomplete. Read the notice under the wipe button."), clean ? "warn" : "err");
       } catch (e) { toast(_failMsg("Panic wipe failed: {error}", e), "err"); }
     }
