@@ -547,12 +547,12 @@ def test_dispose_facts_read_the_log_now_and_never_turn_unknown_into_zero(dd):
     assert unknown["out"] == "unknown" and unknown["step"] == "not run", "an unknown is a CODE in place of the number, never 0"
     failed = forensics.dispose_facts(None, {"outcome": "failed", "error": "OperationalError"})["dispose"]
     assert failed["step"] == "failed" and failed["out"] == "unasked"
-    for why, code in (("locked", "locked"), ("fresh", "fresh"), ("not sqlite", "no db"), ("no file", "no db")):
+    for why, code in (("locked", "locked"), ("fresh", "fresh"), ("drive-changed", "drive"), ("not sqlite", "no db"), ("no file", "no db")):
         got = forensics.dispose_facts({"checked_out": 0}, {"outcome": "skipped", "why": why})["dispose"]
         assert got["step"] == code, (why, got)
     # every code the facts can carry has its words
     assert set(forensics.DISPOSE_OUT_WORDS) == {"earlier", "unknown", "unasked"} and set(forensics.DISPOSE_WAL_WORDS) == {"unreadable"}
-    assert set(forensics.DISPOSE_STEP_WORDS) == {"done", "busy", "copied", "failed", "locked", "fresh", "no db", "not run", "unknown"}
+    assert set(forensics.DISPOSE_STEP_WORDS) == {"done", "busy", "copied", "failed", "locked", "fresh", "drive", "no db", "not run", "unknown"}
 
 
 def test_the_facts_read_the_log_of_the_file_the_step_looked_at(dd, tmp_path):
