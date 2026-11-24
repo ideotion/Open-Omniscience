@@ -7732,6 +7732,7 @@
   "not .eml": "не .eml",
   "not PDF": "не PDF",
   "not a file": "не файл",
+  "not a key this app creates; it is not written and stays in the backup": "это не ключ, который создаёт это приложение; он не записывается и остаётся в резервной копии",
   "not a recognised country code": "нераспознанный код страны",
   "not a usable edition code": "непригодный код раздела",
   "not an ISO code": "не код ISO",

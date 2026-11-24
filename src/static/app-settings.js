@@ -1226,12 +1226,13 @@
         const num = (typeof fmtNum === "function") ? fmtNum : ((x) => String(x));
         if (cEl) cEl.textContent = num(r.total || 0, 0);
         const chips = (r.terms || []).map(w => `<span class="fam-chip" style="cursor:default">${esc(w)}</span>`).join("");
-        const capNote = r.capped ? `<div class="muted" style="width:100%">${esc(TF("{n} matches — showing the first {shown}.", {n: num(r.matched, 0), shown: (r.terms || []).length}))} ${esc(t("Refine your search."))}</div>` : "";
         const empty = !r.terms || !r.terms.length;
-        listEl.innerHTML = empty
+        // Drawn through ooLiveHtml from this answer, so the cap note and the empty line follow a
+        // language switch with no second request (row 367).
+        ooLiveHtml(listEl, () => empty
           ? `<span class="muted">${esc(q ? t("No built-in stopword matches that.") : t("No built-in stoplist."))}</span>`
-          : capNote + chips;
-      } catch (e) { listEl.innerHTML = `<span class="muted">${esc(t("Could not load the stoplist."))}</span>`; }
+          : (r.capped ? `<div class="muted" style="width:100%">${esc(TF("{n} matches — showing the first {shown}.", {n: num(r.matched, 0), shown: (r.terms || []).length}))} ${esc(t("Refine your search."))}</div>` : "") + chips);
+      } catch (e) { ooLiveHtml(listEl, () => `<span class="muted">${esc(t("Could not load the stoplist."))}</span>`); }
     }
 
     async function saveKeywordFilter() {
@@ -1451,29 +1452,27 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!_confirmVacuum()) return;
       const btn = $("vacuum-btn"), out = $("vacuum-result");
-      btn.disabled = true; out.textContent = t("Compacting… this can take a while on a large corpus.");
+      // Every line in #vacuum-result is drawn through ooLive/ooLiveHtml from what this run answered,
+      // so it follows a language switch without compacting again (row 367).
+      btn.disabled = true; ooLive(out, () => t("Compacting… this can take a while on a large corpus."));
       try {
         const r = await api("/api/database/vacuum", {method: "POST"});
         const freed = (r.bytes_reclaimed == null) ? "—" : _fmtBytes(r.bytes_reclaimed);
         // One keyed sentence: welded, zh read "压缩完成。 已释放空间： 1.2 GB" (re-walk O-5).
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
-        out.textContent = tf("Compacted. Space returned to the disk: {freed} · {secs} s",
-          { freed, secs: (r.duration_ms / 1000).toFixed(1) });
+        const secs = (r.duration_ms / 1000).toFixed(1);
         // R785: space freed inside the database that the disk has not seen yet is its own line, never "freed".
-        const pend = r.freed_not_yet_shrunk;
         // A size that could not be read names no cause: the headline already shows "—".
-        if (pend && pend.bytes > 0 && r.bytes_reclaimed != null) {
-          const why = document.createElement("div");
-          why.className = "muted";
-          why.textContent = tf(r.journal_mode === "wal"
+        const pend = r.freed_not_yet_shrunk;
+        const pending = (pend && pend.bytes > 0 && r.bytes_reclaimed != null) ? _fmtBytes(pend.bytes) : null;
+        ooLiveHtml(out, () => esc(tf("Compacted. Space returned to the disk: {freed} · {secs} s", { freed, secs })) +
+          (pending == null ? "" : `<div class="muted">${esc(tf(r.journal_mode === "wal"
             ? "{pending} freed inside the database is not yet back on the disk: on this store's write-ahead log that space returns only when a later checkpoint completes, such as the one the app attempts when it closes; a read still in progress or an abrupt stop can delay it."
             : "{pending} freed inside the database is not yet back on the disk. No cause has been measured for this store.",
-            { pending: _fmtBytes(pend.bytes) });
-          out.appendChild(why);
-        }
+            { pending }))}</div>`));
         _dbReclaimBytes = 0; _paintReclaim();
       } catch (e) {
-        out.textContent = ooLabelText(t("Compaction failed"), e.message);
+        ooLive(out, () => ooLabelText(t("Compaction failed"), e.message));
       } finally { btn.disabled = false; }
     }
 
@@ -1485,6 +1484,13 @@
     // of 15-35 s per GB: never a countdown.
     const REBUILD_LO_S_PER_GB = 15, REBUILD_HI_S_PER_GB = 35;
     let _rebuildWired = false, _rebuildPoll = null, _rebuildSt = null;
+    // What the last click on Rebuild… was answered, until the job's own state says more: null, {starting: true} (the
+    // start was taken) or {refused: message} (it was not). It was res.dataset.keep beside two writers of #rebuild-result;
+    // now ONE render (_rbResultText) owns that line and draws it from this and _rebuildSt, so a language switch
+    // redraws it with no request and never puts an older line back over a newer one (row 367).
+    let _rebuildNote = null;
+    // The kept files whose removal is in flight ("store\u0000name"): their Remove buttons stay disabled through a redraw.
+    const _rbRemoving = new Set();
     function _rbT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
     function _rbTf(s, v) {
       return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s, v) : s.replace(/\{(\w+)\}/g, (_, k) => v[k]);
@@ -1496,6 +1502,60 @@
       return _rbTf("{kib} KiB pages", {kib: fmtNum(kib, 0)}) + " · " +
         (c.auto_vacuum === 2 ? t("space given back gradually") : c.auto_vacuum === 1 ? t("space given back at each save") : t("space kept until compacted"));
     }
+    // The library's status line, from one status answer (a render: it never fetches).
+    function _rbStatusText(st) {
+      const t = _rbT();
+      const running = (st.job || {}).state === "running";
+      if (!st.supported) return t("There is no library file here to rebuild.");
+      // While any rebuild runs the settings are not read (no connection may be open as the switch begins).
+      if (!st.current && running) return t("A rebuild is running; the settings are read again once it has finished.");
+      if (!st.current) return t("The library's settings could not be read, so a rebuild is not offered.");
+      const now = _rbSettings(st.current), want = _rbSettings(st.target);
+      let line = _rbTf("Now: {now}. A rebuild gives: {want}.", {now, want});
+      if (!st.needed) line += " " + t("This library already has the current settings; nothing to rebuild.");
+      const pf = st.preflight || {};
+      if (st.needed && pf.sufficient === false) {
+        line += " " + _rbTf("Not enough free space: the new file needs about {need} and the drive has {free}.",
+          {need: _fmtBytes(pf.needed_bytes), free: _fmtBytes(pf.free_bytes)});
+        if (pf.kept_copies_bytes) line += " " + _rbTf("Files earlier rebuilds kept take {kept}; you can remove them below.", {kept: _fmtBytes(pf.kept_copies_bytes)});
+      } else if (st.needed && pf.sufficient == null) {
+        line += " " + t("The free space on the library's drive could not be read, so it was not checked.");
+      }
+      return line;
+    }
+    // #rebuild-result: the job's own progress line (in the UI language through its keyed frame), else the refusal of the
+    // last click, else the last rebuild's outcome, else "Rebuilding…" for a start that was taken. Drawn from _rebuildSt and
+    // _rebuildNote only.
+    function _rbResultText() {
+      const t = _rbT(), st = _rebuildSt || {}, job = st.job || {}, N = _rebuildNote;
+      if (job.state === "running") {
+        const vars = Object.assign({}, job.detail_vars || {});
+        if (vars.store) vars.store = t(vars.store);  // a separate store's name, from the store registry's own label
+        return job.detail_i18n ? _rbTf(t(job.detail_i18n), vars) : t("Rebuilding…");
+      }
+      if (N && N.refused != null) return ooLabelText(t("The rebuild did not start"), N.refused);
+      const L = st.last;
+      if (L && L.outcome && L.store && L.store !== "library") {
+        // A separate store's last rebuild: named, and "the store" where the library's lines say "the library".
+        const lane = (st.lanes || []).find((x) => x.store === L.store);
+        const store = t((lane && lane.label) || L.store);
+        if (L.outcome === "rebuilt") return _rbTf("Last rebuild of {store} finished in {secs} s. The old file was kept as {name}.", {store, secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
+        if (L.outcome === "stopped") return _rbTf("The last rebuild of {store} was stopped. The store is as it was.", {store});
+        if (L.outcome === "declined") return ooLabelText(_rbTf("The last rebuild of {store} did not start", {store}), L.reason_text || L.reason || "");
+        if (L.outcome === "failed") return ooLabelText(_rbTf("The last rebuild of {store} failed", {store}), L.failure || "") +
+          (L.switched ? "" : " " + t("The store is as it was."));
+      } else if (L && L.outcome) {
+        if (L.outcome === "rebuilt") return _rbTf("Last rebuild finished in {secs} s. The old file was kept as {name}.", {secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
+        if (L.outcome === "stopped") return t("The last rebuild was stopped. The library is as it was.");
+        if (L.outcome === "declined") return ooLabelText(t("The last rebuild did not start"), L.reason_text || L.reason || "");
+        if (L.outcome === "failed") return ooLabelText(t("The last rebuild failed"), L.failure || "") +
+          (L.switched ? "" : " " + t("The library is as it was."));
+      }
+      return (N && N.starting) ? t("Rebuilding…") : "";
+    }
+    function _rbRemoveDisabled(store, name) { return _rbRemoving.has(store + "\u0000" + name) ? " disabled" : ""; }
+    // Every line here is drawn through ooLive/ooLiveHtml from this status answer, so it follows a language switch with no
+    // request (row 367); the 2 s poll re-takes each host with the newer answer.
     function _rbPaint(st) {
       const t = _rbT();
       _rebuildSt = st;
@@ -1504,62 +1564,18 @@
       const job = st.job || {};
       const running = job.state === "running";
       stop.style.display = running ? "" : "none";
-      if (!st.supported) {
-        box.textContent = t("There is no library file here to rebuild.");
-        btn.disabled = true;
-      } else if (!st.current && running) {
-        // While any rebuild runs the settings are not read (no connection may be open as the switch begins).
-        box.textContent = t("A rebuild is running; the settings are read again once it has finished.");
-        btn.disabled = true;
-      } else if (!st.current) {
-        box.textContent = t("The library's settings could not be read, so a rebuild is not offered.");
-        btn.disabled = true;
-      } else {
-        const now = _rbSettings(st.current), want = _rbSettings(st.target);
-        let line = _rbTf("Now: {now}. A rebuild gives: {want}.", {now, want});
-        if (!st.needed) line += " " + t("This library already has the current settings; nothing to rebuild.");
-        const pf = st.preflight || {};
-        if (st.needed && pf.sufficient === false) {
-          line += " " + _rbTf("Not enough free space: the new file needs about {need} and the drive has {free}.",
-            {need: _fmtBytes(pf.needed_bytes), free: _fmtBytes(pf.free_bytes)});
-          if (pf.kept_copies_bytes) line += " " + _rbTf("Files earlier rebuilds kept take {kept}; you can remove them below.", {kept: _fmtBytes(pf.kept_copies_bytes)});
-        } else if (st.needed && pf.sufficient == null) {
-          line += " " + t("The free space on the library's drive could not be read, so it was not checked.");
-        }
-        box.textContent = line;
-        btn.disabled = running || !st.needed || pf.sufficient === false;
-      }
-      // The job's own progress line, in the UI language through its keyed frame.
-      const res = $("rebuild-result");
-      if (running) {
-        delete res.dataset.keep;  // a start that did go ahead replaces the refusal shown before it
-        const vars = Object.assign({}, job.detail_vars || {});
-        if (vars.store) vars.store = t(vars.store);  // a separate store's name, from the store registry's own label
-        res.textContent = job.detail_i18n ? _rbTf(t(job.detail_i18n), vars) : t("Rebuilding…");
-      } else if (st.last && st.last.outcome && !res.dataset.keep && st.last.store && st.last.store !== "library") {
-        // A separate store's last rebuild: named, and "the store" where the library's lines say "the library".
-        const L = st.last, lane = (st.lanes || []).find((x) => x.store === L.store);
-        const store = t((lane && lane.label) || L.store);
-        if (L.outcome === "rebuilt") res.textContent = _rbTf("Last rebuild of {store} finished in {secs} s. The old file was kept as {name}.", {store, secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
-        else if (L.outcome === "stopped") res.textContent = _rbTf("The last rebuild of {store} was stopped. The store is as it was.", {store});
-        else if (L.outcome === "declined") res.textContent = ooLabelText(_rbTf("The last rebuild of {store} did not start", {store}), L.reason_text || L.reason || "");
-        else if (L.outcome === "failed") res.textContent = ooLabelText(_rbTf("The last rebuild of {store} failed", {store}), L.failure || "") +
-          (L.switched ? "" : " " + t("The store is as it was."));
-      } else if (st.last && st.last.outcome && !res.dataset.keep) {
-        const L = st.last;
-        if (L.outcome === "rebuilt") res.textContent = _rbTf("Last rebuild finished in {secs} s. The old file was kept as {name}.", {secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
-        else if (L.outcome === "stopped") res.textContent = t("The last rebuild was stopped. The library is as it was.");
-        else if (L.outcome === "declined") res.textContent = ooLabelText(t("The last rebuild did not start"), L.reason_text || L.reason || "");
-        else if (L.outcome === "failed") res.textContent = ooLabelText(t("The last rebuild failed"), L.failure || "") +
-          (L.switched ? "" : " " + t("The library is as it was."));
-      }
+      const pf = st.preflight || {};
+      btn.disabled = !st.supported || !st.current || running || !st.needed || pf.sufficient === false;
+      ooLive(box, () => _rbStatusText(st));
+      if (running) _rebuildNote = null;  // a start that did go ahead replaces the refusal shown before it
+      ooLive($("rebuild-result"), _rbResultText);
       // The files earlier rebuilds kept: name, size, date, and a Remove button each (Q-a).
       const list = st.kept_copies || [];
-      kept.innerHTML = list.length ? (
+      ooLiveHtml(kept, () => list.length ? (
         `<div class="muted">${esc(t("Files earlier rebuilds kept (the library as it was before each rebuild):"))}</div>` +
         list.map((k) => `<div class="vr"><span>${esc(k.name)} · ${esc(_fmtBytes(k.bytes))} · ${esc(fmtDateTime(k.made_at))}</span>` +
-          `<button class="secondary" data-rebuild-remove="${esc(k.name)}">${esc(t("Remove"))}</button></div>`).join("")
-      ) : "";
+          `<button class="secondary" data-rebuild-remove="${esc(k.name)}"${_rbRemoveDisabled("library", k.name)}>${esc(t("Remove"))}</button></div>`).join("")
+      ) : "");
       _rbPaintLanes(st.lanes || [], running);
       if (running && !_rebuildPoll) _rebuildPoll = setInterval(loadRebuild, 2000);
       if (!running && _rebuildPoll) { clearInterval(_rebuildPoll); _rebuildPoll = null; }
@@ -1569,8 +1585,8 @@
     function _rbPaintLanes(lanes, running) {
       const t = _rbT(), host = $("rebuild-lanes");
       if (!host) return;
-      if (!lanes.length) { host.innerHTML = ""; return; }
-      host.innerHTML = `<div class="muted">${esc(t("Separate stores:"))}</div>` + lanes.map((L) => {
+      // Drawn through ooLiveHtml from this status answer, so it follows a language switch (row 367).
+      ooLiveHtml(host, () => !lanes.length ? "" : `<div class="muted">${esc(t("Separate stores:"))}</div>` + lanes.map((L) => {
         const name = t(L.label || L.store);
         let line, can = false;
         if (!L.supported) line = t("This store has no file to rebuild.");
@@ -1590,8 +1606,8 @@
           `<button class="danger" data-rebuild-store="${esc(L.store)}"${(can && !running) ? "" : " disabled"}>${esc(t("Rebuild…"))}</button></div>` +
           (kept.length ? `<div class="muted">${esc(t("Files earlier rebuilds of this store kept (the store as it was before each rebuild):"))}</div>` +
             kept.map((k) => `<div class="vr"><span>${esc(k.name)} · ${esc(_fmtBytes(k.bytes))} · ${esc(fmtDateTime(k.made_at))}</span>` +
-              `<button class="secondary" data-rebuild-remove="${esc(k.name)}" data-rebuild-store="${esc(L.store)}">${esc(t("Remove"))}</button></div>`).join("") : "");
-      }).join("");
+              `<button class="secondary" data-rebuild-remove="${esc(k.name)}" data-rebuild-store="${esc(L.store)}"${_rbRemoveDisabled(L.store, k.name)}>${esc(t("Remove"))}</button></div>`).join("") : "");
+      }).join(""));
     }
     async function loadRebuild() {
       if (!_rebuildWired) {
@@ -1615,7 +1631,7 @@
         if (sec) sec.addEventListener("toggle", () => { if (sec.open) loadRebuild(); else if (_rebuildPoll) { clearInterval(_rebuildPoll); _rebuildPoll = null; } });
       }
       try { _rbPaint(await api("/api/database/rebuild", {polled: true})); }
-      catch (e) { const box = $("rebuild-status"); if (box) box.textContent = ooLabelText(_rbT()("Could not read the rebuild status"), e.message); }
+      catch (e) { ooLive($("rebuild-status"), () => ooLabelText(_rbT()("Could not read the rebuild status"), e.message)); }
     }
     async function rebuildNow() {
       const t = _rbT(), st = _rebuildSt;
@@ -1632,16 +1648,15 @@
       else if (window.confirm(t("Make a backup first? OK = open the backup export now. Cancel = go on without a backup."))) { openUnifiedExport(); return; }
       else if (window.confirm(t("Rebuild WITHOUT a backup? The old file is kept beside the new one until you remove it, but a backup is the copy that survives a failing disk. Cancel to stop here."))) answer = "no_backup_understood";
       if (!answer) return;
-      const res = $("rebuild-result");
-      delete res.dataset.keep;
+      _rebuildNote = null;
       $("rebuild-btn").disabled = true;
       try {
         await api("/api/database/rebuild", {method: "POST", body: JSON.stringify({backup_answer: answer})});
-        res.textContent = t("Rebuilding…");
+        _rebuildNote = {starting: true};
       } catch (e) {
-        res.dataset.keep = "1";
-        res.textContent = ooLabelText(t("The rebuild did not start"), e.message);
+        _rebuildNote = {refused: String((e && e.message) || "")};
       }
+      ooLive($("rebuild-result"), _rbResultText);   // the one render of #rebuild-result
       loadRebuild();
     }
     async function rebuildStoreNow(store) {
@@ -1657,15 +1672,14 @@
       else if (window.confirm(t("Make a backup first? OK = open the backup export now. Cancel = go on without a backup."))) { openUnifiedExport(); return; }
       else if (window.confirm(t("Rebuild this store WITHOUT a backup? The old file is kept beside the new one until you remove it, but a backup is the copy that survives a failing disk. Cancel to stop here."))) answer = "no_backup_understood";
       if (!answer) return;
-      const res = $("rebuild-result");
-      delete res.dataset.keep;
+      _rebuildNote = null;
       try {
         await api("/api/database/rebuild", {method: "POST", body: JSON.stringify({backup_answer: answer, store})});
-        res.textContent = t("Rebuilding…");
+        _rebuildNote = {starting: true};
       } catch (e) {
-        res.dataset.keep = "1";
-        res.textContent = ooLabelText(t("The rebuild did not start"), e.message);
+        _rebuildNote = {refused: String((e && e.message) || "")};
       }
+      ooLive($("rebuild-result"), _rbResultText);   // the one render of #rebuild-result
       loadRebuild();
     }
     async function rebuildStop() {
@@ -1685,12 +1699,23 @@
         ? _rbTf("Remove {name}? It is the library as it was before a rebuild; once removed it cannot be brought back except from a backup.", {name})
         : _rbTf("Remove {name}? It is the store as it was before a rebuild; once removed it cannot be brought back except from a backup.", {name});
       if (!window.confirm(ask)) return;
+      const key = store + "\u0000" + name;
+      _rbRemoving.add(key);   // a language switch redraws the list: the button stays disabled while this runs
       btn.disabled = true;
       try {
         const r = await api("/api/database/rebuild/remove-kept", {method: "POST", body: JSON.stringify({name, store, confirm: true})});
         toast(_rbTf("Removed. {size} freed.", {size: _fmtBytes(r.bytes || 0)}), "ok");
-      } catch (e) { toast(ooLabelText(t("Could not remove the file"), e.message), "err"); btn.disabled = false; }
-      loadRebuild();
+      } catch (e) {
+        _rbRemoving.delete(key);
+        toast(ooLabelText(t("Could not remove the file"), e.message), "err");
+        // re-enable the button now on the page: a language switch may have redrawn the list mid-remove
+        document.querySelectorAll("[data-rebuild-remove]").forEach((b) => {
+          if (b.dataset.rebuildRemove === name && (b.dataset.rebuildStore || "library") === store) b.disabled = false;
+        });
+      }
+      // After a removal the key is held until the reload has dropped the row, so a redraw from the older answer
+      // in between still draws its button disabled.
+      try { await loadRebuild(); } finally { _rbRemoving.delete(key); }
     }
 
     // Local fixity audit (B-2): re-hash the corpus vs the capture-time hash. Loud,
@@ -2436,76 +2461,83 @@
       const box = $("upd-manual");
       if (!box) return;
       const t = _updT();
-      if (!install || install.can_apply) { box.hidden = true; box.textContent = ""; return; }
+      if (!install || install.can_apply) { box.hidden = true; box.replaceChildren(); return; }
       box.hidden = false;
-      box.innerHTML = "";
-      const p = document.createElement("p");
-      p.textContent = t("This install cannot be updated from here.") + " " + _updReason(install.reason) + " " + t("To update it yourself:");
+      // The sentence is held through ooLive, so it follows a language switch (row 367); the steps are commands, never translated.
+      const p = document.createElement("p"), reason = install.reason;
+      ooLive(p, () => t("This install cannot be updated from here.") + " " + _updReason(reason) + " " + t("To update it yourself:"));
       const pre = document.createElement("pre");
       pre.textContent = (install.manual_steps || []).join("\n");
-      box.appendChild(p); box.appendChild(pre);
+      box.replaceChildren(p, pre);
+    }
+    // The sentence for the last update's outcome, from the status answer's last_result (a render: it never fetches).
+    function _updLastSay(r) {
+      const t = _updT();
+      if (r && (r.status === "updated" || r.status === "already_current")) return t("The last update was installed.");
+      if (r && (r.status === "started" || r.status === "helper_failed")) return t("The last update did not finish. If the app misbehaves, re-run the installer.");
+      if (r && r.status === "start_failed_rolled_back_schema") return t("The new version did not start, so the update was undone and the previous version started again. That version also changes the database, and may already have done so before failing: if the app misbehaves, restore your last backup or re-run the installer on the new version.");
+      if (r && r.status === "start_failed_rolled_back") return t("The new version did not start, so the update was undone and the previous version started again.");
+      if (r && r.status === "dependencies_changed") return t("The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).");
+      if (r && r.status === "app_started_during_update") return t("The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.");
+      if (r && r.status === "start_unconfirmed") return t("The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.");
+      if (r && r.status === "rollback_incomplete") return t("The last update failed and could not fully restore the previous version. Re-run the installer.");
+      if (r) return t("The last update was not applied; the previous version was kept.");
+      return "";
     }
     async function updLoadStatus() {
-      const t = _updT();
       const cur = $("upd-current"), last = $("upd-last");
       try {
         const st = await api("/api/system/update/status", { polled: true });
         if (cur) cur.textContent = st.current || "";
         _updPaintInstall(st.install);
-        if (last) {
-          const r = st.last_result;
-          let say = "";
-          if (r && (r.status === "updated" || r.status === "already_current")) say = t("The last update was installed.");
-          else if (r && (r.status === "started" || r.status === "helper_failed")) say = t("The last update did not finish. If the app misbehaves, re-run the installer.");
-          else if (r && r.status === "start_failed_rolled_back_schema") say = t("The new version did not start, so the update was undone and the previous version started again. That version also changes the database, and may already have done so before failing: if the app misbehaves, restore your last backup or re-run the installer on the new version.");
-          else if (r && r.status === "start_failed_rolled_back") say = t("The new version did not start, so the update was undone and the previous version started again.");
-          else if (r && r.status === "dependencies_changed") say = t("The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).");
-          else if (r && r.status === "app_started_during_update") say = t("The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.");
-          else if (r && r.status === "start_unconfirmed") say = t("The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.");
-          else if (r && r.status === "rollback_incomplete") say = t("The last update failed and could not fully restore the previous version. Re-run the installer.");
-          else if (r) say = t("The last update was not applied; the previous version was kept.");
-          last.textContent = say;
-        }
+        // Held through ooLive from this answer, so it follows a language switch with no request (row 367).
+        const r = st.last_result;
+        ooLive(last, () => _updLastSay(r));
       } catch (e) { /* the check below reports its own failure */ }
     }
     async function updCheck() {
       const t = _updT();
       const msg = $("upd-msg"), go = $("upd-apply");
       if (go) go.hidden = true;
-      if (msg) msg.textContent = "";
+      // #upd-msg is drawn through ooLive from what this check holds (it and updApply take it in turn), so each line
+      // follows a language switch with no second check (row 367).
+      ooLive(msg, () => "");
       if (!await ensureOnline(t("Check GitHub for a newer version of the app"))) return;
-      if (msg) msg.textContent = t("Checking…");
+      ooLive(msg, () => t("Checking…"));
       try {
         _updCheck = await api("/api/system/update/check", { method: "POST" });
       } catch (e) {
         _updCheck = null;
         const code = e && e.detail && e.detail.code;
-        if (msg) msg.textContent = code === "airplane" ? t("Airplane mode is on: the update check did not run.")
+        ooLive(msg, () => code === "airplane" ? t("Airplane mode is on: the update check did not run.")
           : code === "protected_no_proxy" ? t("Protected mode has no usable proxy: the update check did not run.")
           : code === "settings_unreadable" ? t("The settings could not be read, so the update check did not run: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again.")
-          : t("The update check failed.");
+          : t("The update check failed."));
         return;
       }
-      const latest = $("upd-latest"); if (latest) latest.textContent = _updCheck.latest || "";
+      const version = _updCheck.latest || "";   // a version, never translated: held so no raw write sits beside t() here
+      ooLive($("upd-latest"), () => version);
       _updPaintInstall(_updCheck.install);
       // Tags only (R760): with no published release there is nothing to update to, said as such and never "up to date" or anything offered instead.
-      if (_updCheck.no_release) { if (msg) msg.textContent = t("No release has been published yet, so there is nothing to update to."); return; }
-      if (!_updCheck.update_available) { if (msg) msg.textContent = t("You are up to date."); return; }
-      if (msg) msg.textContent = t("A newer version is available.");
+      if (_updCheck.no_release) { ooLive(msg, () => t("No release has been published yet, so there is nothing to update to.")); return; }
+      if (!_updCheck.update_available) { ooLive(msg, () => t("You are up to date.")); return; }
+      ooLive(msg, () => t("A newer version is available."));
       if (go) go.hidden = !(_updCheck.install && _updCheck.install.can_apply);
     }
     async function updApply() {
       const t = _updT();
       const msg = $("upd-msg");
       if (!_updCheck || !_updCheck.update_available) return;
-      const protectedSay = t("Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
+      // Renders, not strings: #upd-msg holds them through ooLive, so each is said again in the new language on a switch (row 367).
+      const protectedSay = () => t("Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
       // R766: settings that could not be read are refused as protected, but said as what they are.
-      const unreadableSay = t("The settings could not be read, so the update did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again.");
+      const unreadableSay = () => t("The settings could not be read, so the update did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again.");
       // Protected mode is refused by the server anyway: say so BEFORE the consent popup, which would otherwise take the app online for nothing.
       try {
         const st = await api("/api/system/update/status", { polled: true });
-        if (st && st.blocked === "protected") { if (msg) msg.textContent = protectedSay; return; }
-        if (st && st.blocked === "settings_unreadable") { if (msg) msg.textContent = unreadableSay; return; }
+        // #upd-msg is drawn through ooLive (row 367): each line is said again in the new language on a switch.
+        if (st && st.blocked === "protected") { ooLive(msg, protectedSay); return; }
+        if (st && st.blocked === "settings_unreadable") { ooLive(msg, unreadableSay); return; }
       } catch (_e) { /* the server's own refusal below still names it */ }
       // The helper downloads after this app has stopped, where no socket guard reaches: so the ONE consent popup comes first (invariant #14),
       // and the server refuses the apply anyway while airplane mode is on.
@@ -2516,16 +2548,17 @@
       if (chk) chk.disabled = true;
       try {
         await api("/api/system/update/apply", { method: "POST", body: JSON.stringify({ confirm: true, ref: _updCheck.ref, sha: _updCheck.sha }) });
-        if (msg) msg.textContent = t("The app is stopping to update and will start again by itself. Reload this page in a minute.");
+        ooLive(msg, () => t("The app is stopping to update and will start again by itself. Reload this page in a minute."));
         if (go) go.hidden = true;
       } catch (e) {
         const code = e && e.detail && e.detail.code;
-        let say = t("The update could not start; nothing was changed.");
-        if (e && typeof e.detail === "string" && e.detail) say += " (" + e.detail + ")";  // the server's own reason, a fixed sentence
+        // the server's own reason, a fixed sentence, shown as text after the translated one
+        const detail = (e && typeof e.detail === "string" && e.detail) ? e.detail : "";
+        let say = () => t("The update could not start; nothing was changed.") + (detail ? " (" + detail + ")" : "");
         if (code === "protected") say = protectedSay;
         else if (code === "settings_unreadable") say = unreadableSay;
-        else if (code === "airplane") say = t("Airplane mode is on, so the update did not start. Go online first.");
-        if (msg) msg.textContent = say;
+        else if (code === "airplane") say = () => t("Airplane mode is on, so the update did not start. Go online first.");
+        ooLive(msg, say);
         if (go) go.disabled = false;
         if (chk) chk.disabled = false;
       }

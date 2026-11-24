@@ -262,12 +262,14 @@ def test_an_mldsa_key_is_not_placed_where_the_library_cannot_read_it(tmp_path, m
     assert not (live / CUSTODY_ML).exists()
 
 
-def test_a_file_that_is_not_a_key_this_app_writes_is_carried_and_said_so(tmp_path, monkeypatch):
+def test_a_file_that_is_not_a_key_this_app_writes_is_not_placed_and_said_so(tmp_path, monkeypatch):
+    """R808 (row 379): it stays in the backup, so the keys folder holds only the app's own names."""
     _hold(monkeypatch, HERE)
     staged, live = _stage(tmp_path, {"keys/notes.txt": b"something an operator kept here"}, SOURCE)
     out = merge.merge_side_files(staged)["keys"]
-    assert out["restored"] == ["keys/notes.txt"] and out["carried_unread"] == ["keys/notes.txt"], out
-    assert (live / "keys" / "notes.txt").read_bytes() == b"something an operator kept here"
+    assert out["restored"] == [] and out["not_app_keys"] == {"count": 1, "listed": 1}, out
+    assert out["not_placed"] == [{"name": "keys/notes.txt", "reason": merge._KEY_NOT_APP, "reason_i18n": out["not_placed"][0]["reason_i18n"]}]
+    assert not (live / "keys" / "notes.txt").exists()
 
 
 def test_a_member_name_outside_the_keys_folder_is_refused(tmp_path, monkeypatch):
@@ -409,11 +411,17 @@ def test_an_mldsa_copy_that_does_not_read_back_as_the_same_pair_is_not_written(t
 
 def test_a_key_file_the_library_cannot_parse_is_reported_and_the_import_goes_on(tmp_path, monkeypatch):
     _hold(monkeypatch, HERE)
-    staged, live = _stage(tmp_path, {EVIDENCE: _unknown_algorithm_pem(), "keys/notes.txt": b"kept"}, SOURCE)
+    # the annotation key cannot be read and sorts before the evidence key, so the evidence key being placed shows the
+    # step went on past it (a second security read of row 379: a file judged by its name proves nothing here)
+    staged, live = _stage(
+        tmp_path,
+        {"keys/annotations_ed25519.pem": _unknown_algorithm_pem(), EVIDENCE: _wrapped(Ed25519PrivateKey.generate(), HERE)},
+        SOURCE,
+    )
     out = merge.merge_side_files(staged)["keys"]
-    assert [e["name"] for e in out["not_placed"]] == [EVIDENCE], out
-    assert out["restored"] == ["keys/notes.txt"], "the step went on past the file it could not read"
-    assert not (live / EVIDENCE).exists()
+    assert [e["name"] for e in out["not_placed"]] == ["keys/annotations_ed25519.pem"], out
+    assert out["restored"] == [EVIDENCE], "the step went on past the file it could not read"
+    assert not (live / "keys" / "annotations_ed25519.pem").exists()
 
 
 def test_a_write_failure_placing_a_key_fails_the_stage(tmp_path, monkeypatch):
