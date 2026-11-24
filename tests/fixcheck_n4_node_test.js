@@ -56,7 +56,7 @@ function load() {
   const api = async (url) => { reads.push(url); return { state: "done", checked: 462, reindexed: 0 }; };
   const doc = { querySelector: () => null };
   const src = "const _jobWatch = {};\nconst _jobLast = {};\n"
-    + ["_diagSectionOpen", "_armJobSettle", "_settleJob", "_watchJobLine", "repaintDiagnosticsJobsFromCache"]
+    + ["_diagSectionOpen", "_armJobSettle", "_settleJob", "_drawJobLine", "_watchJobLine", "repaintDiagnosticsJobsFromCache"]
       .map((n) => extract(n, DIAG)).join("\n")
     + "\nreturn { _watchJobLine, repaintDiagnosticsJobsFromCache };";
   // eslint-disable-next-line no-new-func
@@ -96,6 +96,29 @@ const line = () => ({ textContent: "", isConnected: true });
     f.repaintDiagnosticsJobsFromCache();
     assert(a.textContent === "Échec : disque plein", "a newer message was overwritten by an old reading");
     assert(b.textContent === bText, "a detached line was redrawn");
+  });
+
+  await test("Row 361: the fold's refusal line, drawn before any job runs, follows a switch too", async () => {
+    const FR2 = { "No lemmatiser is installed, so there is no base form to fold into.": "Aucun lemmatiseur." };
+    const I = { lang: "fr" };
+    I.t = (s) => (I.lang === "fr" ? FR2[s] : null) || s;
+    let confirmed = 0;
+    const st = line();
+    const api = async () => ({ refusal: "no-lemmatiser" });
+    const src = "const _jobWatch = {};\nconst _jobLast = {};\n"
+      + ["_drawJobLine", "repaintDiagnosticsJobsFromCache", "_foldStatusText"].map((n) => extract(n, DIAG)).join("\n")
+      + "\nasync " + extract("foldKeywords", DIAG)
+      + "\nreturn { foldKeywords, repaintDiagnosticsJobsFromCache };";
+    // eslint-disable-next-line no-new-func
+    const f = new Function("api", "$", "confirm", "fmtNum", "window", "OOI18N", src)(
+      api, () => st, () => { confirmed++; return false; }, (x) => String(x), { OOI18N: I }, I);
+    await f.foldKeywords(null);
+    assert(st.textContent === "Aucun lemmatiseur.", "the refusal was not drawn in fr: " + st.textContent);
+    assert(confirmed === 0, "a refusal asked to start a fold");
+    I.lang = "en";
+    f.repaintDiagnosticsJobsFromCache();
+    assert(st.textContent === "No lemmatiser is installed, so there is no base form to fold into.",
+      "the refusal kept the old language after the switch: " + st.textContent);
   });
 
   console.log(`fixcheck_n4_node_test: ${passed} passed`);

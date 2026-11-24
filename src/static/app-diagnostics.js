@@ -145,10 +145,7 @@
             // Opening the section on a job that never ran says nothing: the line is for a
             // job, and there is none. A refusal is still named, as the button would.
             const idle = !s.state || s.state === "idle" || s.state === "cancelled";
-            if (st && !(me.quietIdle && idle && !s.refusal)) {
-              st.textContent = render(s, report, t);
-              _jobLast[key] = {s, report, render, st, drawn: st.textContent};
-            }
+            if (st && !(me.quietIdle && idle && !s.refusal)) _drawJobLine(key, st, render, s, report, t);
             const running = s.state === "running" && !!s.running;
             // A start came in while this read was in flight: read again before deciding.
             if (gen !== me.gen) continue;
@@ -164,6 +161,18 @@
         }
       })();
       return me;
+    }
+    // Draw a job line and keep the reading it was drawn from, so repaintDiagnosticsJobsFromCache can redraw it in a new
+    // language. Every write of a reading into a job line goes through here: one written past it would freeze in the
+    // language it was drawn in (row 361: foldKeywords drew a refusal that way).
+    function _drawJobLine(key, st, render, s, report, t) {
+      st.textContent = render(s, report, t);
+      _jobLast[key] = {s, report, render, st, drawn: st.textContent};
+    }
+    // A job line that shows an error the server or the browser sent, as it was sent: data, not chrome, so nothing here
+    // is translated and nothing is kept to redraw. As text, never escaped: textContent shows "&amp;" as typed.
+    function _jobLineError(st, e) {
+      if (st) st.textContent = String((e && e.message) || e || "");
     }
     // A live language switch (the one oo:langchange listener in app-boot.js): redraw each
     // job line from the reading it last drew, in the new language. Never a fetch. A line
@@ -317,7 +326,7 @@
         // keywords on completion — survives a tab close, resumes from its cursor.
         await _startReindexJob(true, "keywords");
         await _pollReindexJob(st, t);
-      } catch (e) { if (st) st.textContent = esc(e.message); }
+      } catch (e) { _jobLineError(st, e); }
       finally { if (btn) btn.disabled = false; }
     }
 
@@ -373,7 +382,7 @@
       let s0 = null;
       try { s0 = await api("/api/insights/keyword-fold-job/status"); }
       catch (_e) { /* status is a courtesy here; never block the action on it */ }
-      if (s0 && s0.refusal) { if (st) st.textContent = _foldStatusText(s0, null, t); return; }
+      if (s0 && s0.refusal) { if (st) _drawJobLine("fold", st, _foldStatusText, s0, null, t); return; }
       // A PAUSED RUN IS CONTINUED, AND THE CONFIRM SAYS SO (the re-index job's lesson).
       const paused = s0 && (s0.state === "paused" || s0.state === "error");
       const ask = paused
@@ -1458,9 +1467,9 @@
       if (btn) btn.disabled = true;
       try {
         await api("/api/system/unattended/stop", { method: "POST", body: JSON.stringify({}) });
-        if (el) el.textContent = t("Disarmed. Collection is untouched — use airplane mode to stop it.");
+        ooLive(el, () => t("Disarmed. Collection is untouched — use airplane mode to stop it."));
       } catch (e) {
-        if (el) el.textContent = t("Could not disarm:") + " " + ((e && e.message) || "");
+        ooLive(el, () => t("Could not disarm:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1469,21 +1478,21 @@
     async function runP0Validation(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("p0-status"); const out = $("p0-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const dest = (($("p0-dest") && $("p0-dest").value) || "").trim();
       const pass = ($("p0-pass") && $("p0-pass").value) || "";
-      if (!dest || !pass) { set(t("Enter a destination directory and a backup passphrase first.")); return; }
+      if (!dest || !pass) { set(() => t("Enter a destination directory and a backup passphrase first.")); return; }
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
+      ooLiveHtml(out, () => "");
+      set(() => t("Starting…"));
       try {
         try {
           await api("/api/diagnostics/p0-validation", {
             method: "POST", body: JSON.stringify({ dest_dir: dest, passphrase: pass }),
           });
         } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
+          set(() => t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
           return;
         }
         // Hand-off done: clear the passphrase from the field (never keep a secret in the DOM).
@@ -1500,21 +1509,21 @@
           try { s = await api("/api/diagnostics/p0-validation/status"); miss = 0; }
           catch (e) {
             miss++;
-            set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
+            set(() => t("Connection hiccup — retrying…"));  // the JOB is still running server-side
             await sleep(Math.min(2000 * miss, 10000));
-            if (miss > 30) { settled = true; set(t("Still running — check the task manager.")); break; }
+            if (miss > 30) { settled = true; set(() => t("Still running — check the task manager.")); break; }
             continue;
           }
           const state = s && s.state;
-          if (state === "done" && s.ready) { settled = true; set(t("Done.")); renderP0Result(out, (s.result && s.result.report) || {}); break; }
-          if (state === "error") { settled = true; set(t("Validation failed:") + " " + (s.error || t("unknown error"))); break; }
-          if (state === "cancelled") { settled = true; set(t("Validation cancelled.")); break; }
-          if (state === "done") { settled = true; set(t("Done — check the task manager for the report.")); break; }
+          if (state === "done" && s.ready) { settled = true; set(() => t("Done.")); renderP0Result(out, (s.result && s.result.report) || {}); break; }
+          if (state === "error") { settled = true; set(() => t("Validation failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { settled = true; set(() => t("Validation cancelled.")); break; }
+          if (state === "done") { settled = true; set(() => t("Done — check the task manager for the report.")); break; }
           const member = s.detail ? " · " + s.detail : "";
-          set(t("Running in the background…") + member);
+          set(() => t("Running in the background…") + member);
           await sleep(2000);
         }
-        if (!settled) set(t("Still running — check the task manager."));
+        if (!settled) set(() => t("Still running — check the task manager."));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1522,6 +1531,10 @@
 
     function renderP0Result(out, rep) {
       if (!out) return;
+      // Row 361: drawn through ooLiveHtml, so the verdicts, the server's reasons and the links follow a switch.
+      ooLiveHtml(out, () => _p0ResultHtml(rep));
+    }
+    function _p0ResultHtml(rep) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Audit finding 2026-07-17 (M7): this used to shadow the real module-level esc()
       // (top of file) with a fallback to a non-existent global `escapeHtml`, which never
@@ -1542,7 +1555,7 @@
           + ']</span> ' + esc(label) + ' — ' + ooSaidHtml(c, "reason") + '</div>';
       });
       const sum = rep.summary || {};
-      out.innerHTML = rows
+      return rows
         + '<div style="margin-top:4px">' + esc(sum.pass || 0) + ' pass · ' + esc(sum.fail || 0)
         + ' fail · ' + esc(sum.not_measurable_here || 0) + ' not-measurable-here</div>'
         + '<div class="hint">' + esc(sum.note || "") + '</div>'
@@ -1554,7 +1567,7 @@
     async function cancelP0Validation() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { await api("/api/diagnostics/p0-validation/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("p0-status"); if (el) el.textContent = t("Cancelling…");
+      ooLive($("p0-status"), () => t("Cancelling…"));
     }
 
     // ---- The 0.4 release run (2026-09-18) --------------------------------------------
@@ -1584,6 +1597,9 @@
 
     function _rrRenderReport(out, rep) {
       if (!out) return;
+      ooLiveHtml(out, () => _rrReportHtml(rep));   // row 361: follows a language switch
+    }
+    function _rrReportHtml(rep) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (rep && rep.board_rows) || [];
       let html = "";
@@ -1601,7 +1617,7 @@
       const soak = (rep && rep.soak) || {};
       const soakTxt = soak.hours_requested != null
         ? ('<div>' + esc(soak.elapsed_hours) + ' / ' + esc(soak.hours_requested) + ' h · ' + esc(soak.ended_by || "") + '</div>') : "";
-      out.innerHTML = html + soakTxt
+      return html + soakTxt
         + '<div style="margin-top:4px">' + tallyTxt + (rep && rep.interim ? ' · INTERIM' : '') + '</div>'
         + warns
         + '<div class="hint">' + esc(sum.note || "") + '</div>'
@@ -1612,6 +1628,7 @@
 
     // The poll, shared by the start button and "Check now". Returns when the run reaches
     // a terminal state, the poll ceiling passes, or the status says the run is not live.
+    // `set` takes a RENDER (row 361): the status line is drawn through ooLive and follows a language switch.
     async function _rrPoll(set, out, opts) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1626,9 +1643,9 @@
         try { s = await api("/api/diagnostics/release-run/status"); miss = 0; }
         catch (e) {
           miss++;
-          set(t("Connection hiccup — retrying…"));
+          set(() => t("Connection hiccup — retrying…"));
           await sleep(Math.min(2000 * miss, 10000));
-          if (miss > 30) { settled = true; set(t("Still running — check the task manager.")); break; }
+          if (miss > 30) { settled = true; set(() => t("Still running — check the task manager.")); break; }
           continue;
         }
         const state = s && s.state;
@@ -1638,52 +1655,53 @@
           _rrResumePlan = s.resumable ? (s.resume || {}) : null;
           const rb = $("rr-resume-btn");
           if (rb) rb.style.display = s.resumable ? "" : "none";
-          set(t("Interrupted — the app restarted during phase") + " " + (p.phase || "?") + " · "
+          const plan = _rrResumePlan;   // this reading's plan, so a repaint redraws what this reading said
+          set(() => t("Interrupted — the app restarted during phase") + " " + (p.phase || "?") + " · "
             + (s.resumable
-                ? (_rrResumePlan.unlock_needed
+                ? (plan.unlock_needed
                     ? t("press Resume run with the backup passphrase — the backup or the restore is still owed; the measured phases are kept.")
                     : t("press Resume run — the measured phases are kept and the soak starts a new stretch (the bar is continuous)."))
                 : t("the soak window ended there; press the button again for a new window.")));
           break;
         }
-        if (state === "done" && s.ready) { settled = true; set(t("Done.")); _rrRenderReport(out, (s.result && s.result.report) || {}); break; }
-        if (state === "error") { settled = true; set(t("Failed:") + " " + (s.error || t("unknown error"))); break; }
+        if (state === "done" && s.ready) { settled = true; set(() => t("Done.")); _rrRenderReport(out, (s.result && s.result.report) || {}); break; }
+        if (state === "error") { settled = true; set(() => t("Failed:") + " " + (s.error || t("unknown error"))); break; }
         if (state === "cancelled") {
-          settled = true; set(t("Cancelled."));
+          settled = true; set(() => t("Cancelled."));
           if (s.result && s.result.report) _rrRenderReport(out, s.result.report);
           break;
         }
-        if (state === "done") { settled = true; set(t("Done — check the task manager for the report.")); break; }
+        if (state === "done") { settled = true; set(() => t("Done — check the task manager for the report.")); break; }
         if (state !== "running") {
           settled = true;
-          set(p.run_id ? (t("Not running.") + " · " + (p.outcome || "") + " · " + (p.phase || "")) : t("Not running."));
+          set(() => p.run_id ? (t("Not running.") + " · " + (p.outcome || "") + " · " + (p.phase || "")) : t("Not running."));
           break;
         }
         const member = s.detail ? " · " + s.detail : "";
-        set(t("Running in the background…") + member);
+        set(() => t("Running in the background…") + member);
         if (once) { settled = true; break; }
         await sleep(5000);
       } while (Date.now() < deadline);
-      if (!settled) set(t("Still running — check the task manager."));
+      if (!settled) set(() => t("Still running — check the task manager."));
     }
 
     async function releaseRunStart(btn, profile) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("rr-status"); const out = $("rr-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       const params = _rrParams(profile || "release-scale");
-      if (!params.dest_dir || !params.passphrase) { set(t("Enter a destination directory and a backup passphrase first.")); return; }
+      if (!params.dest_dir || !params.passphrase) { set(() => t("Enter a destination directory and a backup passphrase first.")); return; }
       // The consent, at the press: the run goes online for the soak.
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Run the 0.4 release run (goes online for the collection soak, the Wikipedia lane and the probes)"))) return;
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
+      ooLiveHtml(out, () => "");
+      set(() => t("Starting…"));
       try {
         try {
           await api("/api/diagnostics/release-run", { method: "POST", body: JSON.stringify(params) });
         } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
+          set(() => t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
           return;
         }
         // Hand-off done: the passphrase leaves the DOM now.
@@ -1696,7 +1714,7 @@
 
     async function releaseRunStatus(btn) {
       const el = $("rr-status"); const out = $("rr-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       if (btn) btn.disabled = true;
       try {
         await _rrPoll(set, out, { once: true });
@@ -1714,13 +1732,13 @@
     async function releaseRunCollect(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("rr-status");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);
       if (btn) btn.disabled = true;
       try {
         const r = await api("/api/diagnostics/release-run/collect", { method: "POST" });
-        set(r && r.requested ? t("Collect requested — the soak ends now and the report follows.") : t("No run is in progress."));
+        set(() => r && r.requested ? t("Collect requested — the soak ends now and the report follows.") : t("No run is in progress."));
       } catch (e) {
-        set(t("Failed:") + " " + ((e && e.message) || ""));
+        set(() => t("Failed:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1729,7 +1747,7 @@
     async function releaseRunCancel() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { await api("/api/diagnostics/release-run/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("rr-status"); if (el) el.textContent = t("Cancelling…");
+      ooLive($("rr-status"), () => t("Cancelling…"));
     }
 
     // The resume (2026-09-18): the run the app restarted out of continues under the
@@ -1741,20 +1759,20 @@
     async function releaseRunResume(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("rr-status"); const out = $("rr-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       const plan = _rrResumePlan || {};
       const pass = ($("rr-pass") && $("rr-pass").value) || "";
-      if (plan.unlock_needed && !pass) { set(t("Enter the backup passphrase to resume: the backup or the restore is still owed.")); return; }
+      if (plan.unlock_needed && !pass) { set(() => t("Enter the backup passphrase to resume: the backup or the restore is still owed.")); return; }
       // The consent, at the press: a resume goes online again for the soak.
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Resume the 0.4 release run (goes online again for the collection soak, the Wikipedia lane and the probes)"))) return;
       if (btn) btn.disabled = true;
-      set(t("Resuming…"));
+      set(() => t("Resuming…"));
       try {
         try {
           await api("/api/diagnostics/release-run/resume", { method: "POST", body: JSON.stringify({ passphrase: pass }) });
         } catch (e) {
-          set(t("Could not resume:") + " " + ((e && e.message) || ""));
+          set(() => t("Could not resume:") + " " + ((e && e.message) || ""));
           return;
         }
         if ($("rr-pass")) $("rr-pass").value = "";
@@ -2220,14 +2238,14 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("pel-status"); const out = $("pel-result");
       if (btn) btn.disabled = true;
-      if (el) el.textContent = t("Running…");
+      ooLive(el, () => t("Running…"));
       try {
         const res = await api("/api/diagnostics/perception-eval-live", { method: "POST", body: JSON.stringify({}) });
-        if (el) el.textContent = "";
+        ooLive(el, () => "");
         renderPerceptionEvalResult(out, res);
         loadPerceptionGate();
       } catch (e) {
-        if (el) el.textContent = t("Could not run:") + " " + ((e && e.message) || "");
+        ooLive(el, () => t("Could not run:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -2237,12 +2255,12 @@
       if (!out) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!res || res.status !== "ok") {
-        out.textContent = t("unavailable") + (res && res.detail ? " — " + res.detail : "");
+        ooLive(out, () => t("unavailable") + (res && res.detail ? " — " + res.detail : ""));
         return;
       }
       const r = res.report || {};
-      out.textContent = t("model") + " " + (res.model || "?") + " " + t("on") + " " + (res.backend || "?")
-        + " — " + (r.n_cases || 0) + " " + t("gold cases scored.");
+      ooLive(out, () => t("model") + " " + (res.model || "?") + " " + t("on") + " " + (res.backend || "?")
+        + " — " + (r.n_cases || 0) + " " + t("gold cases scored."));
     }
 
     // The language gate (B6): which languages cleared the last live perception-eval

@@ -178,6 +178,115 @@
       return ooLabelHtml(esc(t("Server text, in English")), `<span lang="en" dir="ltr">${esc(r.text)}</span>`);
     }
 
+    // TEXT DRAWN IN THE ACTIVE LANGUAGE THAT FOLLOWS A LANGUAGE SWITCH (row 364, for the row 352 list). The i18n walker
+    // records the first text it sees on a node as "the English", so a renderer that writes t() output into an ordinary
+    // node leaves text no later switch can change. The walker keeps out of anything under [data-i18n-dyn].
+    //   ooLive(el, render) keeps render and writes render() as TEXT, into one child <span data-i18n-dyn> it puts in el:
+    //     el itself stays unmarked, so the walker goes on translating its own title, aria-label and placeholder (a
+    //     button with a translated hover can take a live label).
+    //   ooLiveHtml(el, render) writes render() as HTML into el and marks el itself (an HTML host may be a <tbody> or a
+    //     <ul>, where a wrapping span would be wrong); the render must escape what it interpolates, and el's own hover
+    //     attributes are left alone by the walker while it is held.
+    //   ooLiveRepaint, called from the one oo:langchange listener in app-boot.js, calls each kept render again in the
+    //     new language: it never fetches, so a render must draw from what it already holds.
+    //   * Only the node passed is covered; scripts/i18n_frozen_renderers.py exempts that node and no other.
+    //   * ooLive(el, null) releases el: a marker ooLiveHtml put there goes (one the page put there stays) and the nodes
+    //     el held when it was first taken come back, so a button's static label returns to the walker, which still knows
+    //     its English. A status line that held nothing is left empty.
+    //   * A node something else has written since its last draw is dropped from the list and left as it is: its text
+    //     is no longer this render's. A node that left the document is dropped too, so nothing is kept for nothing.
+    //   * ooLive(el, null) on a node something else has written since its last draw leaves that write in place.
+    //   * A node may be taken before it is attached (a row built, then appended): it is dropped as gone only once it
+    //     has been seen in the document and left it, or if a language switch comes while it is still detached.
+    //   * ooLiveHtml tells a foreign write by its text alone, so one that keeps the same text is overwritten at the
+    //     next switch; and each repaint redraws the markup, so form state inside it is not kept.
+    //   * A render that throws is caught for its node alone, so one surface cannot stop the others repainting.
+    //   * An HTML host is marked, so the walker skips it while it is held. Other code drawing over it (a list drawn
+    //     where its "Loading…" line was) is seen AT ONCE by a MutationObserver: the host is let go and its new content
+    //     walked, so text that relies on the walker is translated now, not frozen until the next switch.
+    const _ooLiveNodes = new Set();
+    let _ooLiveObs = null;
+    function _ooLiveWatch(el) {
+      if (typeof MutationObserver !== "function") return;
+      if (!_ooLiveObs) {
+        _ooLiveObs = new MutationObserver((recs) => {
+          for (const r of recs) {
+            const el = r.target, s = el.__ooLive;
+            if (s && s.html && _ooLiveNodes.has(el) && _ooLiveForeign(el, s)) _ooLiveDrop(el, false);
+          }
+        });
+      }
+      _ooLiveObs.observe(el, {childList: true});
+    }
+    function _ooLiveMark(el, s) {
+      if (s.html) { el.setAttribute("data-i18n-dyn", ""); _ooLiveWatch(el); }
+      else if (!s.hadMarker) el.removeAttribute("data-i18n-dyn");
+    }
+    function _ooLiveForeign(el, s) {   // something other than this render wrote el since its last draw
+      return el.textContent !== s.drawn
+        || (!s.html && (s.span.parentNode !== el || el.childNodes.length !== 1));
+    }
+    function _ooLiveDrop(el, restore) {
+      const s = el.__ooLive;
+      _ooLiveNodes.delete(el);
+      if (!s) return;
+      el.__ooLive = null;
+      const unmarked = !s.hadMarker && el.hasAttribute("data-i18n-dyn");
+      if (!s.hadMarker) el.removeAttribute("data-i18n-dyn");
+      if (restore && !_ooLiveForeign(el, s)) el.replaceChildren(...s.saved);
+      // what the walker skipped while el was marked is walked now (a restore is walked anyway: it is a child change)
+      else if (unmarked && el.isConnected && window.OOI18N && typeof window.OOI18N.apply === "function") window.OOI18N.apply(el);
+    }
+    function _ooLiveDraw(el) {
+      const s = el.__ooLive;
+      const gen = s.gen;
+      const v = s.render();
+      // the render released or re-took its own node: what it returned is no longer the one to keep
+      if (el.__ooLive !== s || s.gen !== gen) return;
+      const str = v == null ? "" : String(v);
+      if (s.html) el.innerHTML = str;
+      else {
+        if (s.span.parentNode !== el || el.childNodes.length !== 1) el.replaceChildren(s.span);
+        s.span.textContent = str;
+      }
+      // The TEXT is the fingerprint, also for HTML: the hover convention (app-boot.js) adds a class, and on SVG a role
+      // and an aria-label, to every [title] it finds after the write, so comparing innerHTML would take that for a
+      // foreign write and drop every titled node at the first switch. Nothing of ours changes the text.
+      s.drawn = el.textContent;
+    }
+    function _ooLiveTake(el, render, html) {
+      if (!el) return;
+      for (const n of Array.from(_ooLiveNodes)) {
+        if (n === el || !n.__ooLive) continue;
+        if (n.isConnected) n.__ooLive.seen = true;
+        else if (n.__ooLive.seen) _ooLiveDrop(n, false);
+      }
+      if (render == null) { if (el.__ooLive) _ooLiveDrop(el, true); return; }
+      if (!el.__ooLive) {
+        const span = document.createElement("span");
+        span.setAttribute("data-i18n-dyn", "");
+        el.__ooLive = {saved: Array.from(el.childNodes), hadMarker: el.hasAttribute("data-i18n-dyn"), span};
+      }
+      const s = el.__ooLive;
+      Object.assign(s, {render, html: !!html, gen: (s.gen || 0) + 1});
+      _ooLiveMark(el, s);
+      _ooLiveNodes.add(el);
+      _ooLiveDraw(el);
+      if (el.isConnected) s.seen = true;
+    }
+    function ooLive(el, render) { _ooLiveTake(el, render, false); }
+    function ooLiveHtml(el, render) { _ooLiveTake(el, render, true); }
+    function ooLiveRepaint() {
+      for (const el of Array.from(_ooLiveNodes)) {
+        const s = el.__ooLive;
+        if (s && el.isConnected) s.seen = true;
+        const gone = !s || !el.isConnected || _ooLiveForeign(el, s);
+        if (gone) { _ooLiveDrop(el, false); continue; }
+        try { _ooLiveDraw(el); }
+        catch (e) { if (window.console) console.warn("ooLiveRepaint", e); }
+      }
+    }
+
     // WHERE THE PAGE CAME FROM, BESIDE THE SOURCE IT IS CREDITED TO (queue item 61, R635). A feed item's
     // link may redirect to another site, and the article is still the source's: this says so on the row
     // that credits the source. HTML, escaped here; empty unless the server said the host it was fetched
