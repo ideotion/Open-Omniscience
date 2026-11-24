@@ -169,10 +169,15 @@ def corpus_links(
         end_date=end_date, language=language, tags=tags, cap=cap, adv=adv)
     items: list[dict] = []
     furniture_items: list[dict] = []
+    totals = {"items": 0, "furniture": 0}
     if ids:
-        items, furniture_items = _shared_links(db, ids, min_citations=min_citations, limit=limit)
+        items, furniture_items = _shared_links(db, ids, min_citations=min_citations, limit=limit, totals=totals)
     return {
         "n_articles": len(ids),
+        # Row 404: the lists are cut at ``limit``; these say how many there are in all.
+        "items_total": totals["items"],
+        "furniture_total": totals["furniture"],
+        "truncated": totals["items"] > len(items) or totals["furniture"] > len(furniture_items),
         "total_matched": total,
         "capped": total > len(ids),
         "min_citations": min_citations,
@@ -194,7 +199,9 @@ def corpus_links(
     }
 
 
-def _shared_links(db: Session, ids: list[int], *, min_citations: int, limit: int) -> tuple[list[dict], list[dict]]:
+def _shared_links(
+    db: Session, ids: list[int], *, min_citations: int, limit: int, totals: dict | None = None
+) -> tuple[list[dict], list[dict]]:
     """The Links tab's rows, with each outlet's page furniture taken out of the counts and listed apart (row 99).
 
     A link counts as cited by an article only when that article's source does not carry it as furniture
@@ -268,6 +275,9 @@ def _shared_links(db: Session, ids: list[int], *, min_citations: int, limit: int
         else:
             apart.append({**base, "carried_by": n_all, "furniture_carriers": n_all - n_cit, "citations": n_cit,
                           "furniture_outlets": len({owner.get(a, (None, None))[1] for a in aids if a not in citing})})
+    # Row 404 (anti-capping): how many of each list there are before the cut at ``limit``.
+    if totals is not None:
+        totals["items"], totals["furniture"] = len(kept), len(apart)
     # Ties by URL, so the cut at ``limit`` does not depend on scan order.
     kept = sorted(kept, key=lambda x: (-x["citations"], x["normalized_url"]))[:limit]
     apart = sorted(apart, key=lambda x: (-x["carried_by"], x["normalized_url"]))[:limit]
@@ -285,6 +295,10 @@ def _shared_links(db: Session, ids: list[int], *, min_citations: int, limit: int
     for r in kept + apart:
         r["sample_url"], r["link_text"] = samples.get(r["normalized_url"], (None, None))
     return kept, apart
+
+
+_OPEN_IDS_CAP = 5000
+"""The analysis window's own cap (``openAnalysisForIds`` slices to 5000)."""
 
 
 @router.get("/articles-by-link")
@@ -353,14 +367,30 @@ def articles_by_link(
         if lost:
             ids = [i for i in ids if i not in lost]
         total = len(ids)
+        # Row 404: newest FIRST, by the article's own published date, then the cut. It took
+        # the lowest ids and dated them after, so past ``limit`` the list was the oldest
+        # stored, not the newest. Undated articles go last; ties break by id, newest first.
+        ordered: list[tuple[Any, int]] = []
+        for i in range(0, len(ids), 500):
+            ordered.extend(
+                (pub, int(aid))
+                for aid, pub in db.query(Article.id, Article.published_at)
+                .filter(Article.id.in_(ids[i : i + 500]))
+                .all()
+            )
+        dated = sorted((r for r in ordered if r[0] is not None), key=lambda r: (r[0], r[1]), reverse=True)
+        undated = sorted((r for r in ordered if r[0] is None), key=lambda r: r[1], reverse=True)
+        ids = [aid for _, aid in dated + undated]
         articles = []
         if ids:
-            rows = (
+            shown = ids[:limit]
+            rank = {aid: k for k, aid in enumerate(shown)}
+            rows = sorted(
                 db.query(Article, Source.name, Source.domain)
                 .outerjoin(Source, Article.source_id == Source.id)
-                .filter(Article.id.in_(ids[:limit]))
-                .order_by(desc(func.coalesce(Article.published_at, Article.created_at)))
-                .all()
+                .filter(Article.id.in_(shown))
+                .all(),
+                key=lambda r: rank[r[0].id],
             )
             for art, source_name, source_domain in rows:
                 articles.append(
@@ -373,7 +403,16 @@ def articles_by_link(
                         "published_at": art.published_at.isoformat() if art.published_at else None,
                     }
                 )
-        return {"match": match, "count": total, "articles": articles}
+        # The whole citing set as ids (ints only, newest first) up to the analysis window's
+        # own cap, so a branch opens every citing article, not the ``limit`` listed (row 404).
+        open_ids = ids[:_OPEN_IDS_CAP]
+        return {
+            "match": match,
+            "count": total,
+            "articles": articles,
+            "article_ids": open_ids,
+            "ids_complete": len(open_ids) >= total,
+        }
 
     return guarded_read(db, key, _compute)
 
