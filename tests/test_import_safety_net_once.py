@@ -277,3 +277,41 @@ def test_run_restore_clones_the_working_copy_from_the_net_and_the_commit_reuses_
     )
     take_src = python_function_source(src, "_take_safety_net_with_the_copy")
     assert "verified_store_copy(live, net, read_back=False)" in take_src
+
+
+def test_the_hash_taken_beside_the_copy_is_of_every_byte_in_order(tmp_path):
+    import os
+
+    import src.database.connect as C
+
+    body = os.urandom(1_000_003)  # many small chunks, the last one short
+    src = tmp_path / "src.bin"
+    src.write_bytes(body)
+    digest = hashlib.sha256()
+    fd = os.open(src, os.O_RDONLY)
+    try:
+        C._copy_fd(src, fd, tmp_path / "dst.bin", chunk=4096, use_sendfile=True, digest=digest)
+    finally:
+        os.close(fd)
+    assert (tmp_path / "dst.bin").read_bytes() == body
+    assert digest.hexdigest() == hashlib.sha256(body).hexdigest(), "sendfile is never used while hashing"
+
+
+def test_a_hash_that_fails_on_its_thread_fails_the_copy_and_removes_it(tmp_path):
+    import os
+
+    import src.database.connect as C
+
+    class _Broken:
+        def update(self, data):
+            raise OSError("hash failed")
+
+    src = tmp_path / "src.bin"
+    src.write_bytes(b"z" * 100_000)
+    fd = os.open(src, os.O_RDONLY)
+    try:
+        with pytest.raises(OSError, match="hash failed"):
+            C._copy_fd(src, fd, tmp_path / "dst.bin", chunk=4096, use_sendfile=False, digest=_Broken())
+    finally:
+        os.close(fd)
+    assert not (tmp_path / "dst.bin").exists()

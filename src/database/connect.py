@@ -1797,6 +1797,45 @@ def _copy_chunk(fd: int, out: int, done: int, want: int, size: int, state: dict)
     return len(data)
 
 
+class _DigestBeside:
+    """Feed a hash on its own thread while the copy loop goes on reading and writing (R830: the safety net's sha256 is
+    taken while copying, and on one thread it nearly doubled the copy's time on ext4). ``hashlib`` releases the GIL
+    for large updates, as ``pread``/``write`` do, so the two overlap. Chunks are handed over in order through a
+    bounded queue (at most ``depth`` chunks held), so the hash is of exactly the bytes read, in the order written.
+    :meth:`close` waits for the hash to take every chunk and re-raises anything that failed on its thread."""
+
+    def __init__(self, digest: object, depth: int = 4) -> None:
+        import queue
+
+        self._digest = digest
+        self._q: queue.Queue = queue.Queue(maxsize=depth)
+        self._error: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, name="oo-copy-digest", daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while True:  # the guard-clause form (R163)
+            data = self._q.get()
+            if data is None:
+                return
+            if self._error is None:
+                try:
+                    self._digest.update(data)  # type: ignore[attr-defined]
+                except BaseException as exc:  # noqa: BLE001 - re-raised on the copying thread by close()
+                    self._error = exc
+
+    def update(self, data: bytes) -> None:
+        if self._error is not None:
+            raise self._error
+        self._q.put(data)
+
+    def close(self) -> None:
+        self._q.put(None)
+        self._thread.join()
+        if self._error is not None:
+            raise self._error
+
+
 def _copy_fd(src_p: Path, fd: int, dest_p: Path, *, chunk: int, use_sendfile: bool, digest: object = None) -> None:
     def _same_file_at_path() -> bool:
         try:
@@ -1813,15 +1852,20 @@ def _copy_fd(src_p: Path, fd: int, dest_p: Path, *, chunk: int, use_sendfile: bo
     out = os.open(dest_p, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o666)
     try:
         try:
+            beside = _DigestBeside(digest) if digest is not None else None
             state = {
                 "sendfile": getattr(os, "sendfile", None) if use_sendfile and digest is None else None,
-                "digest": digest,
+                "digest": beside,
             }
             done = 0
-            while True:  # the guard-clause form: the back-edge stays inside the try (R163)
-                if done >= size:
-                    break
-                done += _copy_chunk(fd, out, done, min(chunk, size - done), size, state)
+            try:
+                while True:  # the guard-clause form: the back-edge stays inside the try (R163)
+                    if done >= size:
+                        break
+                    done += _copy_chunk(fd, out, done, min(chunk, size - done), size, state)
+            finally:
+                if beside is not None:
+                    beside.close()  # every chunk hashed before the copy is reported done (or its failure raised)
             if os.fstat(fd).st_size != size:
                 raise StoreCopyRefused("the store changed size during the copy; the copy was discarded")
             if not _same_file_at_path():
