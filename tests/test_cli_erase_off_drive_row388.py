@@ -73,7 +73,7 @@ def _tree(root: Path) -> dict:
     made, a mode changed or an entry touched all show."""
     if not root.exists():
         return {}
-    out = {".": (root.stat().st_mode, root.stat().st_mtime_ns)}
+    out: dict[str, tuple] = {".": (root.stat().st_mode, root.stat().st_mtime_ns)}
     for p in sorted(root.rglob("*")):
         st = p.lstat()
         out[str(p.relative_to(root))] = (st.st_mode, st.st_mtime_ns, p.read_bytes() if p.is_file() else None)
@@ -100,6 +100,8 @@ def test_what_is_outside_the_drive_is_erased_and_the_drive_is_untouched(tmp_path
     assert _tree(data) == before, "nothing at the drive's path is made, changed or removed"
     # No other program holds a store, and this process has no pool of its own: the erase checked, so it says nothing about one.
     assert _panic_precheck.HELD not in out and _panic_precheck.UNKNOWN not in out
+    # The store DATABASE_URL names is plaintext: its pages may outlive the unlink, and that is said (second security read).
+    assert _panic_precheck.PLAINTEXT in out
 
 
 def test_asked_first_and_a_no_erases_nothing(tmp_path):
@@ -146,10 +148,10 @@ def test_main_db_path_names_the_file_without_the_database_module(monkeypatch, tm
     monkeypatch.setattr(builtins, "__import__", _no_session)
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "gone"))
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    assert unlock.main_db_path() == tmp_path / "gone" / "open_omniscience.db"
+    assert unlock.main_db_path(without_the_database_module=True) == tmp_path / "gone" / "open_omniscience.db"
     assert not (tmp_path / "gone").exists()
     monkeypatch.setenv("DATABASE_URL", "postgresql://h/db")
-    assert unlock.main_db_path() is None
+    assert unlock.main_db_path(without_the_database_module=True) is None
 
 
 _RETURNS = """
@@ -181,8 +183,11 @@ def test_a_drive_plugged_in_while_the_question_waits_is_left_whole(tmp_path):
     run = subprocess.run([sys.executable, str(script)], env=env, capture_output=True, text=True, timeout=180, cwd=os.getcwd())
     assert run.returncode == 2, run.stdout + run.stderr
     assert _panic_precheck.RETURNED in run.stdout and "Wiped" not in run.stdout, run.stdout
+    assert _panic_precheck.ON_THE_DRIVE not in run.stdout, "the drive is there: it is never asked to be connected"
     assert (data / "keys" / "custody_ed25519.pem").read_bytes() == b"PRIVATE"
     assert (data / "open_omniscience.db").read_bytes() == b"S" * 4096
+    seen = _tree(data)
+    assert set(seen) == {".", "keys", "keys/custody_ed25519.pem", "open_omniscience.db", data_volume.MARKER_NAME}, seen
     assert all(_erased(p, b) for p, b in outside.items()), "what is outside the drive is erased as agreed"
 
 
@@ -201,3 +206,28 @@ def test_another_program_holding_a_store_outside_the_drive_is_said(tmp_path):
         holder.close()
     assert run.returncode == 2, run.stdout + run.stderr
     assert _panic_precheck.HELD in run.stdout, run.stdout
+
+
+def test_only_the_cli_precheck_limits_the_erase_to_what_is_outside_the_drive():
+    """The HTTP panic and main.py's own CLI erase run the full erase; only the precheck passes off_drive_only."""
+    for path in ("src/api/main.py", "src/api/safety.py"):
+        assert "off_drive_only" not in Path(path).read_text(encoding="utf-8"), path
+    assert "panic_wipe(confirm=True, off_drive_only=True)" in Path("src/api/_panic_precheck.py").read_text(encoding="utf-8")
+
+
+def test_main_db_path_keeps_its_error_for_every_other_caller(monkeypatch, tmp_path):
+    import builtins
+
+    from src.api import unlock
+    from src.paths import DataVolumeMissing
+
+    real_import = builtins.__import__
+
+    def _no_session(name, *a, **k):
+        if name == "src.database.session":
+            raise DataVolumeMissing("data drive not available")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", _no_session)
+    with pytest.raises(DataVolumeMissing):
+        unlock.main_db_path()

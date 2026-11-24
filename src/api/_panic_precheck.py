@@ -55,8 +55,10 @@ HELD = ("THE ERASE MAY BE INCOMPLETE: another program had a store outside the da
         "written that store's key material back to the disk. Close that program or restart the computer.")
 UNKNOWN = ("The erase could not check whether another program had a store outside the data drive open. If one did, the erase "
            "may be incomplete: close such a program or restart the computer.")
-RETURNED = ("The data drive was connected while the erase waited, so nothing on it was erased: you agreed only to erase what is "
-            "outside it. Run the erase again to erase the drive.")
+RETURNED = ("The data drive is there now, so nothing on it was erased: you agreed only to erase what is outside it. Run the "
+            "erase again to erase the drive.")
+PLAINTEXT = ("If a store outside the data drive was not encrypted, it had its first page overwritten and was removed, but the rest "
+             "of its contents may still be recoverable from that disk: only full-disk encryption protects it.")
 
 
 def precheck(argv: list[str]) -> None:
@@ -67,7 +69,7 @@ def precheck(argv: list[str]) -> None:
     if "--yes" not in argv and "-y" not in argv:
         try:
             answer = input(ASK)
-        except EOFError:
+        except (EOFError, KeyboardInterrupt):
             answer = ""
         if answer.strip().lower() != "wipe":
             print("Aborted. Nothing was erased.")
@@ -82,7 +84,8 @@ def precheck(argv: list[str]) -> None:
         print(f"The erase of what the app keeps outside the data drive failed ({type(exc).__name__}): it may be partly erased.")
         print(ON_THE_DRIVE)
         sys.exit(2)
-    if report.get("drive_returned"):
+    returned = bool(report.get("drive_returned"))
+    if returned:
         print(RETURNED)
     else:
         found = crypto_erase._drive_failure_sentence(report)
@@ -92,6 +95,8 @@ def precheck(argv: list[str]) -> None:
         print(f"Files erased outside the data drive: {report['files_wiped']} of {report['files_seen']}.")
     else:
         print(NOTHING_OUTSIDE)
+    if report.get("files_seen") and report.get("encrypted_corpus") is not True:
+        print(PLAINTEXT)  # the store's salt is the guarantee only when it is encrypted; otherwise its pages outlive the unlink
     holder = report.get("other_holder", "unknown")
     if holder == "held":
         print(HELD)
@@ -102,7 +107,8 @@ def precheck(argv: list[str]) -> None:
               "could not check the files in them.")
     if report.get("after_erase_failures"):
         print("The erase completed; these steps after it failed: " + ", ".join(report["after_erase_failures"]))
-    print(ON_THE_DRIVE)
+    if not returned:
+        print(ON_THE_DRIVE)
     sys.exit(2)
 
 

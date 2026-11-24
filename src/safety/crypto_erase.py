@@ -957,7 +957,7 @@ def _resolve(data_dir: Path | None) -> dict:
     keys_dir = base / "keys"
     return {
         "base": base,
-        "main_db": main_db_path(),  # honors DATABASE_URL; None on a non-SQLite backend
+        "main_db": main_db_path(without_the_database_module=True),  # honors DATABASE_URL; None on a non-SQLite backend (row 388)
         "keys_dir": keys_dir,
         "store_dir": store_dir,
         "custody_db": base / _CUSTODY_DB,
