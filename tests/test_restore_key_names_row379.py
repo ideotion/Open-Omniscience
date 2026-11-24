@@ -47,7 +47,7 @@ def _restore(tmp_path, members: dict[str, bytes]):
 
 def test_the_restore_places_from_the_erase_list():
     marker = "evidence_ed25519.pem" + ev.RESTORED_KEY_MARKER_SUFFIX
-    assert merge._APP_KEY_FILES == data_scope.APP_KEY_NAMES - {marker}
+    assert data_scope.APP_KEY_NAMES - {marker} == merge._APP_KEY_FILES
     assert all(merge._key_slot(n) is not None for n in merge._APP_KEY_FILES)
     # row 385: only names the app actually writes; the evidence signer has no ML-DSA key
     assert "evidence_ml_dsa_65.key" not in data_scope.APP_KEY_NAMES and len(merge._APP_KEY_FILES) == 5
@@ -111,7 +111,7 @@ def test_the_reason_is_translated_in_every_locale():
     ],
 )
 def test_every_name_refusal_is_counted_capped_and_shown_printable(tmp_path, names):
-    out = _restore(tmp_path, {n: b"x" for n in names})
+    out = _restore(tmp_path, dict.fromkeys(names, b"x"))
     assert out["not_app_keys"] == {"count": len(names), "listed": merge._KEY_NOT_APP_LISTED}
     assert len(out["not_placed"]) == merge._KEY_NOT_APP_LISTED
     assert all("\u202e" not in e["name"] for e in out["not_placed"])
