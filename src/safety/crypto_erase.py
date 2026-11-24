@@ -549,7 +549,10 @@ def _read_record_fd(dfd: int) -> bytes | None:
         if stat.S_ISREG(st.st_mode) and st.st_size <= RECORD_MAX_BYTES:
             chunks: list[bytes] = []
             got = 0
-            while got <= RECORD_MAX_BYTES:
+            # ``while True: if not <wanted>: break``, the guard-clause form (src/utils/interrupts.py; R161/R163)
+            while True:
+                if got > RECORD_MAX_BYTES:
+                    break
                 b = os.read(fd, RECORD_MAX_BYTES + 1 - got)
                 if not b:
                     break
