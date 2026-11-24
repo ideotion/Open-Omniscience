@@ -5995,6 +5995,7 @@
   "The most recent attempt that did not complete, including one refused before any request. A failed attempt changes nothing that is stored.": "Самая недавняя попытка, которая не завершилась, включая отклонённую ещё до отправки запроса. Неудачная попытка ничего не меняет в сохранённых данных.",
   "The name is the local date and time this export started, so the folders sort in the order you made them. A second export in the same minute gets _2, _3 and so on; an existing folder is never written into.": "Имя — это местные дата и время начала экспорта, чтобы папки сортировались в порядке их создания. Второй экспорт в ту же минуту получает _2, _3 и так далее; в существующую папку запись никогда не ведётся.",
   "The names and domains of the sources that contributed.": "Названия и домены источников, давших материалы.",
+  "The network consent step did not complete, so nothing was started.": "Шаг согласия на сетевой доступ не завершился, поэтому ничего не запущено.",
   "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "Сетевой журнал содержит каждый вердикт robots и доступности для источников, рыночных лент и календарей по умолчанию — поделитесь им, чтобы оптимизировать списки установки по умолчанию.",
   "The network stays on, as you had set it before this start.": "Сеть остаётся включённой, как вы задали до этого запуска.",
   "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "Новая версия меняет зависимости приложения, поэтому она не установлена здесь и ничего не изменено. Обновитесь, запустив установщик заново (git pull, затем install.sh или install.ps1).",
@@ -8990,6 +8991,5 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик (",
-  "The network consent step did not complete, so nothing was started.": "Шаг согласия на сетевой доступ не завершился, поэтому ничего не запущено."
+  "🛒 Draft (": "🛒 Черновик ("
 }

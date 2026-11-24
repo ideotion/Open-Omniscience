@@ -5995,6 +5995,7 @@
   "The most recent attempt that did not complete, including one refused before any request. A failed attempt changes nothing that is stored.": "La tentative la plus récente qui n'a pas abouti, y compris une tentative refusée avant toute requête. Une tentative échouée ne modifie rien de ce qui est stocké.",
   "The name is the local date and time this export started, so the folders sort in the order you made them. A second export in the same minute gets _2, _3 and so on; an existing folder is never written into.": "Le nom est la date et l'heure locales du début de cet export, afin que les dossiers se trient dans l'ordre où vous les avez créés. Un second export dans la même minute reçoit _2, _3 et ainsi de suite ; un dossier existant n'est jamais modifié.",
   "The names and domains of the sources that contributed.": "Les noms et domaines des sources ayant contribué.",
+  "The network consent step did not complete, so nothing was started.": "L’étape de consentement réseau ne s’est pas terminée : rien n’a été lancé.",
   "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "Le journal réseau contient chaque verdict robots et d'accessibilité pour les sources par défaut, les flux de marché et les calendriers — partagez-le pour aider à optimiser les listes de l'installation par défaut.",
   "The network stays on, as you had set it before this start.": "Le réseau reste activé, comme vous l’aviez réglé avant ce démarrage.",
   "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "La nouvelle version modifie les dépendances de l'application : elle n'a donc pas été installée ici et rien n'a été modifié. Mettez à jour en relançant l'installateur (git pull, puis install.sh ou install.ps1).",
@@ -8990,6 +8991,5 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon (",
-  "The network consent step did not complete, so nothing was started.": "L’étape de consentement réseau ne s’est pas terminée : rien n’a été lancé."
+  "🛒 Draft (": "🛒 Brouillon ("
 }

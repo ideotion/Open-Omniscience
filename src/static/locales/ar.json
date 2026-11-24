@@ -5995,6 +5995,7 @@
   "The most recent attempt that did not complete, including one refused before any request. A failed attempt changes nothing that is stored.": "أحدث محاولة لم تكتمل، بما في ذلك محاولة رُفضت قبل إرسال أي طلب. المحاولة الفاشلة لا تغيّر شيئًا مما هو مخزَّن.",
   "The name is the local date and time this export started, so the folders sort in the order you made them. A second export in the same minute gets _2, _3 and so on; an existing folder is never written into.": "الاسم هو التاريخ والوقت المحليان لبدء هذا التصدير، لتُرتَّب المجلدات بالترتيب الذي أنشأتها به. أي تصدير ثانٍ في الدقيقة نفسها يحصل على _2 و_3 وهكذا؛ ولا يُكتب أبدًا داخل مجلد موجود.",
   "The names and domains of the sources that contributed.": "أسماء المصادر المساهمة ونطاقاتها.",
+  "The network consent step did not complete, so nothing was started.": "لم تكتمل خطوة الموافقة على الشبكة، لذلك لم يبدأ أي شيء.",
   "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "يحوي سجل الشبكة كل أحكام robots وقابلية الوصول للمصادر الافتراضية وموجزات السوق والتقويمات — شاركه للمساعدة في تحسين قوائم التثبيت الافتراضي.",
   "The network stays on, as you had set it before this start.": "تبقى الشبكة مفعّلة، كما ضبطتها قبل هذا التشغيل.",
   "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "يغيّر الإصدار الجديد اعتماديات التطبيق، لذا لم يُثبَّت هنا ولم يتغيّر شيء. حدّث بتشغيل المثبّت مرة أخرى (git pull ثم install.sh أو install.ps1).",
@@ -8990,6 +8991,5 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة (",
-  "The network consent step did not complete, so nothing was started.": "لم تكتمل خطوة الموافقة على الشبكة، لذلك لم يبدأ أي شيء."
+  "🛒 Draft (": "🛒 المسودة ("
 }

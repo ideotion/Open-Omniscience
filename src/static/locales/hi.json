@@ -5995,6 +5995,7 @@
   "The most recent attempt that did not complete, including one refused before any request. A failed attempt changes nothing that is stored.": "सबसे हाल का प्रयास जो पूरा नहीं हुआ, जिसमें कोई अनुरोध भेजे जाने से पहले अस्वीकार किया गया प्रयास भी शामिल है। विफल प्रयास संग्रहीत डेटा में कुछ नहीं बदलता।",
   "The name is the local date and time this export started, so the folders sort in the order you made them. A second export in the same minute gets _2, _3 and so on; an existing folder is never written into.": "नाम इस निर्यात के शुरू होने की स्थानीय तिथि और समय है, ताकि फ़ोल्डर उसी क्रम में दिखें जिस क्रम में आपने बनाए। उसी मिनट में दूसरे निर्यात को _2, _3 इत्यादि मिलता है; मौजूदा फ़ोल्डर में कभी नहीं लिखा जाता।",
   "The names and domains of the sources that contributed.": "योगदान देने वाले स्रोतों के नाम और डोमेन।",
+  "The network consent step did not complete, so nothing was started.": "नेटवर्क सहमति का चरण पूरा नहीं हुआ, इसलिए कुछ भी शुरू नहीं किया गया।",
   "The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.": "नेटवर्क लॉग में डिफ़ॉल्ट स्रोतों, बाज़ार फ़ीड और कैलेंडर के सभी robots व पहुँच-निर्णय हैं — डिफ़ॉल्ट इंस्टॉल की सूचियाँ बेहतर करने हेतु इसे साझा करें।",
   "The network stays on, as you had set it before this start.": "नेटवर्क चालू रहता है, जैसा आपने इस शुरुआत से पहले रखा था।",
   "The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).": "नया संस्करण ऐप की निर्भरताएँ बदलता है, इसलिए इसे यहाँ इंस्टॉल नहीं किया गया और कुछ नहीं बदला। इंस्टॉलर फिर से चलाकर अपडेट करें (git pull, फिर install.sh या install.ps1)।",
@@ -8990,6 +8991,5 @@
   "＋ zoom": "＋ ज़ूम",
   "－ zoom": "－ ज़ूम",
   "📍 places": "📍 स्थान",
-  "🛒 Draft (": "🛒 ड्राफ़्ट (",
-  "The network consent step did not complete, so nothing was started.": "नेटवर्क सहमति का चरण पूरा नहीं हुआ, इसलिए कुछ भी शुरू नहीं किया गया।"
+  "🛒 Draft (": "🛒 ड्राफ़्ट ("
 }
