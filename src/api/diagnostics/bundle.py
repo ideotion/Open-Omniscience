@@ -1849,9 +1849,9 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     ),
     "/source-quality": "whole-corpus decrypt ZIP export — saved by the Field data button (R654; manifest 'excluded')",
     "/source-samples": "one-article-per-source ZIP walk, 4 MB per zip — saved by the Field data button (R654; manifest 'excluded')",
-    "/field-run-journal": "the run journal cut to numbers and 200 KB for the Field data button (row 414; manifest 'excluded'); carried in full as run-journal.json",
-    "/field-import-reports": "the import reports cut to numbers and 200 KB for the Field data button (row 414; manifest 'excluded')",
-    "/field-drain-status": "the re-index drain's job metrics cut to numbers for the Field data button (row 414; manifest 'excluded')",
+    "/field-run-journal": "a numbers-only cut of the run journal for the Field data button (row 414); the bundle carries the journal in full as run-journal.json",
+    "/field-import-reports": "a numbers-only cut of the import reports for the Field data button (row 414), not new data",
+    "/field-drain-status": "a numbers-only cut of the re-index drain's job status for the Field data button (row 414), not new data",
     "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
     "/llm-bench": "heavy operator-run benchmark, needs a live model (manifest 'excluded')",
     "/llm-throughput": (
@@ -2868,12 +2868,6 @@ def _all_diagnostics_manifest(
                 "and can run for hours — operator-run from its own button on the machine "
                 "that hosts the models. Its RESULT rides the bundle as the model-bench section "
                 "of ai-runs.json",
-            },
-            {
-                "endpoint": "/api/diagnostics/field-run-journal, /field-import-reports, /field-drain-status",
-                "reason": "the Field data button's numbers-only files, each cut to 200 KB, for sending back "
-                "after a long import: the run journal (carried in full here as run-journal.json), the import "
-                "reports (downloadable from the backup history) and the re-index drain's metrics (its job status)",
             },
             {
                 "endpoint": "/api/diagnostics/ir-eval",

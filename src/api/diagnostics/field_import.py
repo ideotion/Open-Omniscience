@@ -43,7 +43,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi.responses import JSONResponse
+from src.api.country_wire import CountryWireResponse as JSONResponse
 
 from ._base import router
 

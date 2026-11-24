@@ -305,9 +305,10 @@ def test_a_sampler_without_a_size_counts_nothing_and_never_raises():
 
 
 def test_the_button_saves_the_three_files():
+    from tests.js_source_helper import array_literal
+
     js = (ROOT / "src/static/app-diagnostics.js").read_text(encoding="utf-8")
-    start = js.index("const FIELD_DATA_EXPORTS = [")
-    block = js[start : js.index("];", start)]
+    block = array_literal(js, "FIELD_DATA_EXPORTS")
     urls = [
         line.split('url: "', 1)[1].split('"', 1)[0]
         for line in block.splitlines()
