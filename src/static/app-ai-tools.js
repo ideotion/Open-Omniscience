@@ -1738,6 +1738,11 @@
       // Drawn through ooLive/ooLiveHtml (row 367). The plan, the checkbox's label and the status line are held one by
       // one, so an uninstall writing its status never drops the plan's hold, and the box (with the operator's tick) is
       // built once per read. The buttons' "Removing…" comes from `_aiUninstallBusy`, read by the plan's render.
+      // The last uninstall's answer is drawn by the ONE read that follows it (refreshAiPanels) and then let go, so a
+      // later read (another plan, a reinstall) never shows an old "Uninstalled." under it. The render below still holds it,
+      // so a language switch repaints it until the next read.
+      const status = _aiUninstallStatus;
+      _aiUninstallStatus = null;
       let plan = null;
       try { plan = await api("/api/llm/uninstall/plan"); }
       catch (e) { _aiUninstallPlan = null; ooLive(box, () => t("Could not read what is installed.")); return; }
@@ -1746,7 +1751,7 @@
         _aiUninstallPlan = null;
         // the last uninstall's answer stays under it: it is what says what was kept
         ooLiveHtml(box, () => `<div>${esc(t("Nothing to uninstall — no AI backend is installed on this machine."))}</div>` +
-          (_aiUninstallStatus ? `<div class="hint" style="margin-top:6px;white-space:pre-wrap">${esc(_aiUninstallStatus())}</div>` : ""));
+          (status ? `<div class="hint" style="margin-top:6px;white-space:pre-wrap">${esc(status())}</div>` : ""));
         return;
       }
       ooLive(box, null);
@@ -1759,7 +1764,7 @@
       ooLiveHtml($("ai-uninstall-plan"), _aiUninstallPlan);
       ooLive($("ai-uninstall-models-l"), () => t("also delete the downloaded models in this app's folder"));
       const st = $("ai-uninstall-status");
-      if (st && _aiUninstallStatus) { st.style.whiteSpace = "pre-wrap"; ooLive(st, _aiUninstallStatus); }
+      if (st && status) { st.style.whiteSpace = "pre-wrap"; ooLive(st, status); }
     }
     let _aiUninstallPlan = null, _aiUninstallBusy = "";   // the JSON of the backends being removed, or ""
     let _aiUninstallStatus = null;   // the last uninstall's answer, a render
@@ -1811,7 +1816,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // the status line is a render over what this uninstall answered, held through ooLive (row 367)
       // Kept as `_aiUninstallStatus`, so the re-read that follows (refreshAiPanels rebuilds this box) draws it again: the
-      // rebuild used to wipe the answer the moment it was written.
+      // rebuild used to wipe the answer the moment it was written. That read consumes it (loadAiUninstall).
       const say = (render) => {
         _aiUninstallStatus = render;
         const el = $("ai-uninstall-status");

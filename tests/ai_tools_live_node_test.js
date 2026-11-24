@@ -261,6 +261,14 @@ const frame = (L, label, text) => L["{prefix}: {text}"].replace("{prefix}", labe
     assert.ok(box.innerHTML.includes(esc(FR["Uninstalled."] + "\n• the program: system install")), "the answer survived the rebuild: " + box.innerHTML);
     h.switchTo("de");
     assert.ok(box.innerHTML.includes(esc(DE["Uninstalled."])), box.innerHTML);
+    // the answer belongs to the read that followed it: a later read (here a reinstall) no longer shows it
+    plan = { installed: ["ollama"], method: "m", backends: [{ backend: "ollama", installed: true, removable: true, bytes: 1 }], stores: [] };
+    await h.fns.loadAiUninstall();
+    assert.ok(!box.innerHTML.includes(esc(DE["Uninstalled."])), "a stale answer outlived its read: " + box.innerHTML);
+    assert.strictEqual(h.$("ai-uninstall-status").textContent, "", "the status line starts empty on a later read");
+    plan = { installed: [], backends: [], stores: [] };
+    await h.fns.loadAiUninstall();
+    assert.ok(!box.innerHTML.includes(esc(DE["Uninstalled."])), "a stale answer outlived its read: " + box.innerHTML);
   }
 
   // 5. Custody: the status pills are translated by the render (inside a held node the walker no longer looks), the
