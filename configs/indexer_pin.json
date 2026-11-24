@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "a776ecc22d1bf48cb4e0468cfabb36b8fb14f9b231879cdc77e479c4dbe73e23",
+  "digest": "5d6235dd9844e819832b7e346b9f16098983c6966e5ac00b619b8b6c1a4278a5",
   "log": [
     {
       "version": 1,
@@ -115,6 +115,12 @@
       "digest": "a776ecc22d1bf48cb4e0468cfabb36b8fb14f9b231879cdc77e479c4dbe73e23",
       "kind": "same",
       "note": "src/timemap/datestore.py changed only in its agenda READ path (upcoming_deduced gains a default limit, truncated and ids_complete; a new read-only deduced_date_article_ids); extract_dates and every function index_article calls to write date rows are untouched, so the rows an article gets are identical (row 399)"
+    },
+    {
+      "version": 3,
+      "digest": "5d6235dd9844e819832b7e346b9f16098983c6966e5ac00b619b8b6c1a4278a5",
+      "kind": "same",
+      "note": "Row 406: index_article inserts an article's new keywords in one flush instead of one each, and the script check counts per distinct letter; the rows written are identical (tests/test_import_writer_speed_row406.py)"
     }
   ]
 }
