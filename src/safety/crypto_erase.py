@@ -219,8 +219,9 @@ PLAIN_STORE_REST = "The rest was not overwritten."
 PLAIN_STORE_NOTICE = ("Overwriting the unencrypted main database may take several minutes. Closing this page does not stop it; "
                       "quitting the app does, and by then the file is already deleted.")
 #: R819 (4): the same notice for a main database whose encryption could not be determined.
-PLAIN_STORE_NOTICE_UNKNOWN = ("Overwriting the main database may take several minutes. Closing this page does not stop it; "
-                              "quitting the app does, and by then the file is already deleted.")
+#: CLI only (the page cannot know before the erase), so it names the command, never "this page" (Plan, row 396).
+PLAIN_STORE_NOTICE_UNKNOWN = ("Overwriting the main database may take several minutes. Stopping this command stops it; the file is "
+                              "already deleted.")
 #: The notice for the body rewrite that is starting now (set just before :data:`plain_rewrite_notice` is called).
 plain_notice_now: str = PLAIN_STORE_NOTICE
 #: R818 (c): for the overwritten state.
