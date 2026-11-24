@@ -863,8 +863,10 @@ imply a protection we cannot deliver.
   outside the data drive"). A drive that is there has its device read before the erase and again after it: gone or changed is
   "partially erased, what was left could not be checked" (R797 / R798); the device is read on the RESOLVED folder, so a link to
   the drive is followed, and a store is "on the drive" by its spelling or its resolved path. The CLI says the same and exits 2
-  (absent) or 1 (lost); with the drive absent it stops before it opens anything (`src/api/_panic_precheck.py`: the app cannot
-  open its stores without the drive, so nothing else is erased either, and it says so). The free-space overwrite after it writes
+  (absent) or 1 (lost); with the drive absent or unidentified it runs before the app opens anything (`src/api/_panic_precheck.py`,
+  row 388): asked first unless `--yes`, it erases what the overrides keep outside the drive without the database module (which
+  cannot be imported without the drive), says "Files erased outside the data drive: N of M" (or that nothing was found there)
+  and that the stores and keys on the drive were not erased, and still exits 2. The free-space overwrite after it writes
   nothing at the path of an absent drive (`scrub_not_done: "drive_absent"`) and never says the corpus is unrecoverable.
   R812: a folder whose marker file is there and cannot be read is "The data drive could not be identified", the same failure
   (an empty mount point stays "not present"); the drive's identity (resolved folder's device and inode, a directory descriptor

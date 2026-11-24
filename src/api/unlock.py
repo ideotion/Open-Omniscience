@@ -64,12 +64,21 @@ _REFUSED_ATTEMPTS = 0
 
 
 def main_db_path() -> Path | None:
-    """The live SQLite file, or None on non-SQLite backends (no at-rest layer)."""
-    from src.database.session import DATABASE_URL
+    """The live SQLite file, or None on non-SQLite backends (no at-rest layer).
 
-    if not DATABASE_URL.startswith("sqlite"):
+    Row 388: when the database module cannot be imported because the data folder cannot be used (its marked drive is not there,
+    or an erase latched it: ``DataVolumeMissing`` / ``DataFolderErased``), the path is the one it would have named, read the same
+    way (``DATABASE_URL``, else the default file in the data folder) WITHOUT making or checking the folder: the panic CLI erases
+    what is off the drive with no database module, and its erase leaves out every store on the drive."""
+    from src.paths import DataFolderErased, DataVolumeMissing, data_dir_path
+
+    try:
+        from src.database.session import DATABASE_URL as url
+    except (DataVolumeMissing, DataFolderErased):
+        url = os.getenv("DATABASE_URL", f"sqlite:///{data_dir_path() / 'open_omniscience.db'}")
+    if not url.startswith("sqlite"):
         return None
-    return Path(DATABASE_URL.removeprefix("sqlite:///"))
+    return Path(url.removeprefix("sqlite:///"))
 
 
 def app_lock_state() -> str:
