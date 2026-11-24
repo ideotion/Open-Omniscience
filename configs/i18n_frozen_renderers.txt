@@ -98,13 +98,6 @@ app-corpus.js conjContrast
 app-corpus.js loadTrendWindows
 app-corpus.js renderTrendMultiples
 app-corpus.js renderTrendSlope
-app-diagnostics.js discoverSources
-app-diagnostics.js discoverWorld
-app-diagnostics.js downloadDiagnosticsVolumes
-app-diagnostics.js enrichSourceTypes
-app-diagnostics.js enrichSources
-app-diagnostics.js goldBuilderSave
-app-diagnostics.js runAllDiagnostics
 app-dossier.js dossierSearchHint
 app-evidence.js custodyCheckFile
 app-evidence.js evidenceSave
