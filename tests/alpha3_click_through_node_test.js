@@ -138,7 +138,7 @@ async function check(id, what, fn) {
   await check("L7", "a closed filter with one value shows the code the list beside it shows", () => {
     const dets = {"src-msel-country": fakeMsel(["fr"]), "src-msel-language": fakeMsel(["fr"]),
                   "src-msel-tag": fakeMsel(["energy"])};
-    const F = build(["mselValues", "updateMselSummary"], "", "updateMselSummary",
+    const F = build(["mselValues", "updateMselSummary"], "function ooLive(el, r) { if (el && r) el.textContent = r(); }", "updateMselSummary",
       {$: (id) => dets[id] || null});
     Object.keys(dets).forEach(F.updateMselSummary);
     assert.strictEqual(dets["src-msel-country"].summary.textContent, "FRA");
@@ -151,7 +151,7 @@ async function check(id, what, fn) {
                   "src-msel-source_type": fakeMsel([]), "src-msel-tag": fakeMsel([])};
     const facets = {countries: [{key: "de", n: 3}, {key: "fr", n: 5}], languages: [{key: "fr", n: 5}],
                     types: [], tags: []};
-    const F = build(["mselValues", "updateMselSummary", "loadSrcFacets"], "", "loadSrcFacets",
+    const F = build(["mselValues", "updateMselSummary", "loadSrcFacets"], "function ooLive(el, r) { if (el && r) el.textContent = r(); }", "loadSrcFacets",
       {$: (id) => dets[id] || null, api: async () => facets});
     await F.loadSrcFacets();
     const html = dets["src-msel-country"].list.html;
