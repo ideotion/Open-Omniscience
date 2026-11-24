@@ -584,6 +584,7 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
                     pass
                 except OSError:
                     deleted = False
+                    _note_left(rec, None, name, dfd)  # never checked, so never written by path later either
                 continue
             try:
                 st = os.fstat(fd)
