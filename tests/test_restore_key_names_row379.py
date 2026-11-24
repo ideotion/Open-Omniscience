@@ -49,6 +49,8 @@ def test_the_restore_places_from_the_erase_list():
     marker = "evidence_ed25519.pem" + ev.RESTORED_KEY_MARKER_SUFFIX
     assert merge._APP_KEY_FILES == data_scope.APP_KEY_NAMES - {marker}
     assert all(merge._key_slot(n) is not None for n in merge._APP_KEY_FILES)
+    # row 385: only names the app actually writes; the evidence signer has no ML-DSA key
+    assert "evidence_ml_dsa_65.key" not in data_scope.APP_KEY_NAMES and len(merge._APP_KEY_FILES) == 5
 
 
 @pytest.mark.parametrize(
@@ -58,6 +60,7 @@ def test_the_restore_places_from_the_erase_list():
         "keys/foreign_ed25519.pem",  # key-shaped, but no signer of this app is called "foreign"
         "keys/evidence_ed25519.pem.bak",
         "keys/x_ml_dsa_65.key",
+        "keys/evidence_ml_dsa_65.key",  # row 385: no version of the app wrote it
         "keys/.hidden",
     ],
 )
