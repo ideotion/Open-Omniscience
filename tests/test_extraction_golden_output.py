@@ -159,8 +159,10 @@ def test_a_changed_row_changes_the_digest(monkeypatch):
     assert go.digest_of(moved["kw"]) == go.digest_of(base["kw"]), "a place change is not a keyword change"
 
     def _sent(text, lang):
+        # The core-only install has no VADER, so the real scorer returns None there: the
+        # mock gives every article a score, so the changed row exists on every install.
         score, label = real_sent(text, lang)
-        return (None if score is None else score + 0.5), label
+        return (0.25 if score is None else score + 0.5), (label or "positive")
 
     monkeypatch.setattr(sentiment, "score_article", _sent)
     moved2 = go.run_pass(fx)
