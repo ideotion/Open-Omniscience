@@ -566,17 +566,20 @@
 
     async function enrichSources(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const old = btn.textContent;
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      // Row 361: the button's lines follow a language switch (ooLive); the release puts its own label back.
       btn.disabled = true;
-      btn.textContent = t("Enriching…");
+      ooLive(btn, () => t("Enriching…"));
       try {
         const d = await api("/api/diagnostics/enrich-sources", { method: "POST" });
-        btn.textContent = `Enriched ${d.sources_updated || 0} sources (+${d.tags_added || 0} tags)`;
+        const n = d.sources_updated || 0, tags = d.tags_added || 0;
+        ooLive(btn, () => tf("Sources enriched: {n} · tags added: {tags}", { n, tags }));
       } catch (e) {
-        btn.textContent = "Enrich failed — see console";
+        ooLive(btn, () => t("Enrich failed — see console"));
         console.error("enrichSources", e);
       }
-      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 4000);
+      setTimeout(() => { ooLive(btn, null); btn.disabled = false; }, 4000);
     }
 
     // Diagnostics: the NETWORKED source_type pass (Wikidata). Gated by the one
@@ -585,9 +588,8 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Fill source types from Wikidata (egresses to Wikidata over your transport)"))) return;
-      const old = btn.textContent;
       btn.disabled = true;
-      btn.textContent = t("Enriching in the background…");
+      ooLive(btn, () => t("Enriching in the background…"));
       try {
         // Runs ~8 min in a background job (returns {mode, started, job}); poll the job
         // to completion for the REAL tally instead of the empty start-state ("Typed 0
@@ -595,22 +597,22 @@
         await api("/api/diagnostics/enrich-source-types", { method: "POST" });
         const st = await pollJobStatus("/api/diagnostics/enrich-source-types/status");
         if (st.state === "error") {
-          btn.textContent = t("Enrich failed — see console");
+          ooLive(btn, () => t("Enrich failed — see console"));
           console.error("enrichSourceTypes", st.error);
         } else if (_jobStillRunning(st)) {
           // Stopped watching, not finished — never show the start-state's "0/0".
-          btn.textContent = t("Still running in the background — see the task manager.");
+          ooLive(btn, () => t("Still running in the background — see the task manager."));
         } else {
           const res = st.result || {};
-          btn.textContent = t("Typed source types:") + " " + (res.sources_typed || 0) + "/" + (res.scanned || 0)
+          ooLive(btn, () => t("Typed source types:") + " " + (res.sources_typed || 0) + "/" + (res.scanned || 0)
             // A source whose lookup Wikidata redirected off its own host is counted, not followed: say so beside the tally.
-            + (res.sources_refused ? " · " + res.sources_refused + " " + t("refused") : "");
+            + (res.sources_refused ? " · " + res.sources_refused + " " + t("refused") : ""));
         }
       } catch (e) {
-        btn.textContent = t("Enrich failed — see console");
+        ooLive(btn, () => t("Enrich failed — see console"));
         console.error("enrichSourceTypes", e);
       }
-      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 6000);
+      setTimeout(() => { ooLive(btn, null); btn.disabled = false; }, 6000);
     }
 
     // Session forensics (E2, #596): surface the app's own root-cause records so a crash /
@@ -776,21 +778,23 @@
     // them DISABLED for review (never scraped until enabled). Networked -> consent-gated.
     async function discoverSources(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const cc = (document.getElementById("discover-cc").value || "").trim();
       if (!cc) { toast(t("Enter country codes first, e.g. ke,ng,br"), "err"); return; }
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Discover sources from Wikidata (egresses to Wikidata over your transport)"))) return;
-      const old = btn.textContent;
       btn.disabled = true;
-      btn.textContent = t("Discovering…");
+      ooLive(btn, () => t("Discovering…"));
       try {
         const d = await api("/api/diagnostics/discover-sources?countries=" + encodeURIComponent(cc), { method: "POST" });
-        btn.textContent = `Added ${d.added || 0} disabled sources — review in Settings → Sources`;
+        const n = d.added || 0;
+        ooLive(btn, () => tf("Disabled sources added: {n}. Review them in Settings → Sources.", { n }));
       } catch (e) {
-        btn.textContent = t("Discovery failed — see console");
+        ooLive(btn, () => t("Discovery failed — see console"));
         console.error("discoverSources", e);
       }
-      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 6000);
+      setTimeout(() => { ooLive(btn, null); btn.disabled = false; }, 6000);
     }
 
     // WORLD discovery (maintainer-asked 2026-07-15): the same Wikidata discovery over
@@ -800,17 +804,19 @@
     // cancel lives in the task manager (kind "discover-world-sources").
     async function discoverWorld(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const out = document.getElementById("discover-world-status");
-      const say = (msg) => { if (out) out.textContent = msg; };
+      // Row 361: the status line and the button follow a language switch (ooLive); every line is a render.
+      const say = (render) => { if (out) ooLive(out, render); };
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Discover sources worldwide from Wikidata — a long background job over every country (egresses to Wikidata over your transport)"))) return;
-      const old = btn.textContent;
       btn.disabled = true;
-      btn.textContent = t("Discovering worldwide…");
+      ooLive(btn, () => t("Discovering worldwide…"));
       try {
         const d = await api("/api/diagnostics/discover-world", { method: "POST" });
         if (d && d.started === false && d.job && d.job.state === "running") {
-          say(t("Already running — see the task manager."));
+          say(() => t("Already running — see the task manager."));
         }
         // Long job: poll with a live status line; give up WATCHING (not the job) after
         // 30 min — it keeps running server-side and stays visible in the task manager.
@@ -819,24 +825,26 @@
           onProgress: (s) => {
             if (!s) return;
             const p = s.progress ? ` ${s.done}/${s.total}` : "";
-            say((s.detail || t("Working…")) + p);
+            const detail = s.detail;   // the server's own words, shown as sent
+            say(() => (detail || t("Working…")) + p);
           },
         });
         if (st && st.state === "error") {
-          say(t("World discovery failed — see console"));
+          say(() => t("World discovery failed — see console"));
           console.error("discoverWorld", st.error);
         } else if (_jobStillRunning(st)) {
-          say(t("Still running in the background — see the task manager."));
+          say(() => t("Still running in the background — see the task manager."));
         } else if (st && st.result) {
           const r = st.result;
-          say(`${r.countries_done}/${r.countries_requested} countries · +${r.added_this_run} new disabled sources (${r.added_total} total)`
-            + (r.paused_reason ? ` — ${r.paused_reason}` : ""));
+          if (out) ooLiveHtml(out, () => esc(tf("Countries done: {done}/{requested} · new disabled sources: {added} · disabled sources added in total: {total}",
+            { done: r.countries_done, requested: r.countries_requested, added: r.added_this_run, total: r.added_total }))
+            + (r.paused_reason ? " — " + ooSaidHtml(r, "paused_reason") : ""));
         }
       } catch (e) {
-        say(t("World discovery failed — see console"));
+        say(() => t("World discovery failed — see console"));
         console.error("discoverWorld", e);
       }
-      btn.textContent = old;
+      ooLive(btn, null);
       btn.disabled = false;
     }
 
@@ -953,10 +961,14 @@
       return tf("Save the next {n}", {n});
     }
 
-    function _partsStatus(msg) {
+    // Row 361: every line of the parts bar is a RENDER, so it follows a language switch (ooLive); the current one is
+    // kept so a later line can extend it (the hand-over in runAllDiagnostics).
+    let _partsStatusRender = null;
+    function _partsStatus(render) {
       const bar = $("parts-bar"), el = $("parts-status");
       if (bar) bar.hidden = false;
-      if (el) el.textContent = msg;
+      _partsStatusRender = render;
+      if (el) ooLive(el, render);
     }
 
     function _partsRender() {
@@ -1010,16 +1022,16 @@
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const set = _partsSet;
       if (!set || set.saving) return;   // a second click while files are on their way does nothing
-      let note = "";
+      let note = () => "";   // a render, like the line it prefixes
       let start = set.pos;   // a typed part number is a side trip: it never moves `pos` back
       if (fromPart != null) {
         if (!isFinite(fromPart) || fromPart < 1) {
-          _partsStatus(tf("Type a part number from 1 to {n}.", {n: set.pcount}));
+          _partsStatus(() => tf("Type a part number from 1 to {n}.", {n: set.pcount}));
           return;
         }
         const first = Math.min(fromPart, set.pcount);
         if (first < fromPart) {
-          note = tf("There are only {n} parts, so saving starts at the last part.", {n: set.pcount}) + " ";
+          note = () => tf("There are only {n} parts, so saving starts at the last part.", {n: set.pcount}) + " ";
         }
         start = set.mcount + first - 1;
       }
@@ -1054,15 +1066,15 @@
       if (set.single) {
         // one file: «those files» and «all N files» would say what was not asked. A second press of the
         // «again» link offers the file as a new set, so it reads the same as the first: asked, not saved.
-        _partsStatus(t("Asked your browser to save the Diagnostics file. Check that it arrived, then send it."));
+        _partsStatus(() => t("Asked your browser to save the Diagnostics file. Check that it arrived, then send it."));
       } else if (fresh === 0 && win.to > win.from) {
         // a resend changes no count, so the line says what the click did
-        _partsStatus(note + t("Asked your browser to save those files again."));
+        _partsStatus(() => note() + t("Asked your browser to save those files again."));
       } else if (done >= set.files.length) {
-        _partsStatus(note + tf("Asked your browser to save all {n} files. Check that they all arrived, then send them together: the manifest lists every file with its size and checksum.",
+        _partsStatus(() => note() + tf("Asked your browser to save all {n} files. Check that they all arrived, then send them together: the manifest lists every file with its size and checksum.",
                                {n: set.files.length}));
       } else {
-        _partsStatus(note + tf("Asked your browser to save {done} of {n} files.", {done, n: set.files.length}));
+        _partsStatus(() => note() + tf("Asked your browser to save {done} of {n} files.", {done, n: set.files.length}));
       }
     }
 
@@ -1083,13 +1095,13 @@
       const set = _partsOffer(listing, kind);
       if (set.single) {
         const size = (typeof _fmtBytes === "function") ? _fmtBytes(set.files[0].bytes) : String(set.files[0].bytes);
-        _partsStatus(tf("The Diagnostics file is ready ({size}).", {size}));
+        _partsStatus(() => tf("The Diagnostics file is ready ({size}).", {size}));
         return set;
       }
       const cap = Number((listing && (listing.part_max_bytes || listing.volume_max_bytes)) || 0);
       // A cap under 1 MB (an operator's OO_DIAG_VOLUME_MAX_MB below 1) reads «0.02», never «0 MB each».
       const mb = cap >= 1e6 ? String(Math.round(cap / 1e6)) : (cap > 0 ? String(Math.round(cap / 1e4) / 100) : "0.2");
-      _partsStatus(tf("{n} files of at most {mb} MB each are ready (manifest: {m}, numbered parts: {parts}).",
+      _partsStatus(() => tf("{n} files of at most {mb} MB each are ready (manifest: {m}, numbered parts: {parts}).",
                       {n: set.files.length, mb, m: set.mcount, parts: set.pcount})
         + " " + t("Your browser may ask once to allow several downloads: allow them."));
       return set;
@@ -1139,7 +1151,7 @@
       if (btn) btn.disabled = true;
       _partsSet = null;
       _partsRender();
-      _partsStatus(mode === "again" ? t("Looking for the last keyword files…")
+      _partsStatus(() => mode === "again" ? t("Looking for the last keyword files…")
         : t("Building the numbered keyword files… a large corpus takes minutes; the app stays usable."));
       _partsBusy = gen;
       try {
@@ -1149,7 +1161,7 @@
         } catch (e) {
           if (gen !== _partsGen) return;
           const why = (e && (e.detail || e.message)) || t("unknown error");
-          _partsStatus(e && e.status === 404 && mode === "again"
+          _partsStatus(() => e && e.status === 404 && mode === "again"
             ? t("No keyword files are kept on this machine yet — build them with the All keywords link.")
             : tf("Could not build the keyword files: {why}", {why}));
           return;
@@ -1184,7 +1196,7 @@
       if (btn) btn.disabled = true;
       _partsSet = null;
       _partsRender();
-      _partsStatus(t("Splitting the archive…"));
+      _partsStatus(() => t("Splitting the archive…"));
       _partsBusy = gen;
       try {
         let m;
@@ -1200,21 +1212,21 @@
           const status = e && e.status;
           const why = (e && (e.detail || e.message)) || t("unknown error");
           if (status === 404) {
-            _partsStatus(t("Nothing is built yet — press the Diagnostics button first."));
+            _partsStatus(() => t("Nothing is built yet — press the Diagnostics button first."));
           } else if (status === 409) {
-            _partsStatus(t("A build is running — wait for it, then split the archive it produces."));
+            _partsStatus(() => t("A build is running — wait for it, then split the archive it produces."));
           } else {
-            _partsStatus(tf("Could not split the archive: {why}", { why }));
+            _partsStatus(() => tf("Could not split the archive: {why}", { why }));
           }
           return;
         }
         if (gen !== _partsGen) return;
         if (!((m && m.files) || []).length) {
-          _partsStatus(tf("Could not split the archive: {why}", { why: t("the archive produced no volumes") }));
+          _partsStatus(() => tf("Could not split the archive: {why}", { why: t("the archive produced no volumes") }));
           return;
         }
         const ready = $("all-diag-status");
-        if (ready) ready.textContent = "";   // "the archive is ready, press again" is answered by this press
+        if (ready) ooLive(ready, () => "");   // "the archive is ready, press again" is answered by this press
         _partsOffer(m, "diagnostics");
         await _partsSave(_PARTS_PER_CLICK, startAt || null);   // the click that asked is still alive
       } finally {
@@ -1228,11 +1240,12 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const el = $("all-diag-status");
-      const set = (msg) => { if (el) el.textContent = msg; };
+      // Row 361: every status line is a render, so it follows a language switch (ooLive).
+      const set = (render) => { if (el) ooLive(el, render); };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const askedAt = _partsGen;   // what the bar was doing when this build was asked for
       if (btn) btn.disabled = true;
-      set(t("Starting…"));
+      set(() => t("Starting…"));
       try {
         // Start (idempotent: if one is already running the backend returns started:false and
         // we simply poll the in-flight build).
@@ -1247,7 +1260,7 @@
         const budgetEl = $("diag-budget-min");
         const budgetRaw = (mode === "thorough" && budgetEl) ? String(budgetEl.value || "").trim() : "";
         if (budgetRaw && !(Number(budgetRaw) > 0 && Number.isFinite(Number(budgetRaw) * 60))) {
-          set(t("The scan time limit must be a number of minutes above zero, or blank for none."));
+          set(() => t("The scan time limit must be a number of minutes above zero, or blank for none."));
           return;   // the finally below gives the button back
         }
         const budgetQs = budgetRaw ? "&budget_min=" + encodeURIComponent(budgetRaw) : "";
@@ -1271,9 +1284,9 @@
           try { s = await api("/api/diagnostics/all-job/status"); miss = 0; }
           catch (e) {
             miss++;
-            set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
+            set(() => t("Connection hiccup — retrying…"));  // the JOB is still running server-side
             await sleep(Math.min(2000 * miss, 10000));  // backoff, capped
-            if (miss > 30) { settled = true; set(t("Still building — check the task manager.")); break; }
+            if (miss > 30) { settled = true; set(() => t("Still building — check the task manager.")); break; }
             continue;
           }
           const state = s && s.state;
@@ -1283,7 +1296,7 @@
             // archive itself when it fits one file, else numbered files, five to a click) and never
             // opens /all-job/download, which stays for API callers.
             settled = true;
-            set(t("Ready — preparing the download…"));
+            set(() => t("Ready — preparing the download…"));
             let handOver = 0;   // files to hand over once the bar is set; the hand-over is outside the try
             let handSet = null;   // the set the bar was given for it, to tell whether it still holds it afterwards
             try {
@@ -1307,13 +1320,13 @@
               const keywordsOnBar = !!bar && bar.kind === "keywords";
               const pressedSince = _partsGen !== askedAt;
               if (bar && bar.kind === "diagnostics" && filesOf(bar.files) === filesOf(m && m.files)) {
-                set("");   // already on the bar: the earlier press fetched this very archive
+                set(() => "");   // already on the bar: the earlier press fetched this very archive
               } else if ((keywordsOnBar && bar.offered.size > 0)
                          || (pressedSince && ((!bar && _partsBusy === _partsGen) || keywordsOnBar))) {
-                set(t("The Diagnostics file is ready. Use “Save the last Diagnostics again” below to save it."));
+                set(() => t("The Diagnostics file is ready. Use “Save the last Diagnostics again” below to save it."));
               } else {
                 ++_partsGen;
-                set("");
+                set(() => "");
                 handSet = _partsReady(m, "diagnostics");
                 handOver = m.files.length;
               }
@@ -1330,15 +1343,15 @@
               if (_partsSet && _partsSet.kind === "diagnostics" && !(status === 404 || status === 409)) {
                 ++_partsGen; _partsSet = null; _partsRender();
                 const barEl = $("parts-bar"), line = $("parts-status");
-                if (line) line.textContent = "";
+                if (line) ooLive(line, () => "");
                 if (barEl) barEl.hidden = true;
               }
               if (status === 404) {
-                set(t("Nothing is built yet — press the Diagnostics button first."));
+                set(() => t("Nothing is built yet — press the Diagnostics button first."));
               } else if (status === 409) {
-                set(t("A build is running — wait for it, then split the archive it produces."));
+                set(() => t("A build is running — wait for it, then split the archive it produces."));
               } else {
-                set(tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
+                set(() => tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
               }
             }
             // OUTSIDE the try above, because what it answers is «could not split»: a throw here
@@ -1367,15 +1380,16 @@
                 // set of two files or more, and only while the bar still holds this set.
                 const line = $("parts-status");
                 if (handSet && _partsSet === handSet && handOver > 1 && line) {
-                  _partsStatus((line.textContent || "") + " " + t("Your browser may ask once to allow several downloads: allow them."));
+                  const prev = _partsStatusRender;
+                  _partsStatus(() => (prev ? prev() : (line.textContent || "")) + " " + t("Your browser may ask once to allow several downloads: allow them."));
                 }
               }
             }
             break;
           }
-          if (state === "error") { settled = true; set(t("Build failed:") + " " + (s.error || t("unknown error"))); break; }
-          if (state === "cancelled") { settled = true; set(t("Build cancelled.")); break; }
-          if (state === "done") { settled = true; set(t("Done — check the task manager for the file.")); break; }
+          if (state === "error") { settled = true; set(() => t("Build failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { settled = true; set(() => t("Build cancelled.")); break; }
+          if (state === "done") { settled = true; set(() => t("Done — check the task manager for the file.")); break; }
           // running / idle: show live progress — "member i/N · name · elapsed" (the DIAGNOSE-
           // THE-DIAGNOSTICS run-journal ruling): i/N + name already ride the existing
           // done/total/detail fields, elapsed is computed client-side from started_at so no new
@@ -1388,7 +1402,7 @@
           const elapsedS = s.started_at ? Math.max(0, Math.round(Date.now() / 1000 - s.started_at)) : null;
           const elapsed = elapsedS != null ? " · " + elapsedS + "s" : "";
           const pct = (s.progress && s.progress.percent != null) ? " " + s.progress.percent + "%" : "";
-          set((followed ? t("A build was already running, so this page follows it. The Thorough box applies to a build you start.") + " " : "")
+          set(() => (followed ? t("A build was already running, so this page follows it. The Thorough box applies to a build you start.") + " " : "")
             + t("Building in the background…") + pct + (member ? " · " + member : "") + elapsed);
           // 2 s keeps a short build feeling immediate; past the first two minutes this is a
           // long haul and a 2 s poll for hours is the polling storm the 2026-06-13 field log
@@ -1398,7 +1412,7 @@
         // The ceiling, or any other way out that never saw a terminal state. The build is
         // still running server-side; say that rather than leaving the last progress line
         // standing as if it were the outcome.
-        if (!settled) set(t("Still building — check the task manager."));
+        if (!settled) set(() => t("Still building — check the task manager."));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -2867,9 +2881,24 @@
       try {
         const r = await api("/api/diagnostics/gold-builder/save", { method: "POST", body: JSON.stringify({ path, queries }) });
         const c = r.coverage || {};
-        if (typeof toast === "function") toast(`Saved · ${c.graded_queries || 0} graded queries · ${c.total_judgements || 0} judgements`);
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+        if (typeof toast === "function") {
+          toast(tf("Saved · graded queries: {queries} · judgements: {judgements}",
+            { queries: c.graded_queries || 0, judgements: c.total_judgements || 0 }));
+        }
         const el = $("gold-builder-cov");
-        if (el) el.textContent = `Saved to ${r.saved} — ${c.total_judgements || 0} judgements across ${JSON.stringify(c.by_language || {})}. Point the IR-eval run below at this path.`;
+        // Row 361: the line follows a language switch (ooLiveHtml). The path and the per-language counts are data,
+        // each isolated in <bdi translate="no">; the counts read "fr 12, de 4", not the raw JSON shown before.
+        const byLang = c.by_language || {};
+        const langs = Object.keys(byLang).map((k) => `${k} ${byLang[k]}`).join(", ");
+        const data = { path: String(r.saved == null ? "" : r.saved), languages: langs };
+        const judgements = c.total_judgements || 0;
+        if (el) ooLiveHtml(el, () => {
+          return esc(String(tf("Saved to {path}. Judgements: {judgements} ({languages}). Point the IR-eval run below at this path.",
+            { judgements, path: "\u0001path\u0002", languages: "\u0001languages\u0002" })))
+            .replace(/\u0001(\w+)\u0002/g, (m, k) => `<bdi translate="no">${esc(data[k])}</bdi>`);
+        });
       } catch (e) { if (typeof toast === "function") toast(_failMsg("Save failed: {error}", e), "err"); }
       if (btn) btn.disabled = false;
     }
