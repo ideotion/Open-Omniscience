@@ -12,7 +12,7 @@ import pathlib
 import re
 import subprocess
 
-from tests.js_source_helper import function_body
+from tests.js_source_helper import function_body, strip_comments
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
@@ -57,3 +57,18 @@ def test_a_root_walk_keeps_the_records_the_walker_has_not_seen():
     body = function_body((_STATIC / "i18n.js").read_text(encoding="utf-8"), "apply")
     assert "observer.takeRecords().length) schedule();" in body
     assert body.index("takeRecords") < body.index("observer.disconnect()")
+
+
+def test_a_text_render_has_no_path_to_innerhtml():
+    """ooLive keeps a text render apart from an HTML one, under its own name and on its own path, so what a text
+    render returns can only reach textContent. With one shared ``render`` field the HTML write sat on the same path,
+    and a static reader (CodeQL on PR #2329) traced a form value drawn through ooLive into innerHTML."""
+    core = (_STATIC / "app-core.js").read_text(encoding="utf-8")
+    assert "function ooLive(el, render) { _ooLiveTake(el, render, null); }" in core
+    assert "function ooLiveHtml(el, render) { _ooLiveTake(el, null, render); }" in core
+    draw = strip_comments(function_body(core, "_ooLiveDraw"))
+    # ONE innerHTML write, on the markup branch: it sits after s.markup() and before the text branch begins.
+    assert draw.count("innerHTML") == 1, "the text branch must never write HTML"
+    assert draw.index("s.markup()") < draw.index("el.innerHTML = ") < draw.index("s.text()")
+    assert "s.span.textContent = " in draw
+    assert "s.render" not in draw

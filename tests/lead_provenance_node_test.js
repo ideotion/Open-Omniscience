@@ -67,13 +67,15 @@ function load(host) {
     const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g,
       c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","'":"&#39;"}[c])));
     const window = {};      // no OOI18N -> t() falls back to identity, as in a fresh boot
+    // ooLiveHtml (app-core.js, row 364): draw the render now; its repaint is tested in oo_live_node_test.js
+    function ooLiveHtml(el, render) { if (el) el.innerHTML = String(render()); }
   `;
   new Function("__host", "ctx",
     prelude + objLiteral("FAM_HUE") + "\n" + fnSource("famHue") + "\n"
     // "Method: ..." and "From this Lead: <card>" go through app-core's ONE keyed label
     // frame since the 2026-09-27 re-walk (N-5) -- extracted, never re-typed.
     + fnSource("ooLabelHtml") + "\n"
-    + fnSource("_anRenderProvenance")
+    + fnSource("_anRenderProvenance") + "\n" + fnSource("_anProvenanceHtml")
     + "\nctx.render = _anRenderProvenance;")(host, ctx);
   return ctx.render;
 }

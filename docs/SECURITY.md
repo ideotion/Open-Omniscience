@@ -854,6 +854,29 @@ imply a protection we cannot deliver.
   only by its exact name plus the generated tail (`<key file>.<pid>.<thread>.<token>.new|rewrap`), so an operator's own
   `foo_ed25519.pem` stays byte for byte. The secure-uninstall watcher applies the same rules. The other folder names the app
   owns are still owned by name (row 378).
+  R809 (row 381): a data folder on a drive the first-launch step marked (`OO_DATA_VOLUME_ID`) that is not there when the erase
+  runs, or that holds another drive's marker, is never touched: nothing under it is read, erased, scoped or removed, the drive's
+  id is kept (its data still exists), and the result is a FAILURE ("The data drive was not present. Nothing on it was checked or
+  erased. The data on that drive still exists."), never "removed" and never clean, with no reassurance at all (the keys are on
+  that drive, so nothing erased elsewhere makes it unreadable) and no free-space overwrite offered. What the overrides keep
+  elsewhere (`DATABASE_URL`, `OO_COLUMNAR_DIR`) and the passphrase in memory are still erased, and counted apart ("Files erased
+  outside the data drive"). A drive that is there has its device read before the erase and again after it: gone or changed is
+  "partially erased, what was left could not be checked" (R797 / R798); the device is read on the RESOLVED folder, so a link to
+  the drive is followed, and a store is "on the drive" by its spelling or its resolved path. The CLI says the same and exits 2
+  (absent) or 1 (lost); with the drive absent it stops before it opens anything (`src/api/_panic_precheck.py`: the app cannot
+  open its stores without the drive, so nothing else is erased either, and it says so). The free-space overwrite after it writes
+  nothing at the path of an absent drive (`scrub_not_done: "drive_absent"`) and never says the corpus is unrecoverable.
+  R812: a folder whose marker file is there and cannot be read is "The data drive could not be identified", the same failure
+  (an empty mount point stays "not present"); the drive's identity (resolved folder's device and inode, a directory descriptor
+  held on POSIX, and its marker id) is re-checked before the first write on it and before each later drive step, and on any
+  change or unreadable identity nothing more on it is touched ("could not be identified" before the first write, "disconnected
+  ... partially erased" after). THE WINDOW THAT REMAINS: the walks go by path, so a drive swapped between a re-check and the
+  writes after it is reached by its path (row 387 makes the POSIX walk handle-relative). An id the erase forgot is never
+  restored, and a lost drive's result says the app no longer remembers it. When the drive is absent, unidentified, changed or
+  lost, the database connections on it are NEVER closed in this process (`src/database/drive_pin.py`): SQLite deletes
+  `<db>-wal` and `<db>-shm` BY PATH when the last connection closes, which with another drive at the path are that drive's
+  files. They are pinned out of every close and never freed, so only the process exit releases them, and the result says the
+  key to that drive's data stays in memory until the app is closed. SQLITE_FCNTL_PERSIST_WAL is not reachable from our drivers.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or

@@ -202,7 +202,10 @@ async function run() {
       const _storageReadingHtml = (rep) => OOI18N.t("Storage");
       const _storageTableHtml = (rep) => '<input id="storage-budget-wiki" value="5">';
       ${extract("_storageDiskHtml", null, SETTINGS)}
-      let _laneStorageLast = null;
+      // loadLaneStorage releases/holds #storage-lanes through ooLive (row 367); a no-op stand-in here,
+      // where only the success path runs (tests/settings_imports_live_node_test.js drives the real one).
+      const ooLive = () => {}, ooLiveHtml = () => {};
+      let _laneStorageLast = null, _laneStorageErr = false;
       ${extract("_paintLaneStorage", null, SETTINGS)}
       ${extract("repaintLaneStorageFromCache", null, SETTINGS)}
       ${extract("loadLaneStorage", "async function loadLaneStorage(", SETTINGS)}

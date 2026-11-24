@@ -35,7 +35,6 @@ truth; a cold/missing rollup means the seam falls back to the live query.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
 import threading
@@ -179,7 +178,7 @@ def _build_and_swap() -> None:
                 _LOG.info("map serve: the library was encrypted during the build; not served, rebuilding without offload")
                 return
             with _LOCK:
-                if spill and rollup_serve._corpus_encrypted():
+                if spill and (rollup_serve._corpus_encrypted() or rollup_serve._on_frozen_drive(spill)):  # R813: kept, never served
                     # Again under the lock the encryption's close takes (open-on-main row 50): encrypted just after the check above.
                     _STATE["pending"] = True
                     _LOG.info("map serve: the library was encrypted during the build; not served, rebuilding without offload")
@@ -195,14 +194,12 @@ def _build_and_swap() -> None:
                 _STATE["pending"] = False
                 served = True
                 if old is not None:
-                    with contextlib.suppress(Exception):
-                        old.close()  # safe: serves hold _LOCK, so none is mid-query here
+                    rollup_serve._close_con(old, old_spill)  # safe: serves hold _LOCK, so none is mid-query here
             rollup_serve._remove_spill(old_spill)  # the retired connection's folder, closed above; deleted outside the lock
         finally:
             if not served:  # a failed or empty build: this connection is never served, so neither it nor its folder may leak
                 if con is not None:
-                    with contextlib.suppress(Exception):
-                        con.close()
+                    rollup_serve._close_con(con, spill)
                 rollup_serve._remove_spill(spill)  # after the close: DuckDB holds its files open until then
         _LOG.info("map serve: built in-memory source_coverage (%s rows)", rows)
     except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app

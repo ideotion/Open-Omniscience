@@ -507,9 +507,11 @@ def test_render_p0_result_does_not_shadow_the_real_html_escaper():
     the function must rely on the real module-level esc() (top of file) instead of
     redeclaring/shadowing one."""
     appjs = app_js()
-    start = appjs.index("function renderP0Result(")
-    end = appjs.index("\n    }\n", start)
-    body = appjs[start:end]
+    # Row 361: renderP0Result draws through ooLiveHtml and the HTML is built by _p0ResultHtml, so both bodies are read.
+    body = ""
+    for fn in ("renderP0Result", "_p0ResultHtml"):
+        start = appjs.index(f"function {fn}(")
+        body += appjs[start : appjs.index("\n    }\n", start)]
     assert "typeof escapeHtml" not in body, "must not fall back to the non-existent global escapeHtml"
     assert "const esc" not in body, "must not shadow the real module-level esc()"
     # esc() is still used (the fix removes the shadow, not the escaping calls).
@@ -2110,7 +2112,8 @@ def test_no_print_in_library_code():
     """
     import ast
 
-    CLI_MODULES = {"src/diagnostics.py"}
+    # src/api/_panic_precheck.py: the panic CLI's R809 refusal, printed before the app opens anything (exit 2).
+    CLI_MODULES = {"src/diagnostics.py", "src/api/_panic_precheck.py"}
     CLI_FUNCTIONS = {
         "main",
         "_panic_cli",
