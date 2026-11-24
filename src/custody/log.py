@@ -1360,8 +1360,9 @@ def item_signer(
     Who signed the item is said by the rule POST /verify uses for a whole-log bundle: each of the item's entries is this
     installation's only where :func:`_own_positions` places one of its identities (both halves; an earlier key only
     through ENDORSED rotations) and the entry carries it (:func:`_is_yours`). ``"this-installation"`` when every one of
-    the item's entries is; ``"another-installation"`` when none is and none even carries this installation's Ed25519
-    key; ``"not-compared"`` otherwise (some are, some are not; an entry under this installation's Ed25519 key that is
+    the item's entries is; ``"another-installation"`` when none is, none even carries this installation's Ed25519
+    key and none is a key a rotation record of this log hands over from (that may be this installation's own earlier
+    key); ``"not-compared"`` otherwise (some are, some are not; an entry under this installation's Ed25519 key that is
     not credited, such as one stripped of its post-quantum half; or no identity to compare with). ``signer_key`` is the
     Ed25519 key of the item's last entry. Says nothing about what the chain is accepted as."""
     idx = [i for i, e in enumerate(entries) if e.item_id == item_id]
@@ -1378,7 +1379,12 @@ def item_signer(
     mine = [(own := owns[i]) is not None and _is_yours(s, own) for i, s in zip(idx, signers, strict=True)]
     if all(mine):
         return "this-installation", key
-    if not any(mine) and all(ed != local.ed25519_pub for ed, _ml in signers):
+    # A key a rotation record of this log names as the previous one may be this installation's own earlier key (lost
+    # and re-created: an UNENDORSED record, which ``_own_positions`` stops at) as well as another's; the log cannot tell
+    # which, so neither is said.
+    handed_over = {e.metadata.get("previous_ed25519_pub") for e in entries
+                   if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM}
+    if not any(mine) and all(ed != local.ed25519_pub and ed not in handed_over for ed, _ml in signers):
         return "another-installation", key
     return "not-compared", key
 

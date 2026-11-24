@@ -69,7 +69,7 @@ def _swap_custody_key(tmp_path) -> None:
 
 
 def test_the_answer_is_about_the_item_not_the_last_entry_of_the_log(client, tmp_path):
-    """Security reads A and B: an item signed by another key stays another installation's after this installation's
+    """Security reads A and B: an item signed by another key is not called this installation's after this installation's
     next append (which writes an unendorsed rotation to its own key), and an item signed after it is this one's."""
     _log_two(client)
     _swap_custody_key(tmp_path)
@@ -78,7 +78,9 @@ def test_the_answer_is_about_the_item_not_the_last_entry_of_the_log(client, tmp_
     old = client.get("/api/custody/article:1/verify").json()
     new = client.get("/api/custody/article:2/verify").json()
     assert old["verified"] is True and new["verified"] is True
-    assert old["signed_by"] == "another-installation"
+    # Never "this installation" (the last entry of the log is). Nor "another installation": the rotation record names
+    # the old key as the previous one, which a lost and re-created key of this installation's writes the same way.
+    assert old["signed_by"] == "not-compared"
     assert new["signed_by"] == "this-installation"
     assert old["signer_key"] != new["signer_key"]
 
