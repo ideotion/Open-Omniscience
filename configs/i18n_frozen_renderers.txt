@@ -103,14 +103,6 @@ app-maintenance.js maintLoadFurniture
 app-maintenance.js maintPairAct
 app-maintenance.js maintRender
 app-maintenance.js maintStart
-app-markets.js _renderCommodityCatTabs
-app-markets.js _renderFeedVerdicts
-app-markets.js ooTimeScope
-app-markets.js renderDashboard
-app-markets.js renderFamilyGraphs
-app-markets.js renderIdxCompareBar
-app-markets.js renderIndicesBoard
-app-markets.js retryFailedFeeds
 app-medical.js loadMedical
 app-medical.js medicalFetch
 app-medical.js renderAnPapers

@@ -66,6 +66,7 @@
     function renderIndicesBoard() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("idx-board");
+      _idxBoardDrawn = true;
       if (!_idxCards.length) { el.innerHTML = '<div class="muted">No index catalog found.</div>'; }
       const byCont = {};
       for (const c of _idxCards) (byCont[_idxContinent(c)] || (byCont[_idxContinent(c)] = [])).push(c);
@@ -123,6 +124,17 @@
       }
       if (_idxView !== "families") applyIndexFilters();   // cards-view filtering only
       renderIdxCompareBar();
+    }
+    // Row 367: a language switch draws both boards again from what they hold -- the cards, the
+    // prices already read, the chosen category, tags, comparison and window -- so their headings,
+    // tabs, buttons and caveats follow it. Called from app-boot's ONE oo:langchange listener. It
+    // never reads: a board not drawn yet is left alone, and the indices families view waits for
+    // its own series read (loadIdxFullSeries) instead of starting one. A chart in a hidden tab
+    // waits for its width (ooChart), so drawing one there is safe.
+    let _idxBoardDrawn = false, _mktBoardDrawn = false;
+    function repaintMarketBoards() {
+      if (_idxBoardDrawn && _idxCards.length && (_idxView !== "families" || _idxSeriesLoaded)) renderIndicesBoard();
+      if (_mktBoardDrawn && MKT_SERIES.length) renderDashboard();
     }
     // The Cards/Families view toggle (Slice 6) — mirrors the commodities toggle so
     // the two boards stay near-identical; default Cards (no regression).
@@ -418,8 +430,12 @@
     // is not "robots disallows" is not "dead series". Failures are listed with
     // their honest note, and ONLY honestly-retryable ones get the Retry button.
     function _renderFeedVerdicts(elId, r, category) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $(elId); if (!el) return;
+      // A render (row 367): a language switch redraws the list from this answer.
+      ooLiveHtml(el, () => _feedVerdictsHtml(elId, r, category));
+    }
+    function _feedVerdictsHtml(elId, r, category) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // A Stop ends the batch: the feeds it cut or never reached are not in `results`, so a partial load must say how many (invariant #14e's
       // corollary; the key is the one the law tracker already uses, x12).
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
@@ -429,7 +445,7 @@
         ? `<div><span class="pill warn">offline</span> <span class="muted">${esc(tf("{n} not fetched (airplane mode)", {n: fmtNum(off, 0)}))}</span></div>`
         : "";
       const fails = (r.results || []).filter(x => x.status !== "imported");
-      if (!fails.length) { el.innerHTML = offLine; return; }
+      if (!fails.length) return offLine;
       const rows = fails.map(x =>
         `<div><span class="pill warn">${esc(x.verdict || x.status)}</span> <b>${esc(x.symbol || x.key)}</b>` +
         ` <span class="muted">— ${esc(x.verdict_note || x.detail || "")}</span></div>`).join("");
@@ -438,13 +454,13 @@
         ? `<button class="secondary tiny" style="margin-top:4px" data-on-click="retryFailedFeeds(${esc(JSON.stringify(category||""))}, ${esc(JSON.stringify(retry.join(",")))}, ${esc(JSON.stringify(elId))})">` +
           esc(t("Retry failed feeds")) + ` (${retry.length})</button>`
         : "";
-      el.innerHTML = offLine + rows + btn;
+      return offLine + rows + btn;
     }
     async function retryFailedFeeds(category, keys, elId) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (typeof ensureOnline === "function" &&
           !await ensureOnline(t("Fetch market and index data from the official feeds"))) return;
-      const el = $(elId); if (el) el.textContent = t("Retrying failed feeds…");
+      const el = $(elId); if (el) ooLive(el, () => t("Retrying failed feeds…"));
       try {
         const q = category ? `?category=${encodeURIComponent(category)}&keys=` : "?keys=";
         const r = await api(`/api/markets/feeds/import-all${q}${encodeURIComponent(keys)}`, {method: "POST"});
@@ -455,7 +471,7 @@
         toast(tf("Retry finished — new points: {n} · still failing: {k}", {
           n: fmtNum(r.points_imported || 0, 0), k: fmtNum(r.failed || 0, 0) }));
         _renderFeedVerdicts(elId, r, category);
-      } catch (e) { if (el) el.textContent = e.message; }
+      } catch (e) { const msg = e.message; if (el) ooLive(el, () => msg); }
     }
     async function loadIndicesData(btn) {
       btn.disabled = true;
@@ -1527,6 +1543,7 @@
     }
     function renderDashboard() {
       if (!MKT_SERIES.length) return;
+      _mktBoardDrawn = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Window by ABSOLUTE dates [from,to] from the ooTimeScope control (no
       // longer a trailing `days` count).
@@ -2904,9 +2921,12 @@
       opts = opts || {};
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
       const min = _tsParse(opts.min), max = _tsParse(opts.max);
+      // Row 367: every word the control shows is drawn by a held render, so a language switch redraws it in place;
+      // a control built again on the same container lets the previous one's hold go first.
+      ooLive(container, null);
       // Degrade loudly if the span is unusable (no/identical bounds).
       if (min == null || max == null || max <= min) {
-        container.innerHTML = `<span class="hint muted">${esc(t("not enough data for a time range"))}</span>`;
+        ooLiveHtml(container, () => `<span class="hint muted">${esc(t("not enough data for a time range"))}</span>`);
         return { set: () => {}, get: () => ({from: opts.from || null, to: opts.to || null, scale: "day"}),
                  bounds: () => ({min: null, max: null}) };
       }
@@ -2918,26 +2938,22 @@
       if (from > to) { const s = from; from = to; to = s; }
 
       container.classList.add("ts");
+      // The control draws its own words (below), attributes included, so the page walker stays out of it: a title or
+      // aria-label it saw first in one language would otherwise be put back over every later one.
+      container.setAttribute("data-i18n-dyn", "");
       container.innerHTML =
         `<div class="ts-dates">
-           <label>${esc(t("From"))} <input type="date" class="ts-from"></label>
-           <label>${esc(t("To"))} <input type="date" class="ts-to"></label>
+           <label><span class="ts-l-from"></span> <input type="date" class="ts-from"></label>
+           <label><span class="ts-l-to"></span> <input type="date" class="ts-to"></label>
          </div>
-         <div class="ts-bar" tabindex="-1" role="group" aria-label="${esc(t("Date range"))}">
+         <div class="ts-bar" tabindex="-1" role="group">
            <div class="ts-track"></div><div class="ts-sel"></div>
-           <div class="ts-handle ts-h-from" role="slider" tabindex="0"
-                aria-label="${esc(t("From"))}"></div>
-           <div class="ts-handle ts-h-to" role="slider" tabindex="0"
-                aria-label="${esc(t("To"))}"></div>
+           <div class="ts-handle ts-h-from" role="slider" tabindex="0"></div>
+           <div class="ts-handle ts-h-to" role="slider" tabindex="0"></div>
          </div>
-         <div class="ts-presets">` +
-        _TS_PRESETS.map(([k]) =>
-          `<button type="button" data-preset="${esc(k)}">${esc(t(k))}</button>`).join("") +
-        `</div>
-         <label class="ts-scale-l" title="${esc(t("Reads the range in whole days, weeks, months or years: each bound snaps to the start or end of its period. The data inside the range is never thinned."))}">${esc(t("Snap range to"))}
-           <select class="ts-scale">` +
-        TS_SCALES.map((k) => `<option value="${k}"${k === scale ? " selected" : ""}>${esc(t(_TS_SCALE_LABEL[k]))}</option>`).join("") +
-        `</select></label>`;
+         <div class="ts-presets"></div>
+         <label class="ts-scale-l"><span class="ts-l-scale"></span>
+           <select class="ts-scale"></select></label>`;
       const inScale = container.querySelector(".ts-scale");
 
       const inFrom = container.querySelector(".ts-from");
@@ -2946,6 +2962,24 @@
       const sel    = container.querySelector(".ts-sel");
       const hFrom  = container.querySelector(".ts-h-from");
       const hTo    = container.querySelector(".ts-h-to");
+      const scaleL = container.querySelector(".ts-scale-l");
+      // The attributes have no node of their own to hold, so the presets' render sets them as it draws: one switch,
+      // one pass over everything the control says.
+      function relabel() {
+        bar.setAttribute("aria-label", t("Date range"));
+        hFrom.setAttribute("aria-label", t("From"));
+        hTo.setAttribute("aria-label", t("To"));
+        scaleL.setAttribute("title", t("Reads the range in whole days, weeks, months or years: each bound snaps to the start or end of its period. The data inside the range is never thinned."));
+      }
+      ooLive(container.querySelector(".ts-l-from"), () => t("From"));
+      ooLive(container.querySelector(".ts-l-to"), () => t("To"));
+      ooLive(container.querySelector(".ts-l-scale"), () => t("Snap range to"));
+      ooLiveHtml(container.querySelector(".ts-presets"), () => {
+        relabel();
+        return _TS_PRESETS.map(([k]) => `<button type="button" data-preset="${esc(k)}">${esc(t(k))}</button>`).join("");
+      });
+      // the options name the scale in use (`scale`, below), so a redraw keeps the choice
+      ooLiveHtml(inScale, () => TS_SCALES.map((k) => `<option value="${k}"${k === scale ? " selected" : ""}>${esc(t(_TS_SCALE_LABEL[k]))}</option>`).join(""));
       // date inputs carry the absolute bounds so the native picker is bounded.
       const minIso = _tsIso(min), maxIso = _tsIso(max);
       [inFrom, inTo].forEach(el => { el.min = minIso; el.max = maxIso; });

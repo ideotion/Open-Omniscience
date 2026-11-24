@@ -246,6 +246,8 @@
       } catch (_e) {}
       // Markets -> coverage that moves with a commodity: redrawn from the payload it kept.
       try { if (typeof paintMktRipple === "function") paintMktRipple(); } catch (_e) {}
+      // Markets -> the commodities and indices boards (row 367): drawn again from the prices they hold, never read.
+      try { if (typeof repaintMarketBoards === "function") repaintMarketBoards(); } catch (_e) {}
       // Settings -> Statistics: the figures and revision-anomalies tables draw their
       // count lines and headers in the reader's language (B18 R7/R8). Redrawn from the
       // payload each last drew -- never a fetch, and nothing for a table never opened.
