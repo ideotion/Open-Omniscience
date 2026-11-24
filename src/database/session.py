@@ -49,6 +49,7 @@ from sqlalchemy.orm import sessionmaker
 # editable install under $HOME, and a wheel install into a read-only location all
 # behave correctly (see that module's docstring). OO_DATA_DIR still wins.
 from src.database import damage as _damage
+from src.database import drive_pin as _drive_pin  # noqa: F401 - R812: tracks every pool connection from the first
 
 # Before any engine exists: every pool's new connections get the search index's transform
 # functions, which its sync triggers call (Q506/Q507, src/database/fts_norm.py).
@@ -1087,6 +1088,10 @@ def dispose_engine() -> dict[str, Any]:
     connections are still open: it says ``None`` and :data:`EARLIER_DISPOSAL` instead (26 Oct 2026, measured: ``checked_out`` 1 before the
     first disposal, 0 after, the returned connection idle in the old pool). A call that follows only disposals that held nothing is
     counted as before."""
+    # Row 390: a connection on a data drive that is not the marked one is pinned BEFORE the disposal, checked out or not: one checked
+    # out now goes back to the replaced pool and is freed with it, a close no patched close sees (src/database/drive_pin.py). It never
+    # raises.
+    _drive_pin.pin_if_gone()
     global _LEFT_BEHIND
     seen = pool_checkouts()
     engine.dispose()

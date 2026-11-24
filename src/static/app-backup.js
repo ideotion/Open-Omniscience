@@ -4319,12 +4319,21 @@
       if (prompt(t("To confirm, type WIPE in capitals:")) !== "WIPE") {
         toast(t("Panic wipe cancelled."), "err"); return; }
       try {
+        // R818 (a): an unencrypted main database is overwritten in full after it is deleted, which may take minutes: said before,
+        // as information only (nothing to answer). Read from the at-rest state the page holds, or asked for once here.
+        let atRest = _atRestDoc;
+        if (!atRest) { try { atRest = await api("/api/system/doctor"); } catch (_e) { atRest = null; } }
+        // Only where the erase rewrites the body after the delete (not the first-page fallback, Windows).
+        if (atRest && atRest.erase_rewrites_plaintext_body === true && atRest.corpus && atRest.corpus.state === "plaintext") {
+          toast(t("Overwriting the unencrypted main database may take several minutes. Closing this page does not stop it; quitting the app does, and by then the file is already deleted."), "ok");
+        }
         // Phase 1 — instant crypto-erase (destroys the SQLCipher salt; fast at any size).
         const r = await api("/api/safety/panic", {method: "POST", body: JSON.stringify({confirm: true})});
         // The browser's own copy of a personal place goes too (Climate "Your place", R683): the wipe
         // reaches what this page stored, not only the server's files.
         try { localStorage.removeItem("oo.climate.place"); } catch (_e) { /* storage may be unavailable */ }
-        const plaintext = r.encrypted_corpus === false;
+        // R815 (3): the crypto-erase guarantee only for a main database KNOWN to be encrypted; plaintext or unknown fails closed.
+        const plaintext = r.encrypted_corpus !== true;
         // R792, read here before the offer below: it may never call the corpus unrecoverable unless the erase result is clean.
         const holder = r.other_holder || "unknown";
         // R798: a folder the erase could not list holds files it never checked, so that result is never clean either.
@@ -4332,12 +4341,60 @@
         // R802: a data folder the erase removed whole that is there again when it ends was written into after it, so that result is never clean.
         const back = r.folder_back === true;
         // A data folder the erase could not remove at all (a link, an entry it could not delete) is said as that, never as "came back".
-        const notRemoved = !back && r.scope === "data-folder" && r.removed === false;
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved;
+        // R806: a folder kept ON PURPOSE (it holds items the app did not create) is said as kept, never as "could not be removed".
+        const keptForeign = r.folder_kept_foreign === true;
+        const keptCount = Number(r.kept_items) || 0;  // 0 when keys could not be listed: then the "could not list" notice speaks
+        // ...but anything ELSE left at its top is a removal that failed, and "kept" never hides it (R806 / R807).
+        const notRemoved = !back && r.scope === "data-folder" && r.removed === false && r.drive_absent !== true && r.drive_lost !== true && (!keptForeign || (r.not_removed || []).length > 0);
+        // R806 (5) never follows a keys folder that is a link; the app's own keys may be where it points, so the result is never clean.
+        const keysLink = r.keys_link === true;
+        // Anything of the app's whose removal failed (a key file in a kept keys folder, an entry in a folder it does not own) is never clean.
+        const keysLeft = Number(r.keys_left) || 0;  // the app's own key files still in keys (their unlink failed): a count only
+        const leftOver = (r.not_removed || []).length > 0 || keysLeft > 0;
+        // R809: the marked data drive was not there (nothing on it touched: a FAILURE, never "removed", never clean), or it went away
+        // during the erase (partially erased, the rest not checked).
+        const driveAbsent = r.drive_absent === true;
+        const driveLost = r.drive_lost === true;
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext;
+        // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
+        const tfwNow = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf
+          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+        const ps = r.plaintext_store && typeof r.plaintext_store === "object" ? r.plaintext_store : null;
+        const psState = ps ? {
+          overwritten: "The unencrypted main database was overwritten in full.",
+          partially_overwritten: "The unencrypted main database was only partially overwritten.",
+          not_overwritten: "The unencrypted main database was not overwritten.",
+          first_page: "The unencrypted main database had its first page overwritten.",
+        }[ps.state] : null;
+        const psReason = ps ? {
+          absent: "It was no longer there.",
+          unidentified: "It could not be identified, so nothing there was touched.",
+          changed: "Another file was at its place, so nothing there was touched.",
+          drive: "The data drive changed or went away during the erase, so it was not rewritten.",
+          reserve: "The overwrite stopped to leave free space on a nearly full disk.",
+          write_failed: "A write to it failed.",
+          stopped: "The overwrite was stopped before it finished.",
+          pool: "The app's own connection to it could not be confirmed closed.",
+        }[ps.reason] : null;
+        // R818 (c): once overwritten in full, its other names lead to the overwritten content; in part, to partly overwritten content.
+        const psWords = psState ? [t(psState)]
+          .concat(ps.state === "first_page" && psReason ? [t("The rest was not overwritten.")] : [])
+          .concat(psReason ? [t(psReason)] : [])
+          .concat(ps.touched === true ? [t(ps.deleted === true ? "It was deleted." : "It could not be deleted: remove it by hand.")] : [])
+          .concat(Number(ps.other_names) > 0 ? [tfwNow(ps.state === "overwritten"
+            ? "Other names for it remain on the disk and now lead to the overwritten content, so a copy kept under another name is no longer usable (count: {n})."
+            : ps.state === "partially_overwritten"
+              ? "Other names for it remain on the disk and now lead to partly overwritten content; parts of the old content may still be readable through them (count: {n})."
+              : "Other names for it remain on the disk and lead to the same file (count: {n}).", { n: fmtNum(Number(ps.other_names), 0) })] : [])
+          .join(" ") : "";
+        // R815 (3): said plainly, visible beside the result, whenever there was a main database that is not known to be encrypted.
+        const plainNote = plaintext && (driveAbsent ? !!ps : (r.encrypted_corpus === false || Number(r.files_seen) > 0 || !!ps));
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
         // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
         const rec = plaintext
-          ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
+          ? (r.encrypted_corpus === false ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
+            : t("Your store could not be confirmed as encrypted, so a full disk-overwrite is recommended before you stop."))
           : !clean ? t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.")
           : t("For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.") +
             " " + t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.");
@@ -4348,14 +4405,49 @@
         // R792: only "none" is a clean erase. Another program that still had the database open may have written the key material
         // back into the files it holds ("held"), and on Windows, or when the check failed, the erase cannot tell ("unknown"): the
         // result then never says the store is unrecoverable, and the notice stays visible beside it.
+        // R809: with the drive absent or lost no free-space overwrite is offered below, so the note never points at one.
+        const noOverwrite = driveAbsent || driveLost;
         const holderNote = holder === "held"
-          ? t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer, then run a full overwrite of free disk space below.")
-          : t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer, then run a full overwrite of free disk space below.");
+          ? (noOverwrite
+            ? t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer.")
+            : t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer, then run a full overwrite of free disk space below."))
+          : (noOverwrite
+            ? t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer.")
+            : t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer, then run a full overwrite of free disk space below."));
         $("panic-result").innerHTML =
-          `<span class="pill warn">${esc(t(clean ? "crypto-erased" : "erase may be incomplete"))}</span> ${esc(tfw("{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
+          `<span class="pill warn">${esc(t(driveAbsent ? "erase failed" : clean ? "crypto-erased" : "erase may be incomplete"))}</span> ` +
+          // R809: with the drive absent the count is only what was erased ELSEWHERE, said as that, never as the erase's success.
+          `${esc(tfw(driveAbsent ? "Files erased outside the data drive: {done} of {total}." : "{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
+          // R812 (a): a folder at the drive's path that could not be identified (or that changed before the erase wrote on it).
+          (driveAbsent ? `<div class="card-caveat">${esc(r.drive_unidentified === true
+            ? t("The data drive could not be identified. Nothing on it was checked or erased. The data on that drive still exists.")
+            : t("The data drive was not present. Nothing on it was checked or erased. The data on that drive still exists."))}</div>` : "") +
+          // R812 (decision 1): the connections on that drive are kept open, never closed, so its key stays in memory: said.
+          // R813: the cost, and what to do; when the app closes itself (row 389), the cost alone, then the sentence that it is closing.
+          (r.drive_key_in_memory === true ? `<div class="card-caveat">${esc(r.app_closing === true
+            ? t("The key to the data on that drive stays in this app’s memory until the app is closed.")
+            : t("The key to the data on that drive stays in this app’s memory until the app is closed: close the app now."))}</div>` : "") +
+          // R813 row 389: the server closes itself a few seconds after this answer, so the key leaves its memory.
+          (r.app_closing === true ? `<div class="card-caveat">${esc(t("The app is closing itself now, so that the key leaves its memory. Open the app again to go on."))}</div>` : "") +
+          (driveLost ? `<div class="card-caveat">${esc(t("The data drive disconnected during the erase: it was only partially erased, and what was left on it could not be checked."))}` +
+            // R812 (b): only when the erase had already made the app forget the drive's id (it is never restored).
+            (r.drive_forgotten === true ? ` ${esc(t("Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a later launch unless it is set up again."))}` : "") +
+            `</div>` : "") +
+          (psWords ? `<div class="card-caveat">${esc(psWords)}</div>` : "") +
+          (plainNote ? `<div class="card-caveat">${esc(r.encrypted_corpus === false
+            ? t("The main database was not encrypted, so no key was destroyed: old pages of it may remain on the disk after the overwrite and delete. Full-disk encryption is the remedy.")
+            : t("The main database could not be confirmed as encrypted, so this erase cannot promise it is unreadable: old pages of it may remain on the disk after the overwrite and delete. Full-disk encryption is the remedy."))}</div>` : "") +
           (clean ? `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` : "") +
           `<span class="muted">${esc(r.limit)}</span>` +
           (holder === "none" ? "" : `<div class="card-caveat">${esc(holderNote)}</div>`) +
+          // R806 (4): one of two outcomes for the folder, a count and never the names of what was kept.
+          (keptForeign
+            ? (keptCount ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds items the app did not create (count: {n}).", { n: fmtNum(keptCount, 0) }))}</div>` : "")
+            : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
+          (keysLeft ? `<div class="card-caveat">${esc(tfw("Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}` +
+            // the app's own exact file names only (never another entry of the folder), so the operator knows which to remove
+            ((r.keys_left_names || []).length ? ` <bdi translate="no" dir="ltr">${esc(r.keys_left_names.join(", "))}</bdi>` : "") + `</div>` : "") +
+          (keysLink ? `<div class="card-caveat">${esc(tfw("The {folder} folder in the data folder is a link, which the erase never follows: the app’s signing keys may be where it points, and they were not destroyed. Remove them there by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}</div>` : "") +
           (notRemoved ? `<div class="card-caveat">${esc(t("The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."))}</div>` : "") +
           (back ? `<div class="card-caveat">${esc(t("The data folder existed again when the erase ended, although the erase had removed it: something recreated it afterwards, so the erase may be incomplete. Restart the app, run the wipe again, then run the full free-space overwrite below."))}</div>` : "") +
           (unlisted ? `<div class="card-caveat">${esc(tfw("The erase could not list {n} of the folders it was to erase, so it could not check the files in them: the erase may be incomplete. Make those folders readable (the app log names them), then run the wipe again and a full overwrite of free disk space below.", { n: fmtNum(unlisted, 0) }))}</div>` : "") +
@@ -4366,13 +4458,17 @@
                 ? `<div class="card-caveat">${esc(tfw("Also left, because the name is common and may be yours: {names}. Check them and remove what is the app’s.", { names: r.left_common_names.join(", ") }))}</div>`
                 : "")
             : "") +
-          `<div class="hint" style="margin-top:8px">${esc(rec)}` +
+          // R809 / R812: no free-space overwrite is offered for a drive that is not there, or that went away during the erase: it
+          // would write to whatever disk is at its place.
+          (driveAbsent || driveLost ? "" : `<div class="hint" style="margin-top:8px">${esc(rec)}` +
           `<div class="row" style="gap:6px;margin-top:6px">` +
           `<button class="danger" data-on-click="secureErase(1)">${esc(t("Single pass"))}</button>` +
           `<button class="danger" data-on-click="secureErase(3)">${esc(t("Triple pass"))}</button>` +
           `<button class="danger" data-on-click="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
-          `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`;
-        toast(clean ? t("Local data crypto-erased. Restart the app.") : t("The erase may be incomplete. Read the notice under the wipe button."), clean ? "warn" : "err");
+          `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`);
+        toast(clean ? t("Local data crypto-erased. Restart the app.")
+          : driveAbsent ? t("The erase failed. Read the notice under the wipe button.")  // R809: a failure, never "may be incomplete"
+          : t("The erase may be incomplete. Read the notice under the wipe button."), clean ? "warn" : "err");
       } catch (e) { toast(_failMsg("Panic wipe failed: {error}", e), "err"); }
     }
 
@@ -4397,6 +4493,8 @@
           drive_unread: "Free disk space was not overwritten: the app could not tell which drive held the erased data folder.",
           no_folder: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
           nothing_written: "Free disk space was not overwritten: nothing could be written on the drive that held the data, which may already be full.",
+          // R809: the marked data drive is not there (or another drive is at its place): nothing was written at its path.
+          drive_absent: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
         }[r.scrub_not_done];
         const tfw = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf

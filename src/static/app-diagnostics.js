@@ -145,10 +145,7 @@
             // Opening the section on a job that never ran says nothing: the line is for a
             // job, and there is none. A refusal is still named, as the button would.
             const idle = !s.state || s.state === "idle" || s.state === "cancelled";
-            if (st && !(me.quietIdle && idle && !s.refusal)) {
-              st.textContent = render(s, report, t);
-              _jobLast[key] = {s, report, render, st, drawn: st.textContent};
-            }
+            if (st && !(me.quietIdle && idle && !s.refusal)) _drawJobLine(key, st, render, s, report, t);
             const running = s.state === "running" && !!s.running;
             // A start came in while this read was in flight: read again before deciding.
             if (gen !== me.gen) continue;
@@ -164,6 +161,18 @@
         }
       })();
       return me;
+    }
+    // Draw a job line and keep the reading it was drawn from, so repaintDiagnosticsJobsFromCache can redraw it in a new
+    // language. Every write of a reading into a job line goes through here: one written past it would freeze in the
+    // language it was drawn in (row 361: foldKeywords drew a refusal that way).
+    function _drawJobLine(key, st, render, s, report, t) {
+      st.textContent = render(s, report, t);
+      _jobLast[key] = {s, report, render, st, drawn: st.textContent};
+    }
+    // A job line that shows an error the server or the browser sent, as it was sent: data, not chrome, so nothing here
+    // is translated and nothing is kept to redraw. As text, never escaped: textContent shows "&amp;" as typed.
+    function _jobLineError(st, e) {
+      if (st) st.textContent = String((e && e.message) || e || "");
     }
     // A live language switch (the one oo:langchange listener in app-boot.js): redraw each
     // job line from the reading it last drew, in the new language. Never a fetch. A line
@@ -317,7 +326,7 @@
         // keywords on completion — survives a tab close, resumes from its cursor.
         await _startReindexJob(true, "keywords");
         await _pollReindexJob(st, t);
-      } catch (e) { if (st) st.textContent = esc(e.message); }
+      } catch (e) { _jobLineError(st, e); }
       finally { if (btn) btn.disabled = false; }
     }
 
@@ -373,7 +382,7 @@
       let s0 = null;
       try { s0 = await api("/api/insights/keyword-fold-job/status"); }
       catch (_e) { /* status is a courtesy here; never block the action on it */ }
-      if (s0 && s0.refusal) { if (st) st.textContent = _foldStatusText(s0, null, t); return; }
+      if (s0 && s0.refusal) { if (st) _drawJobLine("fold", st, _foldStatusText, s0, null, t); return; }
       // A PAUSED RUN IS CONTINUED, AND THE CONFIRM SAYS SO (the re-index job's lesson).
       const paused = s0 && (s0.state === "paused" || s0.state === "error");
       const ask = paused
@@ -557,17 +566,20 @@
 
     async function enrichSources(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const old = btn.textContent;
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+      // Row 361: the button's lines follow a language switch (ooLive); the release puts its own label back.
       btn.disabled = true;
-      btn.textContent = t("Enriching…");
+      ooLive(btn, () => t("Enriching…"));
       try {
         const d = await api("/api/diagnostics/enrich-sources", { method: "POST" });
-        btn.textContent = `Enriched ${d.sources_updated || 0} sources (+${d.tags_added || 0} tags)`;
+        const n = d.sources_updated || 0, tags = d.tags_added || 0;
+        ooLive(btn, () => tf("Sources enriched: {n} · tags added: {tags}", { n, tags }));
       } catch (e) {
-        btn.textContent = "Enrich failed — see console";
+        ooLive(btn, () => t("Enrich failed — see console"));
         console.error("enrichSources", e);
       }
-      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 4000);
+      setTimeout(() => { ooLive(btn, null); btn.disabled = false; }, 4000);
     }
 
     // Diagnostics: the NETWORKED source_type pass (Wikidata). Gated by the one
@@ -576,9 +588,8 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Fill source types from Wikidata (egresses to Wikidata over your transport)"))) return;
-      const old = btn.textContent;
       btn.disabled = true;
-      btn.textContent = t("Enriching in the background…");
+      ooLive(btn, () => t("Enriching in the background…"));
       try {
         // Runs ~8 min in a background job (returns {mode, started, job}); poll the job
         // to completion for the REAL tally instead of the empty start-state ("Typed 0
@@ -586,22 +597,22 @@
         await api("/api/diagnostics/enrich-source-types", { method: "POST" });
         const st = await pollJobStatus("/api/diagnostics/enrich-source-types/status");
         if (st.state === "error") {
-          btn.textContent = t("Enrich failed — see console");
+          ooLive(btn, () => t("Enrich failed — see console"));
           console.error("enrichSourceTypes", st.error);
         } else if (_jobStillRunning(st)) {
           // Stopped watching, not finished — never show the start-state's "0/0".
-          btn.textContent = t("Still running in the background — see the task manager.");
+          ooLive(btn, () => t("Still running in the background — see the task manager."));
         } else {
           const res = st.result || {};
-          btn.textContent = t("Typed source types:") + " " + (res.sources_typed || 0) + "/" + (res.scanned || 0)
+          ooLive(btn, () => t("Typed source types:") + " " + (res.sources_typed || 0) + "/" + (res.scanned || 0)
             // A source whose lookup Wikidata redirected off its own host is counted, not followed: say so beside the tally.
-            + (res.sources_refused ? " · " + res.sources_refused + " " + t("refused") : "");
+            + (res.sources_refused ? " · " + res.sources_refused + " " + t("refused") : ""));
         }
       } catch (e) {
-        btn.textContent = t("Enrich failed — see console");
+        ooLive(btn, () => t("Enrich failed — see console"));
         console.error("enrichSourceTypes", e);
       }
-      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 6000);
+      setTimeout(() => { ooLive(btn, null); btn.disabled = false; }, 6000);
     }
 
     // Session forensics (E2, #596): surface the app's own root-cause records so a crash /
@@ -707,12 +718,13 @@
       const out = $("session-forensics-out");
       if (!out) return;
       if (btn) btn.disabled = true;
-      out.innerHTML = '<div class="muted">' + esc(t("Loading…")) + "</div>";
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the report from this reading.
+      ooLiveHtml(out, () => '<div class="muted">' + esc(t("Loading…")) + "</div>");
       try {
         const d = await api("/api/diagnostics/session-forensics");
-        out.innerHTML = _renderSessionForensics(d, t);
+        ooLiveHtml(out, () => _renderSessionForensics(d, t));
       } catch (e) {
-        out.innerHTML = '<div class="note err">' + esc(t("Could not load session forensics.")) + " " + esc(e.message) + "</div>";
+        ooLiveHtml(out, () => '<div class="note err">' + esc(t("Could not load session forensics.")) + " " + esc(e.message) + "</div>");
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -748,14 +760,15 @@
       if (!out) return;
       const me = ++_countryFormTicket;
       if (btn) btn.disabled = true;
-      out.innerHTML = '<div class="muted">' + esc(t("Loading…")) + "</div>";
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the form from this reading.
+      ooLiveHtml(out, () => '<div class="muted">' + esc(t("Loading…")) + "</div>");
       try {
         const d = await api("/api/diagnostics/country-form" + (withEstimate ? "?estimate=true" : ""));
         if (me !== _countryFormTicket) return;
-        out.innerHTML = _renderCountryForm(d, t);
+        ooLiveHtml(out, () => _renderCountryForm(d, t));
       } catch (e) {
         if (me !== _countryFormTicket) return;
-        out.innerHTML = '<div class="note err">' + esc(t("Could not read the country form.")) + " " + esc(e.message) + "</div>";
+        ooLiveHtml(out, () => '<div class="note err">' + esc(t("Could not read the country form.")) + " " + esc(e.message) + "</div>");
       } finally {
         if (btn && me === _countryFormTicket) btn.disabled = false;
       }
@@ -765,21 +778,23 @@
     // them DISABLED for review (never scraped until enabled). Networked -> consent-gated.
     async function discoverSources(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const cc = (document.getElementById("discover-cc").value || "").trim();
       if (!cc) { toast(t("Enter country codes first, e.g. ke,ng,br"), "err"); return; }
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Discover sources from Wikidata (egresses to Wikidata over your transport)"))) return;
-      const old = btn.textContent;
       btn.disabled = true;
-      btn.textContent = t("Discovering…");
+      ooLive(btn, () => t("Discovering…"));
       try {
         const d = await api("/api/diagnostics/discover-sources?countries=" + encodeURIComponent(cc), { method: "POST" });
-        btn.textContent = `Added ${d.added || 0} disabled sources — review in Settings → Sources`;
+        const n = d.added || 0;
+        ooLive(btn, () => tf("Disabled sources added: {n}. Review them in Settings → Sources.", { n }));
       } catch (e) {
-        btn.textContent = t("Discovery failed — see console");
+        ooLive(btn, () => t("Discovery failed — see console"));
         console.error("discoverSources", e);
       }
-      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 6000);
+      setTimeout(() => { ooLive(btn, null); btn.disabled = false; }, 6000);
     }
 
     // WORLD discovery (maintainer-asked 2026-07-15): the same Wikidata discovery over
@@ -789,17 +804,19 @@
     // cancel lives in the task manager (kind "discover-world-sources").
     async function discoverWorld(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const out = document.getElementById("discover-world-status");
-      const say = (msg) => { if (out) out.textContent = msg; };
+      // Row 361: the status line and the button follow a language switch (ooLive); every line is a render.
+      const say = (render) => { if (out) ooLive(out, render); };
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Discover sources worldwide from Wikidata — a long background job over every country (egresses to Wikidata over your transport)"))) return;
-      const old = btn.textContent;
       btn.disabled = true;
-      btn.textContent = t("Discovering worldwide…");
+      ooLive(btn, () => t("Discovering worldwide…"));
       try {
         const d = await api("/api/diagnostics/discover-world", { method: "POST" });
         if (d && d.started === false && d.job && d.job.state === "running") {
-          say(t("Already running — see the task manager."));
+          say(() => t("Already running — see the task manager."));
         }
         // Long job: poll with a live status line; give up WATCHING (not the job) after
         // 30 min — it keeps running server-side and stays visible in the task manager.
@@ -808,24 +825,26 @@
           onProgress: (s) => {
             if (!s) return;
             const p = s.progress ? ` ${s.done}/${s.total}` : "";
-            say((s.detail || t("Working…")) + p);
+            const detail = s.detail;   // the server's own words, shown as sent
+            say(() => (detail || t("Working…")) + p);
           },
         });
         if (st && st.state === "error") {
-          say(t("World discovery failed — see console"));
+          say(() => t("World discovery failed — see console"));
           console.error("discoverWorld", st.error);
         } else if (_jobStillRunning(st)) {
-          say(t("Still running in the background — see the task manager."));
+          say(() => t("Still running in the background — see the task manager."));
         } else if (st && st.result) {
           const r = st.result;
-          say(`${r.countries_done}/${r.countries_requested} countries · +${r.added_this_run} new disabled sources (${r.added_total} total)`
-            + (r.paused_reason ? ` — ${r.paused_reason}` : ""));
+          if (out) ooLiveHtml(out, () => esc(tf("Countries done: {done}/{requested} · new disabled sources: {added} · disabled sources added in total: {total}",
+            { done: r.countries_done, requested: r.countries_requested, added: r.added_this_run, total: r.added_total }))
+            + (r.paused_reason ? " — " + ooSaidHtml(r, "paused_reason") : ""));
         }
       } catch (e) {
-        say(t("World discovery failed — see console"));
+        say(() => t("World discovery failed — see console"));
         console.error("discoverWorld", e);
       }
-      btn.textContent = old;
+      ooLive(btn, null);
       btn.disabled = false;
     }
 
@@ -835,24 +854,32 @@
       try {
         const d = await api("/api/diagnostics/keyword-growth");
         const dlg = $("chart-enlarge"); if (!dlg) { toast(t("Could not open the chart.")); return; }
-        const ttl = $("chart-enlarge-title"); if (ttl) ttl.textContent = t("Keyword-growth curve");
-        const note = $("chart-enlarge-note");
-        if (note) { note.textContent = ooSaidText(d, "caveat"); note.style.display = d.caveat ? "" : "none"; }
-        const body = $("chart-enlarge-body"); if (!body) return;
-        const tot = d.totals || {}, heaps = d.heaps || {}, rate = d.minting_rate_per_1000_words || {};
-        // Each "Label: n" through the ONE keyed separator frame (W18; B14's Z3), and each
-        // count through fmtNum, not the browser's locale.
-        const head = ooLabelHtml(esc(t("Keywords")), `<b>${fmtNum(tot.keywords || 0, 0)}</b>`) + " · "
-          + ooLabelHtml(esc(t("words")), `<b>${fmtNum(tot.tokens || 0, 0)}</b>`)
-          + (heaps.beta != null ? ` · Heaps β = <b>${esc(String(heaps.beta))}</b>` : "")
-          + (rate.start != null && rate.end != null
-              ? " · " + ooLabelHtml(esc(t("new keywords / 1,000 words")),
-                `<b>${esc(String(rate.start))} → ${esc(String(rate.end))}</b>`) : "");
-        body.innerHTML = `<div class="hint" style="margin-bottom:6px">${head}</div>` + _growthSvg(d.series, t);
+        // Row 361: the title, the caveat and the body draw through ooLive/ooLiveHtml, so a language switch with the
+        // dialog open redraws them from this reading. The dialog is SHARED (chartEnlarge writes it directly and leaves
+        // its title to the i18n walker), so the three nodes are released when it closes.
+        const ids = ["chart-enlarge-title", "chart-enlarge-note", "chart-enlarge-body"];
+        ooLive($(ids[0]), () => t("Keyword-growth curve"));
+        const note = $(ids[1]);
+        if (note) { ooLive(note, () => ooSaidText(d, "caveat")); note.style.display = d.caveat ? "" : "none"; }
+        const body = $(ids[2]); if (!body) return;
+        ooLiveHtml(body, () => _keywordGrowthHtml(d, t));
+        dlg.addEventListener("close", () => { ids.forEach((id) => ooLive($(id), null)); }, { once: true });
         if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       } catch (e) {
         toast(t("Could not load the keyword-growth curve."));
       } finally { if (btn) btn.disabled = false; }
+    }
+    function _keywordGrowthHtml(d, t) {
+      const tot = d.totals || {}, heaps = d.heaps || {}, rate = d.minting_rate_per_1000_words || {};
+      // Each "Label: n" through the ONE keyed separator frame (W18; B14's Z3), and each
+      // count through fmtNum, not the browser's locale.
+      const head = ooLabelHtml(esc(t("Keywords")), `<b>${fmtNum(tot.keywords || 0, 0)}</b>`) + " · "
+        + ooLabelHtml(esc(t("words")), `<b>${fmtNum(tot.tokens || 0, 0)}</b>`)
+        + (heaps.beta != null ? ` · Heaps β = <b>${esc(String(heaps.beta))}</b>` : "")
+        + (rate.start != null && rate.end != null
+            ? " · " + ooLabelHtml(esc(t("new keywords / 1,000 words")),
+              `<b>${esc(String(rate.start))} → ${esc(String(rate.end))}</b>`) : "");
+      return `<div class="hint" style="margin-bottom:6px">${head}</div>` + _growthSvg(d.series, t);
     }
 
     // All-diagnostics archive as a BACKGROUND job (D2, field-test Item 10): the old button
@@ -934,10 +961,14 @@
       return tf("Save the next {n}", {n});
     }
 
-    function _partsStatus(msg) {
+    // Row 361: every line of the parts bar is a RENDER, so it follows a language switch (ooLive); the current one is
+    // kept so a later line can extend it (the hand-over in runAllDiagnostics).
+    let _partsStatusRender = null;
+    function _partsStatus(render) {
       const bar = $("parts-bar"), el = $("parts-status");
       if (bar) bar.hidden = false;
-      if (el) el.textContent = msg;
+      _partsStatusRender = render;
+      if (el) ooLive(el, render);
     }
 
     function _partsRender() {
@@ -991,16 +1022,16 @@
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const set = _partsSet;
       if (!set || set.saving) return;   // a second click while files are on their way does nothing
-      let note = "";
+      let note = () => "";   // a render, like the line it prefixes
       let start = set.pos;   // a typed part number is a side trip: it never moves `pos` back
       if (fromPart != null) {
         if (!isFinite(fromPart) || fromPart < 1) {
-          _partsStatus(tf("Type a part number from 1 to {n}.", {n: set.pcount}));
+          _partsStatus(() => tf("Type a part number from 1 to {n}.", {n: set.pcount}));
           return;
         }
         const first = Math.min(fromPart, set.pcount);
         if (first < fromPart) {
-          note = tf("There are only {n} parts, so saving starts at the last part.", {n: set.pcount}) + " ";
+          note = () => tf("There are only {n} parts, so saving starts at the last part.", {n: set.pcount}) + " ";
         }
         start = set.mcount + first - 1;
       }
@@ -1035,15 +1066,15 @@
       if (set.single) {
         // one file: «those files» and «all N files» would say what was not asked. A second press of the
         // «again» link offers the file as a new set, so it reads the same as the first: asked, not saved.
-        _partsStatus(t("Asked your browser to save the Diagnostics file. Check that it arrived, then send it."));
+        _partsStatus(() => t("Asked your browser to save the Diagnostics file. Check that it arrived, then send it."));
       } else if (fresh === 0 && win.to > win.from) {
         // a resend changes no count, so the line says what the click did
-        _partsStatus(note + t("Asked your browser to save those files again."));
+        _partsStatus(() => note() + t("Asked your browser to save those files again."));
       } else if (done >= set.files.length) {
-        _partsStatus(note + tf("Asked your browser to save all {n} files. Check that they all arrived, then send them together: the manifest lists every file with its size and checksum.",
+        _partsStatus(() => note() + tf("Asked your browser to save all {n} files. Check that they all arrived, then send them together: the manifest lists every file with its size and checksum.",
                                {n: set.files.length}));
       } else {
-        _partsStatus(note + tf("Asked your browser to save {done} of {n} files.", {done, n: set.files.length}));
+        _partsStatus(() => note() + tf("Asked your browser to save {done} of {n} files.", {done, n: set.files.length}));
       }
     }
 
@@ -1064,13 +1095,13 @@
       const set = _partsOffer(listing, kind);
       if (set.single) {
         const size = (typeof _fmtBytes === "function") ? _fmtBytes(set.files[0].bytes) : String(set.files[0].bytes);
-        _partsStatus(tf("The Diagnostics file is ready ({size}).", {size}));
+        _partsStatus(() => tf("The Diagnostics file is ready ({size}).", {size}));
         return set;
       }
       const cap = Number((listing && (listing.part_max_bytes || listing.volume_max_bytes)) || 0);
       // A cap under 1 MB (an operator's OO_DIAG_VOLUME_MAX_MB below 1) reads «0.02», never «0 MB each».
       const mb = cap >= 1e6 ? String(Math.round(cap / 1e6)) : (cap > 0 ? String(Math.round(cap / 1e4) / 100) : "0.2");
-      _partsStatus(tf("{n} files of at most {mb} MB each are ready (manifest: {m}, numbered parts: {parts}).",
+      _partsStatus(() => tf("{n} files of at most {mb} MB each are ready (manifest: {m}, numbered parts: {parts}).",
                       {n: set.files.length, mb, m: set.mcount, parts: set.pcount})
         + " " + t("Your browser may ask once to allow several downloads: allow them."));
       return set;
@@ -1120,7 +1151,7 @@
       if (btn) btn.disabled = true;
       _partsSet = null;
       _partsRender();
-      _partsStatus(mode === "again" ? t("Looking for the last keyword files…")
+      _partsStatus(() => mode === "again" ? t("Looking for the last keyword files…")
         : t("Building the numbered keyword files… a large corpus takes minutes; the app stays usable."));
       _partsBusy = gen;
       try {
@@ -1130,7 +1161,7 @@
         } catch (e) {
           if (gen !== _partsGen) return;
           const why = (e && (e.detail || e.message)) || t("unknown error");
-          _partsStatus(e && e.status === 404 && mode === "again"
+          _partsStatus(() => e && e.status === 404 && mode === "again"
             ? t("No keyword files are kept on this machine yet — build them with the All keywords link.")
             : tf("Could not build the keyword files: {why}", {why}));
           return;
@@ -1165,7 +1196,7 @@
       if (btn) btn.disabled = true;
       _partsSet = null;
       _partsRender();
-      _partsStatus(t("Splitting the archive…"));
+      _partsStatus(() => t("Splitting the archive…"));
       _partsBusy = gen;
       try {
         let m;
@@ -1181,21 +1212,21 @@
           const status = e && e.status;
           const why = (e && (e.detail || e.message)) || t("unknown error");
           if (status === 404) {
-            _partsStatus(t("Nothing is built yet — press the Diagnostics button first."));
+            _partsStatus(() => t("Nothing is built yet — press the Diagnostics button first."));
           } else if (status === 409) {
-            _partsStatus(t("A build is running — wait for it, then split the archive it produces."));
+            _partsStatus(() => t("A build is running — wait for it, then split the archive it produces."));
           } else {
-            _partsStatus(tf("Could not split the archive: {why}", { why }));
+            _partsStatus(() => tf("Could not split the archive: {why}", { why }));
           }
           return;
         }
         if (gen !== _partsGen) return;
         if (!((m && m.files) || []).length) {
-          _partsStatus(tf("Could not split the archive: {why}", { why: t("the archive produced no volumes") }));
+          _partsStatus(() => tf("Could not split the archive: {why}", { why: t("the archive produced no volumes") }));
           return;
         }
         const ready = $("all-diag-status");
-        if (ready) ready.textContent = "";   // "the archive is ready, press again" is answered by this press
+        if (ready) ooLive(ready, () => "");   // "the archive is ready, press again" is answered by this press
         _partsOffer(m, "diagnostics");
         await _partsSave(_PARTS_PER_CLICK, startAt || null);   // the click that asked is still alive
       } finally {
@@ -1209,11 +1240,12 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const el = $("all-diag-status");
-      const set = (msg) => { if (el) el.textContent = msg; };
+      // Row 361: every status line is a render, so it follows a language switch (ooLive).
+      const set = (render) => { if (el) ooLive(el, render); };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const askedAt = _partsGen;   // what the bar was doing when this build was asked for
       if (btn) btn.disabled = true;
-      set(t("Starting…"));
+      set(() => t("Starting…"));
       try {
         // Start (idempotent: if one is already running the backend returns started:false and
         // we simply poll the in-flight build).
@@ -1228,7 +1260,7 @@
         const budgetEl = $("diag-budget-min");
         const budgetRaw = (mode === "thorough" && budgetEl) ? String(budgetEl.value || "").trim() : "";
         if (budgetRaw && !(Number(budgetRaw) > 0 && Number.isFinite(Number(budgetRaw) * 60))) {
-          set(t("The scan time limit must be a number of minutes above zero, or blank for none."));
+          set(() => t("The scan time limit must be a number of minutes above zero, or blank for none."));
           return;   // the finally below gives the button back
         }
         const budgetQs = budgetRaw ? "&budget_min=" + encodeURIComponent(budgetRaw) : "";
@@ -1252,9 +1284,9 @@
           try { s = await api("/api/diagnostics/all-job/status"); miss = 0; }
           catch (e) {
             miss++;
-            set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
+            set(() => t("Connection hiccup — retrying…"));  // the JOB is still running server-side
             await sleep(Math.min(2000 * miss, 10000));  // backoff, capped
-            if (miss > 30) { settled = true; set(t("Still building — check the task manager.")); break; }
+            if (miss > 30) { settled = true; set(() => t("Still building — check the task manager.")); break; }
             continue;
           }
           const state = s && s.state;
@@ -1264,7 +1296,7 @@
             // archive itself when it fits one file, else numbered files, five to a click) and never
             // opens /all-job/download, which stays for API callers.
             settled = true;
-            set(t("Ready — preparing the download…"));
+            set(() => t("Ready — preparing the download…"));
             let handOver = 0;   // files to hand over once the bar is set; the hand-over is outside the try
             let handSet = null;   // the set the bar was given for it, to tell whether it still holds it afterwards
             try {
@@ -1288,13 +1320,13 @@
               const keywordsOnBar = !!bar && bar.kind === "keywords";
               const pressedSince = _partsGen !== askedAt;
               if (bar && bar.kind === "diagnostics" && filesOf(bar.files) === filesOf(m && m.files)) {
-                set("");   // already on the bar: the earlier press fetched this very archive
+                set(() => "");   // already on the bar: the earlier press fetched this very archive
               } else if ((keywordsOnBar && bar.offered.size > 0)
                          || (pressedSince && ((!bar && _partsBusy === _partsGen) || keywordsOnBar))) {
-                set(t("The Diagnostics file is ready. Use “Save the last Diagnostics again” below to save it."));
+                set(() => t("The Diagnostics file is ready. Use “Save the last Diagnostics again” below to save it."));
               } else {
                 ++_partsGen;
-                set("");
+                set(() => "");
                 handSet = _partsReady(m, "diagnostics");
                 handOver = m.files.length;
               }
@@ -1311,15 +1343,15 @@
               if (_partsSet && _partsSet.kind === "diagnostics" && !(status === 404 || status === 409)) {
                 ++_partsGen; _partsSet = null; _partsRender();
                 const barEl = $("parts-bar"), line = $("parts-status");
-                if (line) line.textContent = "";
+                if (line) ooLive(line, () => "");
                 if (barEl) barEl.hidden = true;
               }
               if (status === 404) {
-                set(t("Nothing is built yet — press the Diagnostics button first."));
+                set(() => t("Nothing is built yet — press the Diagnostics button first."));
               } else if (status === 409) {
-                set(t("A build is running — wait for it, then split the archive it produces."));
+                set(() => t("A build is running — wait for it, then split the archive it produces."));
               } else {
-                set(tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
+                set(() => tf("Could not split the archive: {why}", { why: (e && (e.detail || e.message)) || t("unknown error") }));
               }
             }
             // OUTSIDE the try above, because what it answers is «could not split»: a throw here
@@ -1348,15 +1380,16 @@
                 // set of two files or more, and only while the bar still holds this set.
                 const line = $("parts-status");
                 if (handSet && _partsSet === handSet && handOver > 1 && line) {
-                  _partsStatus((line.textContent || "") + " " + t("Your browser may ask once to allow several downloads: allow them."));
+                  const prev = _partsStatusRender;
+                  _partsStatus(() => (prev ? prev() : (line.textContent || "")) + " " + t("Your browser may ask once to allow several downloads: allow them."));
                 }
               }
             }
             break;
           }
-          if (state === "error") { settled = true; set(t("Build failed:") + " " + (s.error || t("unknown error"))); break; }
-          if (state === "cancelled") { settled = true; set(t("Build cancelled.")); break; }
-          if (state === "done") { settled = true; set(t("Done — check the task manager for the file.")); break; }
+          if (state === "error") { settled = true; set(() => t("Build failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { settled = true; set(() => t("Build cancelled.")); break; }
+          if (state === "done") { settled = true; set(() => t("Done — check the task manager for the file.")); break; }
           // running / idle: show live progress — "member i/N · name · elapsed" (the DIAGNOSE-
           // THE-DIAGNOSTICS run-journal ruling): i/N + name already ride the existing
           // done/total/detail fields, elapsed is computed client-side from started_at so no new
@@ -1369,7 +1402,7 @@
           const elapsedS = s.started_at ? Math.max(0, Math.round(Date.now() / 1000 - s.started_at)) : null;
           const elapsed = elapsedS != null ? " · " + elapsedS + "s" : "";
           const pct = (s.progress && s.progress.percent != null) ? " " + s.progress.percent + "%" : "";
-          set((followed ? t("A build was already running, so this page follows it. The Thorough box applies to a build you start.") + " " : "")
+          set(() => (followed ? t("A build was already running, so this page follows it. The Thorough box applies to a build you start.") + " " : "")
             + t("Building in the background…") + pct + (member ? " · " + member : "") + elapsed);
           // 2 s keeps a short build feeling immediate; past the first two minutes this is a
           // long haul and a 2 s poll for hours is the polling storm the 2026-06-13 field log
@@ -1379,7 +1412,7 @@
         // The ceiling, or any other way out that never saw a terminal state. The build is
         // still running server-side; say that rather than leaving the last progress line
         // standing as if it were the outcome.
-        if (!settled) set(t("Still building — check the task manager."));
+        if (!settled) set(() => t("Still building — check the task manager."));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1397,7 +1430,7 @@
     async function unattendedStart(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("unatt-status");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361/365: the line follows a language switch
       const note = (($("unatt-note") && $("unatt-note").value) || "").trim();
       // Invariant #14: the arming goes ONLINE (the server clears the kill switch), so the
       // press passes the ONE consent popup like every other offline->online transition.
@@ -1405,7 +1438,7 @@
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Start the unattended run (goes online: continuous collection and the qualification drain)"))) return;
       if (btn) btn.disabled = true;
-      set(t("Arming…"));
+      set(() => t("Arming…"));
       try {
         const r = await api("/api/system/unattended/start", {
           method: "POST", body: JSON.stringify({ note }),
@@ -1413,12 +1446,13 @@
         const q = (r && r.qualification) || {};
         // Say what it DECIDED, not just that it started — a run that declined to
         // qualify must read as a decision, never as one that found nothing to do.
-        const qtxt = q.started
+        const qtxt = () => (q.started
           ? t("source qualification running")
-          : t("source qualification not started") + " — " + (q.reason || "");
-        set(t("Armed.") + " " + t("Collecting") + " · " + qtxt);
+          : t("source qualification not started") + " — " + (q.reason || ""));
+        set(() => t("Armed.") + " " + t("Collecting") + " · " + qtxt());
       } catch (e) {
-        set(t("Could not arm:") + " " + ((e && e.message) || ""));
+        const msg = (e && e.message) || "";   // the server's words are data
+        set(() => t("Could not arm:") + " " + msg);
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1427,9 +1461,9 @@
     async function unattendedLog(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("unatt-status"); const box = $("unatt-log");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361/365: the line follows a language switch
       if (btn) btn.disabled = true;
-      set(t("Reading…"));
+      set(() => t("Reading…"));
       try {
         const r = await api("/api/system/unattended/log");
         const text = (r && r.text) || "";
@@ -1444,9 +1478,10 @@
             copied = true;
           }
         } catch (_e) { copied = false; }
-        set(copied ? t("Copied to the clipboard.") : t("Ready below — select and copy."));
+        set(() => (copied ? t("Copied to the clipboard.") : t("Ready below — select and copy.")));
       } catch (e) {
-        set(t("Could not read the log:") + " " + ((e && e.message) || ""));
+        const msg = (e && e.message) || "";   // the server's words are data
+        set(() => t("Could not read the log:") + " " + msg);
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1458,9 +1493,9 @@
       if (btn) btn.disabled = true;
       try {
         await api("/api/system/unattended/stop", { method: "POST", body: JSON.stringify({}) });
-        if (el) el.textContent = t("Disarmed. Collection is untouched — use airplane mode to stop it.");
+        ooLive(el, () => t("Disarmed. Collection is untouched — use airplane mode to stop it."));
       } catch (e) {
-        if (el) el.textContent = t("Could not disarm:") + " " + ((e && e.message) || "");
+        ooLive(el, () => t("Could not disarm:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1469,21 +1504,21 @@
     async function runP0Validation(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("p0-status"); const out = $("p0-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const dest = (($("p0-dest") && $("p0-dest").value) || "").trim();
       const pass = ($("p0-pass") && $("p0-pass").value) || "";
-      if (!dest || !pass) { set(t("Enter a destination directory and a backup passphrase first.")); return; }
+      if (!dest || !pass) { set(() => t("Enter a destination directory and a backup passphrase first.")); return; }
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
+      ooLiveHtml(out, () => "");
+      set(() => t("Starting…"));
       try {
         try {
           await api("/api/diagnostics/p0-validation", {
             method: "POST", body: JSON.stringify({ dest_dir: dest, passphrase: pass }),
           });
         } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
+          set(() => t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
           return;
         }
         // Hand-off done: clear the passphrase from the field (never keep a secret in the DOM).
@@ -1500,21 +1535,21 @@
           try { s = await api("/api/diagnostics/p0-validation/status"); miss = 0; }
           catch (e) {
             miss++;
-            set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
+            set(() => t("Connection hiccup — retrying…"));  // the JOB is still running server-side
             await sleep(Math.min(2000 * miss, 10000));
-            if (miss > 30) { settled = true; set(t("Still running — check the task manager.")); break; }
+            if (miss > 30) { settled = true; set(() => t("Still running — check the task manager.")); break; }
             continue;
           }
           const state = s && s.state;
-          if (state === "done" && s.ready) { settled = true; set(t("Done.")); renderP0Result(out, (s.result && s.result.report) || {}); break; }
-          if (state === "error") { settled = true; set(t("Validation failed:") + " " + (s.error || t("unknown error"))); break; }
-          if (state === "cancelled") { settled = true; set(t("Validation cancelled.")); break; }
-          if (state === "done") { settled = true; set(t("Done — check the task manager for the report.")); break; }
+          if (state === "done" && s.ready) { settled = true; set(() => t("Done.")); renderP0Result(out, (s.result && s.result.report) || {}); break; }
+          if (state === "error") { settled = true; set(() => t("Validation failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { settled = true; set(() => t("Validation cancelled.")); break; }
+          if (state === "done") { settled = true; set(() => t("Done — check the task manager for the report.")); break; }
           const member = s.detail ? " · " + s.detail : "";
-          set(t("Running in the background…") + member);
+          set(() => t("Running in the background…") + member);
           await sleep(2000);
         }
-        if (!settled) set(t("Still running — check the task manager."));
+        if (!settled) set(() => t("Still running — check the task manager."));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1522,6 +1557,10 @@
 
     function renderP0Result(out, rep) {
       if (!out) return;
+      // Row 361: drawn through ooLiveHtml, so the verdicts, the server's reasons and the links follow a switch.
+      ooLiveHtml(out, () => _p0ResultHtml(rep));
+    }
+    function _p0ResultHtml(rep) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Audit finding 2026-07-17 (M7): this used to shadow the real module-level esc()
       // (top of file) with a fallback to a non-existent global `escapeHtml`, which never
@@ -1542,7 +1581,7 @@
           + ']</span> ' + esc(label) + ' — ' + ooSaidHtml(c, "reason") + '</div>';
       });
       const sum = rep.summary || {};
-      out.innerHTML = rows
+      return rows
         + '<div style="margin-top:4px">' + esc(sum.pass || 0) + ' pass · ' + esc(sum.fail || 0)
         + ' fail · ' + esc(sum.not_measurable_here || 0) + ' not-measurable-here</div>'
         + '<div class="hint">' + esc(sum.note || "") + '</div>'
@@ -1554,7 +1593,7 @@
     async function cancelP0Validation() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { await api("/api/diagnostics/p0-validation/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("p0-status"); if (el) el.textContent = t("Cancelling…");
+      ooLive($("p0-status"), () => t("Cancelling…"));
     }
 
     // ---- The 0.4 release run (2026-09-18) --------------------------------------------
@@ -1584,6 +1623,9 @@
 
     function _rrRenderReport(out, rep) {
       if (!out) return;
+      ooLiveHtml(out, () => _rrReportHtml(rep));   // row 361: follows a language switch
+    }
+    function _rrReportHtml(rep) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (rep && rep.board_rows) || [];
       let html = "";
@@ -1601,7 +1643,7 @@
       const soak = (rep && rep.soak) || {};
       const soakTxt = soak.hours_requested != null
         ? ('<div>' + esc(soak.elapsed_hours) + ' / ' + esc(soak.hours_requested) + ' h · ' + esc(soak.ended_by || "") + '</div>') : "";
-      out.innerHTML = html + soakTxt
+      return html + soakTxt
         + '<div style="margin-top:4px">' + tallyTxt + (rep && rep.interim ? ' · INTERIM' : '') + '</div>'
         + warns
         + '<div class="hint">' + esc(sum.note || "") + '</div>'
@@ -1612,6 +1654,7 @@
 
     // The poll, shared by the start button and "Check now". Returns when the run reaches
     // a terminal state, the poll ceiling passes, or the status says the run is not live.
+    // `set` takes a RENDER (row 361): the status line is drawn through ooLive and follows a language switch.
     async function _rrPoll(set, out, opts) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1626,9 +1669,9 @@
         try { s = await api("/api/diagnostics/release-run/status"); miss = 0; }
         catch (e) {
           miss++;
-          set(t("Connection hiccup — retrying…"));
+          set(() => t("Connection hiccup — retrying…"));
           await sleep(Math.min(2000 * miss, 10000));
-          if (miss > 30) { settled = true; set(t("Still running — check the task manager.")); break; }
+          if (miss > 30) { settled = true; set(() => t("Still running — check the task manager.")); break; }
           continue;
         }
         const state = s && s.state;
@@ -1638,52 +1681,53 @@
           _rrResumePlan = s.resumable ? (s.resume || {}) : null;
           const rb = $("rr-resume-btn");
           if (rb) rb.style.display = s.resumable ? "" : "none";
-          set(t("Interrupted — the app restarted during phase") + " " + (p.phase || "?") + " · "
+          const plan = _rrResumePlan;   // this reading's plan, so a repaint redraws what this reading said
+          set(() => t("Interrupted — the app restarted during phase") + " " + (p.phase || "?") + " · "
             + (s.resumable
-                ? (_rrResumePlan.unlock_needed
+                ? (plan.unlock_needed
                     ? t("press Resume run with the backup passphrase — the backup or the restore is still owed; the measured phases are kept.")
                     : t("press Resume run — the measured phases are kept and the soak starts a new stretch (the bar is continuous)."))
                 : t("the soak window ended there; press the button again for a new window.")));
           break;
         }
-        if (state === "done" && s.ready) { settled = true; set(t("Done.")); _rrRenderReport(out, (s.result && s.result.report) || {}); break; }
-        if (state === "error") { settled = true; set(t("Failed:") + " " + (s.error || t("unknown error"))); break; }
+        if (state === "done" && s.ready) { settled = true; set(() => t("Done.")); _rrRenderReport(out, (s.result && s.result.report) || {}); break; }
+        if (state === "error") { settled = true; set(() => t("Failed:") + " " + (s.error || t("unknown error"))); break; }
         if (state === "cancelled") {
-          settled = true; set(t("Cancelled."));
+          settled = true; set(() => t("Cancelled."));
           if (s.result && s.result.report) _rrRenderReport(out, s.result.report);
           break;
         }
-        if (state === "done") { settled = true; set(t("Done — check the task manager for the report.")); break; }
+        if (state === "done") { settled = true; set(() => t("Done — check the task manager for the report.")); break; }
         if (state !== "running") {
           settled = true;
-          set(p.run_id ? (t("Not running.") + " · " + (p.outcome || "") + " · " + (p.phase || "")) : t("Not running."));
+          set(() => p.run_id ? (t("Not running.") + " · " + (p.outcome || "") + " · " + (p.phase || "")) : t("Not running."));
           break;
         }
         const member = s.detail ? " · " + s.detail : "";
-        set(t("Running in the background…") + member);
+        set(() => t("Running in the background…") + member);
         if (once) { settled = true; break; }
         await sleep(5000);
       } while (Date.now() < deadline);
-      if (!settled) set(t("Still running — check the task manager."));
+      if (!settled) set(() => t("Still running — check the task manager."));
     }
 
     async function releaseRunStart(btn, profile) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("rr-status"); const out = $("rr-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       const params = _rrParams(profile || "release-scale");
-      if (!params.dest_dir || !params.passphrase) { set(t("Enter a destination directory and a backup passphrase first.")); return; }
+      if (!params.dest_dir || !params.passphrase) { set(() => t("Enter a destination directory and a backup passphrase first.")); return; }
       // The consent, at the press: the run goes online for the soak.
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Run the 0.4 release run (goes online for the collection soak, the Wikipedia lane and the probes)"))) return;
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
+      ooLiveHtml(out, () => "");
+      set(() => t("Starting…"));
       try {
         try {
           await api("/api/diagnostics/release-run", { method: "POST", body: JSON.stringify(params) });
         } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
+          set(() => t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
           return;
         }
         // Hand-off done: the passphrase leaves the DOM now.
@@ -1696,7 +1740,7 @@
 
     async function releaseRunStatus(btn) {
       const el = $("rr-status"); const out = $("rr-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       if (btn) btn.disabled = true;
       try {
         await _rrPoll(set, out, { once: true });
@@ -1714,13 +1758,13 @@
     async function releaseRunCollect(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("rr-status");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);
       if (btn) btn.disabled = true;
       try {
         const r = await api("/api/diagnostics/release-run/collect", { method: "POST" });
-        set(r && r.requested ? t("Collect requested — the soak ends now and the report follows.") : t("No run is in progress."));
+        set(() => r && r.requested ? t("Collect requested — the soak ends now and the report follows.") : t("No run is in progress."));
       } catch (e) {
-        set(t("Failed:") + " " + ((e && e.message) || ""));
+        set(() => t("Failed:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1729,7 +1773,7 @@
     async function releaseRunCancel() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { await api("/api/diagnostics/release-run/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("rr-status"); if (el) el.textContent = t("Cancelling…");
+      ooLive($("rr-status"), () => t("Cancelling…"));
     }
 
     // The resume (2026-09-18): the run the app restarted out of continues under the
@@ -1741,20 +1785,20 @@
     async function releaseRunResume(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("rr-status"); const out = $("rr-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       const plan = _rrResumePlan || {};
       const pass = ($("rr-pass") && $("rr-pass").value) || "";
-      if (plan.unlock_needed && !pass) { set(t("Enter the backup passphrase to resume: the backup or the restore is still owed.")); return; }
+      if (plan.unlock_needed && !pass) { set(() => t("Enter the backup passphrase to resume: the backup or the restore is still owed.")); return; }
       // The consent, at the press: a resume goes online again for the soak.
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Resume the 0.4 release run (goes online again for the collection soak, the Wikipedia lane and the probes)"))) return;
       if (btn) btn.disabled = true;
-      set(t("Resuming…"));
+      set(() => t("Resuming…"));
       try {
         try {
           await api("/api/diagnostics/release-run/resume", { method: "POST", body: JSON.stringify({ passphrase: pass }) });
         } catch (e) {
-          set(t("Could not resume:") + " " + ((e && e.message) || ""));
+          set(() => t("Could not resume:") + " " + ((e && e.message) || ""));
           return;
         }
         if ($("rr-pass")) $("rr-pass").value = "";
@@ -1771,23 +1815,23 @@
     // geometry is ooTimeline (src/static/ootimeline.js, pure); this is the wiring:
     // fetch, the summary strip, the SVG, wheel/drag/double-click on the time axis.
     let _chronoData = null, _chronoSpan = null, _chronoTimer = null, _chronoReadAt = 0;
-    let _chronoDrag = null, _chronoWindowBound = false;
+    let _chronoDrag = null, _chronoWindowBound = false, _chronoView = null;
     const _chronoDur = (s) => (window.ooTimeline ? ooTimeline.fmtDur(s) : String(s));
     const _chronoWhen = (iso) => (iso ? ((typeof fmtDateTime === "function") ? fmtDateTime(iso) : String(iso)) : "—");
 
     async function loadChronology(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const st = $("chrono-status");
-      const set = (m) => { if (st) st.textContent = m; };
+      const set = (render) => ooLive(st, render);   // row 361: the line follows a language switch
       const anchor = ($("chrono-anchor") && $("chrono-anchor").value) || "run";
       if (btn) btn.disabled = true;
       try {
         const d = await api("/api/diagnostics/chronology?anchor=" + encodeURIComponent(anchor));
         _chronoData = d; _chronoSpan = null; _chronoReadAt = Date.now();
         _chronoRender(d);
-        set(t("Read from the session ledger") + " · " + _chronoWhen(d.generated_at));
+        set(() => t("Read from the session ledger") + " · " + _chronoWhen(d.generated_at));
       } catch (e) {
-        set(t("Failed:") + " " + ((e && e.message) || ""));
+        set(() => t("Failed:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1855,7 +1899,11 @@
 
     function _chronoRender(d) {
       const sum = $("chrono-summary");
-      if (sum) sum.innerHTML = _chronoSummaryHtml(d);
+      // Row 361: the summary is built from t()/tf() frames and the timeline below it too, so both
+      // keep out of the walker and are drawn again on a switch (chronoRepaint, from app-boot's
+      // oo:langchange listener). Not through ooLive: the live counter inside the summary is written
+      // every second, which the helper would read as a foreign write and stop following the switch.
+      if (sum) { sum.setAttribute("data-i18n-dyn", ""); sum.innerHTML = _chronoSummaryHtml(d); }
       _chronoDraw(d);
       // The live counter: the fetched figure plus the seconds since it was read.
       if (_chronoTimer) clearInterval(_chronoTimer);
@@ -1869,9 +1917,15 @@
       }
     }
 
+    // Row 361: the summary and the timeline redraw from the reading they hold; never fetches, and
+    // only once a reading has been drawn (a panel nobody opened stays as it is).
+    function chronoRepaint() {
+      const sum = $("chrono-summary");
+      if (_chronoData && sum && sum.children.length) _chronoRender(_chronoData);
+    }
+
     function _chronoDraw(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const host = $("chrono-timeline");
       if (!host || !window.ooTimeline) return;
       const width = Math.max(320, host.clientWidth || (host.parentElement ? host.parentElement.clientWidth : 0) || 800);
@@ -1879,6 +1933,53 @@
       const L = ooTimeline.layout(d, { width: width, now: now, padL: 76, padR: 10,
                                        t0: _chronoSpan ? _chronoSpan.t0 : undefined, t1: _chronoSpan ? _chronoSpan.t1 : undefined });
       if (!_chronoSpan) _chronoSpan = { t0: L.t0, t1: L.t1 };
+      // Row 361: the timeline and its legend draw through ooLiveHtml/ooLive, so a language switch redraws their
+      // labels and hovers from this layout. The SVG is re-created by every draw, so its listeners live on the HOST,
+      // bound once, and read the layout last drawn.
+      _chronoView = { d: d, L: L };
+      ooLiveHtml(host, () => _chronoSvgHtml(L, width));
+      ooLive($("chrono-legend"), () => t("Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = suspend; dotted outline = no record; dashed end = the end has no time."));
+      if (host.dataset.chronoBound) return;
+      host.dataset.chronoBound = "1";
+      const tAt = (clientX) => {
+        const svg = $("chrono-svg"), V = _chronoView.L;
+        const r = svg ? svg.getBoundingClientRect() : { left: 0 };
+        return V.t0 + (clientX - r.left - V.padL) / Math.max(1, V.plotW) * (V.t1 - V.t0);
+      };
+      host.addEventListener("wheel", (ev) => {
+        if (!_chronoView || !ev.target.closest || !ev.target.closest("#chrono-svg")) return;
+        ev.preventDefault();
+        _chronoSpan = ooTimeline.zoomAround(_chronoSpan, tAt(ev.clientX), ev.deltaY > 0 ? 1.25 : 0.8, _chronoView.L.full);
+        _chronoDraw(_chronoView.d);
+      }, { passive: false });
+      // The drag: ONE pair of window listeners for the life of the page (the SVG is
+      // re-created on every zoom or pan, so binding them per render would stack).
+      host.addEventListener("mousedown", (ev) => {
+        if (!_chronoView || !ev.target.closest || !ev.target.closest("#chrono-svg")) return;
+        const V = _chronoView;
+        _chronoDrag = { x: ev.clientX, t0: _chronoSpan.t0, t1: _chronoSpan.t1, plotW: V.L.plotW, full: V.L.full, data: V.d };
+      });
+      if (!_chronoWindowBound) {
+        _chronoWindowBound = true;
+        window.addEventListener("mousemove", (ev) => {
+          const g = _chronoDrag;
+          if (!g) return;
+          const dt = -(ev.clientX - g.x) / Math.max(1, g.plotW) * (g.t1 - g.t0);
+          _chronoSpan = ooTimeline.pan({ t0: g.t0, t1: g.t1 }, dt, g.full);
+          _chronoDraw(g.data);
+        });
+        window.addEventListener("mouseup", () => { _chronoDrag = null; });
+      }
+      host.addEventListener("dblclick", (ev) => {
+        if (!_chronoView || !ev.target.closest || !ev.target.closest("#chrono-svg")) return;
+        const full = _chronoView.L.full;
+        _chronoSpan = { t0: full.t0, t1: full.t1 };
+        _chronoDraw(_chronoView.d);
+      });
+    }
+    function _chronoSvgHtml(L, width) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const H = L.height;
       const parts = [];
       parts.push('<svg id="chrono-svg" width="' + width + '" height="' + H + '" viewBox="0 0 ' + width + ' ' + H + '" role="img" '
@@ -1951,39 +2052,7 @@
       }
       if (L.nowVisible) parts.push('<line x1="' + L.nowX + '" y1="0" x2="' + L.nowX + '" y2="' + (H - 16) + '" stroke="var(--accent)" stroke-width="1" title="' + esc(t("now")) + '"/>');
       parts.push('</svg>');
-      host.innerHTML = parts.join("");
-      const legend = $("chrono-legend");
-      if (legend) legend.textContent = t("Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = suspend; dotted outline = no record; dashed end = the end has no time.");
-      const svg = $("chrono-svg");
-      if (!svg) return;
-      const full = L.full;
-      const tAt = (clientX) => {
-        const r = svg.getBoundingClientRect();
-        const x = clientX - r.left;
-        return L.t0 + (x - L.padL) / Math.max(1, L.plotW) * (L.t1 - L.t0);
-      };
-      svg.addEventListener("wheel", (ev) => {
-        ev.preventDefault();
-        _chronoSpan = ooTimeline.zoomAround(_chronoSpan, tAt(ev.clientX), ev.deltaY > 0 ? 1.25 : 0.8, full);
-        _chronoDraw(d);
-      }, { passive: false });
-      // The drag: ONE pair of window listeners for the life of the page (the SVG is
-      // re-created on every zoom or pan, so binding them per render would stack).
-      svg.addEventListener("mousedown", (ev) => {
-        _chronoDrag = { x: ev.clientX, t0: _chronoSpan.t0, t1: _chronoSpan.t1, plotW: L.plotW, full: full, data: d };
-      });
-      if (!_chronoWindowBound) {
-        _chronoWindowBound = true;
-        window.addEventListener("mousemove", (ev) => {
-          const g = _chronoDrag;
-          if (!g) return;
-          const dt = -(ev.clientX - g.x) / Math.max(1, g.plotW) * (g.t1 - g.t0);
-          _chronoSpan = ooTimeline.pan({ t0: g.t0, t1: g.t1 }, dt, g.full);
-          _chronoDraw(g.data);
-        });
-        window.addEventListener("mouseup", () => { _chronoDrag = null; });
-      }
-      svg.addEventListener("dblclick", () => { _chronoSpan = { t0: full.t0, t1: full.t1 }; _chronoDraw(d); });
+      return parts.join("");
     }
 
 
@@ -2011,15 +2080,16 @@
     function _paintAiSweepButton(btnId, running) {
       const btn = $(btnId);
       if (!btn) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      btn.textContent = running ? t("Stop sweep") : t("Start sweep");
+      // The ENGLISH label, for the i18n walker to translate and to translate again on every switch (row 361): the
+      // button carries a translated title, which ooLive's marker would freeze, and the label is a plain key.
+      btn.textContent = running ? "Stop sweep" : "Start sweep";
       btn.dataset.running = running ? "1" : "";
     }
     async function _pollAiSweep(job, btnId, statusEl, resultEl, renderFn) {
       if (_aiSweepPolling[job]) return;
       _aiSweepPolling[job] = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const set = (m) => { if (statusEl) statusEl.textContent = m; };
+      const set = (render) => ooLive(statusEl, render);   // row 361: the line follows a language switch
       let fails = 0;
       try {
         for (;;) {
@@ -2027,8 +2097,8 @@
           // JOB-STATE-AS-TRUTH: a dropped status poll never reads as failure while it runs.
           try { s = await api(`/api/diagnostics/${job}/status`); fails = 0; }
           catch (e) {
-            if (++fails > 30) { set(t("Lost contact with the job — see the task manager.")); break; }
-            set(t("Connection hiccup — retrying…"));
+            if (++fails > 30) { set(() => t("Lost contact with the job — see the task manager.")); break; }
+            set(() => t("Connection hiccup — retrying…"));
             await new Promise((r) => setTimeout(r, Math.min(2000 * fails, 10000)));
             continue;
           }
@@ -2036,21 +2106,21 @@
           if (st === "running") {
             _paintAiSweepButton(btnId, true);
             const detail = s.detail ? " · " + s.detail : "";
-            set(t("Sweeping…") + detail);
+            set(() => t("Sweeping…") + detail);
             await new Promise((r) => setTimeout(r, 2000));
             continue;
           }
           _paintAiSweepButton(btnId, false);
           if (st === "done") {
             const res = s.result || {};
-            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
+            set(() => res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
             renderFn(resultEl, s);
           } else if (st === "error") {
-            set(t("Failed:") + " " + esc(s.error || ""));
+            set(() => t("Failed:") + " " + (s.error || ""));   // text, so never escaped
           } else if (st === "cancelled") {
-            set(t("Cancelled — progress is saved."));
+            set(() => t("Cancelled — progress is saved."));
           } else {
-            set("");
+            set(() => "");
           }
           break;
         }
@@ -2059,22 +2129,22 @@
     async function _toggleAiSweep(job, btnId, statusEl, resultEl, renderFn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const btn = $(btnId);
-      const set = (m) => { if (statusEl) statusEl.textContent = m; };
+      const set = (render) => ooLive(statusEl, render);   // row 361: the line follows a language switch
       if (btn && btn.dataset.running === "1") {
         // Currently running -> this click means STOP (mirrors runLangDetect exactly).
         try { await api(`/api/diagnostics/${job}/cancel`, { method: "POST" }); }
         catch (e) { /* idempotent -- a stale click while it's already stopping is fine */ }
-        set(t("Pausing — progress is saved…"));
+        set(() => t("Pausing — progress is saved…"));
         _pollAiSweep(job, btnId, statusEl, resultEl, renderFn);
         return;
       }
       if (btn) btn.disabled = true; // brief, START-request-only -- never held across the sweep
-      set(t("Starting…"));
+      set(() => t("Starting…"));
       try {
         await api(`/api/diagnostics/${job}/run`, { method: "POST", body: JSON.stringify({}) });
         _paintAiSweepButton(btnId, true);
       } catch (e) {
-        set(t("Could not start:") + " " + ((e && e.message) || ""));
+        set(() => t("Could not start:") + " " + ((e && e.message) || ""));
       }
       if (btn) btn.disabled = false;
       _pollAiSweep(job, btnId, statusEl, resultEl, renderFn);
@@ -2146,9 +2216,7 @@
         const last = await api(`/api/diagnostics/${job}/last`);
         if (!last || !last.available || !resultEl) return;
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
-        renderFn(resultEl, { result: _savedSweepAsResult(last) });
-        resultEl.insertAdjacentHTML(
-          "afterbegin", '<div class="muted">' + esc(_savedSweepStateLine(last, t)) + "</div>");
+        renderFn(resultEl, { result: _savedSweepAsResult(last) }, () => _savedSweepStateLine(last, t));
       } catch (e) { /* a courtesy read; never block the toggle on it */ }
     }
 
@@ -2156,12 +2224,20 @@
       await _toggleAiSweep("keyword-triage", "kt-toggle-btn", $("kt-status"), $("kt-result"), renderKeywordTriageResult);
     }
 
-    function renderKeywordTriageResult(out, status) {
+    // The three sweep result panels draw through ooLiveHtml (row 361), so a language switch redraws them from the
+    // status they were given. `lead`, when given, renders the saved-run line drawn above the result.
+    function _sweepResultDraw(out, lead, html) {
       if (!out) return;
+      ooLiveHtml(out, () => (lead ? '<div class="muted">' + esc(lead()) + "</div>" : "") + html());
+    }
+    function renderKeywordTriageResult(out, status, lead) {
+      _sweepResultDraw(out, lead, () => _keywordTriageHtml(status));
+    }
+    function _keywordTriageHtml(status) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
       const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
-      out.innerHTML = (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
+      return (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
         + esc((res.totals && res.totals.verdicts_out) || 0)
         + " verdicts, canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
         + '<div style="margin-top:4px"><a href="/api/diagnostics/keyword-triage/download" target="_blank">'
@@ -2183,8 +2259,10 @@
       await _toggleAiSweep("source-tags", "st-toggle-btn", $("st-status"), $("st-result"), renderSourceTagsResult);
     }
 
-    function renderSourceTagsResult(out, status) {
-      if (!out) return;
+    function renderSourceTagsResult(out, status, lead) {
+      _sweepResultDraw(out, lead, () => _sourceTagsHtml(status));
+    }
+    function _sourceTagsHtml(status) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
       const totals = res.totals || {};
@@ -2192,7 +2270,7 @@
       // 2026-07-26 field-remarks item 6: totals.missing (closed-vocabulary rejections)
       // and totals.parse_failures were computed but never rendered -- real work was
       // silently happening while the panel looked like it was doing nothing.
-      out.innerHTML = (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
+      return (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
         + esc(totals.assigned_count || 0) + " tagged, "
         + esc(totals.none_count || 0) + " none, " + esc(res.skipped_evidence_floor || 0)
         + " skipped (evidence floor), " + esc(totals.missing || 0) + " rejected (not in your tag vocabulary), "
@@ -2220,14 +2298,14 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("pel-status"); const out = $("pel-result");
       if (btn) btn.disabled = true;
-      if (el) el.textContent = t("Running…");
+      ooLive(el, () => t("Running…"));
       try {
         const res = await api("/api/diagnostics/perception-eval-live", { method: "POST", body: JSON.stringify({}) });
-        if (el) el.textContent = "";
+        ooLive(el, () => "");
         renderPerceptionEvalResult(out, res);
         loadPerceptionGate();
       } catch (e) {
-        if (el) el.textContent = t("Could not run:") + " " + ((e && e.message) || "");
+        ooLive(el, () => t("Could not run:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -2237,12 +2315,12 @@
       if (!out) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!res || res.status !== "ok") {
-        out.textContent = t("unavailable") + (res && res.detail ? " — " + res.detail : "");
+        ooLive(out, () => t("unavailable") + (res && res.detail ? " — " + res.detail : ""));
         return;
       }
       const r = res.report || {};
-      out.textContent = t("model") + " " + (res.model || "?") + " " + t("on") + " " + (res.backend || "?")
-        + " — " + (r.n_cases || 0) + " " + t("gold cases scored.");
+      ooLive(out, () => t("model") + " " + (res.model || "?") + " " + t("on") + " " + (res.backend || "?")
+        + " — " + (r.n_cases || 0) + " " + t("gold cases scored."));
     }
 
     // The language gate (B6): which languages cleared the last live perception-eval
@@ -2254,47 +2332,51 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const g = await api("/api/diagnostics/perception-extract/gate");
-        // TRI-STATE (2026-07-29): true = evaluated + cleared, false = evaluated + FAILED,
-        // null = NO harness evidence. "unmeasured" is never folded into either of the
-        // other two — an absence of measurement is not a verdict.
-        const keys = Object.keys(g).filter((l) => g[l]);
-        const active = keys.filter((l) => g[l].active === true).sort();
-        const disabled = keys.filter((l) => g[l].active === false).sort();
-        const unmeasured = keys.filter((l) => g[l].active == null).sort();
-        // PER-FIELD (E-S3, 2026-08-01): a language cleared for `where` alone is
-        // ACTIVE, but storing `who` there is still refused — so the field states are
-        // shown beside the language, or "active" over-reads as "active for everything".
-        const fieldBits = (l) => {
-          const f = g[l].fields; if (!f) return "";
-          const on = Object.keys(f).filter((k) => f[k] && f[k].active === true);
-          const off = Object.keys(f).filter((k) => f[k] && f[k].active === false);
-          const un = Object.keys(f).filter((k) => f[k] && f[k].active == null);
-          return " [" + [
-            on.length ? t("stores") + " " + on.join("/") : "",
-            off.length ? t("gated") + " " + off.join("/") : "",
-            un.length ? t("unmeasured") + " " + un.join("/") : "",
-          ].filter(Boolean).map(esc).join(" · ") + "]";
-        };
-        const detail = (l) => esc(l) + fieldBits(l) + " (" + esc(g[l].reason || "") + ")";
-        // Active languages show their reason too — that is what makes "cleared on 1
-        // synthetic case — low statistical power" visible rather than implied.
-        // R704: the rates below belong to ONE model; name it beside them.
-        const first = keys.length ? g[keys[0]] : null;
-        let html = (first && first.measured_model)
-          ? "<b>" + esc(t("Measured on model:")) + "</b> " + esc(first.measured_model) + "<br>"
-          : "";
-        html += "<b>" + t("Active languages:") + "</b> "
-          + (active.length ? active.map(detail).join("; ") : t("none yet — run the harness above"));
-        if (disabled.length) {
-          html += "<br><b>" + t("Disabled:") + "</b> " + disabled.map(detail).join("; ");
-        }
-        if (unmeasured.length) {
-          html += "<br><b>" + t("Unmeasured (no harness evidence):") + "</b> "
-            + unmeasured.map(detail).join("; ");
-        }
-        out.innerHTML = html;
+        // Row 361: drawn through ooLiveHtml, so a language switch redraws it from this reading.
+        ooLiveHtml(out, () => _perceptionGateHtml(g, t));
         _paintPerceptionLangToggles(g);
-      } catch (e) { out.textContent = ""; }
+      } catch (e) { ooLiveHtml(out, () => ""); }
+    }
+    function _perceptionGateHtml(g, t) {
+      // TRI-STATE (2026-07-29): true = evaluated + cleared, false = evaluated + FAILED,
+      // null = NO harness evidence. "unmeasured" is never folded into either of the
+      // other two — an absence of measurement is not a verdict.
+      const keys = Object.keys(g).filter((l) => g[l]);
+      const active = keys.filter((l) => g[l].active === true).sort();
+      const disabled = keys.filter((l) => g[l].active === false).sort();
+      const unmeasured = keys.filter((l) => g[l].active == null).sort();
+      // PER-FIELD (E-S3, 2026-08-01): a language cleared for `where` alone is
+      // ACTIVE, but storing `who` there is still refused — so the field states are
+      // shown beside the language, or "active" over-reads as "active for everything".
+      const fieldBits = (l) => {
+        const f = g[l].fields; if (!f) return "";
+        const on = Object.keys(f).filter((k) => f[k] && f[k].active === true);
+        const off = Object.keys(f).filter((k) => f[k] && f[k].active === false);
+        const un = Object.keys(f).filter((k) => f[k] && f[k].active == null);
+        return " [" + [
+          on.length ? t("stores") + " " + on.join("/") : "",
+          off.length ? t("gated") + " " + off.join("/") : "",
+          un.length ? t("unmeasured") + " " + un.join("/") : "",
+        ].filter(Boolean).map(esc).join(" · ") + "]";
+      };
+      const detail = (l) => esc(l) + fieldBits(l) + " (" + esc(g[l].reason || "") + ")";
+      // Active languages show their reason too — that is what makes "cleared on 1
+      // synthetic case — low statistical power" visible rather than implied.
+      // R704: the rates below belong to ONE model; name it beside them.
+      const first = keys.length ? g[keys[0]] : null;
+      let html = (first && first.measured_model)
+        ? "<b>" + esc(t("Measured on model:")) + "</b> " + esc(first.measured_model) + "<br>"
+        : "";
+      html += "<b>" + t("Active languages:") + "</b> "
+        + (active.length ? active.map(detail).join("; ") : t("none yet — run the harness above"));
+      if (disabled.length) {
+        html += "<br><b>" + t("Disabled:") + "</b> " + disabled.map(detail).join("; ");
+      }
+      if (unmeasured.length) {
+        html += "<br><b>" + t("Unmeasured (no harness evidence):") + "</b> "
+          + unmeasured.map(detail).join("; ");
+      }
+      return html;
     }
 
     // ONE SWITCH PER LANGUAGE (Q1144 = a, S05-08 S6). A cleared language can be
@@ -2306,8 +2388,19 @@
     function _paintPerceptionLangToggles(g) {
       const box = $("pe-lang-toggles"); if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // ONE delegated listener, bound once: a language switch redraws the switches (row 361), and listeners bound to
+      // the old inputs would go with them.
+      if (!box.dataset.peBound) {
+        box.dataset.peBound = "1";
+        box.addEventListener("change", (ev) => {
+          if (ev.target && ev.target.matches && ev.target.matches("input[data-pe-lang]")) _savePerceptionLangs(box);
+        });
+      }
+      ooLiveHtml(box, () => _perceptionLangTogglesHtml(g, t));
+    }
+    function _perceptionLangTogglesHtml(g, t) {
       const langs = Object.keys(g || {}).filter((l) => g[l]).sort();
-      if (!langs.length) { box.innerHTML = ""; return; }
+      if (!langs.length) return "";
       const name = (l) => (typeof ooLangName === "function" ? ooLangName(l) : l);
       const rows = langs.map((l) => {
         const e = g[l];
@@ -2329,10 +2422,7 @@
           + (cleared ? "" : " disabled") + "> <span>" + esc(name(l)) + " <span class=\"muted\">("
           + esc(numbers) + ")</span>" + esc(why) + "</span></label>";
       });
-      box.innerHTML = "<b>" + esc(t("Extract in these languages:")) + "</b>" + rows.join("");
-      box.querySelectorAll("input[data-pe-lang]").forEach((cb) => {
-        cb.addEventListener("change", () => _savePerceptionLangs(box));
-      });
+      return "<b>" + esc(t("Extract in these languages:")) + "</b>" + rows.join("");
     }
 
     async function _savePerceptionLangs(box) {
@@ -2358,32 +2448,34 @@
       if (!btn) return;
       const running = (st && st.state) === "running";
       btn.dataset.running = running ? "1" : "0";
-      btn.textContent = running ? t("Pause background AI") : t("Start background AI");
-      if (out) {
-        const held = st && st.user_batch && st.user_batch.held;
-        const parts = [];
-        // The job's state is one of a closed list (src/jobs/background.py: idle | running | done | cancelled | error), printed
-        // through t() word by word so a literal t("...") reaches the string scan; a word outside the list prints as sent.
-        const stateWord = { done: t("done"), cancelled: t("cancelled"), error: t("error") };
-        // While a user's batch holds the model the worker's own line reads "paused — <who> is running" in English only, and the
-        // pill below says the same in the page's language, so the line is left out then rather than printed twice.
-        // Any other line is the worker's: its keyed frame (detail_i18n / detail_vars) is how it reaches the page's language.
-        if (running) {
-          if (!held) parts.push(esc(st.detail ? _framedText(st.detail, st.detail_i18n, st.detail_vars, t) : t("running")));
-        } else if (st && st.state && st.state !== "idle") {
-          parts.push(esc(Object.prototype.hasOwnProperty.call(stateWord, st.state) ? stateWord[st.state] : st.state));
-        }
-        // The pause is stated, never left looking like a stall (ruling 13).
-        if (held) parts.push('<span class="pill warn">' + esc(t("paused — your batch is running")) + "</span>");
-        out.innerHTML = parts.join(" · ");
-      }
+      // Row 361: the button, the status line and the hardware note draw through ooLive, so a switch redraws them.
+      ooLive(btn, () => running ? t("Pause background AI") : t("Start background AI"));
+      ooLiveHtml(out, () => _aiCoordinatorStatusHtml(st, running, t));
       // The hardware verdict is a DEFAULT, never a block: it explains why the master
       // starts where it does, and the operator's override still turns it on.
       if (hw && st && st.hardware_default) {
-        hw.textContent = st.hardware_default.default_on
+        ooLive(hw, () => st.hardware_default.default_on
           ? "" : t("This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.")
-                   .replace("{r}", String(st.hardware_default.reason || ""));
+                   .replace("{r}", String(st.hardware_default.reason || "")));
       }
+    }
+    function _aiCoordinatorStatusHtml(st, running, t) {
+      const held = st && st.user_batch && st.user_batch.held;
+      const parts = [];
+      // The job's state is one of a closed list (src/jobs/background.py: idle | running | done | cancelled | error), printed
+      // through t() word by word so a literal t("...") reaches the string scan; a word outside the list prints as sent.
+      const stateWord = { done: t("done"), cancelled: t("cancelled"), error: t("error") };
+      // While a user's batch holds the model the worker's own line reads "paused — <who> is running" in English only, and the
+      // pill below says the same in the page's language, so the line is left out then rather than printed twice.
+      // Any other line is the worker's: its keyed frame (detail_i18n / detail_vars) is how it reaches the page's language.
+      if (running) {
+        if (!held) parts.push(esc(st.detail ? _framedText(st.detail, st.detail_i18n, st.detail_vars, t) : t("running")));
+      } else if (st && st.state && st.state !== "idle") {
+        parts.push(esc(Object.prototype.hasOwnProperty.call(stateWord, st.state) ? stateWord[st.state] : st.state));
+      }
+      // The pause is stated, never left looking like a stall (ruling 13).
+      if (held) parts.push('<span class="pill warn">' + esc(t("paused — your batch is running")) + "</span>");
+      return parts.join(" · ");
     }
     async function _pollAiCoordinator() {
       if (_aicPolling) return;
@@ -2451,13 +2543,15 @@
       await _toggleAiSweep("perception-extract", "pe-toggle-btn", $("pe-status"), $("pe-result"), renderPerceptionExtractResult);
     }
 
-    function renderPerceptionExtractResult(out, status) {
-      if (!out) return;
+    function renderPerceptionExtractResult(out, status, lead) {
+      _sweepResultDraw(out, lead, () => _perceptionExtractHtml(status));
+    }
+    function _perceptionExtractHtml(status) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
       const totals = res.totals || {};
       const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
-      out.innerHTML = (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
+      return (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
         + esc(totals.stored || 0) + " articles extracted (" + esc(totals.who || 0) + " who, "
         + esc(totals.where || 0) + " where, " + esc(totals.when || 0) + " when), "
         + esc(totals.gated || 0) + " gated, " + esc(totals.skipped_existing || 0) + " already done"
@@ -2600,16 +2694,21 @@
 
     async function loadAiActivity() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
-        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const host = $("ai-activity-body");
       if (!host) return;
       let r;
       try { r = await api("/api/diagnostics/ai-activity"); }
       catch (e) {
-        host.innerHTML = `<p class="muted">${esc(t("Could not read the AI activity feed."))}</p>`;
+        ooLiveHtml(host, () => `<p class="muted">${esc(t("Could not read the AI activity feed."))}</p>`);
         return;
       }
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the feed from this reading.
+      ooLiveHtml(host, () => _aiActivityHtml(r));
+    }
+    function _aiActivityHtml(r) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const sweeps = (r.sweeps || []).map((s) => {
         const rows = [`<div style="font-weight:600;margin-top:8px">${esc(s.label ? t(s.label) : (s.key || ""))}</div>`];
         if (s.note) rows.push(`<div class="muted">${esc(_aiSweepNote(s, t, tf))}</div>`);
@@ -2664,7 +2763,7 @@
 
       const coord = (r.coordinator || {}).note
         ? `<div class="muted" style="margin-top:8px">${esc(_aiCoordinatorNote(r.coordinator, t))}</div>` : "";
-      host.innerHTML = sweeps + stored + coord +
+      return sweeps + stored + coord +
         `<div class="card-caveat" style="margin-top:8px">${ooSaidHtml(r, "caveat")}</div>`;
     }
 
@@ -2735,7 +2834,8 @@
     // Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3.
     let _gbQueries = null;
     async function goldBuilderLoad(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // The button's labels are written as the ENGLISH key for the i18n walker to translate, and to translate again on a
+      // switch (row 361): the button carries a translated title, which ooLive's marker would freeze.
       const body = $("gold-builder-body"); if (!body) return;
       if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
       try {
@@ -2743,7 +2843,7 @@
         _gbQueries = (d.queries || []).map((q) => ({ ...q, relevances: {} }));
         _gbRenderBuilder(d.note, d.grading);
       } catch (e) { body.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
-      if (btn) { btn.disabled = false; btn.textContent = t("Build an IR gold set (grade queries 0/1/2)"); }
+      if (btn) { btn.disabled = false; btn.textContent = "Build an IR gold set (grade queries 0/1/2)"; }
     }
     function _gbRenderBuilder(note, grading) {
       const body = $("gold-builder-body"); if (!body) return;
@@ -2794,9 +2894,24 @@
       try {
         const r = await api("/api/diagnostics/gold-builder/save", { method: "POST", body: JSON.stringify({ path, queries }) });
         const c = r.coverage || {};
-        if (typeof toast === "function") toast(`Saved · ${c.graded_queries || 0} graded queries · ${c.total_judgements || 0} judgements`);
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
+        if (typeof toast === "function") {
+          toast(tf("Saved · graded queries: {queries} · judgements: {judgements}",
+            { queries: c.graded_queries || 0, judgements: c.total_judgements || 0 }));
+        }
         const el = $("gold-builder-cov");
-        if (el) el.textContent = `Saved to ${r.saved} — ${c.total_judgements || 0} judgements across ${JSON.stringify(c.by_language || {})}. Point the IR-eval run below at this path.`;
+        // Row 361: the line follows a language switch (ooLiveHtml). The path and the per-language counts are data,
+        // each isolated in <bdi translate="no">; the counts read "fr 12, de 4", not the raw JSON shown before.
+        const byLang = c.by_language || {};
+        const langs = Object.keys(byLang).map((k) => `${k} ${byLang[k]}`).join(", ");
+        const data = { path: String(r.saved == null ? "" : r.saved), languages: langs };
+        const judgements = c.total_judgements || 0;
+        if (el) ooLiveHtml(el, () => {
+          return esc(String(tf("Saved to {path}. Judgements: {judgements} ({languages}). Point the IR-eval run below at this path.",
+            { judgements, path: "\u0001path\u0002", languages: "\u0001languages\u0002" })))
+            .replace(/\u0001(\w+)\u0002/g, (m, k) => `<bdi translate="no">${esc(data[k])}</bdi>`);
+        });
       } catch (e) { if (typeof toast === "function") toast(_failMsg("Save failed: {error}", e), "err"); }
       if (btn) btn.disabled = false;
     }
@@ -3057,12 +3172,13 @@
     }
 
     function _renderAiCheck(res) {
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the reading it was given.
+      ooLiveHtml($("aicheck-result"), () => (res ? _aiCheckHtml(res) : ""));
+    }
+    function _aiCheckHtml(res) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
-      const out = $("aicheck-result");
-      if (!out) return;
-      if (!res) { out.innerHTML = ""; return; }
       const r = res.reading || {};
       const rows = [];
       const b = r.backend || {};
@@ -3181,7 +3297,7 @@
       const sep = (res.not_run_here || []).map((n) => _aiNotRunHereLine(n, t)).join("<br>");
       if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${ooLabelHtml(esc(t("Not part of this check")), sep)}</div>`);
       if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${ooSaidHtml(res, "caveat")}</div>`);
-      out.innerHTML = rows.join("");
+      return rows.join("");
     }
 
     function _paintAiCheck(st) {
@@ -3190,14 +3306,14 @@
       const running = st && st.state === "running";
       if (btn) {
         btn.dataset.running = running ? "1" : "0";
-        btn.textContent = running ? t("Stop the AI checks") : t("Run all AI checks");
+        // The ENGLISH label, for the walker to translate and to translate again on a switch (row 361): the button
+        // carries a translated title, which ooLive's marker would freeze.
+        btn.textContent = running ? "Stop the AI checks" : "Run all AI checks";
       }
       const p = (st && st.progress) || {};
-      if (el) {
-        el.textContent = running
-          ? `${p.done || 0}/${p.total || "?"} · ${p.detail || ""}`
-          : (st && st.state === "error" ? `${t("failed:")} ${st.error || ""}` : "");
-      }
+      ooLive(el, () => running
+        ? `${p.done || 0}/${p.total || "?"} · ${p.detail || ""}`
+        : (st && st.state === "error" ? `${t("failed:")} ${st.error || ""}` : ""));
       if (!running && st && st.result) _renderAiCheck(st.result);
     }
 
@@ -3310,7 +3426,7 @@
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? v[k] : m)));
       const out = $("field-data-status");
-      const say = (m) => { if (out) out.textContent = m; };
+      const say = (render) => ooLive(out, render);   // row 361/365: the line follows a language switch
       if (btn) btn.disabled = true;
       let files = 0;
       const pause = () => new Promise((res) => setTimeout(res, 400));   // let the browser take each download
@@ -3323,7 +3439,7 @@
       try {
         for (const ex of FIELD_DATA_EXPORTS) {
           if (ex.kind === "file") {
-            say(tf("Saving… {files} files so far.", {files}));
+            { const n = files; say(() => tf("Saving… {files} files so far.", {files: n})); }
             const r = await fetch(ex.url, ex.method ? {method: ex.method} : undefined);
             if (!r.ok) throw new Error("HTTP " + r.status);
             files += await _fieldSaveParts(await r.blob(), named(ex.name, r), pause);
@@ -3332,7 +3448,7 @@
           }
           let after = 0, part = 0;
           for (;;) {
-            say(tf("Saving… {files} files so far.", {files}));
+            { const n = files; say(() => tf("Saving… {files} files so far.", {files: n})); }
             const r = await fetch(ex.url + after);
             if (!r.ok) throw new Error("HTTP " + r.status);
             part += 1;
@@ -3343,9 +3459,10 @@
             await pause();
           }
         }
-        say(tf("Done: {files} files.", {files}));
+        { const n = files; say(() => tf("Done: {files} files.", {files: n})); }
       } catch (e) {
-        say(tf("Stopped after {files} files: {why}", {files, why: (e && e.message) || t("unknown error")}));
+        const n = files, msg = e && e.message;   // the server's words are data
+        say(() => tf("Stopped after {files} files: {why}", {files: n, why: msg || t("unknown error")}));
       } finally {
         if (btn) btn.disabled = false;
       }

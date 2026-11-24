@@ -338,21 +338,31 @@
       if (s.ollama_present) { box.style.display = "none"; box.innerHTML = ""; return; }
       const p = s.platform || {};
       box.style.display = "";
+      // The panel is drawn bare and each of its lines is held on its own through ooLive (row 367): the prepare and run
+      // steps write into #llm-install-detail and #llm-install-log inside it, and a hold on the whole box would be
+      // dropped by the first of those writes. So the title, the lead and the action each follow a language switch.
       if (!p.scripted) {
         // macOS/Windows: honest pointer to the graphical installer, no fake auto-install.
         const url = p.download_url || "https://ollama.com/download";
         box.innerHTML = `<div class="panel" style="border-color:var(--accent)">` +
-          `<strong>${esc(t("Install Ollama"))}</strong>` +
-          `<p class="muted" style="margin:6px 0">${esc(p.reason || t("Download and run the official installer for your system, then return here."))}</p>` +
-          `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(t("Open ollama.com/download ↗"))}</a></div>`;
+          `<strong id="llm-install-title"></strong>` +
+          `<p id="llm-install-lead" class="muted" style="margin:6px 0"></p>` +
+          `<a id="llm-install-link" href="${esc(url)}" target="_blank" rel="noopener"></a></div>`;
+        ooLive($("llm-install-title"), () => t("Install Ollama"));
+        // the platform's own reason, as the server wrote it
+        ooLive($("llm-install-lead"), () => p.reason || t("Download and run the official installer for your system, then return here."));
+        ooLive($("llm-install-link"), () => t("Open ollama.com/download ↗"));
         return;
       }
       box.innerHTML = `<div class="panel" style="border-color:var(--accent)">` +
-        `<strong>${esc(t("Install Ollama"))}</strong>` +
-        `<p class="muted" style="margin:6px 0">${esc(t("Ollama is not installed yet. The app can download the official installer, verify its checksum against the publisher's attestation, and run it. Installing needs administrator rights and downloads over the clear internet (not this app's Tor proxy)."))}</p>` +
-        `<button id="llm-install-prepare-btn" data-on-click="prepareOllamaInstall()">${esc(t("Download & verify the official installer"))}</button>` +
+        `<strong id="llm-install-title"></strong>` +
+        `<p id="llm-install-lead" class="muted" style="margin:6px 0"></p>` +
+        `<button id="llm-install-prepare-btn" data-on-click="prepareOllamaInstall()"></button>` +
         `<div id="llm-install-detail" class="hint" style="margin-top:8px"></div>` +
         `<pre id="llm-install-log" style="display:none;max-height:220px;overflow:auto;background:var(--bg2);padding:8px;border-radius:6px;margin-top:8px;font:12px ui-monospace,monospace;white-space:pre-wrap"></pre></div>`;
+      ooLive($("llm-install-title"), () => t("Install Ollama"));
+      ooLive($("llm-install-lead"), () => t("Ollama is not installed yet. The app can download the official installer, verify its checksum against the publisher's attestation, and run it. Installing needs administrator rights and downloads over the clear internet (not this app's Tor proxy)."));
+      ooLive($("llm-install-prepare-btn"), () => t("Download & verify the official installer"));
     }
     async function prepareOllamaInstall(opts) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -363,25 +373,33 @@
       if (!await ensureAiEgress(t("Download and verify the official Ollama installer (downloads over the clear internet)"),
         {alreadyAsked: !!(opts && opts.alreadyAsked)})) return;
       if (btn) { btn.disabled = true; }
-      if (detail) detail.textContent = t("Downloading and verifying…");
+      // #llm-install-detail is drawn through ooLive/ooLiveHtml from what this step holds, so it follows a language
+      // switch with no second download (row 367).
+      if (detail) ooLive(detail, () => t("Downloading and verifying…"));
       let d;
       try { d = await api("/api/llm/install/prepare", {method: "POST"}); }
-      catch (e) { if (detail) detail.textContent = ooLabelText(t("Could not prepare the installer"), e.message); if (btn) btn.disabled = false; return; }
+      catch (e) {
+        const why = e.message;
+        if (detail) ooLive(detail, () => ooLabelText(t("Could not prepare the installer"), why));
+        if (btn) btn.disabled = false;
+        return;
+      }
       if (btn) btn.style.display = "none";
       // Show the verified version + checksum + how to run it. The checksum is the
       // publisher's own attestation we verified the bytes against — show it so the
       // user can cross-check; never present an unverified script.
       let st = {};
       try { st = await api("/api/llm/install/status"); } catch (_e) {}
-      const runNow = st.can_run_unattended
-        ? `<button data-on-click="runOllamaInstall(${esc(JSON.stringify(d.path))})" style="margin-top:8px">${esc(t("Install now"))}</button>`
-        : "";
-      const manual = `<p class="muted" style="margin:8px 0 2px">${esc(st.can_run_unattended ? t("Or run it yourself in a terminal:") : t("Administrator rights are needed and the app cannot ask for your password. Run this in a terminal:"))}</p>` +
-        `<pre style="background:var(--bg2);padding:8px;border-radius:6px;font:12px ui-monospace,monospace;white-space:pre-wrap">${esc(d.manual_command)}</pre>`;
-      if (detail) detail.innerHTML =
-        `<div>${esc(t("Verified Ollama"))} <code>${esc(d.version)}</code> · SHA-256 <code>${esc((d.sha256||"").slice(0,16))}…</code></div>` +
-        runNow + manual +
-        `<p class="muted" style="margin-top:6px">${esc(t("After installing, click Recheck below."))} <button class="tiny secondary" data-on-click="recheckOllama()">${esc(t("Recheck"))}</button></p>`;
+      if (detail) ooLiveHtml(detail, () => {
+        const runNow = st.can_run_unattended
+          ? `<button data-on-click="runOllamaInstall(${esc(JSON.stringify(d.path))})" style="margin-top:8px">${esc(t("Install now"))}</button>`
+          : "";
+        const manual = `<p class="muted" style="margin:8px 0 2px">${esc(st.can_run_unattended ? t("Or run it yourself in a terminal:") : t("Administrator rights are needed and the app cannot ask for your password. Run this in a terminal:"))}</p>` +
+          `<pre style="background:var(--bg2);padding:8px;border-radius:6px;font:12px ui-monospace,monospace;white-space:pre-wrap">${esc(d.manual_command)}</pre>`;
+        return `<div>${esc(t("Verified Ollama"))} <code>${esc(d.version)}</code> · SHA-256 <code>${esc((d.sha256||"").slice(0,16))}…</code></div>` +
+          runNow + manual +
+          `<p class="muted" style="margin-top:6px">${esc(t("After installing, click Recheck below."))} <button class="tiny secondary" data-on-click="recheckOllama()">${esc(t("Recheck"))}</button></p>`;
+      });
     }
     async function runOllamaInstall(path) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -395,7 +413,18 @@
       // online, which starts the collector.
       if (!await ensureAiEgress(t("Run the verified Ollama installer"))) return;
       _ollamaInstalling = true;
-      log.style.display = ""; log.textContent = "";
+      // The log is ONE list drawn by one render through ooLive (row 367): the installer's own lines as they came, and
+      // this app's error and end lines in the page's language, so a switch mid-install redraws ours and keeps theirs.
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+      const entries = [];
+      const draw = () => {
+        ooLive(log, () => entries.map((x) => x.kind === "line" ? x.text + "\n"
+          : x.kind === "error" ? "\n" + ooLabelText(t("Error"), x.error) + "\n"
+          : "\n" + (x.code === 0 ? t("Installation finished.") : tf("Installer exited with code {code}.", {code: String(x.code)})) + "\n").join(""));
+        log.scrollTop = log.scrollHeight;
+      };
+      log.style.display = ""; draw();
       try {
         const resp = await fetch("/api/llm/install/run", {
           method: "POST", headers: {"Content-Type": "application/json"},
@@ -411,14 +440,14 @@
             const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
             if (!line.trim()) continue;
             let o; try { o = JSON.parse(line); } catch (_e) { continue; }
-            if (o.event === "line") { log.textContent += o.text + "\n"; log.scrollTop = log.scrollHeight; }
-            else if (o.event === "error") { log.textContent += "\n" + ooLabelText(t("Error"), o.error) + "\n"; }
+            if (o.event === "line") { entries.push({kind: "line", text: o.text}); draw(); }
+            else if (o.event === "error") { entries.push({kind: "error", error: o.error}); draw(); }
             else if (o.event === "done") { exitCode = o.exit_code; }
           }
         }
-        log.textContent += "\n" + (exitCode === 0 ? t("Installation finished.") : t("Installer exited with code") + " " + exitCode) + "\n";
+        entries.push({kind: "end", code: exitCode}); draw();
       } catch (e) {
-        log.textContent += "\n" + ooLabelText(t("Error"), e.message) + "\n";
+        entries.push({kind: "error", error: e.message}); draw();
       } finally {
         _ollamaInstalling = false;
         recheckOllama();
@@ -440,22 +469,41 @@
     // table is the dated, verified catalog, and this entry carries its own licence
     // provenance, which is shown here rather than only in the confirm dialog so the
     // user reads it before clicking, not after.
-    function _miniBlockHtml(d, t) {
+    // Drawn bare, then each part held on its own (row 367): #llm-default-model is repainted by _paintDefaultModel,
+    // so the box around it is never held as a whole.
+    function _miniBlockHtml(d) {
       const mini = d && d.ministral && d.ministral.tag ? d.ministral : null;
       if (!mini) return "";
       // The artifact + mechanism are filled in by _paintDefaultModel from
       // /api/llm/default-model, which resolves WHICH backend will actually serve.
       // Rendered as a placeholder first so the block exists even if that call fails,
       // rather than silently vanishing.
-      return `<h3 style="margin:14px 0 4px">${esc(t("Default model"))}</h3>` +
-        `<div id="llm-default-model"><p class="muted">${esc(t("Checking which backend will be used…"))}</p></div>`;
+      return `<h3 id="llm-default-model-h" style="margin:14px 0 4px"></h3><div id="llm-default-model"></div>`;
+    }
+    function _miniBlockHold() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      ooLive($("llm-default-model-h"), () => t("Default model"));
+      _dmRender = null;
+      const host = $("llm-default-model");
+      if (host) ooLiveHtml(host, () => `<p class="muted">${esc(t("Checking which backend will be used…"))}</p>`);
     }
 
     // Paint the default-model block from the SERVER's plan. The two backends download
     // differently -- Ollama pulls an image with real byte progress, vLLM fetches the
     // weights when its server starts -- so the button says which one it is about to do
     // instead of implying a single uniform "download".
-    let _dlModelPoll = null;
+    //
+    // The reads and the drawing are split (row 367): this reads the plan, the catalogue and the vLLM job once, and
+    // _defaultModelHtml draws them through ooLiveHtml, so a language switch redraws the block with no request.
+    // `_dmStarting` is a download being started from the block's own button: the render draws that button as
+    // "Starting…" and disabled, so nothing writes inside the held block.
+    // `_dmFresh` marks the draw that follows a new read: that one shows what the server says is in use; a redraw from
+    // what is already held (a language switch, the Starting… button) keeps the operator's pick on the page.
+    let _dlModelPoll = null, _dmRender = null, _dmStarting = false, _dmFresh = false;
+    function _dmRedraw() {
+      const host = $("llm-default-model");
+      if (host && _dmRender) ooLiveHtml(host, _dmRender);
+    }
     async function _paintDefaultModel() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("llm-default-model");
@@ -463,10 +511,11 @@
       let p = null;
       try { p = await api("/api/llm/default-model"); }
       catch (e) {
-        host.innerHTML = `<p class="muted">${ooLabelHtml(esc(t("Could not determine the default model")), esc(e.message || e))}</p>`;
+        const why = e.message || e;
+        _dmRender = null;
+        ooLiveHtml(host, () => `<p class="muted">${ooLabelHtml(esc(t("Could not determine the default model")), esc(why))}</p>`);
         return;
       }
-      const already = p.installed === true;
       // A PICKER OVER WHAT IS ACTUALLY DOWNLOADED (maintainer 2026-08-09: "replace the
       // bla bla about default model with a drop down menu with only the readily
       // downloaded models"). The list comes from the CATALOGUE, not from
@@ -477,24 +526,51 @@
       // The prose that used to fill this block (the resolver's reason and its
       // mechanism note) has not been deleted -- it moved into the picker's hover,
       // which is where the layering convention puts a long explanation.
-      let picker = "";
+      let have = [], cur = null;
       try {
         const c = await api("/api/llm/models/catalog");
-        const have = (c.models || []).filter((m) => m.available && m.installed === true);
-        if (have.length) {
-          const cur = c.active || p.artifact;
-          const opts = have.map((m) =>
-            `<option value="${esc(m.artifact)}"${m.artifact === cur ? " selected" : ""}>` +
-            `${esc(m.label)}${m.is_default ? " — " + esc(t("default")) : ""}</option>`).join("");
-          picker =
-            `<div class="row" style="gap:8px;align-items:center">` +
-            `<label for="llm-model-pick" style="flex:0 0 auto;margin:0">${esc(t("Model in use"))}</label>` +
-            `<select id="llm-model-pick" style="flex:1;max-width:420px"` +
-            ` title="${esc(ooSaidText(p, "reason") + " " + (p.mechanism_note || ""))}"` +
-            ` data-on-change="setActiveModel(this.value)">${opts}</select>` +
-            `<span class="pill">${esc(p.backend)}</span></div>`;
-        }
+        have = (c.models || []).filter((m) => m.available && m.installed === true);
+        cur = c.active || p.artifact;
       } catch (e) { /* fall through to the download line below */ }
+      // A live line while the vLLM weights come down. The pull queue already has its
+      // own live surface for the Ollama half, so this only fills the gap that existed
+      // for vLLM -- where "download" used to mean "the server will fetch it later".
+      let job = null;
+      if (p.backend === "vllm" && p.installed !== true) {
+        try {
+          const st = await api("/api/llm/default-model/status");
+          job = (st && st.job) || {};
+          if (job.running) {
+            clearTimeout(_dlModelPoll);
+            _dlModelPoll = setTimeout(_paintDefaultModel, 3000);
+          }
+        } catch (e) { /* the block still renders without the live line */ }
+      }
+      _dmRender = () => _defaultModelHtml(p, have, cur, job);
+      _dmFresh = true;
+      ooLiveHtml(host, _dmRender);
+    }
+    function _defaultModelHtml(p, have, cur, job) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const already = p.installed === true;
+      const fresh = _dmFresh;
+      _dmFresh = false;
+      let picker = "";
+      if (have.length) {
+        // a redraw keeps the model picked on the page; a new read (the 3 s poll, a reload) shows the server's own
+        const live = $("llm-model-pick");
+        const sel = !fresh && live && live.value ? live.value : cur;
+        const opts = have.map((m) =>
+          `<option value="${esc(m.artifact)}"${m.artifact === sel ? " selected" : ""}>` +
+          `${esc(m.label)}${m.is_default ? " — " + esc(t("default")) : ""}</option>`).join("");
+        picker =
+          `<div class="row" style="gap:8px;align-items:center">` +
+          `<label for="llm-model-pick" style="flex:0 0 auto;margin:0">${esc(t("Model in use"))}</label>` +
+          `<select id="llm-model-pick" style="flex:1;max-width:420px"` +
+          ` title="${esc(ooSaidText(p, "reason") + " " + (p.mechanism_note || ""))}"` +
+          ` data-on-change="setActiveModel(this.value)">${opts}</select>` +
+          `<span class="pill">${esc(p.backend)}</span></div>`;
+      }
 
       const lines = [];
       if (picker) {
@@ -507,31 +583,22 @@
           ` <span class="pill">${esc(p.backend)}</span>` +
           (already
             ? ` <span class="pill ok">${esc(t("Downloaded"))}</span>`
-            : ` <button data-on-click="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
+            : _dmStarting
+              ? ` <button data-on-click="installDefaultModel(this)" disabled>${esc(t("Starting…"))}</button>`
+              : ` <button data-on-click="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
           `</p>`,
           `<p class="hint">${ooSaidHtml(p, "reason")}</p>`);
         if (p.installed === null && !already) {
           lines.push(`<p class="hint">${esc(t("Whether it is already present here could not be read — downloading again is harmless."))}</p>`);
         }
       }
-      // A live line while the vLLM weights come down. The pull queue already has its
-      // own live surface for the Ollama half, so this only fills the gap that existed
-      // for vLLM -- where "download" used to mean "the server will fetch it later".
-      if (p.backend === "vllm" && !already) {
-        try {
-          const st = await api("/api/llm/default-model/status");
-          const j = (st && st.job) || {};
-          if (j.running) {
-            lines.push(`<p class="hint">${esc(t("Downloading…"))} ${esc((j.progress && j.progress.detail) || "")}</p>`);
-            clearTimeout(_dlModelPoll);
-            _dlModelPoll = setTimeout(_paintDefaultModel, 3000);
-          } else if (j.error) {
-            lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Download failed")), esc(j.error))}</p>`);
-          }
-        } catch (e) { /* the block still renders without the live line */ }
+      if (job && job.running) {
+        lines.push(`<p class="hint">${esc(t("Downloading…"))} ${esc((job.progress && job.progress.detail) || "")}</p>`);
+      } else if (job && job.error) {
+        lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Download failed")), esc(job.error))}</p>`);
       }
       lines.push(`<p class="card-caveat">${ooLabelHtml(esc(t("Licence")), esc(p.license || ""))}. ${esc((p.caveats || []).join(" "))}</p>`);
-      host.innerHTML = lines.join("");
+      return lines.join("");
     }
 
     // ONE button for both backends. The server decides which artifact and how; this
@@ -564,8 +631,9 @@
       // (opts.confirmed) and so is not asked again for the same bytes.
       if (!await ensureAiEgress(t("Download the default model (several GB over the clear internet)"),
         {alreadyAsked: !!(opts && opts.confirmed)})) return;
-      const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      // The button sits inside the held default-model block, so it is redrawn as "Starting…" by that block's render
+      // rather than written into (row 367); the setup chain passes no button and the block says the same.
+      _dmStarting = true; _dmRedraw();
       try {
         const r = await api("/api/llm/default-model/install", {method: "POST"});
         toast(r.action === "queued"
@@ -577,7 +645,7 @@
       } catch (e) {
         toast(ooLabelText(t("Download failed"), e.message || e), "err");
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was; }
+        _dmStarting = false; _dmRedraw();
       }
     }
 
@@ -586,8 +654,14 @@
       const box = $("llm-models-box");
       if (!box) return;
       let d;
+      // #llm-models-box is drawn through ooLiveHtml from this read (row 367). When Ollama is not answering it holds
+      // #llm-default-model, which _paintDefaultModel repaints, so then its parts are held one by one instead.
       try { d = await api("/api/llm/models"); }
-      catch (e) { box.innerHTML = `<p class="muted">${ooLabelHtml(esc(t("Model info unavailable")), esc(e.message))}</p>`; return; }
+      catch (e) {
+        const why = e.message;
+        ooLiveHtml(box, () => `<p class="muted">${ooLabelHtml(esc(t("Model info unavailable")), esc(why))}</p>`);
+        return;
+      }
       if (!d.available) {
         // Ollama is not answering. This used to return HERE, which hid the Launch
         // control and the one-click model install in the EXACT state where they are
@@ -601,14 +675,21 @@
         // one action. Nothing is lost -- the sentence now POINTS AT the control
         // instead of duplicating it, which is also the only way a reader learns
         // the pill is clickable at all.
-        box.innerHTML = `<p class="muted">${esc(t("Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers."))}</p>`
-          + _miniBlockHtml(d, t);
+        ooLive(box, null);
+        box.innerHTML = `<p id="llm-models-note" class="muted"></p>` + _miniBlockHtml(d);
+        ooLive($("llm-models-note"), () => t("Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers."));
+        _miniBlockHold();
         _paintDefaultModel();
         return;
       }
       // A keyed frame with the size written by the one localised writer (Y9): this was
       // "15.5 GB RAM detected" in English in every locale. `total_ram_gb` is psutil's
       // total / 1024**3, the binary step `_sizeText` divides by, so the figure is unchanged.
+      ooLiveHtml(box, () => _llmModelsHtml(d));
+      _paintDefaultModel();
+    }
+    function _llmModelsHtml(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const ram = d.total_ram_gb
         ? tf("{size} RAM detected", { size: _sizeText(d.total_ram_gb * 1073741824, (i, v) => (v % 1 ? 1 : 0)) })
@@ -638,8 +719,7 @@
       //
       // What stays here is the half that only Ollama can answer: what is ACTUALLY
       // installed right now, with set-active and remove.
-      box.innerHTML = `<p class="muted">${esc(ram)}.</p>` + installed;
-      _paintDefaultModel();
+      return `<p class="muted">${esc(ram)}.</p>` + installed;
     }
     async function setActiveModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -705,20 +785,22 @@
         example = (d && d.artifact) || "";
       } catch (e) { backend = null; }
       const h = _CUSTOM_MODEL_HELP[backend];
+      // The intro and the label are drawn through ooLive/ooLiveHtml from the backend this read found, so they follow a
+      // language switch with no second read (row 367). The example is a model identifier, never translated.
       if (!h) {
         // No backend answer is its own state: filling in one backend's example on a
         // guess is how an operator ends up typing an Ollama tag into a vLLM field.
-        if (intro) intro.textContent = t("Set up the local AI first — until a backend is chosen, there is no telling which kind of model name to ask you for.");
-        if (label) label.textContent = t("Model name");
+        if (intro) ooLive(intro, () => t("Set up the local AI first — until a backend is chosen, there is no telling which kind of model name to ask you for."));
+        if (label) ooLive(label, () => t("Model name"));
         if (input) input.placeholder = "";
         return;
       }
-      if (label) label.textContent = t(h.label);
+      if (label) ooLive(label, () => t(h.label));
       if (input) input.placeholder = example;
       if (intro) {
-        intro.innerHTML =
+        ooLiveHtml(intro, () =>
           esc(t(h.lead)) + ' <a href="' + esc(h.href) + '" target="_blank" rel="noopener">' +
-          esc(h.linkText) + " \u2197</a>. " + esc(t(h.form));
+          esc(h.linkText) + " \u2197</a>. " + esc(t(h.form)));
       }
     }
 
@@ -749,14 +831,17 @@
       if (!tag) return;
       // R671: an Ollama cloud model (a ":cloud" or "-cloud" tag) would send every prompt off this computer. Refused before the
       // consent popup, since going online would not make it acceptable; the server refuses it too.
+      // Every line in #llm-pull-progress is drawn through ooLive from what this pull holds, so it follows a language
+      // switch with no second request (row 367); the job's own progress words are the server's, shown as they came.
+      const say = (render) => { const el = $("llm-pull-progress"); if (el) ooLive(el, render); };
+      const sayHtml = (render) => { const el = $("llm-pull-progress"); if (el) ooLiveHtml(el, render); };
       if (_ooIsCloudModel(tag)) {
-        const prog0 = $("llm-pull-progress");
-        if (prog0) prog0.textContent = t("That model runs on Ollama's cloud, not on this computer, so it is refused: the text you give it would leave the machine. Choose a local model.");
+        say(() => t("That model runs on Ollama's cloud, not on this computer, so it is refused: the text you give it would leave the machine. Choose a local model."));
         return;
       }
       if (!await ensureAiEgress(t("Download a model you named (over the clear internet)"))) return;
-      const prog = $("llm-pull-progress");
-      if (prog) prog.textContent = t("Queued") + " " + tag + "…";  // instant feedback
+      // instant feedback: "Queued: {tag}" through the reader's own label frame, the tag never translated (row 367)
+      sayHtml(() => ooLabelHtml(esc(t("Queued")), `<span translate="no">${esc(tag)}</span>`));
       try {
         const r = await api("/api/llm/models/pull-custom",
           {method: "POST", body: JSON.stringify({identifier: tag})});
@@ -765,20 +850,19 @@
         // is the whole value of the check.
         const refused = (r && r.refused) || [];
         if (refused.length) {
-          if (prog) prog.textContent = refused.map((x) => (x.reason ? t(x.reason) : t("refused"))).join(" ");
+          say(() => refused.map((x) => (x.reason ? t(x.reason) : t("refused"))).join(" "));
           return;
         }
         const el = $("llm-pull-tag"); if (el) el.value = "";
         if (r && r.backend === "vllm") {
           // vLLM downloads through its own job, not the Ollama pull queue, so the
           // Ollama poller would sit on an empty queue and report nothing happening.
-          await _followJob("/api/llm/models/install/status?backend=vllm",
-            (m) => { if (prog) prog.textContent = m; });
+          await _followJob("/api/llm/models/install/status?backend=vllm", (m) => say(() => m));
           loadLlmModels();
         } else {
           _llmPullStartPoll();
         }
-      } catch (e) { if (prog) prog.textContent = ooLabelText(t("Download failed"), e.message); }
+      } catch (e) { say(() => ooLabelText(t("Download failed"), e.message)); }
     }
     async function cancelPull(model) {
       try { await api("/api/llm/pull/cancel", {method: "POST", body: JSON.stringify({model})}); _llmPullRefresh(); }
@@ -796,10 +880,16 @@
       try { s = await api("/api/llm/pull/status"); } catch (e) { return; }
       const active = s.active, queue = s.queue || [];
       if (!active && !queue.length) {
-        box.style.display = "none"; box.innerHTML = "";
+        box.style.display = "none"; ooLiveHtml(box, () => "");
         if (_llmPullPoll) { clearInterval(_llmPullPoll); _llmPullPoll = null; loadLlmModels(); }  // a finished pull now shows as installed
         return;
       }
+      // Drawn through ooLiveHtml from this status answer, so it follows a language switch between polls (row 367).
+      ooLiveHtml(box, () => _llmPullHtml(active, queue));
+      box.style.display = "";
+    }
+    function _llmPullHtml(active, queue) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       let html = `<h3 style="margin:0 0 6px">${esc(t("Downloads"))}</h3>`;
       if (active) {
         const pct = active.percent || 0;
@@ -814,7 +904,7 @@
           `<code>${esc(m)}</code> <span class="pill muted">${esc(t("Queued"))}</span>` +
           `<button class="tiny secondary" data-on-click="cancelPull(${esc(JSON.stringify(m))})">${esc(t("Cancel"))}</button></div>`;
       }
-      box.innerHTML = html; box.style.display = "";
+      return html;
     }
 
     // --- LLM behaviour & prompts (Settings → Models) --------------------------- //
@@ -867,10 +957,14 @@
     function copyLlmPrompt(k, btn) {
       const ta = $("llm-prompt-" + k); if (!ta) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // "Copied" is held through ooLive and then released, which puts the button's own label back (and lets the page's
+      // walker translate it), so a switch in between redraws it and a second click never makes "Copied" the label (row 367).
       const done = () => {
         if (!btn) return;
-        const o = btn.textContent; btn.textContent = t("Copied");
-        setTimeout(() => { btn.textContent = o; }, 1200);
+        const n = (btn._ooCopied || 0) + 1;
+        btn._ooCopied = n;
+        ooLive(btn, () => t("Copied"));
+        setTimeout(() => { if (btn._ooCopied === n) ooLive(btn, null); }, 1200);   // only the last click's timer releases it
       };
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -897,10 +991,11 @@
       if (btn) btn.disabled = true;
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
-        if (status) status.textContent = t("Saved.");
+        if (status) ooLive(status, () => t("Saved."));   // follows a language switch (row 367)
         loadLlmPrompts();
       } catch (e) {
-        if (status) status.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+        const why = e.message;
+        if (status) ooLiveHtml(status, () => `<span class="note err">${esc(why)}</span>`);
       } finally { if (btn) btn.disabled = false; }
     }
 
@@ -910,20 +1005,35 @@
     // job (also visible in the task manager) that (per the 2026-07-24 field-feedback ruling)
     // AUTO-STARTS itself in the background whenever there is work to do, so this panel's ONE
     // button just toggles "start" <-> "stop" and reflects whatever is already happening. ---- //
+    // (The manual start/stop button and its runLangDetect/_paintLangDetectButton were removed in row 367: the
+    // button left the page on 2026-08-04, when the background-AI checkbox became the one control, and nothing called
+    // them. The poll below stays: it keeps the count's status line live.)
     let _langDetectPolling = false;
-    function _paintLangDetectButton(running) {
-      const btn = $("langdetect-btn");
-      if (!btn) return;
+    // #langdetect-status: the count, then the poll's lines, each drawn through ooLiveHtml (row 367) inside a span that
+    // carries the count's hover (a title is an attribute, so the render draws it), so both follow a language switch.
+    let _langDetectCount = null;   // null = not read yet: no hover
+    function _langDetectSay(render) {
+      const el = $("langdetect-status");
+      if (!el) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      btn.textContent = running ? t("Language detection ongoing — click to stop") : t("Detect languages");
-      btn.dataset.running = running ? "1" : "";
+      ooLiveHtml(el, () => {
+        const n = _langDetectCount;
+        const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+          : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
+        // a labelled count, never a number welded to "article(s)" (row 367)
+        const tip = n == null ? "" : n ? tf("Articles still in an unknown language after the offline detector: {n}.", {n: String(n)})
+          : t("No articles are missing a language — nothing to detect.");
+        return tip ? `<span title="${esc(tip)}">${esc(render())}</span>` : esc(render());
+      });
     }
     async function pollLangDetect() {
       if (_langDetectPolling) return;
       _langDetectPolling = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
-      const el = $("langdetect-status");
+      // Every line is drawn through _langDetectSay from what this poll read, so it follows a language switch between
+      // polls (row 367). The job's own detail is the server's words, escaped as text.
+      const say = _langDetectSay;
       let fails = 0;
       try {
         for (;;) {
@@ -931,37 +1041,37 @@
           // JOB-STATE-AS-TRUTH: a dropped status poll never reads as failure while the job runs.
           try { s = await api("/api/ai/detect-language/status"); fails = 0; }
           catch (_e) {
-            if (++fails > 30) { if (el) el.textContent = t("Lost contact with the job — see the task manager."); break; }
-            if (el) el.textContent = t("Connection hiccup — retrying…");
+            if (++fails > 30) { say(() => t("Lost contact with the job — see the task manager.")); break; }
+            say(() => t("Connection hiccup — retrying…"));
             await new Promise((r) => setTimeout(r, Math.min(2000 * fails, 8000))); continue;
           }
           const st = s.state, p = s.progress || {}, res = s.result || {};
           if (st === "running") {
-            _paintLangDetectButton(true);
-            if (el) el.textContent = `${p.done || 0}/${p.total || 0}` + (s.detail ? ` · ${esc(s.detail)}` : "");
+            // escaped ONCE, by _langDetectSay: esc() here as well showed an "&" as "&amp;"
+            const line = `${p.done || 0}/${p.total || 0}` + (s.detail ? ` · ${s.detail}` : "");
+            say(() => line);
             await new Promise((r) => setTimeout(r, 2000)); continue;
           }
-          _paintLangDetectButton(false);
           if (st === "done") {
             // Loopback, so airplane mode never stops it (the kill switch refuses only a
             // non-loopback model address): unavailable means not running, and saying
             // "or airplane mode" sent the reader online to fix a local problem.
-            if (res.ran === false) el.textContent = t("The local model is unavailable: the local AI is not running.");
+            if (res.ran === false) say(() => t("The local model is unavailable: the local AI is not running."));
             // ONE keyed sentence, so each locale joins "Done." to its tally its own way:
             // welded with a Latin space it read "完成。 3 已标注" (2026-09-27 re-walk O-5).
-            else el.textContent = tf("Done. {stored} labelled · {none} unclear · {total} scanned",
-              { stored: fmtNum(res.stored || 0, 0), none: fmtNum(res.none || 0, 0), total: fmtNum(res.total || 0, 0) });
-          } else if (st === "cancelled") el.textContent = t("Cancelled.");
-          else if (st === "error") el.textContent = ooLabelText(t("Failed"), s.error || "");
+            else say(() => tf("Done. {stored} labelled · {none} unclear · {total} scanned",
+              { stored: fmtNum(res.stored || 0, 0), none: fmtNum(res.none || 0, 0), total: fmtNum(res.total || 0, 0) }));
+          } else if (st === "cancelled") say(() => t("Cancelled."));
+          else if (st === "error") say(() => ooLabelText(t("Failed"), s.error || ""));
           else if (s.last_run) {
             // Idle in THIS process, but a previous process's run left an honest trace
             // (§1 item 3 — the status line must stay honest about what happened after a
             // restart, not read as blank/never-run).
             const lr = s.last_run;
-            if (lr.state === "error") el.textContent = ooLabelText(t("Last run failed"), lr.error || "");
-            else el.textContent = tf("Last run: {stored} labelled · {none} unclear · {total} scanned",
-              { stored: fmtNum(lr.stored || 0, 0), none: fmtNum(lr.none || 0, 0), total: fmtNum(lr.total || 0, 0) });
-          } else el.textContent = "";
+            if (lr.state === "error") say(() => ooLabelText(t("Last run failed"), lr.error || ""));
+            else say(() => tf("Last run: {stored} labelled · {none} unclear · {total} scanned",
+              { stored: fmtNum(lr.stored || 0, 0), none: fmtNum(lr.none || 0, 0), total: fmtNum(lr.total || 0, 0) }));
+          } else say(() => "");
           break;
         }
       } finally { _langDetectPolling = false; }
@@ -979,39 +1089,15 @@
           // useful half -- it says whether ticking the box has anything to do -- and a
           // full sentence beside a checkbox reads as clutter. Empty when there is
           // nothing to detect, rather than a reassurance nobody asked for.
-          el.textContent = n ? `(${n})` : "";
-          el.title = n
-            ? `${n} ${t("article(s) still unknown after the offline detector.")}`
-            : t("No articles are missing a language — nothing to detect.");
+          _langDetectCount = n;
+          _langDetectSay(() => (n ? `(${n})` : ""));
         } catch (e) { /* the count is a hint; leave it blank on error */ }
       }
       // Reflect reality: a job may already be running (auto-started in the background,
       // or by another tab) even though this panel was just opened.
       let s;
       try { s = await api("/api/ai/detect-language/status"); } catch (e) { return; }
-      _paintLangDetectButton(s.state === "running");
       if (s.state === "running") pollLangDetect();
-    }
-    async function runLangDetect(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const el = $("langdetect-status");
-      if (btn && btn.dataset.running === "1") {
-        // Currently running -> this click means STOP.
-        try { await api("/api/ai/detect-language/cancel", { method: "POST" }); }
-        catch (e) { if (el) el.textContent = ooLabelText(t("Failed"), e.message || e); }
-        pollLangDetect(); // in case no poll loop is live yet (e.g. a fresh tab), pick up the cancel
-        return;
-      }
-      if (btn) btn.disabled = true;
-      if (el) el.textContent = t("Starting…");
-      try {
-        // Always continuous now — the checkbox is gone (the job auto-retries transient
-        // model outages and keeps going until the backlog is drained or cancelled).
-        await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({ continuous: true }) });
-        _paintLangDetectButton(true);
-      } catch (e) { if (el) el.textContent = ooLabelText(t("Failed"), e.message || e); }
-      if (btn) btn.disabled = false;
-      pollLangDetect();
     }
 
     // --- Custom extractors (Settings → Models) — a managed list of user-defined AI
@@ -1226,12 +1312,13 @@
         const num = (typeof fmtNum === "function") ? fmtNum : ((x) => String(x));
         if (cEl) cEl.textContent = num(r.total || 0, 0);
         const chips = (r.terms || []).map(w => `<span class="fam-chip" style="cursor:default">${esc(w)}</span>`).join("");
-        const capNote = r.capped ? `<div class="muted" style="width:100%">${esc(TF("{n} matches — showing the first {shown}.", {n: num(r.matched, 0), shown: (r.terms || []).length}))} ${esc(t("Refine your search."))}</div>` : "";
         const empty = !r.terms || !r.terms.length;
-        listEl.innerHTML = empty
+        // Drawn through ooLiveHtml from this answer, so the cap note and the empty line follow a
+        // language switch with no second request (row 367).
+        ooLiveHtml(listEl, () => empty
           ? `<span class="muted">${esc(q ? t("No built-in stopword matches that.") : t("No built-in stoplist."))}</span>`
-          : capNote + chips;
-      } catch (e) { listEl.innerHTML = `<span class="muted">${esc(t("Could not load the stoplist."))}</span>`; }
+          : (r.capped ? `<div class="muted" style="width:100%">${esc(TF("{n} matches — showing the first {shown}.", {n: num(r.matched, 0), shown: (r.terms || []).length}))} ${esc(t("Refine your search."))}</div>` : "") + chips);
+      } catch (e) { ooLiveHtml(listEl, () => `<span class="muted">${esc(t("Could not load the stoplist."))}</span>`); }
     }
 
     async function saveKeywordFilter() {
@@ -1254,28 +1341,54 @@
     //    plain-language impact of moving it, and -- where a bound exists to stop an
     //    underpowered claim -- the reason for that bound. Nothing here ranks or
     //    scores a producer; these are the thresholds each already applied.
-    let _cardCat = null;
+    //    The form is drawn through ooLiveHtml (row 367), so a language switch redraws it with no request. A redraw
+    //    starts from the form AS IT STANDS (_cardFormState): what was ticked or typed and not saved yet, and which
+    //    sections were open, are kept; only a fresh read of the catalogue draws the stored values.
+    let _cardCat = null, _cardFresh = false;
     async function loadCardCatalog() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const host = $("cards-host"); if (!host) return;
       try { _cardCat = await api("/api/settings/cards"); }
       catch (e) {
-        host.innerHTML = `<div class="muted">${esc(t("Could not load the Leads catalogue."))}</div>`;
+        ooLiveHtml(host, () => `<div class="muted">${esc(t("Could not load the Leads catalogue."))}</div>`);
         return;
       }
       renderCardCatalog();
     }
-    function _cardTunableRow(prod, tn) {
+    function _cardKey(prod, key) { return prod + "\u0000" + key; }
+    function _cardFormState(host) {
+      if (!host || !host.querySelector || !host.querySelector(".card-fam")) return null;
+      const st = {on: {}, val: {}, fam: {}, tune: {}};
+      host.querySelectorAll(".card-on").forEach((cb) => { st.on[cb.value] = !!cb.checked; });
+      host.querySelectorAll(".card-tune").forEach((row) => {
+        const input = row.querySelector("input");
+        if (input) st.val[_cardKey(row.dataset.prod, row.dataset.key)] = input.value;
+      });
+      host.querySelectorAll("details.card-fam").forEach((d) => { st.fam[d.dataset.fam] = !!d.open; });
+      host.querySelectorAll(".card-prod").forEach((p) => {
+        const d = p.querySelector("details.card-finetune");
+        if (d) st.tune[p.dataset.prod] = !!d.open;
+      });
+      return st;
+    }
+    // the value the form shows for a tunable: the one typed and not saved yet, else the stored one
+    function _cardVal(st, prod, tn) {
+      const k = _cardKey(prod, tn.key);
+      return st && Object.prototype.hasOwnProperty.call(st.val, k) ? st.val[k] : String(tn.value);
+    }
+    function _cardOn(st, p) { return st && Object.prototype.hasOwnProperty.call(st.on, p.name) ? st.on[p.name] : !!p.enabled; }
+    function _cardTunableRow(prod, tn, st) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const step = tn.kind === "float" ? "0.01" : "1";
-      const changed = Number(tn.value) !== Number(tn.default);
+      const value = _cardVal(st, prod, tn);
+      const changed = Number(value) !== Number(tn.default);
       // The range is SHOWN, not just enforced: an operator should be able to read
       // the bounds without discovering them by being corrected.
       const range = `${ooLtrIsolate(tn.lo + "–" + tn.hi)}${tn.unit ? " " + esc(tn.unit) : ""}`;
       return `<div class="card-tune" data-prod="${esc(prod)}" data-key="${esc(tn.key)}">
         <label class="sl" for="ct-${esc(prod)}-${esc(tn.key)}">${esc(tn.label)}</label>
         <input id="ct-${esc(prod)}-${esc(tn.key)}" type="number" class="card-tune-in"
-               value="${esc(String(tn.value))}" min="${esc(String(tn.lo))}" max="${esc(String(tn.hi))}"
+               value="${esc(value)}" min="${esc(String(tn.lo))}" max="${esc(String(tn.hi))}"
                step="${step}" data-default="${esc(String(tn.default))}">
         <span class="muted card-tune-range">${esc(t("safe range"))} ${range}</span>
         <button class="ghost tiny card-tune-reset" ${changed ? "" : "disabled"}
@@ -1289,47 +1402,58 @@
     // removed. Open at Full; folded at Standard and Essentials, EXCEPT where a value
     // already differs from the one the app ships with -- a changed setting is never
     // tucked out of sight. saveCardSettings reads the rows wherever they sit.
-    function _cardFineTune(p) {
+    function _cardFineTune(p, st) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? v[k] : m)));
-      const changed = p.tunables.filter(tn => Number(tn.value) !== Number(tn.default)).length;
+      const changed = p.tunables.filter(tn => Number(_cardVal(st, p.name, tn)) !== Number(tn.default)).length;
       const depth = (typeof uiDepth === "function") ? uiDepth() : "full";
-      const open = depth === "full" || changed > 0;
+      const open = st && Object.prototype.hasOwnProperty.call(st.tune, p.name) ? st.tune[p.name] : (depth === "full" || changed > 0);
       const n = (typeof fmtNum === "function") ? fmtNum(p.tunables.length, 0) : String(p.tunables.length);
       return `<details class="card-finetune"${open ? " open" : ""}>
         <summary>${esc(tf("Fine-tune ({n})", {n}))}${changed ? ` <span class="muted">· ${esc(tf("{n} changed", {n: String(changed)}))}</span>` : ""}</summary>
-        ${p.tunables.map(tn => _cardTunableRow(p.name, tn)).join("")}
+        ${p.tunables.map(tn => _cardTunableRow(p.name, tn, st)).join("")}
       </details>`;
     }
     function renderCardCatalog() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const host = $("cards-host"); if (!host || !_cardCat) return;
-      host.innerHTML = (_cardCat.families || []).map(fam => {
-        const on = fam.producers.filter(p => p.enabled).length;
-        return `<details class="card-fam" data-fam="${esc(fam.family)}">
-          <summary><span class="card-fam-t">${esc(fam.label)}</span>
+      _cardFresh = true;   // a fresh read: the stored values, never what the older form held (its open families stay)
+      ooLiveHtml(host, _cardCatalogHtml);
+    }
+    function _cardCatalogHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const st = _cardFormState($("cards-host"));
+      // a fresh read (or a depth change) draws the stored values and each fine-tune fold's default for the depth;
+      // the families that were open stay open
+      if (st && _cardFresh) { st.on = {}; st.val = {}; st.tune = {}; }
+      _cardFresh = false;
+      return (_cardCat.families || []).map(fam => {
+        const on = fam.producers.filter(p => _cardOn(st, p)).length;
+        const open = st && st.fam[fam.family] ? " open" : "";
+        return `<details class="card-fam" data-fam="${esc(fam.family)}"${open}>
+          <summary><span class="card-fam-t">${esc(t(fam.label))}</span>
             <span class="muted">— ${on}/${fam.producers.length} ${esc(t("on"))}</span></summary>
           ${fam.producers.map(p => `<div class="card-prod" data-prod="${esc(p.name)}">
             <label class="switch">
-              <input type="checkbox" class="card-on" value="${esc(p.name)}" ${p.enabled ? "checked" : ""}
+              <input type="checkbox" class="card-on" value="${esc(p.name)}" ${_cardOn(st, p) ? "checked" : ""}
                      data-on-change="cardSetEnabled(this)"> <b>${esc(p.label)}</b></label>
             <div class="hint card-prod-d">${esc(p.description)}</div>
-            ${p.tunables.length ? _cardFineTune(p) : ""}
+            ${p.tunables.length ? _cardFineTune(p, st) : ""}
           </div>`).join("")}
         </details>`;
       }).join("") + `<div class="row" style="margin-top:10px;gap:8px">
         <button data-on-click="saveCardSettings()">${esc(t("Save Lead settings"))}</button></div>`;
     }
     function cardSetEnabled(cb) {
-      const fam = cb.closest(".card-fam");
-      if (!fam) return;
-      // keep the family's "N/M on" counter honest as you click, before any save
-      const boxes = fam.querySelectorAll(".card-on");
-      const on = Array.from(boxes).filter(b => b.checked).length;
-      const label = fam.querySelector("summary .muted");
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      if (label) label.textContent = `— ${on}/${boxes.length} ${t("on")}`;
+      const host = $("cards-host");
+      if (!host || !_cardCat || !cb.closest(".card-fam")) return;
+      // keep the family's "N/M on" counter honest as you click, before any save: the form is redrawn from itself
+      // (the count is part of what a language switch redraws, so it is never written beside the render), and the
+      // focus goes back to the box that was clicked.
+      const name = cb.value;
+      ooLiveHtml(host, _cardCatalogHtml);
+      const again = Array.from(host.querySelectorAll(".card-on")).find((b) => b.value === name);
+      if (again && typeof again.focus === "function") again.focus();
     }
     function cardResetTunable(prod, key) {
       const el = document.querySelector(`.card-tune[data-prod="${prod}"][data-key="${key}"] input`);
@@ -1356,17 +1480,18 @@
         // A value the backend had to pull into range is REPORTED here, never applied
         // in silence (ruling 3) -- the operator would otherwise believe a Lead runs
         // at a setting it does not have.
+        // Drawn through ooLiveHtml from this answer, so it follows a language switch (row 367).
         const notes = s.clamped || [];
         if (notes.length) {
-          msg.innerHTML = `<span class="note warn">${esc(t("Some values were adjusted to stay in their safe range:"))}</span>` +
+          ooLiveHtml(msg, () => `<span class="note warn">${esc(t("Some values were adjusted to stay in their safe range:"))}</span>` +
             notes.map(n => `<div class="hint">${esc(n.producer)} · ${esc(n.key)}${
-              n.given !== undefined ? ` ${esc(String(n.given))} → ${esc(String(n.used))}` : ""} — ${ooSaidHtml(n, "reason")}</div>`).join("");
+              n.given !== undefined ? ` ${esc(String(n.given))} → ${esc(String(n.used))}` : ""} — ${ooSaidHtml(n, "reason")}</div>`).join(""));
         } else {
-          msg.innerHTML = `<span class="note ok">${esc(t("Lead settings saved."))}</span>`;
+          ooLiveHtml(msg, () => `<span class="note ok">${esc(t("Lead settings saved."))}</span>`);
         }
         loadCardCatalog();   // re-read so the inputs show what is actually stored
       } catch (e) {
-        msg.innerHTML = `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`;
+        ooLiveHtml(msg, () => `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`);
       }
     }
 
@@ -1388,9 +1513,10 @@
         // number it actually kept is what stops the control from claiming a
         // setting the server declined.
         el.value = s.import_checkpoint_k;
-        if (msg) msg.innerHTML = `<span class="note ok">${esc(t("Preferences saved."))}</span>`;
+        // Drawn through ooLiveHtml, so the line follows a language switch (row 367).
+        ooLiveHtml(msg, () => `<span class="note ok">${esc(t("Preferences saved."))}</span>`);
       } catch (e) {
-        if (msg) msg.innerHTML = `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`;
+        ooLiveHtml(msg, () => `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`);
       }
     }
 
@@ -1450,29 +1576,27 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!_confirmVacuum()) return;
       const btn = $("vacuum-btn"), out = $("vacuum-result");
-      btn.disabled = true; out.textContent = t("Compacting… this can take a while on a large corpus.");
+      // Every line in #vacuum-result is drawn through ooLive/ooLiveHtml from what this run answered,
+      // so it follows a language switch without compacting again (row 367).
+      btn.disabled = true; ooLive(out, () => t("Compacting… this can take a while on a large corpus."));
       try {
         const r = await api("/api/database/vacuum", {method: "POST"});
         const freed = (r.bytes_reclaimed == null) ? "—" : _fmtBytes(r.bytes_reclaimed);
         // One keyed sentence: welded, zh read "压缩完成。 已释放空间： 1.2 GB" (re-walk O-5).
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
-        out.textContent = tf("Compacted. Space returned to the disk: {freed} · {secs} s",
-          { freed, secs: (r.duration_ms / 1000).toFixed(1) });
+        const secs = (r.duration_ms / 1000).toFixed(1);
         // R785: space freed inside the database that the disk has not seen yet is its own line, never "freed".
-        const pend = r.freed_not_yet_shrunk;
         // A size that could not be read names no cause: the headline already shows "—".
-        if (pend && pend.bytes > 0 && r.bytes_reclaimed != null) {
-          const why = document.createElement("div");
-          why.className = "muted";
-          why.textContent = tf(r.journal_mode === "wal"
+        const pend = r.freed_not_yet_shrunk;
+        const pending = (pend && pend.bytes > 0 && r.bytes_reclaimed != null) ? _fmtBytes(pend.bytes) : null;
+        ooLiveHtml(out, () => esc(tf("Compacted. Space returned to the disk: {freed} · {secs} s", { freed, secs })) +
+          (pending == null ? "" : `<div class="muted">${esc(tf(r.journal_mode === "wal"
             ? "{pending} freed inside the database is not yet back on the disk: on this store's write-ahead log that space returns only when a later checkpoint completes, such as the one the app attempts when it closes; a read still in progress or an abrupt stop can delay it."
             : "{pending} freed inside the database is not yet back on the disk. No cause has been measured for this store.",
-            { pending: _fmtBytes(pend.bytes) });
-          out.appendChild(why);
-        }
+            { pending }))}</div>`));
         _dbReclaimBytes = 0; _paintReclaim();
       } catch (e) {
-        out.textContent = ooLabelText(t("Compaction failed"), e.message);
+        ooLive(out, () => ooLabelText(t("Compaction failed"), e.message));
       } finally { btn.disabled = false; }
     }
 
@@ -1484,6 +1608,13 @@
     // of 15-35 s per GB: never a countdown.
     const REBUILD_LO_S_PER_GB = 15, REBUILD_HI_S_PER_GB = 35;
     let _rebuildWired = false, _rebuildPoll = null, _rebuildSt = null;
+    // What the last click on Rebuild… was answered, until the job's own state says more: null, {starting: true} (the
+    // start was taken) or {refused: message} (it was not). It was res.dataset.keep beside two writers of #rebuild-result;
+    // now ONE render (_rbResultText) owns that line and draws it from this and _rebuildSt, so a language switch
+    // redraws it with no request and never puts an older line back over a newer one (row 367).
+    let _rebuildNote = null;
+    // The kept files whose removal is in flight ("store\u0000name"): their Remove buttons stay disabled through a redraw.
+    const _rbRemoving = new Set();
     function _rbT() { return (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s); }
     function _rbTf(s, v) {
       return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s, v) : s.replace(/\{(\w+)\}/g, (_, k) => v[k]);
@@ -1495,6 +1626,60 @@
       return _rbTf("{kib} KiB pages", {kib: fmtNum(kib, 0)}) + " · " +
         (c.auto_vacuum === 2 ? t("space given back gradually") : c.auto_vacuum === 1 ? t("space given back at each save") : t("space kept until compacted"));
     }
+    // The library's status line, from one status answer (a render: it never fetches).
+    function _rbStatusText(st) {
+      const t = _rbT();
+      const running = (st.job || {}).state === "running";
+      if (!st.supported) return t("There is no library file here to rebuild.");
+      // While any rebuild runs the settings are not read (no connection may be open as the switch begins).
+      if (!st.current && running) return t("A rebuild is running; the settings are read again once it has finished.");
+      if (!st.current) return t("The library's settings could not be read, so a rebuild is not offered.");
+      const now = _rbSettings(st.current), want = _rbSettings(st.target);
+      let line = _rbTf("Now: {now}. A rebuild gives: {want}.", {now, want});
+      if (!st.needed) line += " " + t("This library already has the current settings; nothing to rebuild.");
+      const pf = st.preflight || {};
+      if (st.needed && pf.sufficient === false) {
+        line += " " + _rbTf("Not enough free space: the new file needs about {need} and the drive has {free}.",
+          {need: _fmtBytes(pf.needed_bytes), free: _fmtBytes(pf.free_bytes)});
+        if (pf.kept_copies_bytes) line += " " + _rbTf("Files earlier rebuilds kept take {kept}; you can remove them below.", {kept: _fmtBytes(pf.kept_copies_bytes)});
+      } else if (st.needed && pf.sufficient == null) {
+        line += " " + t("The free space on the library's drive could not be read, so it was not checked.");
+      }
+      return line;
+    }
+    // #rebuild-result: the job's own progress line (in the UI language through its keyed frame), else the refusal of the
+    // last click, else the last rebuild's outcome, else "Rebuilding…" for a start that was taken. Drawn from _rebuildSt and
+    // _rebuildNote only.
+    function _rbResultText() {
+      const t = _rbT(), st = _rebuildSt || {}, job = st.job || {}, N = _rebuildNote;
+      if (job.state === "running") {
+        const vars = Object.assign({}, job.detail_vars || {});
+        if (vars.store) vars.store = t(vars.store);  // a separate store's name, from the store registry's own label
+        return job.detail_i18n ? _rbTf(t(job.detail_i18n), vars) : t("Rebuilding…");
+      }
+      if (N && N.refused != null) return ooLabelText(t("The rebuild did not start"), N.refused);
+      const L = st.last;
+      if (L && L.outcome && L.store && L.store !== "library") {
+        // A separate store's last rebuild: named, and "the store" where the library's lines say "the library".
+        const lane = (st.lanes || []).find((x) => x.store === L.store);
+        const store = t((lane && lane.label) || L.store);
+        if (L.outcome === "rebuilt") return _rbTf("Last rebuild of {store} finished in {secs} s. The old file was kept as {name}.", {store, secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
+        if (L.outcome === "stopped") return _rbTf("The last rebuild of {store} was stopped. The store is as it was.", {store});
+        if (L.outcome === "declined") return ooLabelText(_rbTf("The last rebuild of {store} did not start", {store}), L.reason_text || L.reason || "");
+        if (L.outcome === "failed") return ooLabelText(_rbTf("The last rebuild of {store} failed", {store}), L.failure || "") +
+          (L.switched ? "" : " " + t("The store is as it was."));
+      } else if (L && L.outcome) {
+        if (L.outcome === "rebuilt") return _rbTf("Last rebuild finished in {secs} s. The old file was kept as {name}.", {secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
+        if (L.outcome === "stopped") return t("The last rebuild was stopped. The library is as it was.");
+        if (L.outcome === "declined") return ooLabelText(t("The last rebuild did not start"), L.reason_text || L.reason || "");
+        if (L.outcome === "failed") return ooLabelText(t("The last rebuild failed"), L.failure || "") +
+          (L.switched ? "" : " " + t("The library is as it was."));
+      }
+      return (N && N.starting) ? t("Rebuilding…") : "";
+    }
+    function _rbRemoveDisabled(store, name) { return _rbRemoving.has(store + "\u0000" + name) ? " disabled" : ""; }
+    // Every line here is drawn through ooLive/ooLiveHtml from this status answer, so it follows a language switch with no
+    // request (row 367); the 2 s poll re-takes each host with the newer answer.
     function _rbPaint(st) {
       const t = _rbT();
       _rebuildSt = st;
@@ -1503,62 +1688,18 @@
       const job = st.job || {};
       const running = job.state === "running";
       stop.style.display = running ? "" : "none";
-      if (!st.supported) {
-        box.textContent = t("There is no library file here to rebuild.");
-        btn.disabled = true;
-      } else if (!st.current && running) {
-        // While any rebuild runs the settings are not read (no connection may be open as the switch begins).
-        box.textContent = t("A rebuild is running; the settings are read again once it has finished.");
-        btn.disabled = true;
-      } else if (!st.current) {
-        box.textContent = t("The library's settings could not be read, so a rebuild is not offered.");
-        btn.disabled = true;
-      } else {
-        const now = _rbSettings(st.current), want = _rbSettings(st.target);
-        let line = _rbTf("Now: {now}. A rebuild gives: {want}.", {now, want});
-        if (!st.needed) line += " " + t("This library already has the current settings; nothing to rebuild.");
-        const pf = st.preflight || {};
-        if (st.needed && pf.sufficient === false) {
-          line += " " + _rbTf("Not enough free space: the new file needs about {need} and the drive has {free}.",
-            {need: _fmtBytes(pf.needed_bytes), free: _fmtBytes(pf.free_bytes)});
-          if (pf.kept_copies_bytes) line += " " + _rbTf("Files earlier rebuilds kept take {kept}; you can remove them below.", {kept: _fmtBytes(pf.kept_copies_bytes)});
-        } else if (st.needed && pf.sufficient == null) {
-          line += " " + t("The free space on the library's drive could not be read, so it was not checked.");
-        }
-        box.textContent = line;
-        btn.disabled = running || !st.needed || pf.sufficient === false;
-      }
-      // The job's own progress line, in the UI language through its keyed frame.
-      const res = $("rebuild-result");
-      if (running) {
-        delete res.dataset.keep;  // a start that did go ahead replaces the refusal shown before it
-        const vars = Object.assign({}, job.detail_vars || {});
-        if (vars.store) vars.store = t(vars.store);  // a separate store's name, from the store registry's own label
-        res.textContent = job.detail_i18n ? _rbTf(t(job.detail_i18n), vars) : t("Rebuilding…");
-      } else if (st.last && st.last.outcome && !res.dataset.keep && st.last.store && st.last.store !== "library") {
-        // A separate store's last rebuild: named, and "the store" where the library's lines say "the library".
-        const L = st.last, lane = (st.lanes || []).find((x) => x.store === L.store);
-        const store = t((lane && lane.label) || L.store);
-        if (L.outcome === "rebuilt") res.textContent = _rbTf("Last rebuild of {store} finished in {secs} s. The old file was kept as {name}.", {store, secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
-        else if (L.outcome === "stopped") res.textContent = _rbTf("The last rebuild of {store} was stopped. The store is as it was.", {store});
-        else if (L.outcome === "declined") res.textContent = ooLabelText(_rbTf("The last rebuild of {store} did not start", {store}), L.reason_text || L.reason || "");
-        else if (L.outcome === "failed") res.textContent = ooLabelText(_rbTf("The last rebuild of {store} failed", {store}), L.failure || "") +
-          (L.switched ? "" : " " + t("The store is as it was."));
-      } else if (st.last && st.last.outcome && !res.dataset.keep) {
-        const L = st.last;
-        if (L.outcome === "rebuilt") res.textContent = _rbTf("Last rebuild finished in {secs} s. The old file was kept as {name}.", {secs: fmtNum(L.seconds || 0, 1), name: L.kept_file || "—"});
-        else if (L.outcome === "stopped") res.textContent = t("The last rebuild was stopped. The library is as it was.");
-        else if (L.outcome === "declined") res.textContent = ooLabelText(t("The last rebuild did not start"), L.reason_text || L.reason || "");
-        else if (L.outcome === "failed") res.textContent = ooLabelText(t("The last rebuild failed"), L.failure || "") +
-          (L.switched ? "" : " " + t("The library is as it was."));
-      }
+      const pf = st.preflight || {};
+      btn.disabled = !st.supported || !st.current || running || !st.needed || pf.sufficient === false;
+      ooLive(box, () => _rbStatusText(st));
+      if (running) _rebuildNote = null;  // a start that did go ahead replaces the refusal shown before it
+      ooLive($("rebuild-result"), _rbResultText);
       // The files earlier rebuilds kept: name, size, date, and a Remove button each (Q-a).
       const list = st.kept_copies || [];
-      kept.innerHTML = list.length ? (
+      ooLiveHtml(kept, () => list.length ? (
         `<div class="muted">${esc(t("Files earlier rebuilds kept (the library as it was before each rebuild):"))}</div>` +
         list.map((k) => `<div class="vr"><span>${esc(k.name)} · ${esc(_fmtBytes(k.bytes))} · ${esc(fmtDateTime(k.made_at))}</span>` +
-          `<button class="secondary" data-rebuild-remove="${esc(k.name)}">${esc(t("Remove"))}</button></div>`).join("")
-      ) : "";
+          `<button class="secondary" data-rebuild-remove="${esc(k.name)}"${_rbRemoveDisabled("library", k.name)}>${esc(t("Remove"))}</button></div>`).join("")
+      ) : "");
       _rbPaintLanes(st.lanes || [], running);
       if (running && !_rebuildPoll) _rebuildPoll = setInterval(loadRebuild, 2000);
       if (!running && _rebuildPoll) { clearInterval(_rebuildPoll); _rebuildPoll = null; }
@@ -1568,8 +1709,8 @@
     function _rbPaintLanes(lanes, running) {
       const t = _rbT(), host = $("rebuild-lanes");
       if (!host) return;
-      if (!lanes.length) { host.innerHTML = ""; return; }
-      host.innerHTML = `<div class="muted">${esc(t("Separate stores:"))}</div>` + lanes.map((L) => {
+      // Drawn through ooLiveHtml from this status answer, so it follows a language switch (row 367).
+      ooLiveHtml(host, () => !lanes.length ? "" : `<div class="muted">${esc(t("Separate stores:"))}</div>` + lanes.map((L) => {
         const name = t(L.label || L.store);
         let line, can = false;
         if (!L.supported) line = t("This store has no file to rebuild.");
@@ -1589,8 +1730,8 @@
           `<button class="danger" data-rebuild-store="${esc(L.store)}"${(can && !running) ? "" : " disabled"}>${esc(t("Rebuild…"))}</button></div>` +
           (kept.length ? `<div class="muted">${esc(t("Files earlier rebuilds of this store kept (the store as it was before each rebuild):"))}</div>` +
             kept.map((k) => `<div class="vr"><span>${esc(k.name)} · ${esc(_fmtBytes(k.bytes))} · ${esc(fmtDateTime(k.made_at))}</span>` +
-              `<button class="secondary" data-rebuild-remove="${esc(k.name)}" data-rebuild-store="${esc(L.store)}">${esc(t("Remove"))}</button></div>`).join("") : "");
-      }).join("");
+              `<button class="secondary" data-rebuild-remove="${esc(k.name)}" data-rebuild-store="${esc(L.store)}"${_rbRemoveDisabled(L.store, k.name)}>${esc(t("Remove"))}</button></div>`).join("") : "");
+      }).join(""));
     }
     async function loadRebuild() {
       if (!_rebuildWired) {
@@ -1614,7 +1755,7 @@
         if (sec) sec.addEventListener("toggle", () => { if (sec.open) loadRebuild(); else if (_rebuildPoll) { clearInterval(_rebuildPoll); _rebuildPoll = null; } });
       }
       try { _rbPaint(await api("/api/database/rebuild", {polled: true})); }
-      catch (e) { const box = $("rebuild-status"); if (box) box.textContent = ooLabelText(_rbT()("Could not read the rebuild status"), e.message); }
+      catch (e) { ooLive($("rebuild-status"), () => ooLabelText(_rbT()("Could not read the rebuild status"), e.message)); }
     }
     async function rebuildNow() {
       const t = _rbT(), st = _rebuildSt;
@@ -1631,16 +1772,15 @@
       else if (window.confirm(t("Make a backup first? OK = open the backup export now. Cancel = go on without a backup."))) { openUnifiedExport(); return; }
       else if (window.confirm(t("Rebuild WITHOUT a backup? The old file is kept beside the new one until you remove it, but a backup is the copy that survives a failing disk. Cancel to stop here."))) answer = "no_backup_understood";
       if (!answer) return;
-      const res = $("rebuild-result");
-      delete res.dataset.keep;
+      _rebuildNote = null;
       $("rebuild-btn").disabled = true;
       try {
         await api("/api/database/rebuild", {method: "POST", body: JSON.stringify({backup_answer: answer})});
-        res.textContent = t("Rebuilding…");
+        _rebuildNote = {starting: true};
       } catch (e) {
-        res.dataset.keep = "1";
-        res.textContent = ooLabelText(t("The rebuild did not start"), e.message);
+        _rebuildNote = {refused: String((e && e.message) || "")};
       }
+      ooLive($("rebuild-result"), _rbResultText);   // the one render of #rebuild-result
       loadRebuild();
     }
     async function rebuildStoreNow(store) {
@@ -1656,15 +1796,14 @@
       else if (window.confirm(t("Make a backup first? OK = open the backup export now. Cancel = go on without a backup."))) { openUnifiedExport(); return; }
       else if (window.confirm(t("Rebuild this store WITHOUT a backup? The old file is kept beside the new one until you remove it, but a backup is the copy that survives a failing disk. Cancel to stop here."))) answer = "no_backup_understood";
       if (!answer) return;
-      const res = $("rebuild-result");
-      delete res.dataset.keep;
+      _rebuildNote = null;
       try {
         await api("/api/database/rebuild", {method: "POST", body: JSON.stringify({backup_answer: answer, store})});
-        res.textContent = t("Rebuilding…");
+        _rebuildNote = {starting: true};
       } catch (e) {
-        res.dataset.keep = "1";
-        res.textContent = ooLabelText(t("The rebuild did not start"), e.message);
+        _rebuildNote = {refused: String((e && e.message) || "")};
       }
+      ooLive($("rebuild-result"), _rbResultText);   // the one render of #rebuild-result
       loadRebuild();
     }
     async function rebuildStop() {
@@ -1684,12 +1823,23 @@
         ? _rbTf("Remove {name}? It is the library as it was before a rebuild; once removed it cannot be brought back except from a backup.", {name})
         : _rbTf("Remove {name}? It is the store as it was before a rebuild; once removed it cannot be brought back except from a backup.", {name});
       if (!window.confirm(ask)) return;
+      const key = store + "\u0000" + name;
+      _rbRemoving.add(key);   // a language switch redraws the list: the button stays disabled while this runs
       btn.disabled = true;
       try {
         const r = await api("/api/database/rebuild/remove-kept", {method: "POST", body: JSON.stringify({name, store, confirm: true})});
         toast(_rbTf("Removed. {size} freed.", {size: _fmtBytes(r.bytes || 0)}), "ok");
-      } catch (e) { toast(ooLabelText(t("Could not remove the file"), e.message), "err"); btn.disabled = false; }
-      loadRebuild();
+      } catch (e) {
+        _rbRemoving.delete(key);
+        toast(ooLabelText(t("Could not remove the file"), e.message), "err");
+        // re-enable the button now on the page: a language switch may have redrawn the list mid-remove
+        document.querySelectorAll("[data-rebuild-remove]").forEach((b) => {
+          if (b.dataset.rebuildRemove === name && (b.dataset.rebuildStore || "library") === store) b.disabled = false;
+        });
+      }
+      // After a removal the key is held until the reload has dropped the row, so a redraw from the older answer
+      // in between still draws its button disabled.
+      try { await loadRebuild(); } finally { _rbRemoving.delete(key); }
     }
 
     // Local fixity audit (B-2): re-hash the corpus vs the capture-time hash. Loud,
@@ -1784,7 +1934,10 @@
         toast(t("Choose one or more .eml files first."), "warn"); return;
       }
       btn.disabled = true;
-      $("nl-result").textContent = t("Importing…");
+      // #nl-result is drawn through ooLive/ooLiveHtml from what the import answered, so every
+      // line in it follows a language switch without a second request (row 367).
+      const out = $("nl-result");
+      ooLive(out, () => t("Importing…"));
       const fd = new FormData();
       for (const f of input.files) fd.append("files", f);
       try {
@@ -1794,22 +1947,20 @@
         if (!r.ok) throw new Error("HTTP " + r.status);
         const d = await r.json(), tl = d.tally || {};
         const n = (x) => fmtNum(x || 0, 0);
-        $("nl-result").innerHTML =
+        ooLiveHtml(out, () =>
           `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
           `${n(tl.empty)} ${esc(t("empty"))}` +
           (tl.skipped_non_eml ? ` · ${n(tl.skipped_non_eml)} ${esc(t("not .eml"))}` : "") +
           (tl.skipped_oversize ? ` · ${n(tl.skipped_oversize)} ${esc(t("too large (use folder import)"))}` : "") +
-          `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`;
+          `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`);
         input.value = "";
         toast(t("Newsletters imported."), "ok");
-        // Q1151: say where the articles WENT, immediately and on this same screen -- but in
-        // the panel rather than in #nl-result, because #nl-result is written once and then
-        // frozen in whatever locale was active, and an announcement nobody can re-read in
-        // their own language is not much of an announcement.
+        // Q1151: say where the articles WENT, immediately and on this same screen, in the
+        // attach panel (which re-renders from _nlLastRun) rather than in the tally line above.
         _nlLastRun = tl;
         loadNewsletterAttach();
       } catch (e) {
-        $("nl-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`);
       } finally { btn.disabled = false; }
     }
 
@@ -1867,22 +2018,27 @@
 
     async function undoNewsletterAttach(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       if (!confirm(t("Move every automatically filed newsletter back to the import bucket? Newsletters you filed yourself are not touched, and re-importing the same .eml files runs the filing again."))) return;
       btn.disabled = true;
       try {
         // Loopback POST, zero network.
         const d = await api("/api/newsletters/attach/undo", { method: "POST" });
-        const n = (x) => fmtNum(x || 0, 0);
-        toast(`${n(d.restored)} ${t("newsletters moved back to the import bucket.")}`, "ok");
-        $("nl-result").innerHTML =
-          `<b>${n(d.restored)}</b> ${esc(t("newsletters moved back to the import bucket."))}` +
+        const N = fmtNum(d.restored || 0, 0);
+        // ONE keyed sentence with a plural, the count chosen by the engine (row 367: it was
+        // welded, "N" + "newsletters moved back…", so "1 newsletters" in every language).
+        const moved = () => tf("{n} newsletters moved back to the import bucket.", { n: N });
+        toast(moved(), "ok");
+        ooLiveHtml($("nl-result"), () =>
+          // the count in bold: the first occurrence of the number in the chosen form
+          esc(moved()).replace(esc(N), () => `<b>${esc(N)}</b>`) +
           ((d.sources_deleted || []).length
             ? `<div class="muted" style="margin-top:5px">${esc(ooLabelText(t("Removed the now-empty sources this filing had created"), d.sources_deleted.join(", ")))}</div>`
-            : "");
+            : ""));
         _nlLastRun = null;  // the run it described has just been reversed
         await loadNewsletterAttach();
       } catch (e) {
-        $("nl-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Undo failed"), e.message))}</span>`;
+        ooLiveHtml($("nl-result"), () => `<span class="note err">${esc(ooLabelText(t("Undo failed"), e.message))}</span>`);
       } finally { btn.disabled = false; }
     }
 
@@ -1910,7 +2066,8 @@
         toast(t("Choose one or more PDF files first."), "warn"); return;
       }
       btn.disabled = true;
-      $("pdf-result").textContent = t("Importing…");
+      const out = $("pdf-result");   // drawn through ooLive/ooLiveHtml, so it follows a language switch (row 367)
+      ooLive(out, () => t("Importing…"));
       const fd = new FormData();
       for (const f of input.files) fd.append("files", f);
       try {
@@ -1918,12 +2075,12 @@
         // so this works in airplane mode and never needs the network-consent gate.
         const r = await fetch("/api/documents/pdf/upload", { method: "POST", body: fd });
         if (!r.ok) throw new Error("HTTP " + r.status);
-        const d = await r.json();
-        $("pdf-result").innerHTML = _pdfTallyHtml(d.tally || {});
+        const d = await r.json(), tl = d.tally || {};
+        ooLiveHtml(out, () => _pdfTallyHtml(tl));
         input.value = "";
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`);
       } finally { btn.disabled = false; }
     }
     async function importPdfFolder(btn) {
@@ -1931,13 +2088,15 @@
       const folder = ($("pdf-folder").value || "").trim();
       if (!folder) { toast(t("Enter a folder path on this machine."), "warn"); return; }
       btn.disabled = true;
-      $("pdf-folder-result").textContent = t("Importing…");
+      const out = $("pdf-folder-result");   // drawn through ooLive/ooLiveHtml (row 367)
+      ooLive(out, () => t("Importing…"));
       try {
         const d = await api("/api/documents/pdf/import-folder", { method: "POST", body: JSON.stringify({ folder }) });
-        $("pdf-folder-result").innerHTML = _pdfTallyHtml(d.tally || {});
+        const tl = d.tally || {};
+        ooLiveHtml(out, () => _pdfTallyHtml(tl));
         toast(t("PDFs imported."), "ok");
       } catch (e) {
-        $("pdf-folder-result").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Import failed")), esc(e.message))}</span>`);
       } finally { btn.disabled = false; }
     }
 
@@ -1966,6 +2125,7 @@
     }
     async function _folderImportRefresh() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const prog = $("nl-folder-progress"); if (!prog) return;
       let s;
       try { s = await api("/api/newsletters/import-folder/status"); } catch (e) { return; }
@@ -1981,33 +2141,38 @@
       if ($("nl-folder-pause")) $("nl-folder-pause").style.display = s.state === "running" ? "" : "none";
       if ($("nl-folder-resume")) $("nl-folder-resume").style.display = s.state === "paused" ? "" : "none";
       const tl = s.tally || {};
-      const eta = (s.eta_seconds != null) ? ` · ~${Math.max(1, Math.round(s.eta_seconds / 60))} ${t("min left")}` : "";
+      const stored = tl.stored || 0, duplicate = tl.duplicate || 0;
+      // Each line is ONE keyed sentence drawn through ooLive/ooLiveHtml from this poll's answer, so
+      // it follows a language switch; the "Done." line used to freeze, since the poll stops at done
+      // (row 367). Welded, zh read "完成。 5 已导入，…" with a Latin space after the full-width mark.
       if (active) {
-        prog.innerHTML = `${esc(t("Importing"))}… ${ooLtrIsolate((s.percent || 0) + "%")} (${s.files_done}/${s.files_total}) · ` +
-          `${(tl.stored || 0)} ${esc(t("imported"))}, ${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}` +
-          (s.state === "paused" ? ` (${esc(t("paused"))})` : eta);
+        const mins = (s.eta_seconds != null) ? Math.max(1, Math.round(s.eta_seconds / 60)) : null;
+        ooLiveHtml(prog, () =>
+          esc(tf("Importing… {pct} ({done}/{total}) · imported: {stored} · duplicates skipped: {duplicate}",
+            { pct: ooLtrIsolate((s.percent || 0) + "%"), done: s.files_done, total: s.files_total, stored, duplicate })) +
+          (s.state === "paused" ? ` (${esc(t("paused"))})` : (mins != null ? ` · ~${mins} ${esc(t("min left"))}` : "")));
       } else if (s.state === "done") {
-        prog.innerHTML = `<b>${esc(t("Done."))}</b> ${(tl.stored || 0)} ${esc(t("imported"))}, ` +
-          `${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}.`;
+        ooLive(prog, () => tf("Done. Imported: {stored} · duplicates skipped: {duplicate}.", { stored, duplicate }));
         if (typeof loadNewsletterRemoveCount === "function") loadNewsletterRemoveCount();
       } else if (s.state === "error") {
-        prog.innerHTML = `<span class="note err">${esc(s.error || t("failed"))}</span>`;
-      } else { prog.textContent = ""; }
+        ooLiveHtml(prog, () => `<span class="note err">${esc(s.error || t("failed"))}</span>`);
+      } else { ooLive(prog, () => ""); }
     }
 
     // Restore is additive-only, so excluding newsletters from a backup never purges
     // the live corpus — this action does. The panel shows only when there's something
     // to remove; removal needs an explicit confirm and nudges "back up first".
     async function loadNewsletterRemoveCount() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const panel = $("nl-remove-panel"), lab = $("nl-remove-count");
       if (!panel) return;
       try {
         const d = await api("/api/newsletters/imported-count");
         const n = d.count || 0;
         panel.style.display = n > 0 ? "" : "none";
-        const N = (x) => fmtNum(x || 0, 0);
-        if (lab) lab.textContent = n > 0 ? `${N(n)} ${t("imported newsletters in your corpus")}` : "";
+        const N = fmtNum(n, 0);
+        // ONE keyed sentence with a plural, drawn through ooLive so it follows a language switch (row 367).
+        ooLive(lab, () => n > 0 ? tf("{n} imported newsletters in your corpus", { n: N }) : "");
       } catch (e) { panel.style.display = "none"; }
     }
     function downloadBackupFirst(btn) {
@@ -2026,23 +2191,24 @@
       if (!confirm(t("Remove") + ` ${N(n)} ` +
           t("imported newsletters from your corpus? This cannot be undone except from a backup."))) return;
       btn.disabled = true;
-      $("nl-remove-result").textContent = t("Removing…");
+      const out = $("nl-remove-result");   // drawn through ooLive/ooLiveHtml (row 367)
+      ooLive(out, () => t("Removing…"));
       try {
         const d = await api("/api/newsletters/remove-imported",
           {method: "POST", body: JSON.stringify({confirm: true})});
         // One keyed sentence pair with the count dropped in, so each locale joins its
         // own two sentences: welded, zh read "…简报。 重新导入…" (re-walk O-5).
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
-        $("nl-remove-result").innerHTML =
+        ooLiveHtml(out, () =>
           esc(tf("{n} imported newsletters removed. Re-import the cleaned files to replace them.", {n: "\u0001"}))
-            .replace("\u0001", () => `<b>${N(d.removed_articles)}</b>`);
+            .replace("\u0001", () => `<b>${N(d.removed_articles)}</b>`));
         toast(t("Imported newsletters removed."), "ok");
         // The server's own words when every article is removed but the counts after it could not be refreshed (queue item 58).
         // A toast (it sets text, never markup), not a line in this panel: the count refresh below hides the panel once nothing
         // is left to remove, which is exactly when the note comes.
         if (d.note) toast(d.note, "warn");
       } catch (e) {
-        $("nl-remove-result").innerHTML = `<span class="note err">${esc(ooLabelText(t("Removal failed"), e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${esc(ooLabelText(t("Removal failed"), e.message))}</span>`);
         // ... and as a toast: the count refresh below hides this panel when it cannot read the count, and a damaged file can fail
         // the removal and that read together, so the words must not live only in the panel (the fresh read of queue item 58).
         toast(ooLabelText(t("Removal failed"), e.message), "err");
@@ -2060,7 +2226,9 @@
       const host = ($("mbox-host").value || "").trim();
       const user = ($("mbox-user").value || "").trim();
       const password = $("mbox-pass").value || "";
-      if (!host || !user) { if (out) out.textContent = t("Enter at least a host and user."); return; }
+      // Every line in #mbox-result is drawn through ooLive/ooLiveHtml from what this pull holds, so
+      // it follows a language switch without a second request (row 367).
+      if (!host || !user) { ooLive(out, () => t("Enter at least a host and user.")); return; }
       // A network action -> the ONE consent popup (invariant #14).
       if (typeof ensureOnline === "function" && !await ensureOnline(t("Pull newsletters from your mailbox"))) return;
       const body = {
@@ -2070,7 +2238,7 @@
         limit: parseInt($("mbox-limit").value || "50", 10),
       };
       if (btn) btn.disabled = true;
-      if (out) out.textContent = t("Pulling from your mailbox…");
+      ooLive(out, () => t("Pulling from your mailbox…"));
       try {
         // The pull is a BACKGROUND JOB now (it is a network fetch plus a full
         // anonymise-and-store pass -- minutes of work that used to run inside the
@@ -2080,29 +2248,30 @@
         const d = await api("/api/newsletters/mailbox", { method: "POST", body: JSON.stringify(body) });
         $("mbox-pass").value = "";  // never keep the password in the field
         const st = await pollJobStatus("/api/newsletters/mailbox/status", {
-          onProgress: (s) => { if (out && s && s.detail) out.textContent = esc(s.detail); },
+          // The server's own progress words, as TEXT: esc() here showed an "&" as "&amp;".
+          onProgress: (s) => { if (s && s.detail) { const detail = String(s.detail); ooLive(out, () => detail); } },
         });
         if (st && st.state === "error") {
-          if (out) out.innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(st.error || ""))}</span>`;
+          ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(st.error || ""))}</span>`);
           return;
         }
         if (_jobStillRunning(st)) {
           // Stopped WATCHING, not finished. Reading st.result here would report the
           // not-yet-final tallies as zeros -- the honest answer is where to look.
-          if (out) out.textContent = t("Still pulling in the background — the task manager shows it.");
+          ooLive(out, () => t("Still pulling in the background — the task manager shows it."));
           return;
         }
         const res = (st && st.result) || {};
         const tl = res.tally || {}, n = (x) => fmtNum(x || 0, 0);
-        if (out) out.innerHTML = `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))}`
+        ooLiveHtml(out, () => `<b>${n(tl.stored)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))}`
           + `<div class="muted" style="margin-top:5px">${esc(_nlAnonLine(tl))}</div>`
           + (res.disclosure ? `<div class="muted" style="margin-top:4px">${esc(res.disclosure)}</div>` : "")
           // R640: a Stop during the pull ended it; the tally is what came before it, never the mailbox's size.
-          + (res.stopped_by_airplane_mode ? `<div class="note" style="margin-top:4px">${esc(t("Stopped by airplane mode: only the messages fetched before it were imported."))}</div>` : "");
+          + (res.stopped_by_airplane_mode ? `<div class="note" style="margin-top:4px">${esc(t("Stopped by airplane mode: only the messages fetched before it were imported."))}</div>` : ""));
       } catch (e) {
         // 409 = airplane refusal (named as the kill switch), 422 = a network-free
         // validation refusal. Both still answer synchronously, before any socket.
-        if (out) out.innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(e.message))}</span>`;
+        ooLiveHtml(out, () => `<span class="note err">${ooLabelHtml(esc(t("Pull failed")), esc(e.message))}</span>`);
       } finally { if (btn) btn.disabled = false; }
     }
 
@@ -2313,9 +2482,13 @@
     // tf() frame welded to a measured number, so the DOM walker can repaint none of it:
     // the panel kept the old locale for as long as it stayed open (click-through B14, Z2).
     let _laneStorageLast = null;
-    function _paintLaneStorage(rep) {
+    // True while the last read failed: the table host then holds the error (ooLiveHtml), so a
+    // language switch redraws the reading and disk lines from the last good payload and never
+    // draws that old table back over the error (row 367).
+    let _laneStorageErr = false;
+    function _paintLaneStorage(rep, withTable = true) {
       if ($("storage-reading")) $("storage-reading").innerHTML = _storageReadingHtml(rep);
-      if ($("storage-lanes")) $("storage-lanes").innerHTML = _storageTableHtml(rep);
+      if (withTable && $("storage-lanes")) $("storage-lanes").innerHTML = _storageTableHtml(rep);
       if ($("storage-disk")) $("storage-disk").innerHTML = _storageDiskHtml(rep);
     }
     // Registered in app-boot.js's ONE `oo:langchange` listener. Never fetches, and does
@@ -2327,7 +2500,7 @@
       document.querySelectorAll('#storage-lanes input[id^="storage-budget-"]').forEach((el) => {
         kept[el.id] = el.value;
       });
-      _paintLaneStorage(_laneStorageLast);
+      _paintLaneStorage(_laneStorageLast, !_laneStorageErr);
       Object.keys(kept).forEach((id) => { const el = $(id); if (el) el.value = kept[id]; });
     }
     async function loadLaneStorage() {
@@ -2335,11 +2508,15 @@
       try {
         const rep = await api("/api/storage/lanes");
         _laneStorageLast = rep;
+        _laneStorageErr = false;
+        ooLive($("storage-lanes"), null);   // an error line held there gives the host back to the table
         _paintLaneStorage(rep);
       } catch (e) {
-        if ($("storage-lanes")) {
-          $("storage-lanes").innerHTML = `<span class="note err">${ooLabelHtml(esc(t("Storage could not be read")), esc(e.message))}</span>`;
-        }
+        // The error is now the table's state: a language switch (repaintLaneStorageFromCache)
+        // must not draw the last good table back over it (row 367), and it still redraws the
+        // reading and disk lines, which keep showing the last good payload.
+        _laneStorageErr = true;
+        ooLiveHtml($("storage-lanes"), () => `<span class="note err">${ooLabelHtml(esc(t("Storage could not be read")), esc(e.message))}</span>`);
       }
     }
     async function saveLaneBudget(kind, setting, btn) {
@@ -2352,7 +2529,9 @@
         // Refused, never rounded or clamped: the server refuses both too (in English, as
         // a field name), and saying so here, in the operator's language, keeps their
         // number on screen while they fix it. The bounds are the server's, drawn on the input.
-        if (msg) msg.textContent = tf("Enter a whole number of GB from {min} to {max}.", { min: input.min, max: input.max });
+        // Drawn through ooLive (row 367). The line sits inside #storage-lanes, so a redraw of the
+        // table takes it away: it is a transient message, and a gone node is simply dropped.
+        ooLive(msg, () => tf("Enter a whole number of GB from {min} to {max}.", { min: input.min, max: input.max }));
         return;
       }
       if (btn) btn.disabled = true;
@@ -2361,10 +2540,9 @@
         // Re-read, so the row shows what the SERVER now holds (a refused value never
         // lingers on screen as if it had been taken), then confirm on the fresh row.
         await loadLaneStorage();
-        const fresh = $("storage-budget-msg-" + kind);
-        if (fresh) fresh.textContent = t("Saved.");
+        ooLive($("storage-budget-msg-" + kind), () => t("Saved."));
       } catch (e) {
-        if (msg) msg.textContent = ooLabelText(t("Not saved"), e.message);
+        ooLive(msg, () => ooLabelText(t("Not saved"), e.message));
       } finally { if (btn) btn.disabled = false; }
     }
 
@@ -2407,76 +2585,83 @@
       const box = $("upd-manual");
       if (!box) return;
       const t = _updT();
-      if (!install || install.can_apply) { box.hidden = true; box.textContent = ""; return; }
+      if (!install || install.can_apply) { box.hidden = true; box.replaceChildren(); return; }
       box.hidden = false;
-      box.innerHTML = "";
-      const p = document.createElement("p");
-      p.textContent = t("This install cannot be updated from here.") + " " + _updReason(install.reason) + " " + t("To update it yourself:");
+      // The sentence is held through ooLive, so it follows a language switch (row 367); the steps are commands, never translated.
+      const p = document.createElement("p"), reason = install.reason;
+      ooLive(p, () => t("This install cannot be updated from here.") + " " + _updReason(reason) + " " + t("To update it yourself:"));
       const pre = document.createElement("pre");
       pre.textContent = (install.manual_steps || []).join("\n");
-      box.appendChild(p); box.appendChild(pre);
+      box.replaceChildren(p, pre);
+    }
+    // The sentence for the last update's outcome, from the status answer's last_result (a render: it never fetches).
+    function _updLastSay(r) {
+      const t = _updT();
+      if (r && (r.status === "updated" || r.status === "already_current")) return t("The last update was installed.");
+      if (r && (r.status === "started" || r.status === "helper_failed")) return t("The last update did not finish. If the app misbehaves, re-run the installer.");
+      if (r && r.status === "start_failed_rolled_back_schema") return t("The new version did not start, so the update was undone and the previous version started again. That version also changes the database, and may already have done so before failing: if the app misbehaves, restore your last backup or re-run the installer on the new version.");
+      if (r && r.status === "start_failed_rolled_back") return t("The new version did not start, so the update was undone and the previous version started again.");
+      if (r && r.status === "dependencies_changed") return t("The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).");
+      if (r && r.status === "app_started_during_update") return t("The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.");
+      if (r && r.status === "start_unconfirmed") return t("The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.");
+      if (r && r.status === "rollback_incomplete") return t("The last update failed and could not fully restore the previous version. Re-run the installer.");
+      if (r) return t("The last update was not applied; the previous version was kept.");
+      return "";
     }
     async function updLoadStatus() {
-      const t = _updT();
       const cur = $("upd-current"), last = $("upd-last");
       try {
         const st = await api("/api/system/update/status", { polled: true });
         if (cur) cur.textContent = st.current || "";
         _updPaintInstall(st.install);
-        if (last) {
-          const r = st.last_result;
-          let say = "";
-          if (r && (r.status === "updated" || r.status === "already_current")) say = t("The last update was installed.");
-          else if (r && (r.status === "started" || r.status === "helper_failed")) say = t("The last update did not finish. If the app misbehaves, re-run the installer.");
-          else if (r && r.status === "start_failed_rolled_back_schema") say = t("The new version did not start, so the update was undone and the previous version started again. That version also changes the database, and may already have done so before failing: if the app misbehaves, restore your last backup or re-run the installer on the new version.");
-          else if (r && r.status === "start_failed_rolled_back") say = t("The new version did not start, so the update was undone and the previous version started again.");
-          else if (r && r.status === "dependencies_changed") say = t("The new version changes the app's dependencies, so it was not installed here and nothing was changed. Update by running the installer again (git pull, then install.sh or install.ps1).");
-          else if (r && r.status === "app_started_during_update") say = t("The app was started again while the update was being installed. Close it and start it once more so it runs the whole new version.");
-          else if (r && r.status === "start_unconfirmed") say = t("The last update was installed, but the app took a long time to start. If it misbehaves, re-run the installer.");
-          else if (r && r.status === "rollback_incomplete") say = t("The last update failed and could not fully restore the previous version. Re-run the installer.");
-          else if (r) say = t("The last update was not applied; the previous version was kept.");
-          last.textContent = say;
-        }
+        // Held through ooLive from this answer, so it follows a language switch with no request (row 367).
+        const r = st.last_result;
+        ooLive(last, () => _updLastSay(r));
       } catch (e) { /* the check below reports its own failure */ }
     }
     async function updCheck() {
       const t = _updT();
       const msg = $("upd-msg"), go = $("upd-apply");
       if (go) go.hidden = true;
-      if (msg) msg.textContent = "";
+      // #upd-msg is drawn through ooLive from what this check holds (it and updApply take it in turn), so each line
+      // follows a language switch with no second check (row 367).
+      ooLive(msg, () => "");
       if (!await ensureOnline(t("Check GitHub for a newer version of the app"))) return;
-      if (msg) msg.textContent = t("Checking…");
+      ooLive(msg, () => t("Checking…"));
       try {
         _updCheck = await api("/api/system/update/check", { method: "POST" });
       } catch (e) {
         _updCheck = null;
         const code = e && e.detail && e.detail.code;
-        if (msg) msg.textContent = code === "airplane" ? t("Airplane mode is on: the update check did not run.")
+        ooLive(msg, () => code === "airplane" ? t("Airplane mode is on: the update check did not run.")
           : code === "protected_no_proxy" ? t("Protected mode has no usable proxy: the update check did not run.")
           : code === "settings_unreadable" ? t("The settings could not be read, so the update check did not run: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again.")
-          : t("The update check failed.");
+          : t("The update check failed."));
         return;
       }
-      const latest = $("upd-latest"); if (latest) latest.textContent = _updCheck.latest || "";
+      const version = _updCheck.latest || "";   // a version, never translated: held so no raw write sits beside t() here
+      ooLive($("upd-latest"), () => version);
       _updPaintInstall(_updCheck.install);
       // Tags only (R760): with no published release there is nothing to update to, said as such and never "up to date" or anything offered instead.
-      if (_updCheck.no_release) { if (msg) msg.textContent = t("No release has been published yet, so there is nothing to update to."); return; }
-      if (!_updCheck.update_available) { if (msg) msg.textContent = t("You are up to date."); return; }
-      if (msg) msg.textContent = t("A newer version is available.");
+      if (_updCheck.no_release) { ooLive(msg, () => t("No release has been published yet, so there is nothing to update to.")); return; }
+      if (!_updCheck.update_available) { ooLive(msg, () => t("You are up to date.")); return; }
+      ooLive(msg, () => t("A newer version is available."));
       if (go) go.hidden = !(_updCheck.install && _updCheck.install.can_apply);
     }
     async function updApply() {
       const t = _updT();
       const msg = $("upd-msg");
       if (!_updCheck || !_updCheck.update_available) return;
-      const protectedSay = t("Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
+      // Renders, not strings: #upd-msg holds them through ooLive, so each is said again in the new language on a switch (row 367).
+      const protectedSay = () => t("Protected mode is on, so the update did not start: it would connect to GitHub directly, not through your proxy. Switch to standard mode to update, or update by hand through your proxy.");
       // R766: settings that could not be read are refused as protected, but said as what they are.
-      const unreadableSay = t("The settings could not be read, so the update did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again.");
+      const unreadableSay = () => t("The settings could not be read, so the update did not start: network actions are refused as if protected mode were on. Unlock the app if it is locked. If the saved choice is damaged, choose the network fetch mode and proxy again in Settings and save. Then try again.");
       // Protected mode is refused by the server anyway: say so BEFORE the consent popup, which would otherwise take the app online for nothing.
       try {
         const st = await api("/api/system/update/status", { polled: true });
-        if (st && st.blocked === "protected") { if (msg) msg.textContent = protectedSay; return; }
-        if (st && st.blocked === "settings_unreadable") { if (msg) msg.textContent = unreadableSay; return; }
+        // #upd-msg is drawn through ooLive (row 367): each line is said again in the new language on a switch.
+        if (st && st.blocked === "protected") { ooLive(msg, protectedSay); return; }
+        if (st && st.blocked === "settings_unreadable") { ooLive(msg, unreadableSay); return; }
       } catch (_e) { /* the server's own refusal below still names it */ }
       // The helper downloads after this app has stopped, where no socket guard reaches: so the ONE consent popup comes first (invariant #14),
       // and the server refuses the apply anyway while airplane mode is on.
@@ -2487,16 +2672,17 @@
       if (chk) chk.disabled = true;
       try {
         await api("/api/system/update/apply", { method: "POST", body: JSON.stringify({ confirm: true, ref: _updCheck.ref, sha: _updCheck.sha }) });
-        if (msg) msg.textContent = t("The app is stopping to update and will start again by itself. Reload this page in a minute.");
+        ooLive(msg, () => t("The app is stopping to update and will start again by itself. Reload this page in a minute."));
         if (go) go.hidden = true;
       } catch (e) {
         const code = e && e.detail && e.detail.code;
-        let say = t("The update could not start; nothing was changed.");
-        if (e && typeof e.detail === "string" && e.detail) say += " (" + e.detail + ")";  // the server's own reason, a fixed sentence
+        // the server's own reason, a fixed sentence, shown as text after the translated one
+        const detail = (e && typeof e.detail === "string" && e.detail) ? e.detail : "";
+        let say = () => t("The update could not start; nothing was changed.") + (detail ? " (" + detail + ")" : "");
         if (code === "protected") say = protectedSay;
         else if (code === "settings_unreadable") say = unreadableSay;
-        else if (code === "airplane") say = t("Airplane mode is on, so the update did not start. Go online first.");
-        if (msg) msg.textContent = say;
+        else if (code === "airplane") say = () => t("Airplane mode is on, so the update did not start. Go online first.");
+        ooLive(msg, say);
         if (go) go.disabled = false;
         if (chk) chk.disabled = false;
       }

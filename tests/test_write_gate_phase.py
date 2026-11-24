@@ -51,18 +51,35 @@ def engine(tmp_path):
 
     @event.listens_for(eng, "connect")
     def _functions(dbapi, _record):
-        dbapi.create_function("pause", 1, lambda s: time.sleep(s) or 1)
+        dbapi.create_function("pause", 1, _pause)
 
     yield eng
     eng.dispose()
 
 
-class _Holder:
-    """A thread that takes the write gate, runs ``body`` while holding it, and gives it back when told."""
+# Set by ``pause()`` once the holder's statement is running inside the driver (row 391). A fixed sleep before sampling read
+# "pool-wait" on a loaded CI runner (24 Nov, Core-only shard 2): the holder had not yet checked out its connection.
+_IN_STATEMENT = threading.Event()
 
-    def __init__(self, body):
+
+def _pause(seconds):
+    _IN_STATEMENT.set()
+    time.sleep(seconds)
+    return 1
+
+
+class _Holder:
+    """A thread that takes the write gate, runs ``body`` while holding it, and gives it back when told.
+
+    ``in_statement``: the body runs ``SELECT pause(...)``, so entering waits (bounded) until the statement is inside the driver
+    rather than for a fixed time.
+    """
+
+    def __init__(self, body, in_statement=False):
         self.started = threading.Event()
         self.finish = threading.Event()
+        self.in_statement = in_statement
+        _IN_STATEMENT.clear()
         self.thread = threading.Thread(target=self._run, args=(body,), name="oo-phase-holder")
 
     def _run(self, body):
@@ -73,7 +90,11 @@ class _Holder:
     def __enter__(self):
         self.thread.start()
         assert self.started.wait(5)
-        time.sleep(0.25)  # into the body's wait
+        if self.in_statement:
+            assert _IN_STATEMENT.wait(10), "the holder's statement never reached the driver"
+            time.sleep(0.1)  # a hold younger than HOLD_RECORD_S (0.05 s here) is not journalled; the statement runs 0.8 s or more
+        else:
+            time.sleep(0.25)  # into the body's wait
         return self
 
     def __exit__(self, *exc):
@@ -103,7 +124,7 @@ def test_a_holder_inside_a_statement_is_in_the_execute_phase(engine):
         with engine.connect() as c:
             c.exec_driver_sql("SELECT pause(0.8)").fetchall()
 
-    with _Holder(body) as holder:
+    with _Holder(body, in_statement=True) as holder:
         assert writer.thread_phase(holder.thread.ident) == "execute"
 
 
@@ -171,7 +192,7 @@ def test_the_watchdog_sample_records_the_phase_and_counts_the_samples_of_one_hol
 
     gate = writer.write_gate
     warned = None
-    with _Holder(body):
+    with _Holder(body, in_statement=True):
         warned = writer.watchdog_tick(gate, warned)
         warned = writer.watchdog_tick(gate, warned)
     ev = _gate_hold_events()

@@ -840,12 +840,95 @@ imply a protection we cannot deliver.
   it is a real folder of this user with the app's prefix. Not covered: a store or cache engine writing from C into a file it
   already held open, a write already past its open when the latch lands, a child process, and another process (R792 reports
   it); within this process, a kept folder (app-only scope) refuses every write of the app's under it until a restart.
+  R806 (row 362): the erase makes nothing in the folder it erases (its targets are named, never made: no data folder, no
+  `keys`), and in a folder of the app's own `keys` is the app's by its CONTENT, never its name: a real folder holding only the
+  names the app writes there (`data_scope.APP_KEY_NAMES`, each with where it is written, and `.pending` with its private
+  copies). A `keys` holding anything else, or that is a link, is foreign: only the app's key files in it are destroyed (a link
+  is never followed), everything else is left byte for byte, every other entry of the data folder goes, and the folder is
+  kept and said as "kept because it holds items the app did not create (count: N)" (a count, never the names), never "could
+  not be removed" and never "destroyed"; one that cannot be listed is "could not check" (R798), never a count. Anything else
+  still at the top of a kept folder (a removal that failed, or a file written there after) is said as "could not be removed",
+  so "kept" never hides it. A `keys` that is a link is never followed, but the app's own signers write through one, so the
+  result then says the app's keys may be where it points and were not destroyed, and is never clean. R807 (3): in shared scope
+  (a folder the app does not own) the app's key files are matched by these EXACT names too, never by suffix, and a private copy
+  only by its exact name plus the generated tail (`<key file>.<pid>.<thread>.<token>.new|rewrap`), so an operator's own
+  `foo_ed25519.pem` stays byte for byte. The secure-uninstall watcher applies the same rules. The other folder names the app
+  owns are still owned by name (row 378).
+  R809 (row 381): a data folder on a drive the first-launch step marked (`OO_DATA_VOLUME_ID`) that is not there when the erase
+  runs, or that holds another drive's marker, is never touched: nothing under it is read, erased, scoped or removed, the drive's
+  id is kept (its data still exists), and the result is a FAILURE ("The data drive was not present. Nothing on it was checked or
+  erased. The data on that drive still exists."), never "removed" and never clean, with no reassurance at all (the keys are on
+  that drive, so nothing erased elsewhere makes it unreadable) and no free-space overwrite offered. What the overrides keep
+  elsewhere (`DATABASE_URL`, `OO_COLUMNAR_DIR`) and the passphrase in memory are still erased, and counted apart ("Files erased
+  outside the data drive"). A drive that is there has its device read before the erase and again after it: gone or changed is
+  "partially erased, what was left could not be checked" (R797 / R798); the device is read on the RESOLVED folder, so a link to
+  the drive is followed, and a store is "on the drive" by its spelling or its resolved path. The CLI says the same and exits 2
+  (absent) or 1 (lost); with the drive absent or unidentified it runs before the app opens anything (`src/api/_panic_precheck.py`,
+  row 388): asked first unless `--yes`, it erases what the overrides keep outside the drive without the database module (which
+  cannot be imported without the drive), says "Files erased outside the data drive: N of M" (or that nothing was found there)
+  and that the stores and keys on the drive were not erased, and still exits 2. A drive plugged in while the question waits is
+  left whole (the operator agreed only to the rest), and another program holding a store outside the drive is said ("may be
+  incomplete"); the CLI process opened no pool of its own, so its own connections count 0. The free-space overwrite after it writes
+  nothing at the path of an absent drive (`scrub_not_done: "drive_absent"`) and never says the corpus is unrecoverable.
+  R812: a folder whose marker file is there and cannot be read is "The data drive could not be identified", the same failure
+  (an empty mount point stays "not present"); the drive's identity (resolved folder's device and inode, a directory descriptor
+  held on POSIX, and its marker id) is re-checked before the first write on it and before each later drive step, and on any
+  change or unreadable identity nothing more on it is touched ("could not be identified" before the first write, "disconnected
+  ... partially erased" after). THE WINDOW THAT REMAINS: the walks go by path, so a drive swapped between a re-check and the
+  writes after it is reached by its path (row 387 makes the POSIX walk handle-relative). An id the erase forgot is never
+  restored, and a lost drive's result says the app no longer remembers it. When the drive is absent, unidentified, changed or
+  lost, the database connections on it are NEVER closed in this process (`src/database/drive_pin.py`): SQLite deletes
+  `<db>-wal` and `<db>-shm` BY PATH when the last connection closes, which with another drive at the path are that drive's
+  files. They are pinned out of every close and never freed, so only the process exit releases them, and the result says the
+  key to that drive's data stays in memory until the app is closed. The app then closes itself (row 389,
+  `src/safety/panic.py:exit_after_panic`): the power button's graceful stop a few seconds after the answer is sent, and the
+  process ends without it if it is still running 60 s later (status 1, so a forced end is visible). SQLITE_FCNTL_PERSIST_WAL is not reachable from our drivers.
+  The same holds OUTSIDE an erase (row 390): when another drive is put at the data folder's path while the app runs (or the
+  marked one is gone), every close of a pooled connection asks first whether the marked drive is still there
+  (`data_volume.probe`), and a connection with a file in the data folder (its main file or one it ATTACHed) is pinned instead of
+  closed: a pool recycle or overflow, the shutdown disposal and the `atexit` one. Every tracked connection on that drive, checked
+  out or not, is also pinned when the watchdog finds the drive gone, at every engine disposal and at exit, since one a disposal
+  leaves checked out is later freed with its pool, a close no patched close sees. A DuckDB serve on it is kept and its offload folder left, the write-back
+  before the shutdown disposal does not open the file there (`drive-changed`), no offload folder is made or swept and the
+  persisted rollup store is not opened there, no in-memory rollup or map is built from the library there, and a build or refresh refused for it says so (`drive-changed`, never an encryption
+  or a missing passphrase). The question is asked again at each close, so a marker read
+  that fails for a moment pins what was open in that moment (and a process out of descriptors reads the marker as missing, so it
+  pins until the watchdog's countdown closes the app). LIMITS: a connection freed between the swap and the next of those moments
+  (seconds) closes on the drive there; raw `sqlite3` connections a module opens and closes itself (the wiki dump index, the OSM
+  reader, the keyword log scan) are not pooled and not covered: they open the file at the path, so they read or write the other
+  drive's file, and close it whole.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
   a folder `DATABASE_URL` points to: an encrypted one loses its head and is unlinked before the slow rewrite, a plaintext
   one is rewritten whole (a copy of a store not known to be encrypted always is, since a damaged copy's page 1 can stop reading
-  as SQLite with plaintext behind it). **A data folder the app does not own (R711).** Ownership is where the app put the
+  as SQLite with plaintext behind it). **A plaintext main database (R815, R817, row 392).** A main database
+  known to be plaintext, in the data folder or where `DATABASE_URL` keeps it, has no key to destroy, so it leaves step 1's
+  head-only passes. Its identity (device, inode, its folder's device, read with `lstat`) is read before anything of it is
+  opened, and a file that is gone, cannot be identified, is a link or is another file is never touched; on the data drive the
+  drive checks (R802/R805/R812) apply too. In pass 3's place each of its files (main, `-wal`, `-journal`, `-shm`) is opened
+  no-follow through a handle on its folder, checked to be a regular file (a `-wal`, `-journal` or `-shm` with other names, on another device or unreadable is never written, and the result is never "in full"), its handle kept with the wipe's kept descriptors,
+  what step 1 always destroyed at once destroyed through that handle (page 1 random, a `-wal`/`-journal` whole, the `-shm` head
+  zeroed; R818), and unlinked at once. Only at the very end of the erase, after every key, salt page and unlink, and only once
+  the app's own pool on the store is disposed (R818 (b): disposal failed or unconfirmed leaves the body, said as "had its
+  first page overwritten. The rest was not overwritten." with the reason), is every byte of each that holds data rewritten
+  through the kept handle (`SEEK_DATA`/`SEEK_HOLE`, else the logical size stopping before the 64 MiB reserve, R797), after a
+  `fstat` check that it is the same regular file, and fsynced; there is no deadline: the CLI prints, and the page shows before
+  the request (only where the body is rewritten, not on Windows), that it may take several minutes, that closing the page
+  does not stop it and quitting the app does, by when the file is already deleted, and a stop
+  partway is said as "only partially overwritten" wherever a report is still made. The late pass, armed only after the body rewrite and the
+  holder check (both use the kept handles), then rewrites page 1 again and closes the handles (R789); another holder is said under R792. Where
+  an open file cannot be unlinked (Windows: no share-delete open here) the order is the old one, the first page then the
+  unlink, said as "had its first page overwritten". A stated limit there: the fallback checks the pin and then writes by
+  path, so a file swapped in at that name between the two can get its head written. It is never counted in "Wiped n/n": the result says it was overwritten in
+  full, only partially overwritten or not overwritten, with the reason, whether it was deleted, and how many other names (hard
+  links) for it remain; once it is overwritten in full or in part the result says those names now lead to the overwritten
+  content, so a copy kept under another name is no longer usable; after a partial overwrite, that parts of the old
+  content may still be readable through them. The crypto-erase guarantee (`_LIMIT_NOTE`, the page's "permanently
+  unrecoverable") is said only when the main database is positively known to be encrypted; a plaintext one fails closed to
+  "not encrypted, old pages may remain on the disk, full-disk encryption is the remedy", one whose state could not be read to
+  "could not be confirmed as encrypted", on the CLI, the HTTP answer, the page and the free-space overwrite after it.
+  **A data folder the app does not own (R711).** Ownership is where the app put the
   folder, never what is in it (the app writes its own files at every start): the default location and the first-launch
   `OOS data` folder are the app's; a folder set by hand in `OO_DATA_DIR` is shared when it is, on the path it leads to, the
   home folder, a folder above it or one of its standard folders such as Documents, a drive root or a mount point, or when it

@@ -127,6 +127,7 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/wiki/lane_search.py": {"getattr reaches how, a way round the scan of the log calls": 1},
     "src/backup/runlog.py": {"getattr reaches attr, a way round the scan of the log calls": 1},
     "src/backup/folder_backup.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # R787: reads the errno of the OSError from placing one artifact member to tell a name this system cannot hold (refused, that member only) from any other failure (raised); its words are not used
+    "src/database/drive_pin.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},  # row 390: reads whether a SQLite or DuckDB error says the connection is ALREADY closed (nothing left to close or delete) rather than not knowing (pinned); its words are stored and logged nowhere
     "src/safety/crypto_erase.py": {"the caught exception 'exc' is used outside a scrubbing call": 4},  # R798 (row 333): ``_absent`` reads the class and errno of a failed lstat or stat to tell "not there" from "could not be looked at", and ``_listing`` hands a failed listing to the R798 callback, which takes only its ``filename`` (the folder, for the report and a masked log line); its words are not used
 }
 
@@ -137,6 +138,12 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # R768: the reason token a TransportStopped carries is compared with the four fixed tokens; nothing else of the exception is read.
     "src/safety/transport_watch.py": {
         ("stop_reason_of", 'reason = getattr(exc, "reason", None)'): 1,
+    },
+    # Row 392 (R815/R817): only the errno is read: ENXIO from SEEK_DATA is "no data past here", ELOOP from an O_NOFOLLOW open is "a
+    # link at the name" (never followed); nothing else of the exception is read, stored or logged.
+    "src/safety/crypto_erase.py": {
+        ("_data_regions", "if exc.errno == errno.ENXIO:"): 1,
+        ("_open_and_unlink_plain", "if exc.errno == errno.ELOOP:  # a link at the name: never followed"): 1,
     },
     # R397 (b): only the errno is read, to tell damage in the file (EIO) from a passing error that must not mark a healthy store
     "src/events/feeds.py": {("_load_json", "damaged = not isinstance(exc, OSError) or exc.errno == errno.EIO"): 1},

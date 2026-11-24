@@ -70,7 +70,7 @@ const NAMES = [
   // app-analysis
   "commodityOverlaySvg", "_anPriceHtml", "_anLensSuffix", "commoditiesForTerm",
   "renderAnTrend", "_anCtlLabel", "drawAnTrend", "renderAnMindmap",
-  "_anLinksHtml", "_anFurnitureHtml", "_anSentimentHtml", "_anSourcesHtml", "_anSourceCatalogHtml",
+  "_anLinksHtml", "_anFurnitureHtml", "_anSentimentHtml", "_anSourcesHtml", "_anSourceCatalogHtml", "_anSourcesCutHtml",
   "_anRepaintOnLangChange", "_anFormCountsHtml", "_anFormCountsFailedHtml",
   "_anRefillFormSlots",
   // the panels a switch also redraws (the round-2 review of N-4)
@@ -100,7 +100,10 @@ const src = [
   "function api(u){H.api.push(u); return H.respond(u);}",
   "function ooChart(host, list, opts){H.charts.push({host, list, opts});}",
   "function _anRepaintArticles(){H.articlesRepainted++;}",
-  "function _exploreSync(){}",   // Explore's note (R47), redrawn from state; tested in test_explore_merge.py
+  "function _exploreSync(){}",
+  // ooLive/ooLiveHtml (app-core.js, row 364): draw the render now; their repaint is tested in oo_live_node_test.js
+  "function ooLiveHtml(el, render){ if (el) el.innerHTML = String(render()); }",
+  "function ooLive(el, render){ if (el && render) el.textContent = String(render()); }",   // Explore's note (R47), redrawn from state; tested in test_explore_merge.py
   "var _SPARSE_BAR_MAX = 10;",
   "var COMMODITY_QUERY = {WTI: 'crude oil'};",
   "var _anCommodity = null, _anExpand = true;",
@@ -127,7 +130,11 @@ const M = (() => {
 })();
 
 function el(extra) {
+  // Attributes are kept as a real element keeps them: the mind map marks its host off the walker (row 361).
+  const attrs = {};
   return Object.assign({ innerHTML: "", offsetParent: {}, dataset: {},
+    setAttribute(k, v) { attrs[k] = String(v); }, getAttribute(k) { return k in attrs ? attrs[k] : null; },
+    hasAttribute(k) { return k in attrs; }, removeAttribute(k) { delete attrs[k]; },
     querySelector() { return null; }, querySelectorAll() { return []; } }, extra || {});
 }
 function reset(lang) {

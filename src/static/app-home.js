@@ -414,7 +414,8 @@
       _feedControls();
       const order = _feedOrder();
       const more = $("feed-more");
-      if (more) more.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Held (row 367): a switch while the page is in flight redraws this line; the page that lands draws over it.
+      if (more) ooLiveHtml(more, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const p = new URLSearchParams({ order, limit: "20" });
         if (order === "shuffled") p.set("seed", String(_feedSeed()));
@@ -629,7 +630,7 @@
       const ct = (($("latest-channel") || {}).value || "").trim();
       const tg = (($("latest-tag") || {}).value || "").trim();
       const collapse = ($("latest-collapse") ? $("latest-collapse").checked : true) ? "1" : "0";
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // held until the rows land (row 367)
       // Dropped first, so a failed read leaves nothing a language switch could redraw
       // over the hidden panel.
       _homeLatestPayload = null;
@@ -861,7 +862,7 @@
       const panel = $("home-recent-panel"), box = $("home-recent");
       if (!panel || !box) return;
       if (!tag) { panel.hidden = true; return; }
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // held until the rows land (row 367)
       try {
         const q = "/api/articles?tags=" + encodeURIComponent(tag) + "&sort_by=date&sort_dir=desc&limit=8";
         const d = await api(q);
@@ -948,7 +949,7 @@
             // Not computed is not "nothing is trending": say so where the strip would be (the server's own words).
             _homeTrendCaveat = d.caveat;
             if (panel) panel.hidden = false;
-            box.innerHTML = `<div class="hint muted" role="status" style="font-size:12px">${esc(t(d.caveat))}</div>`;
+            ooLiveHtml(box, () => `<div class="hint muted" role="status" style="font-size:12px">${esc(t(d.caveat))}</div>`);
           } else { if (panel) panel.hidden = true; box.innerHTML = ""; }
           _homeTrendLang = lang;
           // The compact Overview row reads the same stash: without this it kept the previous
@@ -961,27 +962,34 @@
         _homeTrendTerms = terms;              // stash so enlargeHomeTrend(i) needs no refetch
         _homeTrendCaveat = d.caveat || "";
         _homeTrendLang = lang;
-        const cards = terms.map((x, i) => {
-          // PRH-31: the axis is the window the server sliced the series against,
-          // never the points' own span — a series that omits its zero days would
-          // otherwise render day 1 and day 5 adjacent.
-          const spark = Array.isArray(x.series)
-            ? dashChartSvg(x.series.map(p => ({observed_on: p.date, price: p.count})), "",
-                           _hw ? {t0: _hw.start, t1: _hw.end} : {})
-            : "";
-          // Click-to-enlarge into the interactive ooChart (invariant #16), matching
-          // the Insights Trends UX — the daily series is already in the payload.
-          const enlarge = Array.isArray(x.series)
-            ? `<button class="ghost tiny" style="margin-inline-start:auto" data-on-click="enlargeHomeTrend(${i})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>`
-            : "";
-          return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
-            <div style="display:flex;align-items:baseline;gap:6px">
-              <a href="#" data-on-click='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
-              <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>${enlarge}
-            </div>${spark}</div>`;
-        }).join("");
-        box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
-          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`;
+        // Held (row 367). These rows carry the translations of the language they were read for, so under
+        // another language the hold keeps what it drew (M8's guard, as _renderOverviewTrends) and the re-read
+        // a switch starts (app-corpus.js) draws the new language over it; under the same language it redraws.
+        let drawn = "";
+        ooLiveHtml(box, () => {
+          if (drawn && lang !== uiLangCode()) return drawn;
+          const cards = terms.map((x, i) => {
+            // PRH-31: the axis is the window the server sliced the series against,
+            // never the points' own span — a series that omits its zero days would
+            // otherwise render day 1 and day 5 adjacent.
+            const spark = Array.isArray(x.series)
+              ? dashChartSvg(x.series.map(p => ({observed_on: p.date, price: p.count})), "",
+                             _hw ? {t0: _hw.start, t1: _hw.end} : {})
+              : "";
+            // Click-to-enlarge into the interactive ooChart (invariant #16), matching
+            // the Insights Trends UX — the daily series is already in the payload.
+            const enlarge = Array.isArray(x.series)
+              ? `<button class="ghost tiny" style="margin-inline-start:auto" data-on-click="enlargeHomeTrend(${i})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>`
+              : "";
+            return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
+              <div style="display:flex;align-items:baseline;gap:6px">
+                <a href="#" data-on-click='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
+                <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>${enlarge}
+              </div>${spark}</div>`;
+          }).join("");
+          return (drawn = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
+            + `<div class="hint muted" style="font-size:11px;margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`);
+        });
         _renderOverviewTrends();   // the compact row folded into Overview (ruling 7a)
         _syncHomeSubtabs();
       } catch (e) {
@@ -1026,15 +1034,22 @@
         // a computing corpus would look like a quiet one.
         if (d && d.building) {
           if (panel) panel.hidden = false;
-          const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-          box.innerHTML = `<div class="muted">${esc(t("Checking for alerts…"))}</div>`;
+          _homeAlertsLast = "building";
+          _renderHomeAlerts(_homeAlertsLast);
           return;
         }
+        _homeAlertsLast = null;
         if (!d || !d.total) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
         if (panel) panel.hidden = false;
+        _homeAlertsLast = d;
         _renderHomeAlerts(d);
-      } catch (e) { if (panel) panel.hidden = true; box.innerHTML = ""; }
+      } catch (e) { _homeAlertsLast = null; if (panel) panel.hidden = true; box.innerHTML = ""; }
     }
+    // WHAT THE STRIP LAST DREW (row 367): a payload, "building" for the scan-still-running line, or null when it
+    // drew nothing. Its tier names, notes and hovers are written with t() at render time, so a language switch
+    // redraws them from here (app-boot.js's ONE oo:langchange listener) -- never a fetch, nothing for an empty strip.
+    let _homeAlertsLast = null;
+    function repaintHomeAlerts() { if (_homeAlertsLast) _renderHomeAlerts(_homeAlertsLast); }
     // Item 3 (field-feedback A6, ruled): a distinct glyph per hazard TYPE (never a
     // score/severity encoding -- purely a scannability aid), "⚠" for an unlisted type.
     const HAZARD_GLYPH = {
@@ -1100,6 +1115,8 @@
     function _renderHomeAlerts(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("home-alerts"); if (!box) return;
+      // S3.1: a scan still running is not "no alerts"; it says so, in the reader's language.
+      if (d === "building") { box.innerHTML = `<div class="muted">${esc(t("Checking for alerts…"))}</div>`; return; }
       const TIER_LABEL = { urgent: t("Urgent"), watch: t("Watch"), info: t("Info") };
       const TIER_CLASS = { urgent: "err", watch: "warn", info: "" };
       // The DISPLAY floor (2026-08-01 rulings 1-2). The backend already ordered
@@ -1486,17 +1503,19 @@
       if (_carCards.length < 2) { panel.hidden = true; host.innerHTML = ""; return; }
       panel.hidden = false;
       _carIdx = 0;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // The words (the region's names and every button's label) are written by _carLabels, which a language switch
+      // runs again (repaintLeadsCarousel, row 367); `data-i18n-dyn` keeps the walker off what it writes.
       host.innerHTML =
-        `<div class="carousel" role="region" aria-roledescription="${esc(t("carousel"))}" aria-label="${esc(t("Leads"))}" tabindex="0">`
+        `<div class="carousel" role="region" tabindex="0" data-i18n-dyn>`
         + `<div class="carousel-face" id="carousel-face" aria-live="polite"></div>`
         + `<div class="carousel-ctl">`
-        +   `<button class="tiny secondary" data-on-click="carouselStep(-1)" aria-label="${esc(t("Previous Lead"))}">‹</button>`
-        +   `<button class="tiny secondary" id="carousel-pause" data-on-click="carouselToggle()" aria-pressed="false" aria-label="${esc(t("Pause the carousel"))}">⏸</button>`
-        +   `<button class="tiny secondary" data-on-click="carouselStep(1)" aria-label="${esc(t("Next Lead"))}">›</button>`
+        +   `<button class="tiny secondary carousel-prev" data-on-click="carouselStep(-1)">‹</button>`
+        +   `<button class="tiny secondary" id="carousel-pause" data-on-click="carouselToggle()" aria-pressed="false">⏸</button>`
+        +   `<button class="tiny secondary carousel-next" data-on-click="carouselStep(1)">›</button>`
         +   `<span class="carousel-dots" id="carousel-dots"></span>`
         + `</div></div>`;
       const car = host.querySelector(".carousel");
+      _carLabels();
       // WCAG 2.2: the auto-rotation pauses on hover/focus, plus the explicit pause toggle.
       car.addEventListener("mouseenter", _carHold);
       car.addEventListener("mouseleave", _carRelease);
@@ -1551,14 +1570,33 @@
     function carouselGo(i) { _carIdx = i; _carPaint(); }
     function carouselToggle() {
       _carPaused = !_carPaused;
-      const b = $("carousel-pause");
+      _carLabels();
+      if (_carPaused) _carStop(); else _carStart();
+    }
+    // The carousel's own words, from the state it holds (the pause button follows _carPaused).
+    function _carLabels() {
+      const host = $("home-carousel"), car = host && host.querySelector(".carousel");
+      if (!car) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      car.setAttribute("aria-roledescription", t("carousel"));
+      car.setAttribute("aria-label", t("Leads"));
+      const prev = host.querySelector(".carousel-prev"), next = host.querySelector(".carousel-next");
+      if (prev) prev.setAttribute("aria-label", t("Previous Lead"));
+      if (next) next.setAttribute("aria-label", t("Next Lead"));
+      const b = $("carousel-pause");
       if (b) {
         b.textContent = _carPaused ? "▶" : "⏸";
         b.setAttribute("aria-pressed", _carPaused ? "true" : "false");
         b.setAttribute("aria-label", _carPaused ? t("Play the carousel") : t("Pause the carousel"));
       }
-      if (_carPaused) _carStop(); else _carStart();
+    }
+    // THE REPAINT (row 367), from app-boot.js's ONE oo:langchange listener: the words and the face showing, from
+    // the cards and the position held -- the rotation keeps its place and its timer; nothing for a carousel not drawn.
+    function repaintLeadsCarousel() {
+      const host = $("home-carousel");
+      if (!host || !_carCards.length || !host.querySelector(".carousel")) return;
+      _carLabels();
+      _carPaint();
     }
     function _carStart() { _carStop(); if (_carPaused || _carCards.length < 2) return; _carTimer = setInterval(() => carouselStep(1), 7000); }
     function _carStop() { if (_carTimer) { clearInterval(_carTimer); _carTimer = null; } }
@@ -1652,7 +1690,7 @@
         const el = $(p.id), avail = !!(el && !el.hidden);
         if (avail && !btn) {
           const b = document.createElement("button");
-          b.dataset.tab = p.key; b.textContent = t(p.label);
+          b.dataset.tab = p.key; ooLive(b, () => t(p.label));   // held: follows a language switch (row 367)
           nav.appendChild(b);
         } else if (!avail && btn) {
           if (_homeTabKey === p.key) _homeTabKey = "__ov";
@@ -2141,16 +2179,20 @@
       if (acts.querySelector(".lead-dismiss-form")) return;     // already open
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const form = document.createElement("div");
+      // Every word in the form is held (row 367) and follows a language switch; the marker keeps the walker off the
+      // placeholder the Dismiss button's render writes.
+      form.setAttribute("data-i18n-dyn", "");
       form.className = "lead-dismiss-form";
       form.style.cssText = "margin-top:6px;width:100%";
       form.addEventListener("click", (e) => e.stopPropagation());   // never flip the card while choosing
       const label = document.createElement("div");
-      label.className = "hint"; label.textContent = t("Why dismiss? (optional)");
+      label.className = "hint"; ooLive(label, () => t("Why dismiss? (optional)"));
       const chips = document.createElement("div");
       chips.className = "lead-dreasons"; chips.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;margin:4px 0";
       _leadDismissReasons().forEach(([k, lbl]) => {
         const b = document.createElement("button");
-        b.type = "button"; b.className = "ghost tiny"; b.textContent = lbl;
+        b.type = "button"; b.className = "ghost tiny";
+        ooLive(b, () => { const r = _leadDismissReasons().find(x => x[0] === k); return r ? r[1] : lbl; });
         b.addEventListener("click", (e) => { e.stopPropagation(); _leadDismissWith(id, type, k); });
         chips.appendChild(b);
       });
@@ -2158,12 +2200,13 @@
       row.className = "row"; row.style.cssText = "gap:6px";
       const inp = document.createElement("input");
       inp.className = "lead-dreason-text"; inp.type = "text";
-      inp.placeholder = t("Add a reason…"); inp.style.flex = "1";
+      inp.style.flex = "1";
       inp.addEventListener("keydown", (e) => {
         if (e.key === "Enter") { e.stopPropagation(); _leadDismissWith(id, type, inp.value.trim()); }
       });
       const go = document.createElement("button");
-      go.type = "button"; go.className = "ghost tiny"; go.textContent = t("Dismiss");
+      go.type = "button"; go.className = "ghost tiny";
+      ooLive(go, () => { inp.placeholder = t("Add a reason…"); return t("Dismiss"); });
       go.addEventListener("click", (e) => { e.stopPropagation(); _leadDismissWith(id, type, inp.value.trim()); });
       row.appendChild(inp); row.appendChild(go);
       form.appendChild(label); form.appendChild(chips); form.appendChild(row);
@@ -2214,31 +2257,34 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const dlg = $("link-preview"), body = $("lp-body"), out = $("lp-out");
       if (!dlg) { window.open(url, "_blank", "noopener"); return false; }
-      body.textContent = t("Loading…"); out.innerHTML = "";
+      // Held (row 367): every line below is drawn again in the new language if it changes while the preview is open.
+      ooLive(body, () => t("Loading…")); out.innerHTML = "";
       dlg.showModal();
       try {
         const d = await api("/api/links/preview?url=" + encodeURIComponent(url));
-        const rows = [`<div class="muted small">${esc(d.domain)}</div>`];
-        if (d.local_article) {
-          rows.push(`<div>${esc(t("A stored local copy exists — read it without going online:"))} <a href="${esc(d.local_article.reader_url)}" target="_blank" rel="noopener">${esc(d.local_article.title || "")}</a></div>`);
-        }
-        if (d.known_source) {
-          rows.push(`<div>${esc(t("Known source in your catalog:"))} <b>${esc(d.known_source.name)}</b>${d.known_source.country ? ` <span class="muted">(${ooCountryCell(d.known_source.country)})</span>` : ""}</div>`);
-        }
-        rows.push(`<div>${esc(t("Articles in your corpus citing this URL:"))} <b>${d.cited_by_articles}</b></div>`);
-        // Row 99: articles whose own outlet carries this link on most of its pages are counted apart, not dropped.
-        if (d.furniture_articles) rows.push(`<div class="muted small" title="${esc(t("A link counts as an outlet's page furniture (a footer, app or subscription link) when at least half of the articles stored from that source carry it, and the source has at least 20 stored articles. Measured on your corpus."))}">${esc(t("Articles that carry it only as their outlet's page furniture (not counted):"))} <b>${d.furniture_articles}</b></div>`);
-        if ((d.citing_examples || []).length) {
-          rows.push(`<div class="muted small">${d.citing_examples.map(x => `<a href="/api/articles/${x.article_id}/view" target="_blank" rel="noopener">${esc(x.title || ("#" + x.article_id))}</a>`).join(" · ")}</div>`);
-        }
-        if (d.law_document) rows.push(`<div>${esc(t("Tracked law document:"))} <b>${esc(d.law_document.title)}</b> <span class="muted">(${ooCountryCell(d.law_document.jurisdiction)})</span></div>`);
-        if (d.wiki_page) rows.push(`<div>${esc(t("Watched Wikipedia page:"))} <b>${esc(d.wiki_page.title)}</b> <span class="muted">(${esc(d.wiki_page.wiki)})</span></div>`);
-        if (d.keywords && d.keywords.length) rows.push(`<div class="muted small">${esc(t("Top keywords of the local copy:"))} ${d.keywords.map(esc).join(", ")}</div>`);
-        if (!d.local_article && !d.known_source && !d.cited_by_articles && !d.furniture_articles) rows.push(`<div class="muted">${esc(t("No local record of this link yet."))}</div>`);
-        rows.push(`<div class="muted small" style="margin-top:4px" title="${esc(ooSaidText(d, "method"))}">${esc(t("Built from your local database only — no network call."))}</div>`);
-        body.innerHTML = rows.join("");
-        out.innerHTML = `<div class="muted small">${esc(t("The transparent outbound link — its text is the full address; opening it leaves this machine:"))}</div>` +
-          `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer" style="word-break:break-all">${esc(d.url)}</a>`;
+        ooLiveHtml(body, () => {
+          const rows = [`<div class="muted small">${esc(d.domain)}</div>`];
+          if (d.local_article) {
+            rows.push(`<div>${esc(t("A stored local copy exists — read it without going online:"))} <a href="${esc(d.local_article.reader_url)}" target="_blank" rel="noopener">${esc(d.local_article.title || "")}</a></div>`);
+          }
+          if (d.known_source) {
+            rows.push(`<div>${esc(t("Known source in your catalog:"))} <b>${esc(d.known_source.name)}</b>${d.known_source.country ? ` <span class="muted">(${ooCountryCell(d.known_source.country)})</span>` : ""}</div>`);
+          }
+          rows.push(`<div>${esc(t("Articles in your corpus citing this URL:"))} <b>${d.cited_by_articles}</b></div>`);
+          // Row 99: articles whose own outlet carries this link on most of its pages are counted apart, not dropped.
+          if (d.furniture_articles) rows.push(`<div class="muted small" title="${esc(t("A link counts as an outlet's page furniture (a footer, app or subscription link) when at least half of the articles stored from that source carry it, and the source has at least 20 stored articles. Measured on your corpus."))}">${esc(t("Articles that carry it only as their outlet's page furniture (not counted):"))} <b>${d.furniture_articles}</b></div>`);
+          if ((d.citing_examples || []).length) {
+            rows.push(`<div class="muted small">${d.citing_examples.map(x => `<a href="/api/articles/${x.article_id}/view" target="_blank" rel="noopener">${esc(x.title || ("#" + x.article_id))}</a>`).join(" · ")}</div>`);
+          }
+          if (d.law_document) rows.push(`<div>${esc(t("Tracked law document:"))} <b>${esc(d.law_document.title)}</b> <span class="muted">(${ooCountryCell(d.law_document.jurisdiction)})</span></div>`);
+          if (d.wiki_page) rows.push(`<div>${esc(t("Watched Wikipedia page:"))} <b>${esc(d.wiki_page.title)}</b> <span class="muted">(${esc(d.wiki_page.wiki)})</span></div>`);
+          if (d.keywords && d.keywords.length) rows.push(`<div class="muted small">${esc(t("Top keywords of the local copy:"))} ${d.keywords.map(esc).join(", ")}</div>`);
+          if (!d.local_article && !d.known_source && !d.cited_by_articles && !d.furniture_articles) rows.push(`<div class="muted">${esc(t("No local record of this link yet."))}</div>`);
+          rows.push(`<div class="muted small" style="margin-top:4px" title="${esc(ooSaidText(d, "method"))}">${esc(t("Built from your local database only — no network call."))}</div>`);
+          return rows.join("");
+        });
+        ooLiveHtml(out, () => `<div class="muted small">${esc(t("The transparent outbound link — its text is the full address; opening it leaves this machine:"))}</div>` +
+          `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer" style="word-break:break-all">${esc(d.url)}</a>`);
       } catch (e) {
         body.innerHTML = `<div class="note err">${esc(e.message)}</div>`;
         out.innerHTML = `<a href="${esc(safeUrl(url))}" target="_blank" rel="noopener noreferrer" style="word-break:break-all">${esc(url)}</a>`;
@@ -2279,6 +2325,12 @@
       return !!(await ensureOnline(ask, {shadow: shadow, confirmIfOnline: shadow ? ask + "\n\n" + shadow : ask}));
     }
 
+    // The second line of the weather question: the dates that would be sent, in the reader's language when asked.
+    function _wxDatesSentLine(start, end) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
+      return tf("Dates sent: {start} to {end}.", {start: start, end: end});
+    }
     async function cardWeatherFetch(id) {
       const c = _briefCards[id]; if (!c) return;
       const sig = c.signal || {};
@@ -2290,9 +2342,7 @@
         variables: String(sig.variables || "").split(",").filter(Boolean),
         label: sig.rule_label || c.title
       };
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
-        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
-      box.textContent = t("Loading…");
+      ooLive(box, () => t("Loading…"));   // held until the slice is drawn (row 367)
       try {
         // A slice already held is read from this machine first: nothing is sent and nothing is asked,
         // in airplane mode too (R683). Only a slice not held leads to the question.
@@ -2303,9 +2353,8 @@
         if (held && held.held) { renderWeatherContext(box, held, sig); return; }
         box.textContent = "";
         // The place, the dates and the host are named before anything is sent.
-        if (!await ooAskToSendPlace(sig.lat, sig.lon,
-          {shadow: tf("Dates sent: {start} to {end}.", {start: body.start_date, end: body.end_date})})) return;
-        box.textContent = t("Loading…");
+        if (!await ooAskToSendPlace(sig.lat, sig.lon, {shadow: _wxDatesSentLine(body.start_date, body.end_date)})) return;
+        ooLive(box, () => t("Loading…"));
         const d = await api("/api/weather/context", {method: "POST", body: JSON.stringify(Object.assign({}, body, {consent: true}))});
         renderWeatherContext(box, d, sig);
       } catch (e) {

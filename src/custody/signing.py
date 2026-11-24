@@ -528,8 +528,16 @@ class HybridSigner:
             if not self._create:
                 raise
             key = Ed25519PrivateKey.generate()
+            sealed = seal_ed25519_key(key, self._pp)
+            from src.reporting.evidence import _drop_restored_marker, restored_marker_lock
+
             try:
-                keyfile.create_new(path, seal_ed25519_key(key, self._pp))
+                # R816 (R801 for the custody and annotation signers): the key is made and its restored-key marker dropped
+                # under the lock a restore looks for a key and writes its marker under, so a marker never lands on a key
+                # this installation just made, and a marker left by a restore whose key is gone does not describe this one
+                with restored_marker_lock(path):
+                    keyfile.create_new(path, sealed)
+                    _drop_restored_marker(path)
             except FileExistsError:
                 # another caller created it between our look and our create: ONE key, theirs, and it is
                 # judged like any file found there (it may be plaintext, made by a caller with no passphrase)

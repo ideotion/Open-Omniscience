@@ -150,7 +150,10 @@ async function run() {
     const I = i18n(lang);
     const els = {"qualify-bulk-status": el(), "qualify-bulk-cancel-btn": el(), "qualify-bulk-btn": el()};
     const src = [ESC, FMTNUM, C("_jobLabel"), C("_framedText"), A("_qualTf"), A("_qualDeclinedText"),
-      A("loadQualifyBulk"), "return loadQualifyBulk;"].join("\n");
+      A("_qualifyBulkDeclined"), A("_qualifyBulkLine"), A("loadQualifyBulk"),
+      "function ooLive(el, render) { if (render) el.textContent = render(); }",   // row 367: the status line is a held render
+      "let _qualifyBulkDone = null;",   // row 367: a run's last line, kept for the read after it
+      "return loadQualifyBulk;"].join("\n");
     let st = status;
     // eslint-disable-next-line no-new-func
     const f = new Function("window", "OOI18N", "$", "api", src)({OOI18N: I}, I, (id) => els[id] || null,
@@ -212,7 +215,10 @@ async function run() {
     const calls = [];
     const els = {"qualify-bulk-status": el(), "qualify-bulk-cancel-btn": el()};
     const src = [FMTNUM, C("_jobLabel"), C("_framedText"), A("_qualTf"), A("_qualDeclinedText"),
-      C("_jobStillRunning"), A("qualifyBulkStart"), "return qualifyBulkStart;"].join("\n");
+      C("_jobStillRunning"), A("qualifyBulkStart"),
+      "function ooLive(el, render) { if (render) el.textContent = render(); }",   // row 367: the status line is a held render
+      "let _qualifyBulkDone = null;",   // row 367: a run's last line, kept for the read after it
+      "return qualifyBulkStart;"].join("\n");
     // eslint-disable-next-line no-new-func
     const start = new Function("window", "OOI18N", "$", "api", "ensureOnline", "pollJobStatus", "loadQualifyBulk", src)(
       {OOI18N: I}, I, (id) => els[id] || null,
@@ -296,6 +302,8 @@ async function run() {
     const saved = [];
     const src = [ESC, FMTNUM, C("_jobLabel"), C("_framedText"), C("_apiErrorMessage"), A("_qualTf"),
       "var _qualMergeLast = null; var _qualMergeRefusal = null;",
+      // ooLive as a text write and a release as a no-op (row 367): the progress line is the text its render returns
+      "function ooLive(el, render) { if (render) el.textContent = render(); }",
       A("overlayMerge"), A("_renderOverlayMerge"),
       "return {merge: overlayMerge, render: _renderOverlayMerge};"].join("\n");
     // eslint-disable-next-line no-new-func

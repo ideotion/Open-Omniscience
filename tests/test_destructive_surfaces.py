@@ -286,7 +286,6 @@ _REQUEST_EXEMPT = {
     "overlayMerge": "posts the picked export files and reads back a merged REPORT; it writes no corpus row",
     "rebuildStop": "stops a running rebuild at its next safe point (job control, bound by addEventListener): the library stays "
     "exactly as it was, the unfinished copy is removed, and the rebuild can be started again from the same panel",
-    "runLangDetect": "no caller in src/static (dead code); its cancel half would stop a running detection pass (job control)",
     "stopWikiLane": "switches the wiki lane off in the scheduler config (job control; the toggle switches it on again)",
     "undoAdmission": "reverses ONE automatic admission from the audit list; the audit row stays",
     "volBackupCancel": "no caller in src/static (dead code); it would cancel a volume build, which discards that build's OWN partial set",

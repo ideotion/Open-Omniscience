@@ -659,12 +659,13 @@ class CustodyLog:
         report = self.verify_report()
         return report["verified"], report["issues"]
 
-    def verify_report(self) -> dict:
+    def verify_report(self, entries: list[CustodyEntry] | None = None) -> dict:
         """``{"verified", "issues", "notes"}`` for the full chain held in this database: hashes, links and signatures
         (:func:`verify_entries`), and the signing key followed through its key-rotation records. A key change with no
         record is refused; an unendorsed rotation is accepted on its record's word -- this is the operator's own store --
-        and named in the notes, with every other rotation."""
-        entries = self.all_entries()
+        and named in the notes, with every other rotation. ``entries``: the log as the caller already read it
+        (:meth:`all_entries`), so what it goes on to say about those entries is about the ones verified here (row 382)."""
+        entries = self.all_entries() if entries is None else entries
         ok, issues = verify_entries(entries)
         notes: list[str] = []
         if entries:
@@ -1325,6 +1326,13 @@ _VERDICT_TEXT = {
 }
 
 
+#: R816 (R801): said beside a bundle verified while this installation's custody key is one a restore placed.
+RESTORED_CUSTODY_KEY_NOTE = (
+    "This installation's custody signing key was placed by a restore from a backup, so no entry is called this"
+    " installation's own: that key is counted as another installation's."
+)
+
+
 #: Said beside a one-item bundle that crosses a key rotation: why its earlier keys are not called this installation's.
 ONE_ITEM_EARLIER_KEY_NOTE = (
     "This one-item bundle crosses a change of signing key. Its entries signed before the change are not tied to the"
@@ -1348,6 +1356,44 @@ def _is_yours(signer: tuple[str, str | None], local: PublicIdentity) -> bool:
     if not ed or ed != local.ed25519_pub:
         return False
     return ml is None or ml == local.ml_dsa_pub  # a hybrid half this install does not hold is not this install's
+
+
+def item_signer(
+    entries: list[CustodyEntry], item_id: str, local: PublicIdentity | None, *, held_ml: str | None = None
+) -> tuple[str | None, str | None]:
+    """``(signed_by, signer_key)`` for ``item_id`` in this installation's own VERIFIED log (row 382, R800).
+
+    The chain verified against the keys its entries carry, which shows only that it is unchanged since they signed it.
+    Who signed the item is said by the rule POST /verify uses for a whole-log bundle: each of the item's entries is this
+    installation's only where :func:`_own_positions` places one of its identities (both halves; an earlier key only
+    through ENDORSED rotations) and the entry carries it (:func:`_is_yours`). ``"this-installation"`` when every one of
+    the item's entries is; ``"another-installation"`` when none is, none even carries this installation's Ed25519
+    key and none is a key a rotation record of this log hands over from (that may be this installation's own earlier
+    key); ``"not-compared"`` otherwise (some are, some are not; an entry under this installation's Ed25519 key that is
+    not credited, such as one stripped of its post-quantum half; or no identity to compare with). ``signer_key`` is the
+    Ed25519 key of the item's last entry. Says nothing about what the chain is accepted as."""
+    idx = [i for i, e in enumerate(entries) if e.item_id == item_id]
+    if not idx:
+        return None, None
+    key = _sig_ed25519_pub(entries[idx[-1]].signature) or None
+    if local is None or not local.ed25519_pub:
+        return "not-compared", key
+    try:
+        owns = _own_positions(entries, local, chained=True, held_ml=held_ml)
+        signers = [_signer_of(entries[i]) for i in idx]
+    except Exception:  # noqa: BLE001 - a verified log has well-formed signatures; anything else is not answered
+        return "not-compared", key
+    mine = [(own := owns[i]) is not None and _is_yours(s, own) for i, s in zip(idx, signers, strict=True)]
+    if all(mine):
+        return "this-installation", key
+    # A key a rotation record of this log names as the previous one may be this installation's own earlier key (lost
+    # and re-created: an UNENDORSED record, which ``_own_positions`` stops at) as well as another's; the log cannot tell
+    # which, so neither is said.
+    handed_over = {e.metadata.get("previous_ed25519_pub") for e in entries
+                   if e.action == CustodyAction.KEY_ROTATION.value and e.item_id == ROTATION_ITEM}
+    if not any(mine) and all(ed != local.ed25519_pub and ed not in handed_over for ed, _ml in signers):
+        return "another-installation", key
+    return "not-compared", key
 
 
 def _own_positions(
@@ -1458,6 +1504,7 @@ def describe_export(
     require_signer: bool = False,
     accept_unendorsed_rotation: bool = False,
     held_ml_dsa_pub: str | None = None,
+    local_restored: bool = False,
 ) -> dict:
     """Verify a posted custody bundle and say BY WHOM it is signed (R681).
 
@@ -1471,7 +1518,10 @@ def describe_export(
     Across a key rotation a bundle has several signers by design. A signer older than this installation's key is
     called this installation's only for the stretch it signed before an unbroken run of ENDORSED rotations led from it
     to that key (see ``_own_positions``); ``earlier_key`` marks it, and ``notes`` names every change of key, as
-    :func:`verify_export_report` does."""
+    :func:`verify_export_report` does.
+
+    ``local_restored`` (R816, R801): this installation's custody key was placed by a restore (its marker is beside it), so
+    no signer is called this installation's: every proven signer reads as not yours and a note says why."""
     report = verify_export_report(
         bundle, require_signer=require_signer, accept_unendorsed_rotation=accept_unendorsed_rotation
     )
@@ -1525,7 +1575,10 @@ def describe_export(
     def yours(ed: str, ml: str | None) -> bool | None:
         if local is None or not proven[(ed, ml)]:
             return None
-        return own_everywhere.get((ed, ml), False)
+        return not local_restored and own_everywhere.get((ed, ml), False)
+
+    if ok and local is not None and local_restored:
+        notes = [*notes, RESTORED_CUSTODY_KEY_NOTE]
 
     signed_by = [
         {

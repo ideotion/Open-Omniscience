@@ -639,9 +639,9 @@ def omni(
 ) -> dict:
     """Federated first-hits for the omnibar. Index-backed; totals disclosed.
 
-    S2.4 guard: the omnibar fires per debounced keystroke and runs 2x full FTS
-    ``search_ids`` (articles + wiki) — on a large corpus a 2-char term matches most
-    of it. ``guarded_read`` collapses identical concurrent keystrokes to ONE compute
+    S2.4 guard: the omnibar fires per debounced keystroke and runs ONE full FTS
+    search (``_fts_hits``, shared by the articles and wiki groups) — on a large corpus
+    a 2-char term matches most of it. ``guarded_read`` collapses identical concurrent keystrokes to ONE compute
     (single-flight) + a concurrency cap + a statement deadline, so a burst can never
     pile onto the one SQLCipher connection. Because the omnibar must NEVER blank, a
     busy/timeout DEGRADES to an honest empty-with-note payload (never a 429/503)."""

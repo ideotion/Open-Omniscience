@@ -529,7 +529,9 @@ def test_the_erase_never_writes_outside_the_data_dir_through_a_link(tmp_path, mo
             crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     else:
         report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
-        assert report["removed"] is True
+        # R806 (2): a key name that is a link is not a key the app wrote, so keys is foreign: the folder is kept and said to be kept.
+        assert report["removed"] is False and report["folder_kept_foreign"] is True and report["keys_folder"] == "foreign"
+        assert sorted(os.listdir(data)) == ["keys"] and (data / "keys" / "custody_ed25519.pem").is_symlink()
     assert precious.read_bytes() == b"KEEP" * 2048
     assert (outside / "inner.db-wal").read_bytes() == b"KEEP" * 2048
     for target in ("w", "a", "k"):
@@ -571,14 +573,14 @@ def test_a_folder_the_erase_cannot_list_is_named_as_a_failure(tmp_path):
 def test_a_keys_subfolder_the_erase_cannot_list_is_named_as_a_failure(tmp_path, monkeypatch):
     """Runs as any user, root included: the listing itself is made to fail."""
     data = tmp_path / "OOS data"
-    sub = data / "keys" / "sub"
+    sub = data / "keys" / ".pending"  # the app's own private-copy folder (R806: a foreign subfolder is left, never walked)
     sub.mkdir(parents=True)
-    (sub / "evidence.key").write_bytes(b"K" * 100)
+    (sub / "evidence_ed25519.pem.1.2.0123456789ab.new").write_bytes(b"K" * 100)
 
     def walk(top, *a, onerror=None, **k):  # the listing of keys/sub fails, as an unreadable folder's does
         for root, dirs, names in os.walk(top, *a, onerror=onerror, **k):
-            if "sub" in dirs and Path(root, "sub") == sub:
-                dirs.remove("sub")
+            if sub.name in dirs and Path(root, sub.name) == sub:
+                dirs.remove(sub.name)
                 if onerror is not None:
                     onerror(PermissionError(13, "Permission denied", str(sub)))
             yield root, dirs, names
@@ -693,7 +695,7 @@ def test_an_erase_in_a_folder_the_app_does_not_own_removes_only_the_app_s_files(
     (keys / "custody_ed25519.pem").write_bytes(b"PRIVATE" * 10)
     (keys / "evidence_ed25519.pem").write_bytes(b"EVIDENCE" * 10)
     (keys / ".pending").mkdir()
-    (keys / ".pending" / "staged.pem").write_bytes(b"STAGED" * 10)
+    (keys / ".pending" / "custody_ed25519.pem.1.2.0123456789ab.new").write_bytes(b"STAGED" * 10)  # the app's one pending name
     (keys / "id_ed25519").write_bytes(b"the operator's own ssh key")
     (keys / "annotations_ed25519.pem").write_bytes(b"ANNOTATION SIGNER" * 10)
     (home / "annotations").mkdir()
@@ -824,7 +826,7 @@ def test_the_watcher_keeps_a_lane_database_header_only(tmp_path):
 def test_the_watcher_in_a_folder_the_app_does_not_own_wipes_only_the_app_s_files(tmp_path):
     """R711: the plan's names decide, the folder, the operator's files and the app's common names stay, and the audit log gives a
     count, never the operator's file names (one of them not even UTF-8)."""
-    from src.safety.uninstall import _app_only
+    from src.safety.uninstall import _app_only, _keys_spec
 
     home = tmp_path / "home"
     home.mkdir()
@@ -853,7 +855,7 @@ def test_the_watcher_in_a_folder_the_app_does_not_own_wipes_only_the_app_s_files
     (home / "wiki_dumps").symlink_to(tmp_path)  # an app name that is a link: removed, never followed
     audit = tmp_path / "a.log"
     _run_watcher({"files": [], "venv": None, "app_folder": None, "wipe_data_dir": str(home), "audit_log": str(audit),
-                  "app_only": _app_only({"broad": True, "reason": "home"})})
+                  "app_only": _app_only({"broad": True, "reason": "home"}), "keys_spec": _keys_spec()})
     assert home.is_dir()
     left = sorted(os.listdir(home))
     assert "models" in left and "thesis.odt" in left and "keys" not in left
@@ -881,23 +883,35 @@ def test_the_uninstall_plan_reads_the_scope_and_hands_the_watcher_the_app_s_name
 
 
 def test_a_plaintext_database_step_one_could_not_unlink_is_rewritten_whole(tmp_path, monkeypatch):
-    """Only an ENCRYPTED store's database skips step 6's whole rewrite when its unlink failed (Windows, an open pool)."""
+    """Only an ENCRYPTED store's database skips a whole rewrite when its unlink failed (Windows, an open pool). A plaintext one
+    (R817, row 392) is rewritten in full through the handle the erase kept on it, whether or not its unlink went through."""
     folder = tmp_path / "OOS data"
     folder.mkdir()
     main = folder / "open_omniscience.db"
     _plain_sqlite(main)
     kept = tmp_path / "kept"
     os.link(main, kept)
-    real_unlink = Path.unlink
     calls = []
+    if os.name == "posix" and os.unlink in os.supports_dir_fd:
+        real_os_unlink = os.unlink
 
-    def unlink(self, *a, **k):
-        if self.name == "open_omniscience.db" and not calls:
-            calls.append(self)
-            raise PermissionError("held open")
-        return real_unlink(self, *a, **k)
+        def os_unlink(path, *a, **k):
+            if path == "open_omniscience.db" and k.get("dir_fd") is not None and not calls:
+                calls.append(path)
+                raise PermissionError("held open")
+            return real_os_unlink(path, *a, **k)
 
-    monkeypatch.setattr(Path, "unlink", unlink)
+        scope_os(monkeypatch, crypto_erase, unlink=os_unlink, supports_dir_fd=os.supports_dir_fd | {os_unlink})
+    else:
+        real_unlink = Path.unlink
+
+        def unlink(self, *a, **k):
+            if self.name == "open_omniscience.db" and not calls:
+                calls.append(self)
+                raise PermissionError("held open")
+            return real_unlink(self, *a, **k)
+
+        monkeypatch.setattr(Path, "unlink", unlink)
     crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
     assert calls and b"plaintext-row" not in kept.read_bytes()
 

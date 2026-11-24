@@ -68,6 +68,10 @@
       try { if (typeof esStatusRepaint === "function") esStatusRepaint(); } catch (_e) {}
       // Row 352 fix: the corpus-integrity (fixity) result redraws from its last report; never re-hashes.
       try { if (typeof fixityRepaint === "function") fixityRepaint(); } catch (_e) {}
+      // Row 361: the chronology summary and timeline (Diagnostics) redraw from the reading they hold; never fetch.
+      try { if (typeof chronoRepaint === "function") chronoRepaint(); } catch (_e) {}
+      // Row 367: the Climate tab's charts (legend and axis words) redraw from the points they hold; never fetch.
+      try { if (typeof climateChartsRepaint === "function") climateChartsRepaint(); } catch (_e) {}
       // Row 364: every node drawn through ooLive/ooLiveHtml (app-core.js) redraws from the render it keeps; never fetches.
       try { if (typeof ooLiveRepaint === "function") ooLiveRepaint(); } catch (_e) {}
       // The rest of the Home at-a-glance strip -- its counts and their labels, the "as
@@ -121,7 +125,8 @@
         const qd = document.querySelector('#set-advanced details.adv-sec[data-adv="qualification"]');
         if (qd && qd.dataset.advLoaded === "1" && typeof loadQualificationGates === "function") {
           loadQualificationGates();
-          if (typeof loadQualifyBulk === "function") loadQualifyBulk();
+          // The backlog line (loadQualifyBulk) is a held render now (row 367): ooLiveRepaint redraws it, and a re-read
+          // here would replace a finished run's tally, which belongs to the read after the run, with the backlog.
           // The queue panel picks its list separator from the page direction, so it has to be
           // redrawn on a switch too (found in the R95 follow-up review: en -> ar kept the ASCII comma).
           if (typeof loadQualQueue === "function") loadQualQueue();
@@ -135,6 +140,10 @@
       // English beside chips that translated, while booting straight into `ar` rendered
       // it correctly. Repaints from the CACHED payload, so a switch costs no request.
       try { if (typeof _renderHomeChannels === "function") _renderHomeChannels(); } catch (_e) {}
+      // Row 367: Home's alert strip and the Leads carousel draw their words with t() at render time. Each redraws
+      // from what it last drew (the alerts payload; the cards, position and pause state) -- never a fetch.
+      try { if (typeof repaintHomeAlerts === "function") repaintHomeAlerts(); } catch (_e) {}
+      try { if (typeof repaintLeadsCarousel === "function") repaintLeadsCarousel(); } catch (_e) {}
       // Home's "Most recent" and "Latest in your corpus" panels and the Settings
       // Collection toggle are the same class, seen only on a switch that STARTS in a
       // non-English locale: the walker had recorded their French text as "the English",
@@ -241,6 +250,10 @@
       } catch (_e) {}
       // Markets -> coverage that moves with a commodity: redrawn from the payload it kept.
       try { if (typeof paintMktRipple === "function") paintMktRipple(); } catch (_e) {}
+      // Markets -> the commodities and indices boards (row 367): drawn again from the prices they hold, never read.
+      try { if (typeof repaintMarketBoards === "function") repaintMarketBoards(); } catch (_e) {}
+      // Insights -> Groups: the two-tier concept browse (row 367), drawn again from what it holds, never read.
+      try { if (typeof repaintConceptBrowse === "function") repaintConceptBrowse(); } catch (_e) {}
       // Settings -> Statistics: the figures and revision-anomalies tables draw their
       // count lines and headers in the reader's language (B18 R7/R8). Redrawn from the
       // payload each last drew -- never a fetch, and nothing for a table never opened.

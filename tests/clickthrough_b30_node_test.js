@@ -114,6 +114,9 @@ const src = [
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function extLink(u, label){ return '<a href=\"' + esc(u) + '\">' + esc(label) + '</a>'; }",
   "function agFlag(){ return ''; }",
+  // Row 372(b): the live helpers (app-core.js), drawn once here; tests/app_map_live_i18n_node_test.js runs the real ones.
+  "function ooLive(el, r){ if (el && r) el.textContent = r(); }",
+  "function ooLiveHtml(el, r){ if (el && r) el.innerHTML = r(); }",
   "function ooRegionName(x, fb){ return fb; }",
   "function safeUrl(u){ return u; }",
   "function kindColor(){ return '#000'; }",

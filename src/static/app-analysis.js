@@ -190,8 +190,10 @@
       $("an-adv-query").value = tb.query || "";
       _advWrite(tb.adv);
       _advRenderChips();
-      $("an-query").textContent = tb.label ? `“${tb.label}”` : (tb.query ? `“${tb.query}”` : t("(the selected article set)"));
-      $("an-adv-note").textContent = (tb.kind === "ids") ? t("Showing the exact article set behind this Lead.") : "";
+      // Row 361: both lines follow a language switch (ooLive); the label and the query are the person's own words.
+      const label = tb.label, query = tb.query, isIds = tb.kind === "ids";
+      ooLive($("an-query"), () => label ? `“${label}”` : (query ? `“${query}”` : t("(the selected article set)")));
+      ooLive($("an-adv-note"), () => isIds ? t("Showing the exact article set behind this Lead.") : "");
       _anRenderProvenance(tb.prov || null);
       if (_exploreFromSearch) { _exploreSearchKey = tb.key; _exploreListAll = false; }
       _exploreSync();
@@ -256,13 +258,19 @@
       const host = $("an-prov"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!prov || !(prov.card || prov.producer || prov.method || prov.caveat)) {
-        host.hidden = true; host.innerHTML = ""; host.style.removeProperty("--fam");
+        host.hidden = true; ooLiveHtml(host, () => ""); host.style.removeProperty("--fam");
         return;
       }
       // The family colour comes from the same famHue as Home, keyed on the same stable
       // bucket name, so a Lead and its analysis are recognisably the same family.
       if (prov.bucket) host.style.setProperty("--fam", famHue(prov.bucket));
       else host.style.removeProperty("--fam");
+      // Row 361: the panel follows a language switch (ooLiveHtml), drawn again from the provenance it was given.
+      ooLiveHtml(host, () => _anProvenanceHtml(prov));
+      host.hidden = false;
+    }
+    function _anProvenanceHtml(prov) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const famLabel = prov.family || prov.bucket || "";
       const bits = [];
       if (famLabel) {
@@ -294,13 +302,12 @@
         ? `<div class="mc">${ooLabelHtml(`<b>${esc(t("Method"))}</b>`, esc(t(prov.method)))}</div>` : "";
       // The reader's own separator after each label, through the ONE keyed frame
       // (`ooLabelHtml`; the 2026-09-27 re-walk, N-5) -- never a ": " welded after t().
-      host.innerHTML = `<div class="an-prov-top">`
+      return `<div class="an-prov-top">`
         + ooLabelHtml(`<span class="an-prov-from">${esc(t("From this Lead"))}</span>`,
                       `<b class="an-prov-card">${esc(prov.card || "")}</b>`) + ` ${bits.join(" ")}</div>`
         + caveat + method
         + ((why || math) ? `<div class="why-mathlabel">${esc(t("Why am I seeing this?"))}</div>` : "")
         + why + math;
-      host.hidden = false;
     }
     function _anActivate(id) {
       const tb = _anTabs.find(x => x.id === id); if (!tb) return;
@@ -335,10 +342,11 @@
     function _anShowEmpty() {
       // No tabs: the surface is a launcher (the empty singleton #an is retired).
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      _anIds = null; _anCommodity = null; $("an-query").textContent = "";
+      _anIds = null; _anCommodity = null; ooLive($("an-query"), () => "");
       _anRenderProvenance(null);
       const ov = $("an-overview");
-      if (ov) ov.innerHTML = `<div class="muted">${esc(t("Search above, or open a Lead or keyword, to start an analysis. Each opens its own tab here."))}</div>`;
+      // Row 361: the launcher line follows a language switch (ooLiveHtml) until an analysis draws over it.
+      if (ov) ooLiveHtml(ov, () => `<div class="muted">${esc(t("Search above, or open a Lead or keyword, to start an analysis. Each opens its own tab here."))}</div>`);
       if (_anSubtabs) _anSubtabs.select("overview"); else anSelectTab("overview");
       _exploreSync();
     }
@@ -483,15 +491,15 @@
       const key = p.toString();
       if (_anOverviewKey === key && host.dataset.done === "1") return;  // already shown for this set
       _anOverviewKey = key; host.dataset.done = "";
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       // Honest slow-load notice (field test 2026-06-24, remark 8: a keyword's analysis
       // hung on a bare "Loading…" at 60K). After a few seconds we say it's a large-corpus
       // aggregation and how to speed it up (narrow the window) — never a fake spinner and
       // never a hard abort that would discard the in-flight result.
       const slow = setTimeout(() => {
         if (host.dataset.done !== "1") {
-          host.innerHTML = `<div class="muted">${esc(t("Loading…"))} `
-            + `<span class="bp-detail">${esc(t("still computing over your full corpus — narrow the time window to speed this up"))}</span></div>`;
+          ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))} `
+            + `<span class="bp-detail">${esc(t("still computing over your full corpus — narrow the time window to speed this up"))}</span></div>`);
         }
       }, 6000);
       const qs = p.toString();
@@ -562,8 +570,11 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("an-price"); if (!el || !_anCommodity) return;
       const c = _anCommodity;
-      el.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(el, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       const term = anQuery() || c.name || c.symbol;
+      // Row 394: a newer analysis run, or another commodity, owns the panel by the time an
+      // old answer (or its failure) lands; it is dropped rather than drawn over them.
+      const run = _anRunSeq, stale = () => run !== _anRunSeq || _anCommodity !== c;
       try {
         // Price (the commodity's own series) + corpus coverage (this term's article
         // volume over time). Either may be absent — degrade loudly, never fake.
@@ -571,13 +582,14 @@
           api(`/api/commodities/${encodeURIComponent(c.symbol)}/prices`).catch(() => null),
           api(`/api/insights/trend?bucket=week&term=${encodeURIComponent(term)}`).catch(() => null),
         ]);
+        if (stale()) return;
         const prices = (pd && pd.prices) || [];
         const vol = (td && td.resolved) ? (td.points || []) : [];
         const unit = c.unit || (prices[0] ? `${prices[0].currency}/${prices[0].unit}` : "");
         _anPriceLast = {symbol: c.symbol, name: c.name || c.symbol, prices, vol, unit,
                         total: td ? td.total : null};
         _anPriceHtml(el, _anPriceLast);
-      } catch (e) { _anPriceLast = null; el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; _anPriceLast = null; el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     // The last price overlay drawn, so a LANGUAGE SWITCH can redraw it with no request:
     // its axis label ("Price USD/kg") is text drawn INTO the SVG from t(), which the i18n
@@ -742,14 +754,15 @@
       // cache -- which reads as the toggle being broken rather than as a stale cache.
       const key = term + "\u0000" + lens;
       if (_anTrend.key === key && _anTrend.counts.length) { drawAnTrend(); return; }
-      if (!term) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search to see its combined trend."))}</div>`; return; }
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (!term) { ooLiveHtml(host, () => `<div class="muted">${esc(t("Open the analysis from a keyword or a search to see its combined trend."))}</div>`); return; }
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       _anTrend.key = key; _anTrend.term = term; _anTrend.counts = []; _anTrend.suggested = []; _anTrend.picked = {}; _anTrend.mode = "counts"; _anTrend.autoIndexed = false;
       try {
         const [main, assoc] = await Promise.all([
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term) + lens).catch(() => null),
           api("/api/insights/associations?term=" + encodeURIComponent(term) + "&limit=8" + lens).catch(() => null),
         ]);
+        if (_anTrend.key !== key) return;   // row 394: a newer term or lens owns the chart
         const series = [];
         // THE UNIT IS MENTIONS (the 2026-09-27 re-walk, N-3, P1). Every point's `count`
         // is SUM(KeywordMention.count) -- `_mention_series` and the single-keyword path
@@ -768,6 +781,7 @@
         const palette = ["var(--ok)", "var(--warn)", "#6ea8fe", "#c084fc"];
         const relTrends = await Promise.all(rel.map(rt =>
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(rt) + lens).catch(() => null)));
+        if (_anTrend.key !== key) return;
         relTrends.forEach((rd, i) => {
           if (rd && rd.resolved && (rd.points || []).length)
             series.push({ label: rel[i], labelIsData: true, unitKey: "mentions", color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
@@ -783,7 +797,7 @@
         _anTrend.suggested = commoditiesForTerm(term, rel);
         if (_anCommodity && _anCommodity.symbol && _anTrend.suggested.indexOf(_anCommodity.symbol) < 0)
           _anTrend.suggested.unshift(_anCommodity.symbol);
-      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      } catch (e) { if (_anTrend.key !== key) return; host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
       drawAnTrend();
     }
     function anTrendSetMode(m) { _anTrend.mode = m; _anTrend.autoIndexed = false; drawAnTrend(); }
@@ -992,7 +1006,7 @@
       const host = $("an-related"); if (!host) return;
       const key = (p && p.toString && p.toString()) || "";
       if (_anRelated.key === key && host.dataset.done === "1") return;   // cached on this corpus
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       _anRelated.key = key; host.dataset.done = "";
       const qs = p ? p.toString() : "";
       try {
@@ -1011,7 +1025,7 @@
         _anPanelsLast.related = { cd, ld };
         host.innerHTML = _anRelatedHtml(cd, ld);
         host.dataset.done = "1";
-      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (_anRelated.key !== key) return; host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     // The Related tab from its two payloads, so a LANGUAGE SWITCH redraws it with no
     // request (the 2026-09-27 re-walk, N-4): its counts, method line and caveats are t()
@@ -1222,6 +1236,13 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = hostEl || $("an-mindmap");
       if (!host) return;
+      // Row 361: the map follows a language switch by being FETCHED again in the new language
+      // (`anMindmapRepaint`, from app-corpus.js's ooKwRepaintOnLangChange): its keyword labels
+      // carry translations made for the language they were fetched in, so redrawing the payload
+      // held here would paint the old words, and the walker must not read a keyword as chrome.
+      // So the host is let go of any loading line drawn through ooLiveHtml and marked off the walker.
+      ooLive(host, null);
+      host.setAttribute("data-i18n-dyn", "");
       if (graph) _anMM.graph = graph;
       const g = _anMM.graph || {};
       const all = (g.nodes || []);
@@ -1658,7 +1679,10 @@
         const d = await api("/api/insights/corpus-source-language-facets?" + p.toString());
         if (run != null && run !== _anRunSeq) return;   // superseded by a newer loadAnalysis
         _anArtFacetData = { sources: d.sources || [], languages: d.languages || [] };
-      } catch (e) { _anArtFacetData = { sources: [], languages: [] }; }
+      } catch (e) {
+        if (run != null && run !== _anRunSeq) return;   // row 394: a superseded run's failure never blanks the newer chips
+        _anArtFacetData = { sources: [], languages: [] };
+      }
       _anRenderArtFacetChips();
     }
     function _anToggleArtFacetChip(kind, value) {
@@ -1667,6 +1691,10 @@
     }
     function _anRenderArtFacetChips() {
       const host = $("an-art-facets"); if (!host) return;
+      // Row 361: the chips' labels follow a language switch (ooLiveHtml), drawn from the facets this list holds.
+      ooLiveHtml(host, _anArtFacetChipsHtml);
+    }
+    function _anArtFacetChipsHtml() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const srcChips = (_anArtFacetData.sources || []).slice(0, 20).map(s => {
         // Selection/drill key is source_id (never name) -- Source.name carries no
@@ -1683,8 +1711,8 @@
           + `data-on-click="_anToggleArtFacetChip('language', ${esc(JSON.stringify(l.language))})">${ooLangCell(l.language)} `
           + `<span class="muted">${l.n}</span></button>`;
       }).join(" ");
-      if (!srcChips && !langChips) { host.innerHTML = ""; return; }
-      host.innerHTML = `<div style="margin:4px 0 8px">`
+      if (!srcChips && !langChips) return "";
+      return `<div style="margin:4px 0 8px">`
         + (srcChips ? `<div style="margin-bottom:4px">${_anCtlLabel(t("source"), ".85em")} ${srcChips}</div>` : "")
         + (langChips ? `<div>${_anCtlLabel(t("language"), ".85em")} ${langChips}</div>` : "")
         + `<button class="tiny" style="margin-top:4px" data-on-click="anApplyArticlesFilter()">${esc(t("Apply filter"))}</button>`
@@ -1724,9 +1752,10 @@
         if (tb) { tb.ids = ids.slice(); tb.kind = "ids"; _anRenderStrip(); _anSaveTabs(); }
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const fs = _anFilterSummary();
-        $("an-adv-note").innerHTML = fs.length
+        // Row 361: the note follows a language switch (ooLiveHtml); the filter values are data.
+        ooLiveHtml($("an-adv-note"), () => fs.length
           ? `<span class="pill">${esc(t("Filtered"))}</span> ${fs.map(esc).join(" · ")}`
-          : "";
+          : "");
         loadAnalysis(anParams());
       } else {
         // A query-seeded corpus: the chips narrow the tab's own filter set, by source ID
@@ -1741,8 +1770,8 @@
         _advWrite(tb.adv);
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const fs = _anFilterSummary();
-        $("an-adv-note").innerHTML = fs.length
-          ? `<span class="pill">${esc(t("Filtered"))}</span> ${fs.map(esc).join(" · ")}` : "";
+        ooLiveHtml($("an-adv-note"), () => fs.length
+          ? `<span class="pill">${esc(t("Filtered"))}</span> ${fs.map(esc).join(" · ")}` : "");
         loadAnalysis(anParams());
       }
     }
@@ -2123,7 +2152,8 @@
       Object.keys(_anSenses).forEach((k) => q.append("sense", k + ":" + _anSenses[k]));
       const id = "an-xforms-" + _anSlug(key == null ? term : key);
       const slot = $(id);
-      if (slot) slot.innerHTML = ` <span class="muted">${esc(t("Counting…"))}</span>`;
+      // Row 361: the waiting line follows a language switch (ooLiveHtml); the answer is drawn over it as before.
+      if (slot) ooLiveHtml(slot, () => ` <span class="muted">${esc(t("Counting…"))}</span>`);
       // The slot is looked up AGAIN when the answer lands: a redraw of the rail in the
       // meantime (a page turn, a language switch) replaced the one above. An answer that
       // lands after a NEW run (a lens change) describes the old lens and is dropped.
@@ -2304,7 +2334,8 @@
       const arts = $("an-art-list") || $("an-articles"); if (!arts) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anArtParams = p; _anArtPage = Math.max(0, page | 0);
-      arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Row 361: the loading and failure lines follow a language switch (ooLiveHtml); the list is drawn over them.
+      ooLiveHtml(arts, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const q = _articleQuery(p);
         q.set("limit", String(_AN_ART_PAGE));
@@ -2322,7 +2353,7 @@
         _anKwForCount = d.keyword_for_count || "";
         if (!_anKwForCount) _anKwSort = false;   // no keyword resolved -> no count sort
         const total = d.total || 0, pages = Math.max(1, Math.ceil(total / _AN_ART_PAGE));
-        if (_anArtPage > pages - 1) return _anLoadArticles(p, pages - 1);   // clamp after a narrower filter
+        if (_anArtPage > pages - 1) return _anLoadArticles(p, pages - 1, run);   // clamp after a narrower filter
         // Retained so a LANGUAGE SWITCH can redraw the rail without re-running the
         // search: the rail's text is derived at render time (a tf() frame plus server
         // prose through t()), so the i18n DOM walker cannot reach it and it would
@@ -2335,12 +2366,13 @@
         _anDrawArticles(arts, _anArtLast);
         annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
       } catch (e) {
+        if (run != null && run !== _anRunSeq) return;   // row 394: a superseded run's failure never writes
         // Same honest, rate-limit-aware message as the Search tab (search-lockout
         // fix) -- this subtab hits the SAME /api/articles endpoint, including from a
         // boot-time deep link (?corpus=/?analyze=, app-boot.js._hydrateCardCorpus),
         // so a refusal here deserves the same disclosure, not a bare exception string.
         _anArtLast = null;
-        arts.innerHTML = `<div class="note err">${esc(_articleFailureMessage(e))}</div>`;
+        ooLiveHtml(arts, () => `<div class="note err">${esc(_articleFailureMessage(e))}</div>`);
       }
     }
     // The last /api/articles page the list drew -- see `_anRepaintArticles`.
@@ -2516,8 +2548,8 @@
       // concept while looking like one view.
       p = _anApplyLens(new URLSearchParams(p));
       const kw = $("an-keywords"), arts = $("an-art-list") || $("an-articles");
-      kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(kw, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
+      ooLiveHtml(arts, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       _anProvenance = ""; _anKwSort = false; _anKwForCount = "";   // fresh corpus -> reset the Articles-list lenses
       _anArtFacetSel = { source: "", language: "" };   // fresh corpus -> reset the staged facet selection too
       _anLastParams = p; _anTrend.key = null; _anRelated.key = null; _anCompetitive.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
@@ -2537,20 +2569,20 @@
         if (stale()) return;
         _anKwData = d; _anKwHost = kw;   // stash for the tentative-fill action
         anRenderKwChips();
-        loadAnContext(p);   // S4.4: term-in-context concordance under the chips (progressive)
-      } catch (e) { kw.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+        loadAnContext(p, run);   // S4.4: term-in-context concordance under the chips (progressive)
+      } catch (e) { if (stale()) return; kw.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Mindmap: a deterministic radial keyword-association graph seeded on the
       // TOP keyword of the matched set (KEYWORDS ARE CORPORA). Self-contained
       // renderer — never touches the Insights mind-map state. Window params pass
       // through (the /graph endpoint accepts start/end/days, like _mmWindowQS).
       const mm = $("an-mindmap");
-      mm.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(mm, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const dk = await api("/api/insights/corpus-keywords?" + p.toString());
         if (stale()) return;
         const top = (dk.terms && dk.terms.length) ? dk.terms[0].term : null;
         if (!top) {
-          mm.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
+          ooLiveHtml(mm, () => `<div class="muted">${esc(t("No strong associations yet."))}</div>`);
         } else {
           // an-mindmap-wrong-corpus-scope (P1): clone the analysis window's OWN scope
           // (article_ids, or query/source/language/date-range) instead of a fresh,
@@ -2581,7 +2613,7 @@
           _anMM.arms = cm;
           renderAnMindmap(g, mm);
         }
-      } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       _anLoadArticles(p, 0, run);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
       _anLoadArtFacets(p, run);   // sources/languages present in this corpus, with counts (item 3 facet controls)
       // When/Where/Who deduced across the matched articles, as CLICKABLE FACETS:
@@ -2592,7 +2624,7 @@
         if (stale()) return;
         _anPanelsLast.www = d;
         $("an-www").innerHTML = _anWwwHtml(d);
-      } catch (e) { $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Links: outbound URLs SHARED by 2+ of the matched articles (shared-origin
       // structure; convergence is corroboration only when paths are independent).
       try {
@@ -2600,7 +2632,7 @@
         if (stale()) return;
         _anPanelsLast.links = d;
         $("an-links").innerHTML = _anLinksHtml(d);
-      } catch (e) { $("an-links").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; $("an-links").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Sentiment: distribution of the STORED per-article VADER tone over the set,
       // with the English-lexicon limitation disclosed (non-English scores unreliable).
       try {
@@ -2608,7 +2640,7 @@
         if (stale()) return;
         _anPanelsLast.sentiment = d;
         $("an-sentiment").innerHTML = _anSentimentHtml(d);
-      } catch (e) { $("an-sentiment").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; $("an-sentiment").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Sources: how each source covers the matched set -- volume, mean tone, span,
       // and the catalogue facts the source ASSERTS about itself.
       // Coverage, never credibility; no ranking (ordered by volume only).
@@ -2630,7 +2662,7 @@
         if (stale()) return;
         _anPanelsLast.sources = d;
         $("an-sources").innerHTML = _anSourcesHtml(d);
-      } catch (e) { $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     // The payloads the Links, Sentiment and Sources panels last drew, so a LANGUAGE
     // SWITCH redraws them with no request (the 2026-09-27 re-walk, N-4): their labels and
@@ -2693,16 +2725,23 @@
             + `aria-label="${esc(t("Open the place card"))}" title="${esc(t("Open the place card"))}">&#9678;</button>`;
         }).join(" ");
       };
-      const col = (title, group) =>
+      // Row 397 (anti-capping): a column cut to its biggest values says how many the
+      // matched set holds -- the same x12 line as the Sources table (row 395). An older
+      // payload without ``total`` says nothing rather than guess.
+      const cut = (f, shown) => (f && f.truncated && f.total != null)
+        ? `<div class="hint muted">${esc(_tfn("{shown} of {total} shown.", { shown: fmtNum(shown, 0), total: fmtNum(f.total, 0) }))}</div>`
+        : "";
+      const col = (title, group, f) =>
         `<div style="min-width:200px;flex:1"><div class="vsect">${esc(title)}</div>`
         + `<div class="an-facet-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`
-        + `${chips(group)}</div></div>`;
+        + `${chips(group)}</div>${cut(f, _anFacets[group].length)}</div>`;
       // A fixed server sentence, keyed x12 like the Links / Sentiment / Sources caveats
       // below (the 2026-09-27 re-walk, N-2) -- verbatim it read English everywhere.
       return `<div class="hint muted">${esc(d.caveat ? t(d.caveat) : "")} `
         + `${esc(t("Click a value to narrow the corpus to articles that mention it."))}</div>`
         + `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:8px">`
-        + col(t("Who"), "who") + col(t("Where"), "where") + col(t("When"), "when") + `</div>`;
+        + col(t("Who"), "who", d.who) + col(t("Where"), "where", d.where)
+        + col(t("When"), "when", d.when) + `</div>`;
     }
     function _anLinksHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -2775,6 +2814,21 @@
         + ` · n=${d.n_scored}/${d.n_articles} · `
         + `${ooLabelHtml(esc(t("English-scored (reliable)")), `${d.english_scored} (${ooLtrIsolate(engPct + "%")})`)}</div>`;
     }
+    // Row 395 (anti-capping): the sources table is cut to its biggest rows (40 here, 200
+    // in Competitive), and a cut table that says nothing reads as the corpus's whole
+    // coverage. The server counts every source in the set; when it holds more than the
+    // table shows, one line says so. Nothing when the table is whole, or when the payload
+    // predates the count.
+    function _anSourcesCutHtml(d) {
+      if (!d || !d.truncated || d.sources_total == null) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const shown = (d.sources || []).length;
+      // The total counts feeds (rows of the sources list), never outlets; the server's own
+      // sentence says so beside it (R146 (b)), keyed x12.
+      return `<div class="hint muted" style="margin-top:6px">`
+        + `${esc(_tfn("{shown} of {total} shown.", { shown: fmtNum(shown, 0), total: fmtNum(d.sources_total, 0) }))}`
+        + `${d.sources_note ? " " + esc(t(d.sources_note)) : ""}</div>`;
+    }
     function _anSourcesHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (d.sources || []).map((s) => {
@@ -2792,7 +2846,7 @@
             + `<th style="text-align:right">${esc(t("Articles"))}</th>`
             + `<th style="text-align:right">${esc(t("Mean tone"))}</th><th>${esc(t("Span"))}</th>`
             + `<th title="${esc(t("Stated by the source catalog (asserted, not deduced from text)."))}">${esc(t("Catalog"))}</th></tr></thead>`
-            + `<tbody>${rows}</tbody></table>`
+            + `<tbody>${rows}</tbody></table>` + _anSourcesCutHtml(d)
           : `<div class="muted" style="margin-top:8px">${esc(t("No sources in this set."))}</div>`);
     }
     // Registered in app-boot's ONE `oo:langchange` listener, beside `_anRepaintXLang`.
@@ -2849,10 +2903,10 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("an-competitive"); if (!host) return;
       p = p || _anLastParams;
-      if (!p) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search first."))}</div>`; return; }
+      if (!p) { ooLiveHtml(host, () => `<div class="muted">${esc(t("Open the analysis from a keyword or a search first."))}</div>`); return; }
       const key = p.toString();
       if (_anCompetitive.key === key) return;   // already rendered for this corpus
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       const query = p.get("query");   // framing is query-only; absent for an article-set corpus
       let cs, fr;
       try {
@@ -2860,7 +2914,10 @@
           api("/api/insights/corpus-sources?" + p.toString() + "&limit=200"),
           query ? api("/api/framing?query=" + encodeURIComponent(query)).catch(() => null) : Promise.resolve(null),
         ]);
-      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      } catch (e) {
+        if (_anLastParams && _anLastParams.toString() !== key) return;   // row 394: same rule on the failure path
+        host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return;
+      }
       // A NEWER RUN OVER ANOTHER CORPUS OWNS THE PANEL (its own render is on the way).
       if (_anLastParams && _anLastParams.toString() !== key) return;
       _anPanelsLast.competitive = { cs, fr, query };
@@ -2877,9 +2934,14 @@
       if (rows.length === 1) return `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`;
       const byName = {}; ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
       const fmt = (n) => fmtNum(n || 0, 0);
+      // Row 395: the corpus span is the server's, read over EVERY matched article. Taken
+      // from the rows it was the span of the sources that made the cut, under a label that
+      // says corpus. The rows are only a fallback for a payload that predates the field.
       const firsts = rows.map(r => r.first).filter(Boolean).sort();
       const lasts = rows.map(r => r.last).filter(Boolean).sort();
-      const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;
+      const hasSpan = cs && ("corpus_first" in cs);
+      const corpusFirst = hasSpan ? cs.corpus_first : (firsts[0] || null);
+      const corpusLast = hasSpan ? cs.corpus_last : (lasts[lasts.length - 1] || null);
       const day = (s) => ooIsoDate(s);
       const tonePill = (label, val) => {
         if (val == null) return `<span class="muted">—</span>`;
@@ -2922,7 +2984,7 @@
              <th style="text-align:start;padding:5px 8px" title="${esc(t("This outlet's most distinctive terms when covering the concept (from framing). Descriptive emphasis, not a judgement."))}">${esc(t("Emphasis"))}</th>
            </tr></thead>
            <tbody>${body}</tbody>
-         </table>` +
+         </table>` + _anSourcesCutHtml(cs) +
         `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}` +
           `${(corpusFirst && corpusLast) ? ` · ${esc(day(corpusFirst))} → ${esc(day(corpusLast))}` : ""}` +
           `${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ` +
@@ -3120,6 +3182,7 @@
     const _SYNTH_MAX = 20;        // mirrors the backend bound (small-CPU-model context)
     let _synthData = null;        // last result, for export/copy
     let _synthCandidates = null;  // {params, total, results} for the selection step
+    let _synthBusy = false;       // a run is in flight: the selection step draws its button busy (row 361)
     const _synthT = () => ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s));
 
     function _synthCandidateParams(arg) {
@@ -3135,9 +3198,11 @@
         || p.get("start_date") || p.get("end_date") || p.get("article_ids");
       if (!hasSel) { toast(t("Run a search first."), "err"); return; }
       const dlg = $("synth-window"); if (!dlg) return;
-      $("synth-win-actions").innerHTML = "";
-      $("synth-win-title").textContent = t("Synthesis");
-      $("synth-win-body").innerHTML = `<p class="muted">${esc(t("Loading articles…"))}</p>`;
+      // Row 361: the window's title and body are drawn through ooLive/ooLiveHtml, so a language
+      // switch redraws them from the render they keep (never a fetch).
+      ooLiveHtml($("synth-win-actions"), () => "");
+      ooLive($("synth-win-title"), () => t("Synthesis"));
+      ooLiveHtml($("synth-win-body"), () => `<p class="muted">${esc(t("Loading articles…"))}</p>`);
       if (!dlg.open) dlg.showModal();
       // Fetch a candidate pool a bit larger than the synthesis bound so the user has a
       // real choice; /api/articles uses `ids` for an explicit set, else the query.
@@ -3147,43 +3212,73 @@
         const data = await api("/api/articles?" + cp.toString());
         _synthCandidates = { total: data.total, results: data.results || [] };
         _synthRenderSelect();
-      } catch (e) { $("synth-win-body").innerHTML = `<p class="card-caveat">${esc(t("Could not load articles."))} ${esc(e.message)}</p>`; }
+      } catch (e) {
+        const msg = e.message;   // the server's words are data, kept as they are
+        ooLiveHtml($("synth-win-body"), () => `<p class="card-caveat">${esc(t("Could not load articles."))} ${esc(msg)}</p>`);
+      }
     }
 
     function _synthRenderSelect() {
-      const TF = (window.OOI18N && OOI18N.tf)
-        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const t = _synthT();
       const c = _synthCandidates; if (!c) return;
+      ooLiveHtml($("synth-win-actions"), () => "");
+      ooLive($("synth-win-title"), () => t("Synthesis"));
+      const body = $("synth-win-body"); if (!body) return;
+      if (!c.results.length) { ooLiveHtml(body, () => `<p class="muted">${esc(t("No matching articles to synthesize."))}</p>`); return; }
+      // Row 361: the step is drawn as a frame of LEAF parts, each through ooLive/ooLiveHtml, so a
+      // language switch redraws each from the render it keeps. No part holds another: a part
+      // whose text changed under it (the count, the busy button) reads as a foreign write and
+      // stops following the switch.
+      _synthSelectFrame(body);
+      ooLiveHtml($("synth-sel-intro"), () => _synthSelectIntroHtml(c));
+      ooLive($("synth-sel-first"), () => _tfn("Select first {n}", { n: _SYNTH_MAX }));
+      ooLive($("synth-sel-clear"), () => t("Clear"));
+      ooLive($("synth-run-btn"), () => (_synthBusy ? t("Synthesizing…") : t("Run synthesis")));
+      ooLiveHtml($("synth-sel-list"), () => _synthSelectListHtml(c));
+      _synthCount();
+    }
+    // The selection step's frame: no words of its own, so it is written plainly once the body's
+    // earlier render (the loading line, or the result step) is let go.
+    function _synthSelectFrame(body) {
+      ooLive(body, null);
+      body.innerHTML = `
+        <div id="synth-sel-intro"></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          <span id="synth-count" class="chip"></span>
+          <button class="ghost tiny" id="synth-sel-first" data-on-click="_synthSelectAll(true)"></button>
+          <button class="ghost tiny" id="synth-sel-clear" data-on-click="_synthSelectAll(false)"></button>
+          <span style="margin-inline-start:auto"></span>
+          <button class="primary" id="synth-run-btn" data-on-click="_synthRun()"></button>
+        </div>
+        <div id="synth-sel-list"></div>`;
+    }
+    function _synthSelectIntroHtml(c) {
+      const t = _synthT();
+      const shown = c.results.length;
+      return `
+        <div class="hint" style="margin-bottom:10px">${esc(t("A synthesis reads a bounded set of articles with a local model and writes what they agree on, where they disagree, and what they leave open — citing each source by number. It is reading assistance, never a verdict."))}</div>
+        <div class="card" style="margin-bottom:12px">
+          <div>${ooLabelHtml(esc(t("Matched")), `<b>${c.total}</b>`)}${c.total > shown ? ` <span class="muted">(${esc(_tfn("showing the top {n} by search relevance", {n: shown}))})</span>` : ""}</div>
+          <div class="muted" style="font-size:12px;margin-top:4px">${esc(_tfn("Pick up to {n} articles. The most relevant are pre-selected — refine your search to change the pool. (A small local model can only synthesize a bounded set well.)", {n: _SYNTH_MAX}))}</div>
+        </div>`;
+    }
+    // The candidate list. A switch calls it again: the reader's ticks are read from the boxes on
+    // screen first, so a redraw keeps them; a first draw ticks the most relevant.
+    function _synthSelectListHtml(c) {
+      const t = _synthT();
       const rows = c.results;
-      $("synth-win-actions").innerHTML = "";
-      $("synth-win-title").textContent = t("Synthesis");
-      if (!rows.length) { $("synth-win-body").innerHTML = `<p class="muted">${esc(t("No matching articles to synthesize."))}</p>`; return; }
       const preset = Math.min(_SYNTH_MAX, rows.length);
-      const list = rows.map((a, i) => `
+      const onScreen = Array.from(document.querySelectorAll("#synth-sel-list .synth-cb"));
+      const ticked = onScreen.length ? new Set(onScreen.filter((cb) => cb.checked).map((cb) => String(cb.value))) : null;
+      return rows.map((a, i) => `
         <label style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);align-items:flex-start">
-          <input type="checkbox" class="synth-cb" value="${a.id}" ${i < preset ? "checked" : ""} data-on-change="_synthCount()">
+          <input type="checkbox" class="synth-cb" value="${a.id}" ${(ticked ? ticked.has(String(a.id)) : i < preset) ? "checked" : ""} data-on-change="_synthCount()">
           <span style="flex:1">
-            <span style="font-weight:600">${esc(a.title) || '<span class="muted">(untitled)</span>'}</span>
+            <span style="font-weight:600">${esc(a.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</span>
             <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")}${ooFetchedOffSiteNote(a)} · ${esc(ooIsoDate(a.published_at)) || t("undated")} · ${a.language ? ooLangCell(a.language) : "?"}
               · <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a></span>
           </span>
         </label>`).join("");
-      $("synth-win-body").innerHTML = `
-        <div class="hint" style="margin-bottom:10px">${esc(t("A synthesis reads a bounded set of articles with a local model and writes what they agree on, where they disagree, and what they leave open — citing each source by number. It is reading assistance, never a verdict."))}</div>
-        <div class="card" style="margin-bottom:12px">
-          <div>${ooLabelHtml(esc(t("Matched")), `<b>${c.total}</b>`)}${c.total > rows.length ? ` <span class="muted">(${esc(TF("showing the top {n} by search relevance", {n: rows.length}))})</span>` : ""}</div>
-          <div class="muted" style="font-size:12px;margin-top:4px">${esc(TF("Pick up to {n} articles. The most relevant are pre-selected — refine your search to change the pool. (A small local model can only synthesize a bounded set well.)", {n: _SYNTH_MAX}))}</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-          <span id="synth-count" class="chip"></span>
-          <button class="ghost tiny" data-on-click="_synthSelectAll(true)">${esc(TF("Select first {n}", {n: _SYNTH_MAX}))}</button>
-          <button class="ghost tiny" data-on-click="_synthSelectAll(false)">${esc(t("Clear"))}</button>
-          <span style="margin-inline-start:auto"></span>
-          <button class="primary" id="synth-run-btn" data-on-click="_synthRun()">${esc(t("Run synthesis"))}</button>
-        </div>
-        <div>${list}</div>`;
-      _synthCount();
     }
 
     function _synthSelectAll(on) {
@@ -3195,9 +3290,9 @@
     function _synthCount() {
       const t = _synthT();
       const n = document.querySelectorAll("#synth-win-body .synth-cb:checked").length;
-      const el = $("synth-count"); if (el) el.textContent = ooLabelText(t("Selected"), `${n} / ${_SYNTH_MAX}`);
+      ooLive($("synth-count"), () => ooLabelText(t("Selected"), `${n} / ${_SYNTH_MAX}`));
       const btn = $("synth-run-btn");
-      if (btn) { btn.disabled = (n < 1 || n > _SYNTH_MAX); btn.title = n > _SYNTH_MAX ? t("Too many — uncheck some.") : ""; }
+      if (btn) { btn.disabled = (_synthBusy || n < 1 || n > _SYNTH_MAX); btn.title = n > _SYNTH_MAX ? t("Too many — uncheck some.") : ""; }
     }
 
     async function _synthRun() {
@@ -3206,35 +3301,50 @@
         .map((cb) => Number(cb.value)).filter((n) => n);
       if (!ids.length) { toast(t("Select at least one article."), "err"); return; }
       if (ids.length > _SYNTH_MAX) { toast(t("Too many — uncheck some."), "err"); return; }
-      const btn = $("synth-run-btn"); if (btn) { btn.disabled = true; btn.textContent = t("Synthesizing…"); }
+      _synthBusy = true;
+      const btn = $("synth-run-btn"); if (btn) { btn.disabled = true; ooLive(btn, () => t("Synthesizing…")); }
       const code = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
       try {
         const r = await api("/api/llm/synthesize", { method: "POST",
           body: JSON.stringify({ article_ids: ids, output_language: _uiLangName(), ui_lang: code }) });
+        _synthBusy = false;
         _synthData = r;
         _synthRenderResult();
       } catch (e) {
+        _synthBusy = false;
         toast(t("Synthesis failed: ") + e.message, "err");
-        if (btn) { btn.disabled = false; btn.textContent = t("Run synthesis"); }
+        const b = $("synth-run-btn");   // the button on screen now: a switch may have redrawn it
+        if (b) { b.disabled = false; ooLive(b, () => t("Run synthesis")); }
       }
     }
 
     function _synthRenderResult() {
-      const TF = (window.OOI18N && OOI18N.tf)
-        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
       const t = _synthT();
       const r = _synthData; if (!r) return;
-      $("synth-win-actions").innerHTML = `
+      ooLive($("synth-win-title"), () => t("Synthesis"));
+      ooLiveHtml($("synth-win-actions"), () => _synthResultActionsHtml());
+      ooLiveHtml($("synth-win-body"), () => _synthResultHtml(r));
+    }
+    // The result step's buttons and body. A language switch calls each again (row 361); the
+    // synthesis text, the model name and the server's caveat are data and are never translated.
+    function _synthResultActionsHtml() {
+      const t = _synthT();
+      return `
         <button class="ghost tiny" data-on-click="_synthCopy()" title="${esc(t("Copy the synthesis text"))}">${esc(t("Copy"))}</button>
         <button class="ghost tiny" data-on-click="_synthExport('md')">${esc(t("Export .md"))}</button>
         <button class="ghost tiny" data-on-click="_synthExport('html')">${esc(t("Open as a page ↗"))}</button>`;
+    }
+    function _synthResultHtml(r) {
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
+      const t = _synthT();
       const members = (r.members || []).map((m) => `
         <li style="padding:6px 0;border-bottom:1px solid var(--line)">
-          <span style="font-weight:600">[${m.n}] ${esc(m.title) || '<span class="muted">(untitled)</span>'}</span>
+          <span style="font-weight:600">[${m.n}] ${esc(m.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</span>
           <div class="muted" style="font-size:12px">${esc(m.source || "")} · ${esc(ooIsoDate(m.published_at)) || t("undated")} · ${m.language ? ooLangCell(m.language) : "?"}
             · <a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a>${m.url ? " · " + extLink(m.url, t("source ↗"), "muted") : ""}</div>
         </li>`).join("");
-      $("synth-win-body").innerHTML = `
+      return `
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
           <span class="chip">${esc(t("synthesis"))} · ${esc(r.model || "")}</span>
           <span class="chip">${esc(TF("{n} articles", {n: r.member_count}))}</span>
@@ -3365,25 +3475,36 @@
       const hasSel = p.get("article_ids") || p.get("query") || p.get("source")
         || p.get("language") || p.get("start_date") || p.get("end_date");
       if (!hasSel) { toast(t("Run a search first."), "err"); return; }
+      mount.style.display = "";
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the panel from this render;
+      // the reader's own entries (the target language, the skip box) are read back from the panel
+      // on screen first, so a redraw never undoes them (a fresh open starts from the defaults).
+      let fresh = true;
+      ooLiveHtml(mount, () => { const h = _bulkPanelHtml(op, ctx, fresh); fresh = false; return h; });
+      _bulkRenderQueue();
+      _bulkRefresh();  // the server's queue, also what an earlier tab (or a restart) left in it
+    }
+    function _bulkPanelHtml(op, ctx, fresh) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const isTr = op === "translate";
       const heading = isTr ? t("Translate all matched articles") : t("Summarize all matched articles");
+      const tgtEl = fresh ? null : $("bulk-tgt-" + ctx), skipEl = fresh ? null : $("bulk-skip-" + ctx);
+      const tgtVal = tgtEl ? tgtEl.value : _uiLangName();
+      const skipOn = skipEl ? skipEl.checked : true;
       const tgt = isTr
         ? `<label class="muted" style="margin-inline-end:4px" for="bulk-tgt-${ctx}">${esc(t("Into"))}</label>`
-          + `<input id="bulk-tgt-${ctx}" value="${esc(_uiLangName())}" style="max-width:150px">`
+          + `<input id="bulk-tgt-${ctx}" value="${esc(tgtVal)}" style="max-width:150px">`
         : "";
-      mount.style.display = "";
-      mount.innerHTML = `<div class="card">
+      return `<div class="card">
         <div style="font-weight:600;margin-bottom:4px">${esc(heading)}</div>
         <div class="hint" style="margin-bottom:8px">${esc(t("Runs a local model over each article — this can take a while. Each result is stored with its model and date; nothing leaves your machine, and keyword analysis is never affected. You can queue several runs; they process one at a time."))}</div>
         <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
           ${tgt}
-          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="bulk-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="bulk-skip-${ctx}"${skipOn ? " checked" : ""}> ${esc(t("Skip articles already done"))}</label>
           <button class="primary" id="bulk-start-${ctx}" data-on-click="bulkLlmRun('${op}','${ctx}')">${esc(t("Add to queue"))}</button>
           <button class="ghost tiny" data-on-click="bulkPanelHide('${ctx}')">${esc(t("Hide"))}</button>
         </div>
       </div>`;
-      _bulkRenderQueue();
-      _bulkRefresh();  // the server's queue, also what an earlier tab (or a restart) left in it
     }
     // Hides the CONFIG panel only — queued/running jobs persist (the maintainer keeps
     // searching while a translation runs). Never cancels work.
@@ -3484,22 +3605,24 @@
         <span style="font-weight:600">${esc(_bulkSelLabel(job.op, job.body || {}))}</span> ${state} ${cancel}</div>`;
     }
     function _bulkRenderQueue() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const conts = document.querySelectorAll(".bulk-queue");
       if (!conts.length) return;
-      let html = "";
-      if (_bulkQueue.length) {
-        const anyDone = _bulkQueue.some((j) => j.state === "done" || j.state === "cancelled" || j.state === "error");
-        const paused = _bulkPaused && _bulkQueue.some((j) => j.state === "queued" || j.state === "paused");
-        html = `<div class="card"><div style="font-weight:600;margin-bottom:4px">${esc(t("Translation & summary queue"))}</div>`
-          + `<div class="hint" style="margin-bottom:6px">${esc(t("The queue runs on the server: you can close this tab or the browser and it goes on. Stop a run here or in the task manager."))}</div>`
-          + (paused ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><span class="note">${esc(t("Paused. Resume carries on where it stopped, without redoing an article."))}</span>`
-              + `<button class="tiny" data-on-click="bulkQueueResume()">${esc(t("Resume"))}</button></div>` : "")
-          + _bulkQueue.map(_bulkJobLine).join("")
-          + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" data-on-click="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")
-          + `</div>`;
-      }
-      conts.forEach((c) => { c.innerHTML = html; });
+      // Row 361: each copy is drawn through ooLiveHtml from the queue as last read, so a language
+      // switch redraws it in the new language without asking the server again.
+      conts.forEach((c) => ooLiveHtml(c, _bulkQueueHtml));
+    }
+    function _bulkQueueHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!_bulkQueue.length) return "";
+      const anyDone = _bulkQueue.some((j) => j.state === "done" || j.state === "cancelled" || j.state === "error");
+      const paused = _bulkPaused && _bulkQueue.some((j) => j.state === "queued" || j.state === "paused");
+      return `<div class="card"><div style="font-weight:600;margin-bottom:4px">${esc(t("Translation & summary queue"))}</div>`
+        + `<div class="hint" style="margin-bottom:6px">${esc(t("The queue runs on the server: you can close this tab or the browser and it goes on. Stop a run here or in the task manager."))}</div>`
+        + (paused ? `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px"><span class="note">${esc(t("Paused. Resume carries on where it stopped, without redoing an article."))}</span>`
+            + `<button class="tiny" data-on-click="bulkQueueResume()">${esc(t("Resume"))}</button></div>` : "")
+        + _bulkQueue.map(_bulkJobLine).join("")
+        + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" data-on-click="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")
+        + `</div>`;
     }
 
     // --- Run a user-defined custom extractor over the analysis OR search selection (the
@@ -3526,25 +3649,60 @@
       // at all — the custom-prompt path absorbs the MECHANISM but not this prompt.
       // Listing it here gives it a caller rather than retiring a capability nothing
       // else provides.
-      const opts = `<option value="builtin">${esc(t("Built-in: AI keywords"))} · ai-keyword</option>`
-        + usable.map((x) =>
-          `<option value="${x.id}">${esc(x.label)} · ${esc(x.output_kind)}</option>`).join("");
+      // Row 361: the panel is a frame of LEAF parts, each drawn through ooLive/ooLiveHtml, so a
+      // language switch redraws each from the render it keeps. The progress line is one of them and
+      // keeps its render per panel, so it survives a switch (and a reopened panel shows a run still
+      // in flight). The reader's pick is read back from the list on screen before a redraw.
+      _aiRunFrame(mount, ctx);
+      ooLiveHtml($("ai-run-head-" + ctx), () =>
+        `<div style="font-weight:600;margin-bottom:4px">${esc(t("Run a custom extractor"))}</div>`
+        + `<div class="hint" style="margin-bottom:8px">${esc(t("Runs your prompt with the local model over each matched article. Results are stored as AI-derived metadata of that type, labelled unreliable — the trusted keyword index is never affected; nothing leaves your machine."))}</div>`);
+      ooLiveHtml($("ai-run-pick-" + ctx), () => _aiRunOptionsHtml(ctx, usable));
+      ooLive($("ai-run-skiplbl-" + ctx), () => t("Skip articles already done"));
+      ooLive($("ai-run-start-" + ctx), () => t("Start"));
+      ooLive($("ai-run-cancel-" + ctx), () => t("Cancel"));
+      if (!_aiRuns[ctx]) delete _aiProg[ctx];
+      ooLiveHtml($("ai-run-prog-" + ctx), _aiProg[ctx] || (() => ""));
+    }
+    // The extractor panel's frame: no words of its own, so it is written plainly once the mount's
+    // earlier render (the bulk panel) is let go.
+    function _aiRunFrame(mount, ctx) {
+      ooLive(mount, null);
       mount.innerHTML = `<div class="card">
-        <div style="font-weight:600;margin-bottom:4px">${esc(t("Run a custom extractor"))}</div>
-        <div class="hint" style="margin-bottom:8px">${esc(t("Runs your prompt with the local model over each matched article. Results are stored as AI-derived metadata of that type, labelled unreliable — the trusted keyword index is never affected; nothing leaves your machine."))}</div>
+        <div id="ai-run-head-${ctx}"></div>
         <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
-          <select id="ai-run-pick-${ctx}">${opts}</select>
-          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="ai-run-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
-          <button class="primary" id="ai-run-start-${ctx}" data-on-click="aiRunPromptStart('${ctx}')">${esc(t("Start"))}</button>
-          <button class="ghost tiny" data-on-click="bulkLlmStop('${ctx}')">${esc(t("Cancel"))}</button>
+          <select id="ai-run-pick-${ctx}"></select>
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="ai-run-skip-${ctx}" checked> <span id="ai-run-skiplbl-${ctx}"></span></label>
+          <button class="primary" id="ai-run-start-${ctx}" data-on-click="aiRunPromptStart('${ctx}')"></button>
+          <button class="ghost tiny" id="ai-run-cancel-${ctx}" data-on-click="bulkLlmStop('${ctx}')"></button>
         </div>
         <div id="ai-run-prog-${ctx}" class="hint" style="margin-top:8px"></div>
       </div>`;
     }
+    // E-S5 (2026-08-01): the BUILT-IN AI-keyword extractor had an endpoint and no
+    // caller anywhere in the UI, so a user with no custom prompt could not reach it
+    // at all — the custom-prompt path absorbs the MECHANISM but not this prompt.
+    // Listing it here gives it a caller rather than retiring a capability nothing
+    // else provides.
+    function _aiRunOptionsHtml(ctx, usable) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const cur = $("ai-run-pick-" + ctx);
+      const was = cur && cur.options && cur.options.length ? String(cur.value) : "builtin";
+      const sel = (v) => (String(v) === was ? " selected" : "");
+      return `<option value="builtin"${sel("builtin")}>${esc(t("Built-in: AI keywords"))} · ai-keyword</option>`
+        + usable.map((x) =>
+          `<option value="${x.id}"${sel(x.id)}>${esc(x.label)} · ${esc(x.output_kind)}</option>`).join("");
+    }
+    // The extractor's progress line, per panel: kept so a switch (or a reopened panel) draws it again.
+    const _aiProg = {};
+    function _aiProgSet(ctx, render) {
+      _aiProg[ctx] = render;
+      ooLiveHtml($("ai-run-prog-" + ctx), render);
+    }
     async function aiRunPromptStart(ctx) {
       ctx = ctx || "an";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const pick = $("ai-run-pick-" + ctx), prog = $("ai-run-prog-" + ctx), startBtn = $("ai-run-start-" + ctx);
+      const pick = $("ai-run-pick-" + ctx), startBtn = $("ai-run-start-" + ctx);
       const id = pick && pick.value;
       if (!id) return;
       const p = _bulkParams(ctx);
@@ -3561,11 +3719,11 @@
       }
       // One run per panel: a Cancel ends a run only once the server has finished the article in flight, and a reopened
       // panel's fresh Start must not launch a second model run beside it.
-      if (_aiRuns[ctx]) { if (prog) prog.textContent = t(_aiRuns[ctx].stopping ? "Stopping…" : "Running"); return; }
+      if (_aiRuns[ctx]) { const busy = _aiRuns[ctx].stopping; _aiProgSet(ctx, () => esc(t(busy ? "Stopping…" : "Running"))); return; }
       const run = { task: null, stopping: false };
       _aiRuns[ctx] = run;
       if (startBtn) startBtn.disabled = true;
-      if (prog) prog.textContent = t("Starting…");
+      _aiProgSet(ctx, () => esc(t("Starting…")));
       let done = 0, total = 0;
       try {
         const url = (id === "builtin")
@@ -3577,7 +3735,7 @@
         if (!resp.ok || !resp.body) {
           let detail = "HTTP " + resp.status;
           try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (e) { /* keep status */ }
-          if (prog) prog.innerHTML = `<span class="note err">${esc(detail)}</span>`;
+          _aiProgSet(ctx, () => `<span class="note err">${esc(detail)}</span>`);
           if (startBtn) startBtn.disabled = false; return;
         }
         run.task = resp.headers.get("X-OO-Task");
@@ -3593,27 +3751,31 @@
             let o; try { o = JSON.parse(line); } catch (e) { continue; }
             if (o.event === "start") {
               total = o.total;
-              if (prog) prog.textContent = t("Processing") + " 0/" + total + "…";
+              const n = total;
+              _aiProgSet(ctx, () => esc(t("Processing") + " 0/" + n + "…"));
             } else if (o.event === "item") {
               done++;
-              if (prog) prog.textContent = t("Processing") + " " + done + "/" + total + "…";
+              const d = done, n = total;
+              _aiProgSet(ctx, () => esc(t("Processing") + " " + d + "/" + n + "…"));
             } else if (o.event === "done") {
               if (o.aborted && run.stopping && o.reason === _STOPPED_REASON) {
-                if (prog) prog.textContent = t("Cancelled.");
+                _aiProgSet(ctx, () => esc(t("Cancelled.")));
               } else if (o.aborted) {
-                if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${ooSaidHtml(o, "reason")}</span>`;
-              } else if (prog) {
-                const tally = `${o.terms || 0} ${t("items")} · ${o.stored || 0} ${t("stored")} · `
-                  + `${o.skipped || 0} ${t("skipped")} · ${o.failed || 0} ${t("failed")}`;
-                prog.innerHTML = `<b>${esc(t("Done."))}</b> ${esc(tally)} `
-                  + `<span class="muted">${esc(t("Open an article to see its AI-derived metadata."))}</span>`;
+                _aiProgSet(ctx, () => `<span class="note err">${esc(t("Stopped:"))} ${ooSaidHtml(o, "reason")}</span>`);
+              } else {
+                _aiProgSet(ctx, () => {
+                  const tally = `${o.terms || 0} ${t("items")} · ${o.stored || 0} ${t("stored")} · `
+                    + `${o.skipped || 0} ${t("skipped")} · ${o.failed || 0} ${t("failed")}`;
+                  return `<b>${esc(t("Done."))}</b> ${esc(tally)} `
+                    + `<span class="muted">${esc(t("Open an article to see its AI-derived metadata."))}</span>`;
+                });
               }
             }
           }
         }
       } catch (e) {
-        if (e && e.name === "AbortError") { if (prog) prog.textContent = t("Cancelled."); }
-        else if (prog) prog.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+        if (e && e.name === "AbortError") _aiProgSet(ctx, () => esc(t("Cancelled.")));
+        else { const msg = e && e.message; _aiProgSet(ctx, () => `<span class="note err">${esc(msg)}</span>`); }
       } finally {
         if (startBtn) startBtn.disabled = false;
         if (_aiRuns[ctx] === run) delete _aiRuns[ctx];
@@ -4028,7 +4190,7 @@
       fill("adv-regions", d.regions || [], (r) => r.region, (r) => r.region + " · " + n(r.sources || 0));
       const cav = d.caveats || {};
       for (const k of ["words", "sentiment", "mentions", "quarantine"]) {
-        const el = $("adv-cav-" + k); if (el) el.textContent = cav[k] ? t(cav[k]) : "";
+        const el = $("adv-cav-" + k); if (el) ooLive(el, () => cav[k] ? t(cav[k]) : "");
       }
       const nd = $("adv-near-default");
       if (nd && d.near) { nd.min = d.near.min; nd.max = d.near.max; if (nd.value === "") nd.value = d.near.default; }
@@ -4136,20 +4298,20 @@
       // would re-run wider than the search it claims to be.
       if (adv.source) {
         const ids = ((_advFacets && _advFacets.sources) || []).filter((s) => s.name === adv.source).map((s) => s.id);
-        if (!ids.length) { if (note) note.textContent = t("Pick the source from the Sources list first: a saved search keeps sources by their identity, not by name."); return; }
+        if (!ids.length) { if (note) ooLive(note, () => t("Pick the source from the Sources list first: a saved search keeps sources by their identity, not by name.")); return; }
         adv.sources = ids.join(","); delete adv.source;
       }
       const filters = _advToWatchFilters(adv);
-      if (!q && !Object.keys(filters).length) { if (note) note.textContent = t("Type a search or pick a filter first."); return; }
+      if (!q && !Object.keys(filters).length) { if (note) ooLive(note, () => t("Type a search or pick a filter first.")); return; }
       const name = prompt(t("Name this saved search:"), q || t("Filtered search"));
       if (name == null) return;
       try {
         await api("/api/watches", {method: "POST", body: JSON.stringify({
           name: name.trim() || q || t("Filtered search"), query: q, threshold: 0, window_days: 7, filters})});
-        if (note) note.textContent = t("Saved. Find it in Insights → Watches; it never fires a Lead.");
+        if (note) ooLive(note, () => t("Saved. Find it in Insights → Watches; it never fires a Lead."));
         if (typeof loadWatches === "function" && $("wt-list")) loadWatches();
       } catch (e) {
-        if (note) note.textContent = tf("Could not save: {error}", {error: e.message});
+        if (note) ooLive(note, () => tf("Could not save: {error}", {error: e.message}));
       }
     }
     async function _advCopyLink() {
@@ -4159,7 +4321,7 @@
       const url = location.origin + "/?" + _advPermalink(q, _advRead(),
         {sort_by: sb && sb.value, sort_dir: dr && dr.value, view: _anArtView});
       const note = $("an-adv-note");
-      try { await navigator.clipboard.writeText(url); if (note) note.textContent = t("Link copied. It opens this search on this machine."); }
+      try { await navigator.clipboard.writeText(url); if (note) ooLive(note, () => t("Link copied. It opens this search on this machine.")); }
       catch (_e) { prompt(t("Copy this link:"), url); }
     }
     async function _advSaveNearDefault() {
@@ -4170,8 +4332,8 @@
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({search_near_default: v})});
         if (_advFacets && _advFacets.near) _advFacets.near.default = v;
-        if (note) note.textContent = tf("Saved: a NEAR without its own number now means {n} words.", {n: v});
-      } catch (e) { if (note) note.textContent = tf("Could not save: {error}", {error: e.message}); }
+        if (note) ooLive(note, () => tf("Saved: a NEAR without its own number now means {n} words.", {n: v}));
+      } catch (e) { if (note) ooLive(note, () => tf("Could not save: {error}", {error: e.message})); }
     }
 
     // -- the local history (Q614 = a + its note) ---------------------------------- //
@@ -4215,11 +4377,11 @@
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({search_history_enabled: !!on})});
       } catch (e) {
-        const n = $("an-adv-note"); if (n) n.textContent = tf("Could not save: {error}", {error: e.message});
+        const n = $("an-adv-note"); if (n) ooLive(n, () => tf("Could not save: {error}", {error: e.message}));
       }
       await _advHistLoad();
       const n = $("an-adv-note");
-      if (n) n.textContent = on ? t("Search history is on. It stays on this machine.") : t("Search history is off. Nothing new is kept.");
+      if (n) ooLive(n, () => on ? t("Search history is on. It stays on this machine.") : t("Search history is off. Nothing new is kept."));
     }
     async function _advHistClear() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

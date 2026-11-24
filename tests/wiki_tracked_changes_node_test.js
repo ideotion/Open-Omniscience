@@ -63,6 +63,8 @@ function load(payload, opts) {
     "var window = {};\n" +
     "var _wikiTc = OO_TC;\n" +
     "function $(id){ return OO_ELS[id] || null; }\n" +
+    // Row 372(b): the status lines are drawn through ooLiveHtml (app-core.js); drawn once here.
+    "function ooLiveHtml(el, r){ if (el && r) el.innerHTML = r(); }\n" +
     "async function api(u){ OO_CALLS.push(u); if (OO_PAYLOAD instanceof Error) throw OO_PAYLOAD; return OO_PAYLOAD; }\n" +
     // B18 R14/R2: the window line is ONE keyed frame with grouped numbers, and the
     // failure line goes through the shared label frame -- the real helpers.

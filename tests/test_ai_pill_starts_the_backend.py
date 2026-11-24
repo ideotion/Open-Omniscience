@@ -135,11 +135,11 @@ def test_the_default_model_install_shows_when_ollama_is_DOWN():
 
 def test_the_install_block_is_shared_by_both_panel_states():
     """One renderer, so the two states cannot drift into showing different caveats."""
-    assert _APP.count("_miniBlockHtml(d, t)") >= 2
+    assert _APP.count("_miniBlockHtml(d)") >= 2
     # 2026-07-30: the block became a placeholder that _paintDefaultModel fills from the
     # server's per-backend plan, so the licence + caveats now render THERE. Still one
     # renderer, one source of truth -- just fed by the backend that will actually serve.
-    painted = _fn("_paintDefaultModel")
+    painted = _fn("_paintDefaultModel") + _fn("_defaultModelHtml")   # read, then drawn (row 367)
     # The label is keyed without its colon since the 2026-09-27 re-walk (O-5): the reader's
     # separator comes from ooLabelHtml, not from the key.
     assert "card-caveat" in painted and 't("Licence")' in painted, (

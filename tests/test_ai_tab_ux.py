@@ -34,7 +34,7 @@ HTML = read_static("index.html")
 #  one big button per model, and it goes away when it has nothing left to do
 # --------------------------------------------------------------------------- #
 def test_the_catalogue_offers_one_button_per_model_not_tickboxes():
-    body = function_body(APP, "loadModelCatalog")
+    body = function_body(APP, "_modelCatalogRowsHtml")
     assert 'data-on-click="installOneModel(' in body, "each row needs its own download action"
     # The tick-box + shared "Download selected" gesture is what this replaced. Comments
     # are stripped first: the comment EXPLAINING the removal necessarily quotes it, and
@@ -47,7 +47,7 @@ def test_the_catalogue_offers_one_button_per_model_not_tickboxes():
 def test_a_downloaded_model_offers_no_download_button():
     """THE 'remove useless elements' RULE. A row for a model already on disk must
     render a state, never a live control for work that is already done."""
-    body = function_body(APP, "loadModelCatalog")
+    body = function_body(APP, "_modelCatalogRowsHtml")
     # The installed branch and the button must be on OPPOSITE sides of one condition.
     assert "m.installed === true" in body
     i_state = body.index('t("Downloaded")')
@@ -62,7 +62,7 @@ def test_an_unreadable_probe_still_offers_the_download():
     """Negative-space twin. ``installed === null`` is a stopped daemon that cannot
     tell us — hiding the button on that guess would strand the operator, and
     downloading something already present is harmless."""
-    body = function_body(APP, "loadModelCatalog")
+    body = function_body(APP, "_modelCatalogRowsHtml")
     assert "m.installed === null" in body, "the third state must keep its own answer"
 
 
@@ -80,7 +80,8 @@ def test_installOneModel_asks_consent_and_repaints():
 #  the default model becomes a picker over what is actually downloaded
 # --------------------------------------------------------------------------- #
 def test_the_default_model_block_is_a_picker_over_downloaded_models():
-    body = function_body(APP, "_paintDefaultModel")
+    # read in _paintDefaultModel, drawn by _defaultModelHtml (row 367: a switch redraws it with no request)
+    body = function_body(APP, "_paintDefaultModel") + function_body(APP, "_defaultModelHtml")
     assert 'id="llm-model-pick"' in body
     assert 'data-on-change="setActiveModel(' in body
     # ONLY downloaded ones — the whole point of the ask.
@@ -94,7 +95,7 @@ def test_the_default_model_block_is_a_picker_over_downloaded_models():
 def test_the_picker_falls_back_to_a_download_when_nothing_is_downloaded():
     """With an empty disk there is nothing to choose BETWEEN, so the honest control is
     the one that gets you a first model — not an empty dropdown."""
-    body = function_body(APP, "_paintDefaultModel")
+    body = function_body(APP, "_defaultModelHtml")
     assert "installDefaultModel(this)" in body
 
 

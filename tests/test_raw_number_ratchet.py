@@ -35,7 +35,7 @@ _PLUS_STR = re.compile(r"""(?<!ooLtrIsolate\()["']\+["']""")
 _RANGE = re.compile(r"(?<!ooLtrIsolate\(`)\$\{[^}$]*\}\s*–\s*\$\{")
 
 _PINS = {
-    "plus": {"app-diagnostics.js": 2, "app-sources.js": 1},
+    "plus": {"app-sources.js": 1},
     "plus_str": {
         "app-backup.js": 3, "app-core.js": 1, "app-corpus.js": 1, "app-gov-law.js": 2, "app-living.js": 2,
         "app-map.js": 7, "app-markets.js": 1, "app-settings.js": 1, "app-shell.js": 1, "ooversions.js": 1,

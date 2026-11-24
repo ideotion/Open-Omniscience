@@ -99,10 +99,16 @@ def test_a_clean_erase_still_reads_clean(tmp_path):
 def test_a_held_store_and_an_unlisted_folder_are_both_said(monkeypatch):
     monkeypatch.setattr(crypto_erase, "shut_out_held", lambda g: None)
     monkeypatch.setattr(crypto_erase, "settle_other_holders", lambda g: crypto_erase.HOLDER_HELD)
-    report = {"unlisted_folders": 2, "limit": crypto_erase._LIMIT_NOTE_UNLISTED}
+    # an erase of a main database known to be encrypted (R815: only then is the held-store note the crypto-erase one)
+    report = {"unlisted_folders": 2, "limit": crypto_erase._LIMIT_NOTE_UNLISTED, "encrypted_corpus": True}
     assert crypto_erase.finish_holder_check(report, 1) == crypto_erase.HOLDER_HELD
     assert report["limit"].startswith(crypto_erase._LIMIT_NOTE_NOT_CLEAN)
     assert crypto_erase._UNLISTED_SENTENCE in report["limit"]
+    # not known to be encrypted: both still said, and the guarantee never (R815 (3), fail closed)
+    report = {"unlisted_folders": 2, "limit": crypto_erase._LIMIT_NOTE_UNLISTED}
+    assert crypto_erase.finish_holder_check(report, 1) == crypto_erase.HOLDER_HELD
+    assert report["limit"].startswith(crypto_erase._NOT_CLEAN_PLAIN_SENTENCE)
+    assert crypto_erase._UNLISTED_SENTENCE in report["limit"] and "permanently unrecoverable" not in report["limit"]
 
 
 def test_the_masking_withholds_a_path_when_it_fails(monkeypatch):
@@ -382,12 +388,14 @@ _PRELUDE_KEYS = _PRELUDE_SEARCH.replace('== "locked"', '== "keys"')
 def test_the_watcher_names_key_files_in_an_unsearchable_keys_folder_of_a_shared_folder(tmp_path):
     data = tmp_path / "shared"
     (data / "keys").mkdir(parents=True)
-    (data / "keys" / "signing_ed25519.pem").write_bytes(b"PRIVATE")
+    (data / "keys" / "custody_ed25519.pem").write_bytes(b"PRIVATE")
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)
-    only = {"names": ["open_omniscience.db"], "prefixes": [], "suffixes": [], "strip": "^$", "reason": "test",
-            "key_suffixes": ["_ed25519.pem"]}
-    text = _watch_with(tmp_path, {"wipe_data_dir": str(data), "app_only": only, "audit_log": str(tmp_path / "audit.log")},
-                       _PRELUDE_KEYS)
+    only = {"names": ["open_omniscience.db"], "prefixes": [], "suffixes": [], "strip": "^$", "reason": "test"}
+    # R807 (3): the app's key files by their exact names, never a suffix
+    from src.safety.uninstall import _keys_spec
+
+    text = _watch_with(tmp_path, {"wipe_data_dir": str(data), "app_only": only, "keys_spec": _keys_spec(),
+                                  "audit_log": str(tmp_path / "audit.log")}, _PRELUDE_KEYS)
     assert "salt pages destroyed" not in text and "could not check 1 folder(s)" in text, text
 
 

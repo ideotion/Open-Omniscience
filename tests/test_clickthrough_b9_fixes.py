@@ -168,7 +168,11 @@ def test_a_language_switch_rereads_the_quality_gates_panel_only_once_opened() ->
         "never fetch for a fold nobody expanded"
     )
     assert guard < h.find("loadQualificationGates()"), "the guard must come before the call"
-    assert "loadQualifyBulk()" in h, "the backlog line is a composed frame too"
+    # Row 367: the backlog line is a held render (ooLive), redrawn by ooLiveRepaint; a re-read here would replace a
+    # finished run's tally, which belongs to the read after the run (tests/test_ai_tools_live.py).
+    assert "loadQualifyBulk()" not in h, (
+        "the backlog line repaints itself; a re-read would drop a run's tally"
+    )
     assert "_renderOverlayMerge()" in h, "the last merge report is a composed frame too"
 
 

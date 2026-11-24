@@ -47,9 +47,11 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from src.monitoring.secret_scrub import log_failure
+from src.utils.interrupts import kept
 
 _LOG = logging.getLogger(__name__)
 
@@ -113,10 +115,131 @@ _FOLDER_BACK_SENTENCE = (
 _NOT_REMOVED_SENTENCE = (
     "The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."
 )
+# R809: the marked data drive was not there (or a different drive was at its path) when the erase ran: nothing on it was touched.
+_DRIVE_ABSENT_SENTENCE = (
+    "The data drive was not present. Nothing on it was checked or erased. The data on that drive still exists."
+)
+# R812 (a): a folder is at the drive's path, but whether it is the marked drive cannot be told (its marker file is there and cannot
+# be read, or the check failed), or its identity changed before the erase wrote on it: nothing on it was touched either.
+_DRIVE_UNIDENTIFIED_SENTENCE = (
+    "The data drive could not be identified. Nothing on it was checked or erased. The data on that drive still exists."
+)
+# R809 / R797 / R798: the data drive went away while the erase ran.
+_DRIVE_LOST_SENTENCE = (
+    "The data drive disconnected during the erase: it was only partially erased, and what was left on it could not be checked."
+)
+# R812 (b): said after the sentence above only when the erase had already made the app forget the drive's id (never restored).
+_DRIVE_FORGOTTEN_SENTENCE = (
+    "Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a "
+    "later launch unless it is set up again."
+)
+
+
+# R812 (coordinator decision 1): the connections on that drive are kept open, never closed (a close deletes the log files BY PATH,
+# on whatever drive is there now), so the key they were opened with stays in memory: the cost, said, and never "destroyed".
+_DRIVE_KEY_IN_MEMORY_SENTENCE = (
+    "The key to the data on that drive stays in this app's memory until the app is closed: close the app now."
+)
+
+
+def _drive_failure_sentence(report: dict) -> str:
+    """R809 / R812: the sentence for an erase that did not reach the drive, or that the drive left; "" for neither."""
+    key = (" " + _DRIVE_KEY_IN_MEMORY_SENTENCE) if report.get("drive_key_in_memory") else ""
+    if report.get("drive_absent"):
+        return (_DRIVE_UNIDENTIFIED_SENTENCE if report.get("drive_unidentified") else _DRIVE_ABSENT_SENTENCE) + key
+    if report.get("drive_lost"):
+        return _DRIVE_LOST_SENTENCE + (" " + _DRIVE_FORGOTTEN_SENTENCE if report.get("drive_forgotten") else "") + key
+    return ""
+_KEYS_LEFT_SENTENCE = (
+    "Some of the app's own key files could not be removed from the keys folder, so the erase may be incomplete: remove them by hand."
+)
 _DEFENCE_TAIL = (
     " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
     "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
 )
+# R815 (3): the clean guarantee (_LIMIT_NOTE) only for a main database positively known to be encrypted. Plaintext fails closed to
+# the first sentence, a main database whose state could not be read to the second (R817 notes 7 and 7u): no key was destroyed.
+_PLAINTEXT_SENTENCE = (
+    "The main database was not encrypted, so no key was destroyed: old pages of it may remain on the disk after the overwrite "
+    "and delete. Full-disk encryption is the remedy."
+)
+_UNKNOWN_SENTENCE = (
+    "The main database could not be confirmed as encrypted, so this erase cannot promise it is unreadable: old pages of it may "
+    "remain on the disk after the overwrite and delete. Full-disk encryption is the remedy."
+)
+
+
+def _plain_sentence(encrypted: bool | None) -> str:
+    """R815 (3): the fail-closed sentence for a main database not known to be encrypted (plaintext, or unknown)."""
+    return _PLAINTEXT_SENTENCE if encrypted is False else _UNKNOWN_SENTENCE
+
+
+_NOT_CLEAN_PLAIN_SENTENCE = (
+    "Another program that had the database open may have written to files it still held, so the erase may be incomplete."
+)
+
+
+#: R815 / R817 (2): what is said of the plaintext main database (in the data folder or outside it), apart from "Wiped n/n"; the
+#: same words, translated, in the panic page. ``first_page`` is the fallback where an open file cannot be unlinked (R817 (4)).
+PLAIN_STORE_STATE = {
+    "overwritten": "The unencrypted main database was overwritten in full.",
+    "partially_overwritten": "The unencrypted main database was only partially overwritten.",
+    "not_overwritten": "The unencrypted main database was not overwritten.",
+    "first_page": "The unencrypted main database had its first page overwritten.",
+}
+PLAIN_STORE_REASON = {
+    "absent": "It was no longer there.",
+    "unidentified": "It could not be identified, so nothing there was touched.",
+    "changed": "Another file was at its place, so nothing there was touched.",
+    "drive": "The data drive changed or went away during the erase, so it was not rewritten.",
+    "reserve": "The overwrite stopped to leave free space on a nearly full disk.",
+    "write_failed": "A write to it failed.",
+    "stopped": "The overwrite was stopped before it finished.",
+    "pool": "The app's own connection to it could not be confirmed closed.",
+}
+#: R818 (b): after "had its first page overwritten" when the body rewrite did not run.
+PLAIN_STORE_REST = "The rest was not overwritten."
+#: R818 (a): information only, as the body rewrite starts (the CLI prints it; the page shows it before the request).
+PLAIN_STORE_NOTICE = ("Overwriting the unencrypted main database may take several minutes. Closing this page does not stop it; "
+                      "quitting the app does, and by then the file is already deleted.")
+#: R818 (c): for the overwritten state.
+PLAIN_STORE_OTHER_NAMES_OVERWRITTEN = ("Other names for it remain on the disk and now lead to the overwritten content, so a copy "
+                                       "kept under another name is no longer usable (count: {n}).")
+#: R818 (c), Plan: for the partially overwritten state (parts of the old content may remain under those names).
+PLAIN_STORE_OTHER_NAMES_PARTIAL = ("Other names for it remain on the disk and now lead to partly overwritten content; parts of the old "
+                                   "content may still be readable through them (count: {n}).")
+PLAIN_STORE_DELETED = "It was deleted."
+PLAIN_STORE_NOT_DELETED = "It could not be deleted: remove it by hand."
+PLAIN_STORE_OTHER_NAMES = "Other names for it remain on the disk and lead to the same file (count: {n})."
+
+
+def plaintext_store_sentences(report: dict) -> list[str]:
+    """R815 (2)/(4): the plain words for ``report["plaintext_store"]`` (none when there is no such store)."""
+    st = report.get("plaintext_store")
+    if not isinstance(st, dict) or st.get("state") not in PLAIN_STORE_STATE:
+        return []
+    out = [PLAIN_STORE_STATE[st["state"]]]
+    if st["state"] == "first_page" and st.get("reason"):
+        out.append(PLAIN_STORE_REST)
+    if st.get("reason") in PLAIN_STORE_REASON:
+        out.append(PLAIN_STORE_REASON[st["reason"]])
+    if st.get("touched"):
+        out.append(PLAIN_STORE_DELETED if st.get("deleted") else PLAIN_STORE_NOT_DELETED)
+    if st.get("other_names"):
+        line = {"overwritten": PLAIN_STORE_OTHER_NAMES_OVERWRITTEN,
+                "partially_overwritten": PLAIN_STORE_OTHER_NAMES_PARTIAL}.get(st["state"], PLAIN_STORE_OTHER_NAMES)
+        out.append(line.format(n=int(st["other_names"])))
+    return out
+
+
+#: R815 (3): what the last erase in this process found the main database to be (None: none ran, or it could not tell); the
+#: free-space scrub that follows it claims the crypto-erase guarantee only when this is True.
+_LAST_ERASE_ENCRYPTED: bool | None = None
+
+
+def _clean_note(encrypted: bool | None) -> str:
+    """R815 (3): the note of a clean erase; the crypto-erase guarantee only when the main database is known to be encrypted."""
+    return _LIMIT_NOTE if encrypted is True else _plain_sentence(encrypted) + _DEFENCE_TAIL
 
 
 def settle_removed(report: dict) -> bool:
@@ -124,8 +247,37 @@ def settle_removed(report: dict) -> bool:
     that is there again makes ``removed`` False, sets ``folder_back`` and puts the "may be incomplete" sentence first in ``limit``.
     Logs nothing (a log line after the measure is what this measure is for). Returns ``removed``. Never raises."""
     try:
+        if report.get("drive_absent") or report.get("drive_lost"):
+            report["removed"] = False  # R809: a drive that was not there, or went away, is never measured as "removed"
+            return False
         if report.get("scope") != "data-folder" or not report.get("data_dir"):
             return bool(report.get("removed"))
+        if report.get("folder_kept_foreign"):
+            # R806: a folder kept on purpose for its keys is said as kept, never as "could not be removed"; anything else at its top
+            # now (a removal that failed, or something written there after) is said as not removed, so "kept" never hides it.
+            base = Path(report["data_dir"])
+            if not _present(base):
+                report["folder_kept_foreign"] = False  # gone since (the operator removed it): nothing is kept any more
+                report["removed"] = True
+                return True
+            if _kind(base / "keys") == "absent":
+                report["folder_kept_foreign"] = False  # its keys folder is gone since: not kept for it any more
+                report["kept_items"] = 0
+                report["keys_left"] = 0
+                report["keys_left_names"] = []
+            failed: list[OSError] = []
+            rest = sorted(e.name for e in _listing(base, failed.append) if e.name != "keys")
+            if failed:
+                rest = rest or ["?"]  # could not be listed: never read as "only keys is left"
+            if rest:
+                report["not_removed"] = sorted({*(report.get("not_removed") or []), *rest})
+                limit = report.get("limit")
+                if not isinstance(limit, str):
+                    report["limit"] = _NOT_REMOVED_SENTENCE + _DEFENCE_TAIL
+                elif not limit.startswith(_NOT_REMOVED_SENTENCE):
+                    report["limit"] = _NOT_REMOVED_SENTENCE + " " + limit
+            report["removed"] = False
+            return False
         removed_before = bool(report.get("removed")) or bool(report.get("removed_at_rmtree"))
         removed = not _present(Path(report["data_dir"]))
         report["removed"] = removed
@@ -244,6 +396,388 @@ def _overwrite(path: Path, *, head_bytes: int | None = None, zeros: bool = False
     except OSError:
         _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", _masked([str(path)])[0])
         return False
+
+
+
+def _data_regions(fd: int, size: int) -> list[tuple[int, int]] | None:
+    """R797: the ``(start, end)`` regions of an open file that hold data, read with ``SEEK_DATA``/``SEEK_HOLE``; ``None`` where the
+    platform or the file system cannot say (the caller then rewrites the logical size, keeping the disk reserve)."""
+    seek_data, seek_hole = getattr(os, "SEEK_DATA", None), getattr(os, "SEEK_HOLE", None)
+    if seek_data is None or seek_hole is None:
+        return None
+    regions: list[tuple[int, int]] = []
+    off = 0
+    try:
+        while True:
+            if off >= size:
+                break
+            try:
+                start = os.lseek(fd, off, seek_data)
+            except OSError as exc:
+                if exc.errno == errno.ENXIO:
+                    break  # no data past ``off``
+                raise
+            end = min(os.lseek(fd, start, seek_hole), size)
+            if end > start:
+                regions.append((start, end))
+            off = max(end, start + 1)
+    except OSError:
+        return None
+    return regions
+
+
+def _fd_free_bytes(fd: int) -> int | None:
+    try:
+        st = os.fstatvfs(fd)
+    except (OSError, AttributeError):
+        return None
+    return st.f_bavail * st.f_frsize
+
+
+def _rewrite_fd(fd: int, *, zeros: bool = False) -> tuple[int, int, str | None]:
+    """R815 / R797: rewrite in place every byte of the open regular file ``fd`` that holds data, then fsync; every other name of
+    the same file is covered by the same write. The regions come from :func:`_data_regions`; where they cannot be read, the logical
+    size is rewritten; either way the rewrite stops before the drive's free space would fall under :data:`_DISK_RESERVE`. Returns
+    ``(written, total, stop)``: ``stop`` is None when every byte was written, else ``"reserve"`` or ``"write_failed"``. Never
+    closes ``fd`` (R789: the caller keeps it until the app's own connections are closed). Never raises."""
+    written = total = 0
+    stop: str | None = None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return 0, 0, "write_failed"
+        regions = _data_regions(fd, st.st_size)
+        regions = [(0, st.st_size)] if regions is None else regions
+        total = sum(end - start for start, end in regions)
+        for start, end in regions:
+            os.lseek(fd, start, os.SEEK_SET)
+            pos = start
+            while True:
+                if pos >= end:
+                    break
+                n = min(_CHUNK, end - pos)
+                # Every chunk, both ways: the logical size may reach holes, and on a copy-on-write file system (APFS, btrfs, ZFS)
+                # even a rewrite in place takes new blocks.
+                free = _fd_free_bytes(fd)
+                if free is None or free - n < _DISK_RESERVE:
+                    stop = "reserve"
+                    break
+                done = os.write(fd, bytes(n) if zeros else os.urandom(n))
+                if done <= 0:
+                    raise OSError("nothing written")
+                pos += done
+                written += done
+            if stop:
+                break
+        os.fsync(fd)
+    except OSError:
+        stop = stop or "write_failed"
+        _LOG.warning("crypto-erase: the rewrite of an unencrypted store stopped (only partially overwritten)")
+    return written, total, stop
+
+
+#: R815: the files of one SQLite store, the main file first.
+_STORE_PARTS = ("", "-wal", "-journal", "-shm")
+
+
+def _pin_file(p: Path) -> tuple[int, int, int, int, str] | str:
+    """R815/R817: the identity of ``p`` itself (never through a link) and of the folder it is really in: ``(device, inode, folder's
+    device, folder's inode, folder's real path)``; or why it cannot be read: ``"absent"`` (not there) or ``"unidentified"`` (there,
+    but not a regular file, or not readable)."""
+    try:
+        folder = os.path.realpath(p.parent)
+        st, fst = os.lstat(os.path.join(folder, p.name)), os.stat(folder)
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent"
+    except OSError:
+        return "unidentified"
+    if not stat.S_ISREG(st.st_mode):
+        return "unidentified"
+    return (st.st_dev, st.st_ino, fst.st_dev, fst.st_ino, folder)
+
+
+def _untouched(reason: str) -> dict:
+    return {"state": "not_overwritten", "reason": reason, "other_names": 0, "deleted": False, "touched": False, "_held": []}
+
+
+def _fast_destroy(fd: int, kind: str) -> tuple[int, bool]:
+    """R817 (2), as Plan read it (2026-11-24): what step 1 always destroyed at once, done through the kept handle before the unlink,
+    so nothing is slower or weaker than before: the main file's first page (random), the -shm head (zeros), a -wal or -journal whole
+    (:func:`_rewrite_fd`). Returns ``(bytes written, whether the part is now rewritten in full)``. Never raises."""
+    if kind == "whole":
+        written, _total, stop = _rewrite_fd(fd)
+        return written, stop is None
+    try:
+        size = min(os.fstat(fd).st_size, _SQLCIPHER_PAGE1)
+        os.lseek(fd, 0, os.SEEK_SET)
+        done = os.write(fd, bytes(size) if kind == "shm" else os.urandom(size)) if size else 0
+        os.fsync(fd)
+        return done, False
+    except OSError:
+        return 0, False
+
+
+def plaintext_body_rewrite_supported() -> bool:
+    """Whether this platform takes the R817 path (an open file unlinked through its folder's handle, the body rewritten after the
+    delete) rather than the first-page fallback (R817 (4))."""
+    return os.name == "posix" and os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd
+
+
+def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, generation: int, missed: list[str]) -> dict:
+    """R817 (1): a main database KNOWN to be plaintext. Its folder is opened no-follow and checked against ``pin`` (read before the
+    erase opened anything); each part is opened no-follow through that folder handle, checked to be a regular file (the main file
+    the very one pinned, a sidecar on the same device), kept, its first page / log destroyed at once (:func:`_fast_destroy`) and
+    unlinked through the folder handle at once. Its contents are rewritten in full through the kept handle only at the end of the
+    erase (:func:`_rewrite_plain`). A main file that is gone, cannot be identified, is a link or is another file is never touched
+    (``touched`` False: the caller leaves it to the steps that handle any other file). Where an open file cannot be unlinked
+    (Windows, which this code opens without share-delete) the order is the old one, first page then unlink (R817 (4)).
+
+    Returns the store's record: ``state`` (None until rewritten), ``reason``, ``other_names`` (hard links, a count), ``deleted``,
+    ``touched`` and, private to the erase, ``_held`` as ``[[fd, kind, (dev, ino), written, done]]``."""
+    if isinstance(pin, str):
+        return _untouched(pin)
+    if not plaintext_body_rewrite_supported():
+        return _first_page_fallback(db, pin)
+    dev, ino, fdev, fino, folder = pin
+    try:
+        dfd = os.open(folder, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    except (FileNotFoundError, NotADirectoryError):
+        return _untouched("absent")
+    except OSError:  # a link at the folder's place (never followed) or a folder that cannot be opened
+        return _untouched("unidentified")
+    rec = _untouched("")
+    rec.update(state=None, reason=None)  # said only once the body rewrite ran, or was left (finish_plaintext_rewrite)
+    try:
+        try:
+            fst = os.fstat(dfd)
+        except OSError:
+            return _untouched("unidentified")
+        if (fst.st_dev, fst.st_ino) != (fdev, fino):
+            return _untouched("changed")  # another folder (another drive) at that place
+        deleted = True
+        # The main file first (its identity decides everything), then the log index (its head zeroed, so no connection trusts it
+        # again), then the logs, as step 1's passes order them.
+        for suffix in ("", "-shm", "-wal", "-journal"):
+            name = db.name + suffix
+            kind = "head" if suffix == "" else ("shm" if suffix == "-shm" else "whole")
+            try:
+                fd = os.open(name, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0),
+                             dir_fd=dfd)
+            except FileNotFoundError:
+                if suffix == "":
+                    return _untouched("absent")
+                continue  # a sidecar that is not there (a connection closing removes its log): nothing to do
+            except OSError as exc:
+                if exc.errno == errno.ELOOP:  # a link at the name: never followed
+                    if suffix == "":
+                        return _untouched("changed")
+                    with contextlib.suppress(OSError):
+                        os.unlink(name, dir_fd=dfd)  # the link itself goes; its target is never written
+                    rec["reason"] = rec["reason"] or "changed"  # the store's own part was not there to rewrite: never "in full"
+                    continue
+                if suffix == "":
+                    return _untouched("unidentified")
+                missed.append(name)  # existed, could not be kept: the holder check cannot ask it (R792)
+                rec["reason"] = rec["reason"] or "write_failed"
+                try:
+                    os.unlink(name, dir_fd=dfd)  # R817 (4): deletion is never traded for the rewrite
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    deleted = False
+                    _note_left(rec, None, name, dfd)  # never checked, so never written by path later either
+                continue
+            try:
+                st = os.fstat(fd)
+            except OSError:
+                st = None
+            # A sidecar with other names may be a link to a file that is not the store's (security read): never written.
+            if st is None or not stat.S_ISREG(st.st_mode) or (st.st_dev, st.st_ino) != (dev, ino) and suffix == "" \
+                    or st.st_dev != dev or suffix != "" and st.st_nlink > 1:
+                # Never written: another file, a FIFO, socket or device, a file on another device, or one that cannot be looked at.
+                if st is not None and not stat.S_ISREG(st.st_mode):
+                    os.close(fd)
+                else:
+                    # A regular file (or one fstat could not read) may be a file this process's pool still has open: closing this
+                    # descriptor would drop the pool's locks on it (R789). Kept, never written (cap 0), let go by the late pass.
+                    _HELD.setdefault(generation, []).append((fd, "keep", 0))
+                if suffix == "":
+                    return _untouched("changed")
+                rec["reason"] = rec["reason"] or ("write_failed" if st is None else "changed")  # never "in full" (security read)
+                deleted = False  # left at its name; step 6 or a later look may still find it gone
+                _note_left(rec, st, name, dfd)
+                continue
+            if suffix == "":
+                rec["other_names"] = max(0, st.st_nlink - 1)
+                rec["touched"] = True
+            # Kept with this wipe's descriptors at once (R817 (3)): closed only by the late pass, after the app's own pool on the
+            # store, and seen by the holder rule; never left open if the erase stops before the rewrite.
+            _HELD.setdefault(generation, []).append((fd, kind, st.st_size + _HELD_GROWTH))
+            written, done = _fast_destroy(fd, kind)
+            rec["_held"].append([fd, kind, (st.st_dev, st.st_ino), written, done])
+            try:
+                os.unlink(name, dir_fd=dfd)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                deleted = False
+                _note_left(rec, st, name, dfd)  # rewritten through its handle; the walks of the folder only remove the name
+                _LOG.warning("crypto-erase: could not delete a file of an unencrypted store")
+        rec["deleted"] = deleted
+        return rec
+    finally:
+        os.close(dfd)
+
+
+def _note_left(rec: dict, st: os.stat_result | None, name: str, dfd: int) -> None:
+    """A file of the plaintext store left at its name by :func:`_open_and_unlink_plain` (refused, or its unlink failed), by its
+    identity: the later walks of the data folder (5b, step 6) only remove the name of such a file, never write it by path (it may
+    be a file that is not the store's, reached through another name). By identity, never by spelling: the walks spell the data
+    folder their own way (security read)."""
+    if st is None:
+        try:
+            st = os.lstat(name, dir_fd=dfd)
+        except OSError:
+            return
+    rec.setdefault("_left", set()).add((st.st_dev, st.st_ino))
+
+
+def _left_by_erase(rec: dict | None, p: Path) -> bool:
+    """Whether ``p`` is a file of the plaintext store :func:`_open_and_unlink_plain` left at its name (see :func:`_note_left`)."""
+    left = rec.get("_left") if rec else None
+    if not left:
+        return False
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return False
+    return (st.st_dev, st.st_ino) in left
+
+
+def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
+    """R817 (4): where an open file cannot be unlinked (no share-delete open here), the old order: the first page overwritten (a log
+    whole, a log index's head zeroed), then the unlink; said as "had its first page overwritten". Deletion is never traded."""
+    if _pin_file(db) != pin:
+        return _untouched("changed")
+    rec = _untouched("")
+    rec.update(reason=None, touched=True)
+    with contextlib.suppress(OSError):
+        rec["other_names"] = max(0, os.lstat(db).st_nlink - 1)
+    deleted, head_ok = True, False
+    for suffix in _STORE_PARTS:
+        p = db.with_name(db.name + suffix)
+        if not os.path.lexists(p):
+            continue
+        whole = suffix in ("-wal", "-journal")
+        ok = _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=suffix == "-shm")
+        if suffix == "":
+            head_ok = ok
+        elif not ok:
+            rec["reason"] = rec["reason"] or "write_failed"
+        try:
+            p.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            deleted = False
+    rec["state"] = "first_page" if head_ok else "not_overwritten"
+    rec["reason"] = None if head_ok and rec["reason"] is None else (rec["reason"] or "write_failed")
+    rec["deleted"] = deleted
+    return rec
+
+
+def _rewrite_plain(rec: dict, *, may_write: bool) -> None:
+    """R817 (1)/(2)/(3): rewrite in full, through its kept handle, every part of a plaintext store not already rewritten in full by
+    :func:`_fast_destroy`, after every key, salt page and unlink of the erase, each handle first checked to be the same regular file
+    that was unlinked. The handles stay with this wipe's kept descriptors: never closed here (R789). ``may_write`` False (the drive it
+    is on changed or went away, R812) rewrites nothing more. Sets ``state`` and ``reason``; a store whose main file was not kept is
+    never "overwritten"."""
+    held = rec.pop("_held", [])
+    if rec["state"] is not None:  # not touched, or the first-page fallback: already said
+        return
+    stop = rec["reason"]
+    head_written = any(e[1] == "head" and e[3] > 0 for e in held)
+    written_any = False  # by the body rewrite here; the fast destruction before the unlink is said as "its first page" (R818)
+    if not any(e[1] == "head" for e in held):
+        stop = stop or "absent"
+    for fd, kind, ident, _written, done in held:
+        if done:
+            continue
+        try:
+            st = os.fstat(fd)
+            same = stat.S_ISREG(st.st_mode) and (st.st_dev, st.st_ino) == ident
+        except OSError:
+            same = False
+        if not may_write:
+            stop = stop or "drive"
+        elif not same:
+            stop = stop or "write_failed"
+        else:
+            try:
+                written, _total, why = _rewrite_fd(fd, zeros=kind == "shm")
+            except KeyboardInterrupt:  # R818 (a): a stop partway is said, wherever a report is still made
+                stop = stop or "stopped"
+                written_any = True
+                break
+            written_any = written_any or written > 0
+            stop = stop or why
+    if stop is None:
+        rec["state"] = "overwritten"
+    else:
+        rec["state"] = "partially_overwritten" if written_any else "first_page" if head_written else "not_overwritten"
+        rec["reason"] = stop
+
+
+#: R818 (b): a plaintext store whose files were opened, destroyed at the head and unlinked, waiting for its body rewrite until the
+#: app's own pool on it is closed: ``generation -> (record, may_write, the store's paths)``.
+_PLAIN_PENDING: dict[int, tuple[dict, bool, list[str]]] = {}
+#: R818 (a): called (no argument) as a body rewrite starts; the CLI sets it to print :data:`PLAIN_STORE_NOTICE`.
+plain_rewrite_notice: Callable[[], object] | None = None
+
+
+def _plain_public(rec: dict) -> dict:
+    return {k: rec.get(k) for k in ("state", "reason", "other_names", "deleted", "touched")}
+
+
+def _is_head(entry: list) -> bool:
+    return entry[1] == "head"
+
+
+def finish_plaintext_rewrite(report: dict, generation: int, own_open: int | None) -> None:
+    """R817 (2) / R818 (b): rewrite the body of this wipe's plaintext store, only once the app's own pool on it is closed
+    (``own_open == 0``); otherwise, or when that cannot be told, the body is left: "had its first page overwritten", "the rest was
+    not overwritten" and why. Under the kept-descriptor lock, so no pass closes a handle mid-write (the late pass waits). Sets
+    ``report["plaintext_store"]``. Never raises."""
+    pending = _PLAIN_PENDING.pop(generation, None)
+    if pending is None:
+        return
+    rec, may_write, parts = pending
+    try:
+        if rec["state"] is None and own_open != 0:
+            head = kept(rec.get("_held", []), _is_head)
+            rec.pop("_held", None)
+            rec["state"] = "first_page" if head and head[0][3] > 0 else "not_overwritten"
+            rec["reason"] = rec["reason"] or "pool"
+        else:
+            # The notice says the file is already deleted: said only when it is (security read).
+            if rec["state"] is None and may_write and rec["deleted"] and callable(plain_rewrite_notice):
+                with contextlib.suppress(Exception):
+                    plain_rewrite_notice()
+            with _HELD_LOCK:
+                _rewrite_plain(rec, may_write=may_write)
+        if not rec["deleted"] and rec.get("touched"):
+            rec["deleted"] = not any(os.path.lexists(p) for p in parts)  # step 6 may have removed one whose unlink failed
+    except KeyboardInterrupt:  # R818 (a): a stop outside the rewrite itself (the notice, a check) is said too, never lost
+        head = kept(rec.pop("_held", []), _is_head)
+        if rec["state"] is None:
+            rec["state"] = "first_page" if head and head[0][3] > 0 else "not_overwritten"
+        rec["reason"] = rec["reason"] or "stopped"
+    except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
+        rec["state"] = rec["state"] or "not_overwritten"
+        rec["reason"] = rec["reason"] or "write_failed"
+    report["plaintext_store"] = _plain_public(rec)
+    if rec["state"] != "overwritten" or not rec["deleted"]:
+        _LOG.warning("CRYPTO-ERASE: the unencrypted main database was not overwritten in full (%s)", rec["reason"] or "not deleted")
 
 
 # Descriptors the erase keeps on the files it unlinked, as (fd, kind), one list per wipe (its GENERATION): a transaction
@@ -486,6 +1020,8 @@ def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: fl
     # file's first page is reached.
     for fd, kind, cap in sorted(held, key=lambda e: e[1] == "whole"):
         try:
+            if kind == "keep":
+                continue  # a descriptor kept only so that closing it never drops the pool's locks (R789): never written, let go below
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError  # not rewritten this pass; a closing pass still closes it below
             size = min(os.fstat(fd).st_size, cap)
@@ -575,23 +1111,13 @@ def _key_files_lock() -> contextlib.AbstractContextManager:
     return KEY_FILES_LOCK
 
 
-#: The key files the app keeps beside the two named above: the evidence-signing key (src/reporting/evidence.py) and the
-#: private copies a key change stages in ``keys/.pending`` (src/custody/keyfile.py). In a shared folder every file whose name
-#: ends like one of the app's key forms goes too (the annotation signer, a key a restore placed: src/backup/merge.py _KEY_FORMS).
-_OTHER_KEY_FILES = ("evidence_ed25519.pem",)
-_KEYS_PENDING = ".pending"
-KEY_FORM_SUFFIXES = ("_ed25519.pem", "_ml_dsa_65.key")
-
-
-def _destroy_keys_folder(
-    keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, *, shared: bool = False, unreached=None
-) -> tuple[int, int]:
-    """Step 2 and 2b of the quick erase, ``(seen, wiped)``: the named key files, then everything else in the keys folder
-    (the evidence key, a private copy in ``keys/.pending``), then the folder itself, so nothing can be added to it
-    before the caller lets the key-file lock go. In a SHARED data folder (R711) a ``keys`` folder may be the operator's
-    own, so only the app's key files and its ``.pending`` folder go, and the folder is removed only if that left it empty. A function of its own with no handler, called inside the caller's
-    ``with``: CPython 3.13 leaves a loop's back-edge outside the exception table of the block around it, so the loops
-    live here (R163; tests/test_loop_heads_reach.py)."""
+def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, *, unreached=None) -> tuple[int, int]:
+    """Step 2 and 2b of the quick erase in a ``keys`` folder that is the app's by its content (R806 (2)), ``(seen, wiped)``: the
+    corpus signer's named key files, then everything else in it (the evidence key, a private copy in ``keys/.pending``), then the
+    folder itself, so nothing can be added to it before the caller lets the key-file lock go. In shared scope, and for a ``keys``
+    that holds anything the app did not write, :func:`_destroy_app_keys_in_foreign` is used instead: exact names only (R807 (3)).
+    A function of its own with no handler, called inside the caller's ``with``: CPython 3.13 leaves a loop's back-edge outside the
+    exception table of the block around it, so the loops live here (R163; tests/test_loop_heads_reach.py)."""
     seen = wiped = 0
     for name in _KEY_FILES:
         s, overwritten, w = track(keys_dir / name)
@@ -599,18 +1125,6 @@ def _destroy_keys_folder(
         wiped += w
         if s and overwritten:
             keys_destroyed.append(name)
-    if shared:
-        others = [e.name for e in _listing(keys_dir, unlisted) if e.name.endswith(KEY_FORM_SUFFIXES) and e.name not in _KEY_FILES]
-        for name in dict.fromkeys([*_OTHER_KEY_FILES, *others]):
-            s, _overwritten, w = track(keys_dir / name)
-            seen += s
-            wiped += w
-        pending = keys_dir / _KEYS_PENDING
-        if _kind(pending, unreached) != "dir":
-            with contextlib.suppress(OSError):
-                keys_dir.rmdir()  # only when empty: what is left in it is not the app's to remove
-            return seen, wiped
-        keys_dir = pending  # walked and removed below, like the whole folder in the app's own data folder
     if _kind(keys_dir, unreached) == "dir":
         for root, dirs, names in os.walk(keys_dir, onerror=unlisted):
             dirs[:] = [d for d in dirs if _kind(Path(root, d), unreached) == "dir"]  # a link or a junction never entered
@@ -619,10 +1133,225 @@ def _destroy_keys_folder(
                 seen += s
                 wiped += w
         shutil.rmtree(keys_dir, ignore_errors=True)
-    if shared:
-        with contextlib.suppress(OSError):
-            keys_dir.parent.rmdir()  # only when empty: what is left in it is not the app's to remove
     return seen, wiped
+
+
+def _destroy_app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, unreached=None) -> tuple[int, int]:
+    """R806 (2): step 2 for a ``keys`` folder that is not the app's by its content (it holds something the app did not write), and
+    R807 (3): for every ``keys`` in shared scope (a folder the app does not own), where ``keys`` is a common name. Only
+    the app's own key files go, by their exact names (``data_scope.APP_KEY_NAMES``), and the private copies in a real ``.pending``
+    folder, by their one name shape; everything else is left byte for byte, and neither folder is removed unless that left it
+    empty. A ``keys`` that is a link, a junction or not a folder is never entered: nothing in it is the app's to reach."""
+    from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING, KEYS_PENDING_RE
+
+    seen = wiped = 0
+    if _kind(keys_dir, unreached) != "dir":
+        return seen, wiped
+    for name in (*_KEY_FILES, *sorted(APP_KEY_NAMES - set(_KEY_FILES))):  # the corpus signer's pair first, as in the app's own folder
+        p = keys_dir / name
+        if _kind(p, unreached) != "file":
+            continue  # a link or a folder under one of the app's names was not written by the app: left, never followed
+        s, overwritten, w = track(p)
+        seen += s
+        wiped += w
+        if s and overwritten and name in _KEY_FILES:
+            keys_destroyed.append(name)
+    pending = keys_dir / KEYS_PENDING
+    if _kind(pending, unreached) == "dir":
+        for e in _listing(pending, unlisted):
+            p = Path(e.path)
+            if re.fullmatch(KEYS_PENDING_RE, e.name) and _kind(p, unreached) == "file":
+                s, _overwritten, w = track(p)
+                seen += s
+                wiped += w
+        with contextlib.suppress(OSError):
+            pending.rmdir()  # only when empty
+    with contextlib.suppress(OSError):
+        keys_dir.rmdir()  # only when empty: what is left in it is not the app's to remove
+    return seen, wiped
+
+
+def _drive_state(base: Path) -> str:
+    """R809 / R812: ``unwatched`` (no drive was marked for this folder), ``ok`` (the marked drive is there with its own marker),
+    ``absent`` (no folder there, or a folder with no marker file, such as an empty mount point, or another drive's marker:
+    src/safety/data_volume.py probe) or ``unidentified`` (a folder whose marker file is there and cannot be read, or a question that
+    could not be answered). Reads only; never makes anything. Neither of the last two lets the erase touch what is at its path."""
+    try:
+        from src.safety import data_volume
+
+        if not data_volume.watched():
+            return "unwatched"
+        chosen = data_volume.configured_folder()
+        if chosen is None or os.path.abspath(chosen) != os.path.abspath(base):
+            return "unwatched"
+        state = data_volume.probe().get("state")
+        if state == "ok":
+            return "ok"
+        if state == "missing" and os.path.isdir(chosen) and os.path.lexists(os.path.join(chosen, data_volume.MARKER_NAME)):
+            return "unidentified"
+        return "absent"
+    except Exception:  # noqa: BLE001 - not knowing whether the drive is there never lets the erase touch what is at its path
+        return "unidentified"
+
+
+def _drive_hold(base: Path, fds: list[int]) -> tuple[Path, tuple[int, int], int | None] | None:
+    """R812 (c): the drive's identity when the probe found it: the resolved folder, its (device, inode) and, on POSIX, a read-only
+    descriptor held on it (put in ``fds``, which this erase closes when it ends), so the identity compared later is the folder the
+    probe saw, never an inode number reused by another. Windows has no directory descriptor and compares by stat alone. None:
+    unreadable."""
+    try:
+        real = Path(os.path.realpath(base))
+        fd: int | None = None
+        if hasattr(os, "O_DIRECTORY"):
+            fd = os.open(real, os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0))
+            fds.append(fd)
+            st = os.fstat(fd)
+        else:
+            st = os.stat(real)
+        return real, (st.st_dev, st.st_ino), fd
+    except (OSError, ValueError):
+        return None
+
+
+def _drive_same(hold: tuple[Path, tuple[int, int], int | None] | None, want_id: str | None, *, marker: bool) -> bool:
+    """R812 (c): the folder at the drive's path is still the one the probe found (the held descriptor's device and inode, which
+    cannot be reused while it is held) and, when ``marker``, still carries the marked drive's id. Anything that cannot be read is
+    a change: the erase then touches nothing more on the drive."""
+    if hold is None:
+        return False
+    real, ident, fd = hold
+    try:
+        if fd is not None:
+            held = os.fstat(fd)
+            ident = (held.st_dev, held.st_ino)
+        st = os.stat(real)
+        if (st.st_dev, st.st_ino) != ident:
+            return False
+        # A drive's root folder has the same inode on every drive of one file-system type, so the file-system id is compared too
+        # (on Linux it is taken from the volume's own id): where the held descriptor is there, the folder at the path must be on
+        # the same file system as it. Where either cannot be read on this platform, the comparison above stands alone.
+        if fd is not None and hasattr(os, "fstatvfs"):
+            held_fsid, now_fsid = getattr(os.fstatvfs(fd), "f_fsid", None), getattr(os.statvfs(real), "f_fsid", None)
+            if held_fsid is not None and now_fsid is not None and held_fsid != now_fsid:
+                return False
+        if marker:
+            from src.safety import data_volume
+
+            return want_id is not None and data_volume.read_marker_id(real) == want_id
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _pin_drive(base: Path) -> int:
+    """R812 (coordinator decision 1): every connection on a store on the drive is kept open for the rest of the process, never
+    closed (src/database/drive_pin.py says why). Returns how many are kept. Never raises."""
+    try:
+        from src.database.drive_pin import pin_drive
+
+        return pin_drive(base)
+    except Exception:  # noqa: BLE001 - not known: said as kept
+        return -1
+
+
+def _off_drive_paths(paths: dict, base: Path) -> dict:
+    """R809: the erase's paths with every store on the drive left out (the overrides' stores elsewhere stay)."""
+    return {**paths, "lane_dbs": [], "custody_db": None, "anchors_db": None,
+            "main_db": None if _under(paths["main_db"], base) else paths["main_db"],
+            "store_dir": None if _under(paths["store_dir"], base) else paths["store_dir"]}
+
+
+def _drive_anchor(base: Path) -> tuple[Path, int, bool] | None:
+    """R809: a folder that stays on the data drive through the erase, with the drive's device id: the data folder's parent when it
+    is on the same drive (the erase removes the folder itself), else the folder (it is the drive's mount point, which stays). Taken
+    on the RESOLVED folder (os.path.realpath), so a data folder or a parent that is a link to the drive is followed to the drive and
+    never stands for the disk the link is on. The third item says the anchor is the folder itself."""
+    try:
+        real = Path(os.path.realpath(base))
+        dev = os.stat(real).st_dev
+    except (OSError, ValueError):
+        return None
+    try:
+        if os.stat(real.parent).st_dev == dev and real.parent != real:
+            return real.parent, dev, False
+    except OSError:
+        pass
+    return real, dev, True
+
+
+def _drive_lost(anchor: tuple[Path, int, bool] | None) -> bool:
+    """R809: the drive whose ``anchor`` was taken before the erase is gone, or another device is at its place, after it. An anchor
+    that is the data folder itself and is gone was removed by the erase (a removable mount, a subvolume): not a lost drive."""
+    if anchor is None:
+        return False
+    try:
+        return os.lstat(anchor[0]).st_dev != anchor[1]
+    except FileNotFoundError:
+        return not anchor[2]
+    except OSError:
+        return True
+
+
+def _under(p: Path | None, base: Path) -> bool:
+    """``p`` is the data folder or inside it, by its spelling or by its resolved path (os.path.realpath, which reads only the links
+    that are there and never makes anything): a store reached through a link into the drive, or a data folder that is a link, is
+    inside it either way."""
+    if p is None:
+        return False
+    pairs = [(os.path.abspath(p), os.path.abspath(base))]
+    with contextlib.suppress(OSError, ValueError):
+        pairs.append((os.path.realpath(p), os.path.realpath(base)))
+        pairs.append((os.path.realpath(p), os.path.abspath(base)))
+        pairs.append((os.path.abspath(p), os.path.realpath(base)))
+    for a, b in pairs:
+        if a == b or a.startswith(b.rstrip(os.sep) + os.sep):
+            return True
+    return False
+
+
+def _app_keys_left(keys_dir: Path) -> list[str]:
+    """The app's own key files and private copies still in ``keys`` after step 2 (as ``keys/<the app's own name>``: never a name
+    of the operator's), and ``keys/.pending`` itself when it is a link or a junction, which is never entered."""
+    from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING, KEYS_PENDING_RE
+
+    if _kind(keys_dir) != "dir":
+        return []
+    left = [f"keys/{n}" for n in sorted(APP_KEY_NAMES) if _kind(keys_dir / n) == "file"]
+    pending = keys_dir / KEYS_PENDING
+    kind = _kind(pending)
+    if kind == "link":
+        left.append(f"keys/{KEYS_PENDING}")
+    elif kind == "dir":
+        left += [f"keys/{KEYS_PENDING}/{e.name}" for e in _listing(pending)
+                 if re.fullmatch(KEYS_PENDING_RE, e.name) and _kind(Path(e.path)) == "file"]
+    return left
+
+
+def _kept_in_keys(keys_dir: Path) -> int:
+    """How many entries a foreign ``keys`` folder still holds that the app did not write (1 for a ``keys`` that is a link or not a
+    folder: that entry itself). A count only: names are never read out (R806 (4)). One that cannot be listed counts 0: what it
+    holds is not known, and the erase says "could not check" for it (R798), never "holds items the app did not create"."""
+    from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING, KEYS_PENDING_RE
+
+    kind = _kind(keys_dir)
+    if kind == "absent":
+        return 0
+    if kind != "dir":
+        return 1
+    try:
+        entries = list(os.scandir(keys_dir))
+    except OSError:
+        return 0  # could not be listed (R798): said as "could not check" (unlisted_folders), never as a count
+    n = 0
+    for e in entries:
+        if e.name == KEYS_PENDING:
+            if _kind(Path(e.path)) != "dir":
+                n += 1
+            else:
+                n += sum(1 for f in _listing(Path(e.path)) if not (re.fullmatch(KEYS_PENDING_RE, f.name) and _kind(Path(f.path)) == "file"))
+        elif e.name not in APP_KEY_NAMES or _kind(Path(e.path)) != "file":
+            n += 1
+    return n
 
 
 def _shred(path: Path, *, head_bytes: int | None = None, zeros: bool = False, unreached=None) -> tuple[bool, bool, bool]:
@@ -671,8 +1400,7 @@ def _resolve(data_dir: Path | None) -> dict:
     """Resolve every wipe target. For the default store (``data_dir is None``) the
     real resolvers are used so nothing is hardcoded; an explicit dir (tests/tools)
     derives the same layout from that base."""
-    from src.paths import DataFolderErased, data_dir_path
-    from src.paths import data_dir as _default_dir
+    from src.paths import data_dir_path
 
     if data_dir is not None:
         base = Path(data_dir)
@@ -687,27 +1415,18 @@ def _resolve(data_dir: Path | None) -> dict:
         }
     from src.api.unlock import main_db_path
 
-    try:
-        base = _default_dir()
-        latched = False
-    except DataFolderErased:
-        # R802: a second erase in this process, of a folder the first one latched: never made again to be erased again. The
-        # same overrides as the first erase (DATABASE_URL, OO_COLUMNAR_DIR) are kept, and the keys folder is named, never made.
-        base = data_dir_path()
-        latched = True
-    if latched:
-        override = os.getenv("OO_COLUMNAR_DIR")
-        store_dir = Path(override) if override else base
-        keys_dir = base / "keys"
-    else:
-        from src.analytics.columnar import _store_dir
-        from src.custody.signing import _keys_dir
-
-        store_dir = _store_dir()
-        keys_dir = _keys_dir()
+    # R806 (1): the erase never makes anything in the folder it erases, so every target is NAMED here, never made: the data folder
+    # where src.paths.data_dir would answer (data_dir_path: no mkdir, the same precedence), the keys folder inside it (src.custody.
+    # signing._keys_dir makes it; a missing one is nothing to erase) and the columnar store where src.analytics.columnar._store_dir
+    # puts it (its OO_COLUMNAR_DIR override, else the data folder). A second erase in this process, of a folder the first one
+    # latched (R802), resolves the same way.
+    base = data_dir_path()
+    override = os.getenv("OO_COLUMNAR_DIR")
+    store_dir = Path(override) if override else base
+    keys_dir = base / "keys"
     return {
         "base": base,
-        "main_db": main_db_path(),  # honors DATABASE_URL; None on a non-SQLite backend
+        "main_db": main_db_path(without_the_database_module=True),  # honors DATABASE_URL; None on a non-SQLite backend (row 388)
         "keys_dir": keys_dir,
         "store_dir": store_dir,
         "custody_db": base / _CUSTODY_DB,
@@ -821,6 +1540,8 @@ def _files_under(roots: list[Path], base: Path, onerror, skip: Path | None = Non
         for top, dirs, names in os.walk(root, onerror=onerror):
             dirs[:] = [d for d in dirs if Path(top, d) != skip and _kind(Path(top, d), unreached) == "dir"]
             for name in names:
+                if skip is not None and Path(top, name) == skip:
+                    continue  # R806: a foreign keys entry that is a link to a file, or a file, is left too
                 yield Path(top, name)
 
 
@@ -851,7 +1572,7 @@ def _left_entries(base: Path) -> dict[str, list[str]]:
 
 def quick_crypto_erase(
     confirm: bool = False, *, data_dir: Path | None = None, hold_for_rescrub: bool = False, hold_generation: int = 0,
-    settle: bool = True,
+    settle: bool = True, off_drive_only: bool = False,
 ) -> dict:
     """Instant crypto-erase then remove the data dir. Requires ``confirm=True``.
 
@@ -882,19 +1603,27 @@ def quick_crypto_erase(
     generation = new_hold_generation() if own else hold_generation
     missed: list[str] = []
     root_token = _ERASE_ROOT.set(None)  # the erase sets its data folder; put back as it was when it ends
+    drive_fds: list[int] = []
     from src.paths import erase_owned
 
     try:
         # R802: the erase latches its folder before it touches a byte; its own overwrites, on this thread, are the writes let through.
         with erase_owned():
-            report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed, close_own_pool=own)
+            report = _quick_crypto_erase(data_dir=data_dir, generation=generation, missed=missed, close_own_pool=own,
+                                         drive_fds=drive_fds, off_drive_only=off_drive_only)
             report["files_not_kept"] = len(missed)  # a count: the names are never reported
+            if own:
+                # R818 (b): the pool was closed before the erase (close_own_pool); its count says whether it really was.
+                finish_plaintext_rewrite(report, generation, report.get("own_connections_open", 0))
             if settle or own:
                 finish_holder_check(report, generation)
         if settle or own:
             settle_removed(report)  # R802 (5): after the last log line of this erase
         return report
     finally:
+        for fd in drive_fds:  # R812 (c): this erase's own descriptors, never another's; the drive is never held past the erase
+            with contextlib.suppress(OSError):
+                os.close(fd)
         _ERASE_ROOT.reset(root_token)
         if own:
             rescrub_held(close=True, generation=generation, settle=False)
@@ -907,7 +1636,7 @@ def finish_holder_check(report: dict, generation: int) -> str:
     try:
         shut_out_held(generation)
         state = settle_other_holders(generation)
-    except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
+    except (Exception, KeyboardInterrupt):  # noqa: BLE001 - an erase result is never lost to its own bookkeeping, nor to a Ctrl-C
         state = HOLDER_UNKNOWN
     if report.get("files_not_kept") and state == HOLDER_NONE:
         state = HOLDER_UNKNOWN  # a file of the store that could not be kept could not be asked either
@@ -919,8 +1648,15 @@ def finish_holder_check(report: dict, generation: int) -> str:
     elif own_open:
         state = HOLDER_HELD
     report["other_holder"] = state
+    if state != HOLDER_NONE and report.get("drive_absent"):
+        return state  # R809: the drive's own sentence stands alone; the store this would speak of is on the drive, untouched
     if state != HOLDER_NONE:
-        report["limit"] = _LIMIT_NOTE_NOT_CLEAN + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
+        report["limit"] = (
+            (_drive_failure_sentence(report) + " " if report.get("drive_lost") else "")  # R809: said first, whatever else is said
+            + (_LIMIT_NOTE_NOT_CLEAN if report.get("encrypted_corpus") is True
+               else _NOT_CLEAN_PLAIN_SENTENCE + " " + _clean_note(report.get("encrypted_corpus")))
+            + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
+        )
         _LOG.warning("CRYPTO-ERASE: %s", "another program had the database open during the erase; the erase may be "
                      "incomplete" if state == HOLDER_HELD else "could not check whether another program had the database open")
     return state
@@ -944,16 +1680,57 @@ def _close_own_pool() -> int | None:
         return None
 
 
-def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[str], close_own_pool: bool = False) -> dict:
+def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[str], close_own_pool: bool = False,
+                        drive_fds: list[int] | None = None, off_drive_only: bool = False) -> dict:
     """The erase itself (see :func:`quick_crypto_erase`); keeps its descriptors under ``generation`` and names in ``missed``
     each file of a store that existed but could not be kept."""
 
     from src.database.connect import is_encrypted_file
 
+    global _LAST_ERASE_ENCRYPTED
+    _LAST_ERASE_ENCRYPTED = None  # an erase that raises leaves no earlier erase's answer behind (the scrub then fails closed)
+
     paths = _resolve(data_dir)
     base: Path = paths["base"]
+    # R809: a marked data drive that is not there (or a different drive at its path) is never touched: nothing under the data folder
+    # is read, erased, scoped or removed. What the overrides keep elsewhere (DATABASE_URL, OO_COLUMNAR_DIR) and the passphrase held
+    # in memory are still erased, and counted apart. A drive that IS there has its device read now and again at the end (R809).
+    drive = _drive_state(base) if data_dir is None else "unwatched"
+    # Row 388: the panic CLI asked for what is OUTSIDE a drive it found not there; a drive there again by now (plugged in while
+    # the question waited) is left whole, exactly as if it were still away: the operator never agreed to erase it.
+    drive_returned = off_drive_only and drive not in ("absent", "unidentified")
+    if drive_returned:
+        drive = "absent"
+    drive_absent = drive in ("absent", "unidentified")
+    drive_unidentified = drive == "unidentified"
+    anchor = _drive_anchor(base) if drive == "ok" else None
+    # R812 (c): the drive's identity, held from here (a descriptor on POSIX), and its id, read before the erase forgets it.
+    # THE WINDOW THAT REMAINS: the identity is re-checked before each step that writes on the drive (1, keys, cache, anchors, copies,
+    # the walks, the removal), never per file: the walks go by path (_files_under / _listing: os.scandir on a path), so a drive
+    # swapped between a re-check and the writes after it (in the long rewrite of step 6, minutes) is reached by its path. Row 387
+    # makes the POSIX walk handle-relative; Windows keeps the stat re-checks.
+    hold = _drive_hold(base, drive_fds if drive_fds is not None else []) if drive == "ok" else None
+    want_id: str | None = None
+    if drive == "ok":
+        with contextlib.suppress(Exception):
+            from src.safety.data_volume import expected_id
+
+            want_id = expected_id()
+    drive_stopped = False  # R812 (c): the drive changed after the erase wrote on it: nothing more is touched there
+    drive_forgotten = False  # R812 (b): the erase made the app forget the drive's id (never restored)
+    pinned = 0  # R812: connections on the drive kept open (never closed) for the rest of the process; -1: could not tell
+    if drive_absent:
+        pinned = _pin_drive(base)  # before the first close point below (_close_own_pool, the serves, the lane pools)
+        paths = _off_drive_paths(paths, base)
+        _LOG.error("CRYPTO-ERASE: the data drive was not present or could not be identified; nothing on it was checked or "
+                   "erased, and its data still exists")
     _latch(base)  # R802: before a byte is touched; for the rest of the process
     _latch_outside(paths, base)  # a store the overrides put outside the folder is latched too (its exact files only)
+    if drive == "ok" and close_own_pool and not drive_absent and not _drive_same(hold, want_id, marker=True):
+        # R812 (c): changed before this process's own pool is closed (a close deletes <db>-wal/-shm BY PATH): the (a) case.
+        drive_absent = drive_unidentified = True
+        pinned = _pin_drive(base)
+        paths = _off_drive_paths(paths, base)
     own_open = _close_own_pool() if close_own_pool else 0  # R805 (a): after the latch, so no new connection opens on the store
     _ERASE_ROOT.set(base)  # every log line of this erase is masked against its own data folder, never src.paths.data_dir
     # R711. Is the data folder the app's own? One the app did not choose that also holds other files (the operator's home folder, a
@@ -965,11 +1742,24 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     try:
         from src.safety.data_scope import folder_scope
 
-        scope = folder_scope(base)
+        scope = {"broad": False, "reason": "drive_absent"} if drive_absent else folder_scope(base)
     except Exception as exc:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
         log_failure(_LOG, "could not read the data folder's scope; erasing the app's own files only", exc, level=logging.WARNING)
         scope = {"broad": True, "reason": "unknown"}
     app_only = bool(scope["broad"])
+    # R806 (2): in a folder of the app's own, ``keys`` is the app's by its CONTENT, never by its name: a real folder holding only the
+    # names the app writes there (data_scope.keys_folder_state). One that holds anything else, or is a link, is "foreign": only the
+    # app's key files in it go, the rest is left, and so is the data folder. One that cannot be listed is "could not check" (R798) and
+    # is left the same way. (In a folder the app does not own, keys is a common name and already handled that way.) Read-only.
+    keys_state = "absent"
+    if not app_only and not drive_absent:
+        try:
+            from src.safety.data_scope import keys_folder_state
+
+            keys_state = keys_folder_state(paths["keys_dir"])
+        except Exception:  # noqa: BLE001 - not knowing is "could not check", never "the app's"
+            keys_state = "unlisted"
+    keys_foreign = keys_state in ("foreign", "unlisted")
     seen = wiped = 0
     headers: list[str] = []
     keys_destroyed: list[str] = []
@@ -995,12 +1785,31 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         overwrite_failures.append(str(p))
         unlisted_folders.append(str(p.parent))
 
+    def _off_drive(*, marker: bool = False) -> bool:
+        """R812 (c): True when nothing more may be written on the drive: it was never reached, or it changed (or its identity could
+        not be read) at this re-check or an earlier one, after the erase had written on it."""
+        nonlocal drive_stopped, pinned
+        if drive_absent or drive_stopped:
+            return True
+        if drive == "ok" and not _drive_same(hold, want_id, marker=marker):
+            drive_stopped = True
+            pinned = _pin_drive(base)  # before the lane pools and the panic's own pool close after the erase
+            _LOG.error("CRYPTO-ERASE: the data drive changed during the erase; nothing more on it was erased")
+        return drive_stopped
+
     def _track(p: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
         s, overwritten, w = _shred(p, head_bytes=head_bytes, unreached=_unreached)
         if s and not overwritten:
             overwrite_failures.append(str(p))
         return s, overwritten, w
 
+    # R812 (c): the first write on the drive, and the serves' close, are next. Changed (or unreadable) since the probe: nothing on it is touched, the (a) case.
+    if drive == "ok" and not _drive_same(hold, want_id, marker=True):
+        drive_absent = drive_unidentified = True
+        pinned = _pin_drive(base)
+        paths = _off_drive_paths(paths, base)
+        scope, app_only, keys_state, keys_foreign = {"broad": False, "reason": "drive_absent"}, False, "absent", False
+        _LOG.error("CRYPTO-ERASE: the data drive changed before the erase wrote on it; nothing on it was erased")
     # The columnar serves are the same kind of thing: a PERSISTED one keeps the cache's derived key inside DuckDB for the life of
     # the process and goes on answering from a file step 3 is about to overwrite. Closed here, before a byte is touched and
     # without waiting (an erase is not held up behind a refresh): a serve in use is named and closed as soon as it is free.
@@ -1018,7 +1827,6 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # optional full pass matters more; surfaced so the UI can recommend it).
     main_db: Path | None = paths["main_db"]
     encrypted = is_encrypted_file(main_db) if main_db is not None else None
-
     # 1) Destroy the salt/header page of each encrypted DB, then its sidecars. Head-only
     #    on the main file = instant even for a 100 GB corpus; the salt is what matters.
     # The lane files join this loop rather than falling through to step 6: each is an
@@ -1041,17 +1849,29 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # A database reached through a link (a corpus kept on another drive and linked into place) is erased where it really
     # is: these are the app's own files, the one place a link is followed. Every other file is never written through one.
     dbs = [_real(db) for db in (main_db, paths["custody_db"], *paths.get("lane_dbs", ())) if db is not None]
+    if drive_absent:
+        dbs = [db for db in dbs if not _under(db, base)]  # R809: a store reached through a link into the absent drive is not touched
+    # R815 / R817: a main database KNOWN to be plaintext, in the data folder or outside it, has no salt to lose: it leaves the
+    # passes below. Its identity is read now, before anything of it is opened (R802/R805); in pass 3's place each of its files is
+    # opened no-follow, kept and unlinked (:func:`_open_and_unlink_plain`), and its contents are rewritten in full through the kept
+    # handles at the very end of the erase, after every key, salt page and unlink (:func:`_rewrite_plain`).
+    plain_main = _real(main_db) if encrypted is False and main_db is not None and _real(main_db) in dbs else None
+    plain_pin = _pin_file(plain_main) if plain_main is not None else None
+    plain_parts = {plain_main.with_name(plain_main.name + suffix) for suffix in _STORE_PARTS} if plain_main is not None else set()
+    plain_rec: dict | None = None
     head_ok: dict[Path, bool] = {}
     # The -shm head is written with ZEROS, never random bytes: it holds no page data, and a connection that rolls back
     # after the erase reads its frame count from that header and grows the mapped file toward it -- a random count grew
     # it toward 32 GiB in the security read; a zeroed header reads as "rebuild from the log", which is already noise.
     for db in dbs:
         for p in (db.with_name(db.name + "-shm"), db):
-            if _present(p, _unreached):
+            if p not in plain_parts and _present(p, _unreached):
                 head_ok[p] = _overwrite(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
     for db in dbs:
         for suffix in ("-wal", "-journal"):
             p = db.with_name(db.name + suffix)
+            if p in plain_parts:
+                continue
             if _hold(p, whole=True, generation=generation) is False:
                 missed.append(p.name)
             s, overwritten, w = _shred(p, unreached=_unreached)
@@ -1059,8 +1879,25 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             wiped += w
             if s and not overwritten:
                 overwrite_failures.append(str(p))
+    if plain_main is not None and plain_pin is not None and not (_under(plain_main, base) and _off_drive()):  # R812: else untouched
+        plain_rec = _open_and_unlink_plain(plain_main, plain_pin, generation, missed)
+        if not plain_rec["touched"]:
+            # Not this store's file at that place: its own sidecars still get step 1's old treatment (a log whole, a log index's
+            # head zeroed), counted as before, and the file at the path is never written.
+            for suffix in ("-shm", "-wal", "-journal"):
+                p = plain_main.with_name(plain_main.name + suffix)
+                s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1 if suffix == "-shm" else None, zeros=suffix == "-shm",
+                                           unreached=_unreached)
+                seen += s
+                wiped += w
+                if s and not overwritten:
+                    overwrite_failures.append(str(p))
+            if _under(plain_main, base):
+                plain_rec = None  # in the data folder, whatever is at the path is erased by step 6 like any other file
     for db in dbs:
         for p in (db, db.with_name(db.name + "-shm")):
+            if p in plain_parts:
+                continue
             if _hold(p, whole=False, generation=generation, kind="head" if p == db else "shm") is False:
                 missed.append(p.name)
             s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db, unreached=_unreached)
@@ -1084,6 +1921,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     try:
         from src.versioned.store import dispose_all as _dispose_lanes
 
+        _off_drive()  # R812: changed since the last re-check: its lane connections are pinned first, never closed by this dispose
         _dispose_lanes()
     except Exception as exc:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
         log_failure(_LOG, "could not dispose the lane engines after their salt pages", exc, level=logging.WARNING)
@@ -1095,8 +1933,19 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # put the destroyed key back under its name after this step. Held for the keys folder only, never for the
     # rest of step 6, which rewrites everything left (a wiki dump can take hours) while a signing request waits.
     keys_dir: Path = paths["keys_dir"]
+    # R806 (5) never follows a ``keys`` that is a link; the app's own signers write THROUGH one (signing.py makes its folder with
+    # exist_ok), so the app's keys may be where it points and are not destroyed here: said, and the result is never clean.
+    keys_off = _off_drive(marker=True)  # R812 (c): before the key material, with the marker read once more
+    keys_link = not keys_off and _kind(keys_dir) == "link"
+    if keys_state == "unlisted":
+        _unlisted(OSError(errno.EACCES, "could not list the keys folder", str(keys_dir)))
     with _key_files_lock():
-        _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, shared=app_only, unreached=_unreached)
+        if keys_off:
+            _s = _w = 0  # R809 / R812: the keys folder is on the drive that is not there, or that changed
+        elif keys_foreign or app_only:  # R807 (3): in shared scope the app's key files are matched by exact name, never by suffix
+            _s, _w = _destroy_app_keys_in_foreign(keys_dir, _track, keys_destroyed, _unlisted, _unreached)
+        else:
+            _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, unreached=_unreached)
     seen += _s
     wiped += _w
 
@@ -1104,9 +1953,11 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    salt in that sidecar, so with the sidecar destroyed the key is underivable even from the right passphrase;
     #    the cache is a derived copy, so this is defence-in-depth beside step 1 and the passphrase clearing in
     #    step 5 + the free-space scrub).
-    store_dir: Path = paths["store_dir"]
-    for name in _DUCK_FILES:
-        _s, _overwritten, _w = _track(store_dir / name, head_bytes=_SQLCIPHER_PAGE1)
+    store_dir: Path | None = paths["store_dir"]  # None: on a data drive that is not there (R809)
+    if store_dir is not None and _under(store_dir, base) and _off_drive():
+        store_dir = None  # R812 (c)
+    for duck in [store_dir / name for name in _DUCK_FILES] if store_dir is not None else []:
+        _s, _overwritten, _w = _track(duck, head_bytes=_SQLCIPHER_PAGE1)
         seen += _s
         wiped += _w
 
@@ -1114,7 +1965,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    L1, 2026-07-17 -- it used to be always-plaintext regardless of the corpus).
     #    A full overwrite destroys it either way (it is small, so this is cheap
     #    even though a head-only pass would already crypto-erase it if encrypted).
-    anchors_seen, _anchors_overwritten, anchors_wiped = _track(paths["anchors_db"])
+    anchors_db = paths["anchors_db"] if paths["anchors_db"] is not None and not (_under(paths["anchors_db"], base) and _off_drive()) else None
+    anchors_seen, _anchors_overwritten, anchors_wiped = _track(anchors_db) if anchors_db is not None else (False, False, False)
     seen += anchors_seen
     wiped += anchors_wiped
 
@@ -1142,6 +1994,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         try:
             from src.scheduler.release import close_serves_for_cleared_key
 
+            _off_drive()  # R812: a serve on a changed drive is pinned first, never closed
             close_serves_for_cleared_key()
         except Exception as exc:  # noqa: BLE001 - an erase must never be blocked by bookkeeping
             log_failure(_LOG, "could not close the columnar serves after the key was cleared", exc, level=logging.WARNING)
@@ -1154,7 +2007,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    copy of a plaintext store) has no salt to lose: it is rewritten whole, after 5b, wherever it is.
     copies_destroyed: list[str] = []
     plain_copies: list[Path] = []
-    for folder in dict.fromkeys([base, *(db.parent for db in dbs)]):
+    copies_off = _off_drive()
+    for folder in dict.fromkeys([*([] if copies_off else [base]), *(db.parent for db in dbs if not (copies_off and _under(db, base)))]):
         for p in _db_copies(folder, base, dbs, _unlisted):
             mode = _copy_mode(p, encrypted_store=encrypted is True)
             if mode == "plain":
@@ -1181,10 +2035,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    sits past its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a
     #    failure. In a folder the app does not own, only the app's entries are reached.
     heads_elsewhere = 0
-    roots = _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)
+    # The marker is read once more here: 5b overwrites every file's head, the marker's too, so later re-checks compare the folder's
+    # device, inode and file-system id only.
+    roots = [] if _off_drive(marker=True) else _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)
     for p in _files_under(roots, base, _unlisted, skip=paths["keys_dir"], unreached=_unreached):
         if _kind(p, _unreached) != "file":
             continue
+        if _left_by_erase(plain_rec, p):
+            continue  # a file of the plaintext store the erase left (refused to write, or its unlink failed): step 6 only removes it
         name = p.name
         whole = name.endswith(("-wal", "-journal"))
         if _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=name.endswith("-shm")):
@@ -1193,7 +2051,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             overwrite_failures.append(str(p))
 
     # The plaintext copies found in 5a, rewritten whole and unlinked: in the data folder or beside a database kept elsewhere.
-    for p in plain_copies:
+    for p in [c for c in plain_copies if not (_under(c, base) and _off_drive())]:  # R812 (c)
         s, overwritten, w = _track(p)
         seen += s
         wiped += w
@@ -1214,10 +2072,12 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         from src.safety.data_volume import configured_folder, forget_volume_id
 
         chosen = configured_folder()
-        if chosen is not None and chosen.resolve() == base.resolve():
-            forget_volume_id()
-    roots = _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)  # listed again: a file the app wrote since 5b is the app's too
-    for p in _files_under(roots, base, _unlisted, unreached=_unreached):  # never follows a symlinked folder or a junction
+        if not _off_drive() and chosen is not None and chosen.resolve() == base.resolve():
+            forget_volume_id()  # R809: a drive that was not there keeps its id: its data still exists
+            drive_forgotten = drive == "ok"  # R812 (b): never restored; said if the drive is then lost
+    roots = [] if _off_drive() else _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)  # listed again: a file the app wrote since 5b is the app's too
+    # R806: a foreign keys folder is left out of the walk (its app key files went in step 2), never followed when it is a link.
+    for p in _files_under(roots, base, _unlisted, skip=keys_dir if keys_foreign else None, unreached=_unreached):  # never follows a symlinked folder or a junction
         kind = _kind(p, _unreached)
         if kind in ("absent", "unreached"):
             continue  # gone already, or named as not overwritten (R798)
@@ -1236,19 +2096,62 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             with contextlib.suppress(OSError):
                 p.unlink()
             continue
+        if _left_by_erase(plain_rec, p):
+            # R815 (2): a file of the plaintext store the erase left at its name (its unlink failed, or the erase refused to write
+            # it: another file, another device, other names), known by its identity. Its own file is rewritten through the kept
+            # handle; this name is only removed, never written by path (a hard link here may lead to a file that is not the
+            # store's), never counted in "Wiped". Anything else at a store name (a new log written since) is erased as before.
+            with contextlib.suppress(OSError):
+                p.unlink()
+            continue
         _s, _overwritten, _w = _track(p)
+        if p in plain_parts and plain_rec is not None:
+            continue  # R815 (2): never counted in "Wiped"
         seen += _s
         wiped += _w
     left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}
     removed_at_rmtree = False
-    if app_only:
+    kept_items = 0
+    if _off_drive():
+        pass  # R809 / R812: nothing on the absent drive is removed, nor on one that changed during the erase
+    elif app_only:
         _remove_app_folders(roots)
         left = _left_entries(base)
+        kept_items = len(left["others"])
+    elif keys_foreign and _kind(keys_dir) != "absent":
+        # R806 (2): the data folder is kept because it holds items the app did not create (in keys); every other entry of it goes.
+        _remove_app_folders([Path(e.path) for e in _listing(base, _unlisted) if Path(e.path) != keys_dir])
+        kept_items = _kept_in_keys(keys_dir)
+        # Kept ON PURPOSE for keys only: anything else still there is a removal that failed, said as that (never hidden by "kept").
+        left["not_removed"] = sorted(e.name for e in _listing(base) if Path(e.path) != keys_dir)
     else:
         with contextlib.suppress(OSError):
             shutil.rmtree(base, ignore_errors=True)
         removed_at_rmtree = not _present(base)  # before any log line: one that makes it again then reads "came back", never "not removed"
+    # Kept ON PURPOSE: in shared scope for the entries that are not the app's (R711), else for a keys folder that is not (R806).
+    # R809: the drive went away while this erase ran: partially erased, the rest could not be checked (R797 / R798), never "removed".
+    # A drive reclassified as not identified before the first write was never written on: that alone is said, never "lost" too.
+    drive_lost = not drive_absent and (drive_stopped or _drive_lost(anchor))
+    if drive_lost and not drive_stopped:
+        pinned = _pin_drive(base)  # before the panic disposes its pool after the erase (src/safety/panic.py _dispose_after_erase)
+    if drive_lost:
+        # Its own sentence says what was left could not be checked (R798): never counted as a folder to make readable, which a
+        # drive that is not there cannot be.
+        _LOG.error("CRYPTO-ERASE: the data drive disconnected during the erase; it was only partially erased")
+    kept_foreign = not drive_absent and not drive_stopped and _present(base) and (bool(kept_items) if app_only else keys_foreign and _kind(keys_dir) != "absent")
+    # An app key or private copy still in a kept keys folder (its unlink failed), or a ``.pending`` that is a link the app's
+    # copies may have gone through: never hidden by "kept", said as such (R806 / R807; the delta security reads). A count in the
+    # report; the app's own names only in the log's count, never an operator's.
+    keys_left = _app_keys_left(keys_dir) if (kept_foreign or app_only) and not drive_absent and not drive_stopped else []
 
+    # R817 (2) / R818 (b): the plaintext store's body is rewritten through its kept handles only after the app's own pool on it is
+    # closed (:func:`finish_plaintext_rewrite`, called by the panic after its pool closes, and by :func:`quick_crypto_erase`); on
+    # its drive only while that drive is the one the erase began on (R812). Never counted in files_wiped/files_seen (R815 (2)).
+    plaintext_store = None
+    if plain_rec is not None:
+        plaintext_store = _plain_public(plain_rec)
+        _PLAIN_PENDING[generation] = (plain_rec, not (_under(plain_main, base) and (drive_absent or drive_stopped or drive_lost)),
+                                      sorted(str(p) for p in plain_parts))
     overwrite_failures[:] = list(dict.fromkeys(overwrite_failures))  # a file failing in two steps is named once
     unlisted_folders[:] = list(dict.fromkeys(unlisted_folders))  # 5b and 6 walk the same folders
     # The log names no path whole (R734/R736): each is written as its role, and one that cannot be read as such is withheld.
@@ -1258,12 +2161,19 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             len(unlisted_folders),
             _masked(unlisted_folders, base),
         )
+    if keys_left:
+        _LOG.error("CRYPTO-ERASE: %d of the app's own key files could not be removed from the keys folder; the erase may be incomplete",
+                   len(keys_left))
+    if keys_link:
+        _LOG.error("CRYPTO-ERASE: the keys folder is a link, which the erase never follows: the app's key files may be where it points "
+                   "and were not destroyed; the erase may be incomplete")
     if overwrite_failures:
         _LOG.error(
             "CRYPTO-ERASE: %d file(s) could NOT be overwritten (only unlinked, if that): %s",
             len(overwrite_failures),
             _masked(overwrite_failures, base),
         )
+    _LAST_ERASE_ENCRYPTED = encrypted
     _LOG.warning(
         "CRYPTO-ERASE executed on %s (encrypted=%s, %d/%d files, %d headers, %d keys, "
         "%d overwrite failures)",
@@ -1286,6 +2196,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "overwrite_failures": overwrite_failures,
         "passphrase_cleared": passphrase_cleared,
         "encrypted_corpus": encrypted,
+        # R815 / R817: the plaintext main database, in the data folder or outside it (None when there is none): never counted above.
+        "plaintext_store": plaintext_store,
         "copies_destroyed": copies_destroyed,
         # R711: "data-folder" removes the folder whole; "app-only" reached only the app's own entries in a folder it does not
         # own. Names only, never read: ``left_untouched`` the entries that are not the app's, ``left_common_names`` the app's
@@ -1295,13 +2207,42 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "left_untouched": left["others"],
         "left_common_names": left["common"],
         "not_removed": left["not_removed"],
-        "removed": not _present(base),
+        "removed": not drive_absent and not drive_lost and not _present(base),
+        # R809: the marked drive was not there (nothing on it touched; the counts above are what was erased elsewhere), or it went
+        # away during the erase. Either is a failure state: never "removed", never clean.
+        "drive_absent": drive_absent,
+        "drive_returned": drive_returned,  # row 388: the drive is there now and was left whole (off_drive_only)
+        "drive_unidentified": drive_absent and drive_unidentified,  # R812 (a)
+        "drive_lost": drive_lost,
+        "drive_forgotten": drive_lost and drive_forgotten,  # R812 (b)
+        # R812 (decision 1): connections on the drive kept open until the app closes (-1: could not tell), and so its key in memory.
+        "drive_connections_kept": pinned if (drive_absent or drive_lost) else 0,
+        "drive_key_in_memory": (drive_absent or drive_lost) and pinned != 0,
         "removed_at_rmtree": removed_at_rmtree,
+        # R806 (4): the folder was kept ON PURPOSE because it holds items the app did not create (a count, never their names), so
+        # the report says "folder kept because it holds items the app did not create", never "could not be removed" or "destroyed".
+        "keys_folder": keys_state,
+        "folder_kept_foreign": kept_foreign,
+        "kept_items": kept_items,
+        "keys_link": keys_link,
+        "keys_left": len(keys_left),
+        # Plan on the keys_left string: which of the APP's files were left, by the app's own exact names (relative to keys), so a
+        # shared keys folder never leaves the operator guessing; never any other entry of it.
+        "keys_left_names": [n.removeprefix("keys/") for n in keys_left],
         # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
         "unlisted_folders": len(unlisted_folders),
         # R805 (a): this process's own connections on the store still open when the erase ran (None: could not tell).
         "own_connections_open": own_open,
-        "limit": _LIMIT_NOTE_UNLISTED if unlisted_folders else _LIMIT_NOTE,
+        # R809: no reassurance at all for a drive that was not there (its keys are on it: nothing erased here makes it unreadable),
+        # and none for one that went away during the erase.
+        "limit": _drive_failure_sentence({"drive_absent": drive_absent, "drive_unidentified": drive_unidentified,
+                                          "drive_key_in_memory": pinned != 0}) if drive_absent
+        else _drive_failure_sentence({"drive_lost": True, "drive_forgotten": drive_forgotten, "drive_key_in_memory": pinned != 0})
+        + _DEFENCE_TAIL if drive_lost
+        else (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
+        + (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
+        + (_LIMIT_NOTE_UNLISTED + ("" if encrypted is True else " " + _plain_sentence(encrypted)) if unlisted_folders
+           else _clean_note(encrypted)),
     }
 
 
@@ -1379,7 +2320,7 @@ def _sweep_crash_left_scrubs(where: Path) -> None:
 
 
 #: Why the free space was not overwritten (R805 (c)1/2; R798 style: "could not", never a success). The UI words each ×12.
-SCRUB_NOT_DONE = ("other_drive", "drive_unread", "no_folder", "nothing_written")
+SCRUB_NOT_DONE = ("other_drive", "drive_unread", "no_folder", "nothing_written", "drive_absent")
 
 
 def full_secure_erase(
@@ -1412,13 +2353,17 @@ def full_secure_erase(
         # R802: the folder the panic erase latched is never made again, so it is named, not asked for.
         base = data_dir_path() if erased_folder_of(data_dir_path()) else data_dir()
     latched = erased_folder_of(base)
-    if not latched:
+    # R809: the marked data drive is not there, or another drive is at its place: nothing is written at its path (the fill files
+    # would land on whatever disk is there, never on the erased data), and nothing says the corpus is unrecoverable.
+    drive_now = _drive_state(base) if base_dir is None else "unwatched"
+    drive_absent = drive_now in ("absent", "unidentified")
+    if not latched and not drive_absent:
         base.mkdir(parents=True, exist_ok=True)
     where = base
     while not where.is_dir() and where.parent != where:
         where = where.parent
-    not_done: str | None = None
-    if latched:
+    not_done: str | None = "drive_absent" if drive_absent else None
+    if latched and not_done is None:
         dev = erased_device(base)
         try:
             here = os.stat(where).st_dev
@@ -1468,5 +2413,8 @@ def full_secure_erase(
         # The private folder when it could not be removed (shown as a plain path, to remove by hand); None when it was.
         "scrub_folder_left": str(scrub_dir) if (scrub_dir is not None and left_behind) else None,
         "reserve_bytes": _DISK_RESERVE,
-        "limit": _LIMIT_NOTE,
+        # Never the clean guarantee when nothing was overwritten (a drive that went away during the erase lands here as
+        # "other_drive" or "drive_absent"; its own result already says what happened to it): the plain limit of an overwrite only.
+        # R815 (3): the crypto-erase guarantee only when the erase before it found the main database encrypted.
+        "limit": _DEFENCE_TAIL.strip() if not_done else _clean_note(_LAST_ERASE_ENCRYPTED),
     }

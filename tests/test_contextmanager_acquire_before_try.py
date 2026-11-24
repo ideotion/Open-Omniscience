@@ -70,6 +70,11 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("database/session.py", "session_scope"): _SESSION,
     ("ingest/ssrf_guard.py", "connect_scope"): _THREAD_LOCAL + " (the scope stack is per thread)",
     ("monitoring/tasks.py", "track"): "a task row the snapshot ages out (its docstring); no lock or count outlives it",
+    ("reporting/evidence.py", "restored_marker_lock"): (
+        _THREAD_LOCAL + " (row 370): before the yield it only computes the keys folder and its realpath and makes sure this "
+        "thread's held-set exists; both locks are taken by with-blocks that give them back themselves, and the set entry is added "
+        "inside the file lock's with and removed in a finally"
+    ),
     ("testing/scale_bench.py", "sample_peak_rss"): "a bench helper; its sampler is a daemon thread",
     ("versioned/store.py", "lane_session"): _SESSION,
     ("wiki/service.py", "wiki_lane_session"): "create_lane is idempotent and takes nothing a gap could leave",

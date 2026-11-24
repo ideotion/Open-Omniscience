@@ -97,9 +97,10 @@ def test_the_show_more_row_always_carries_text():
 def test_ring_two_folds_below_full_but_never_hides_a_changed_value():
     settings = _read("app-settings.js")
     body = _fn(settings, "_cardFineTune")
-    assert 'const open = depth === "full" || changed > 0;' in body
+    # The default for the depth; a redraw for a language switch keeps the fold as the operator left it (row 367).
+    assert '(depth === "full" || changed > 0)' in body
     assert '<details class="card-finetune"' in body
-    assert "_cardTunableRow(p.name, tn)" in body, "the tunables are folded, never dropped"
+    assert "_cardTunableRow(p.name, tn, st)" in body, "the tunables are folded, never dropped"
     # Saving reads every tunable wherever it sits.
     assert 'document.querySelectorAll("#cards-host .card-tune")' in settings
 

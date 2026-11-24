@@ -113,7 +113,7 @@ def test_hardware_and_memory_sizes_go_through_the_one_writer():
     chips = function_body(js, "_hwChips")
     assert_absent(chips, '" GB"')
     assert chips.count("_sizeText(") == 2
-    models = function_body(js, "loadLlmModels")
+    models = function_body(js, "loadLlmModels") + function_body(js, "_llmModelsHtml")   # read, then drawn (row 367)
     assert_absent(models, "GB RAM detected`")
     assert_absent(models, '+ " GB"')
     assert_present(models, 'tf("{size} RAM detected"')

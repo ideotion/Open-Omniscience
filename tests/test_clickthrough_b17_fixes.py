@@ -238,7 +238,9 @@ def test_the_activity_chip_composes_the_count_and_is_repainted_on_a_switch():
 # --- T8: the AI store's sizes ------------------------------------------------------ #
 
 def test_the_ai_store_sizes_go_through_the_one_size_writer():
-    body = strip_comments(function_body(read_static("app-ai-tools.js"), "loadAiStore"))
+    ai = read_static("app-ai-tools.js")
+    # read in loadAiStore, drawn by _aiStoreHtml (row 367)
+    body = strip_comments(function_body(ai, "loadAiStore") + function_body(ai, "_aiStoreHtml"))
     assert "_fmtBytes(n)" in body
     assert "1e9" not in body and "GB)" not in body, "a hand-written GB came back"
 

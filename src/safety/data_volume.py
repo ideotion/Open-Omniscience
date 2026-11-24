@@ -546,6 +546,13 @@ class VolumeMonitor:
         self.detected_by = reason
         self._reconnect_recorded = self._restart_failure_logged = False   # a new disconnection owes its own "reconnected"
         self.phase, self.deadline = "reconnect", self._clock() + RECONNECT_SECONDS
+        try:
+            # Row 390: every connection on the drive is pinned now, before a disposal or a garbage collection can close one there.
+            from src.database.drive_pin import pin_if_gone
+
+            pin_if_gone()
+        except Exception:  # noqa: BLE001 - the countdown runs whatever this did
+            pass
         record_incident(
             "disconnected",
             path=str(configured_folder()),

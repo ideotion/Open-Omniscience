@@ -63,13 +63,25 @@ _UNLOCK_ONE_AT_A_TIME = threading.Lock()
 _REFUSED_ATTEMPTS = 0
 
 
-def main_db_path() -> Path | None:
-    """The live SQLite file, or None on non-SQLite backends (no at-rest layer)."""
-    from src.database.session import DATABASE_URL
+def main_db_path(*, without_the_database_module: bool = False) -> Path | None:
+    """The live SQLite file, or None on non-SQLite backends (no at-rest layer).
 
-    if not DATABASE_URL.startswith("sqlite"):
+    Row 388, ``without_the_database_module`` (the erase only, src/safety/crypto_erase.py ``_resolve``): when the database module
+    cannot be imported because the data folder cannot be used (its marked drive is not there, or an erase latched it:
+    ``DataVolumeMissing`` / ``DataFolderErased``), the path is the one it would have named, read the same way (``DATABASE_URL``,
+    else the default file in the data folder) WITHOUT making or checking the folder: the panic CLI erases what is off the drive
+    with no database module, and its erase leaves out every store on the drive. Every other caller still gets the error."""
+    from src.paths import DataFolderErased, DataVolumeMissing, data_dir_path
+
+    try:
+        from src.database.session import DATABASE_URL as url
+    except (DataVolumeMissing, DataFolderErased):
+        if not without_the_database_module:
+            raise
+        url = os.getenv("DATABASE_URL", f"sqlite:///{data_dir_path() / 'open_omniscience.db'}")
+    if not url.startswith("sqlite"):
         return None
-    return Path(DATABASE_URL.removeprefix("sqlite:///"))
+    return Path(url.removeprefix("sqlite:///"))
 
 
 def app_lock_state() -> str:
@@ -239,7 +251,12 @@ def doctor() -> dict:
         return line
 
     lanes = {spec.kind: _line(f"lane:{spec.kind}", data_dir() / spec.filename) for spec in all_lanes()}
+    from src.safety.crypto_erase import plaintext_body_rewrite_supported
+
     return {
+        # Row 392 (Plan on R818 (a)): whether an erase here rewrites a plaintext main database's body after deleting it (POSIX);
+        # the page says its "may take several minutes" notice only then.
+        "erase_rewrites_plaintext_body": plaintext_body_rewrite_supported(),
         "driver": have_driver(),
         # R742: the whole set at once. ``complete`` is never true while any store is plaintext, and the plaintext pre-encrypt
         # snapshots still on the disk are named, so "encrypted" is never read as "no plaintext anywhere".

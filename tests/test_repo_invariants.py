@@ -507,9 +507,11 @@ def test_render_p0_result_does_not_shadow_the_real_html_escaper():
     the function must rely on the real module-level esc() (top of file) instead of
     redeclaring/shadowing one."""
     appjs = app_js()
-    start = appjs.index("function renderP0Result(")
-    end = appjs.index("\n    }\n", start)
-    body = appjs[start:end]
+    # Row 361: renderP0Result draws through ooLiveHtml and the HTML is built by _p0ResultHtml, so both bodies are read.
+    body = ""
+    for fn in ("renderP0Result", "_p0ResultHtml"):
+        start = appjs.index(f"function {fn}(")
+        body += appjs[start : appjs.index("\n    }\n", start)]
     assert "typeof escapeHtml" not in body, "must not fall back to the non-existent global escapeHtml"
     assert "const esc" not in body, "must not shadow the real module-level esc()"
     # esc() is still used (the fix removes the shadow, not the escaping calls).
@@ -2110,7 +2112,8 @@ def test_no_print_in_library_code():
     """
     import ast
 
-    CLI_MODULES = {"src/diagnostics.py"}
+    # src/api/_panic_precheck.py: the panic CLI's R809 refusal, printed before the app opens anything (exit 2).
+    CLI_MODULES = {"src/diagnostics.py", "src/api/_panic_precheck.py"}
     CLI_FUNCTIONS = {
         "main",
         "_panic_cli",
@@ -6939,10 +6942,14 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     # control exists, wired to the real setting, and the operator can see how much work
     # is outstanding before switching it on.
     #
-    # `runLangDetect` / `_paintLangDetectButton` remain in app.js, unwired: they are the
-    # manual bounded-run path, and the poll they belong to is what keeps the count live.
-    # Recorded here so a future reader does not read their absence-from-the-DOM as a
-    # capability that was lost.
+    # `runLangDetect` / `_paintLangDetectButton` (the manual start/stop button's handler and
+    # painter) were REMOVED in row 367: the button left the page on 2026-08-04 and nothing
+    # called them. The checkbox below is the one control; `pollLangDetect` stays, because it
+    # keeps the count's status line live. Pinned ABSENT, so neither the dead handler nor a
+    # second button beside the checkbox comes back unnoticed.
+    assert "function runLangDetect(" not in ui and "function _paintLangDetectButton(" not in ui
+    assert "langdetect-btn" not in ui, "a second language-detection control beside the checkbox"
+    assert "function pollLangDetect(" in ui
     assert 'id="aic-m-langdetect"' in ui, "the opt-in control must exist somewhere"
     assert "ai_langdetect_auto" in ui, "and be wired to the real setting"
     assert "loadLangDetectCount" in ui, "the outstanding-work count is still surfaced"
@@ -6957,7 +6964,6 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     # transient LLMUnavailable mid-run retries with backoff instead of hard-aborting the run
     # into a benign-looking "done" (the maintainer's exact field report).
     assert 'id="langdetect-continuous"' not in ui, "the continuous checkbox must be removed"
-    assert "Language detection ongoing" in ui, "the button must toggle to a stop label while running"
     assert "_LANGDETECT_MAX_CONSECUTIVE_FAILURES" in api, "transient failures must retry, not hard-abort"
     assert "advance_langdetect_auto_start" in api, "an auto-start ride-along must exist (default ON)"
     assert "ai_langdetect_auto" in api, "the auto-start must be gated by an operator setting"
@@ -9836,7 +9842,8 @@ def test_the_ai_store_panel_leads_with_the_path_in_use():
     app's configured path and the app's configured size, so the numbers pointed away
     from the answer and the folder had to be found in a file manager."""
     app = app_js()
-    body = _js_function_body(app, "loadAiStore")
+    # The panel is drawn by _aiStoreHtml through ooLiveHtml (row 367).
+    body = _js_function_body(app, "loadAiStore") + _js_function_body(app, "_aiStoreHtml")
     assert "r.ollama.in_app_folder === false" in body, "the two cases must be told apart"
     assert "r.ollama.detected" in body and "r.ollama.detected_bytes" in body, (
         "the path IN USE, sized by what it actually holds"
