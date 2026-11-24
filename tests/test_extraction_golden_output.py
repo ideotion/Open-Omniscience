@@ -158,11 +158,13 @@ def test_a_changed_row_changes_the_digest(monkeypatch):
     assert go.digest_of(moved["www"]) != go.digest_of(base["www"])
     assert go.digest_of(moved["kw"]) == go.digest_of(base["kw"]), "a place change is not a keyword change"
 
+    if real_sent("The budget was a great success.", "en")[0] is None:
+        pytest.skip("no sentiment scorer in this install (VADER is in the [analysis] extra): the place half ran; the sentiment half "
+                    "needs real scores to shift, and the lockfile-install job runs it with VADER")
+
     def _sent(text, lang):
-        # The core-only install has no VADER, so the real scorer returns None there: the
-        # mock gives every article a score, so the changed row exists on every install.
         score, label = real_sent(text, lang)
-        return (0.25 if score is None else score + 0.5), (label or "positive")
+        return (None if score is None else score + 0.5), label
 
     monkeypatch.setattr(sentiment, "score_article", _sent)
     moved2 = go.run_pass(fx)
