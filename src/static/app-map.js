@@ -297,17 +297,23 @@
       // list's sideways scroll and two same-minute exports read identically.
       $("fp-path").innerHTML = `<bdi dir="ltr">${esc(d.path)}</bdi>`;
       const rows = [];
-      if (d.parent) rows.push(`<div class="fp-row" data-path="${esc(d.parent)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">⬆ ${esc(t("Parent folder"))}</div>`);
+      if (d.parent) rows.push(`<div class="fp-row" data-path="${esc(d.parent)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">⬆ <span data-fp-parent></span></div>`);
       for (const e of (d.entries || [])) rows.push(`<div class="fp-row" data-path="${esc(e.path)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line);overflow-wrap:anywhere">📁 <bdi dir="ltr">${esc(e.name)}</bdi></div>`);
-      if (!(d.entries || []).length) rows.push(`<div class="muted" style="padding:10px">${esc(t("No sub-folders here."))}</div>`);
+      if (!(d.entries || []).length) rows.push(`<div class="muted" style="padding:10px" data-fp-empty></div>`);
       $("fp-list").innerHTML = rows.join("");
+      // Row 372(b): the two chrome lines are drawn live, so a language switch redraws them (the rows keep their listeners).
+      const fpParent = $("fp-list").querySelector("[data-fp-parent]");
+      if (fpParent) ooLive(fpParent, () => t("Parent folder"));
+      const fpEmpty = $("fp-list").querySelector("[data-fp-empty]");
+      if (fpEmpty) ooLive(fpEmpty, () => t("No sub-folders here."));
       $("fp-list").querySelectorAll(".fp-row").forEach(el => el.addEventListener("click", () => _fpNav(el.dataset.path)));
       const useBtn = $("fp-use");
       const blocked = _fpState.requireWritable && d.writable === false;
       if (useBtn) useBtn.disabled = !!blocked;
-      $("fp-note").textContent = blocked
+      const truncated = !!d.truncated;
+      ooLive($("fp-note"), () => (blocked
         ? t("This folder is not writable — pick another for a backup destination.")
-        : (d.truncated ? t("Showing the first folders only.") : "");
+        : (truncated ? t("Showing the first folders only.") : "")));
     }
     function ooFolderPickerUse() {
       const inp = $(_fpState.inputId);
@@ -1919,38 +1925,43 @@
       if (d.layer === "streets" && d.status !== "no-lane" && d.status !== "not-indexed") {
         // The street view. Its vintage is what the roads are AS OF: the extract's date and the
         // last daily diff applied, per country in sight, never a claim that they are up to date.
-        const names = (ks) => {
-          const l = ks.map((k) => t((_OO_OSM_STREET_STYLE[(d.classes || []).indexOf(k)] || [k])[0]));
-          try { return new Intl.ListFormat((window.OOI18N && OOI18N.current && OOI18N.current()) || "en", { type: "conjunction" }).format(l); }
-          catch (e) { return l.join(", "); }
-        };
-        let sline;
-        if (d.status === "no-roads") sline = t("No roads ingested for this area.");
-        else if (d.status === "too-many") {
-          const fb = d.fallback || {};
-          sline = fb.status === "clusters" ? t("Too many roads for one view, even of the most important class: drawn as clusters.")
-            : _mapTf("OpenStreetMap, objects in view: {n}. Shapes drawn as points.", { n: fmtNum(fb.total || 0, 0) });
-        }
-        else {
-          sline = _mapTf("OpenStreetMap streets in view: {n}. Drawn: {d}.", { n: fmtNum(d.total, 0), d: fmtNum(d.drawn, 0) });
-          if (d.dropped && d.dropped.length) sline += " " + _mapTf("Left out to stay within the caps: {classes}.", { classes: names(d.dropped) });
-          // Counted and not drawn, so "Drawn" is what is on the canvas and the rest is accounted for.
-          if (d.subpixel) sline += " " + _mapTf("Too small to see at this zoom: {n}.", { n: fmtNum(d.subpixel, 0) });
-          if (d.no_shape) sline += " " + _mapTf("With no stored shape: {n}.", { n: fmtNum(d.no_shape, 0) });
-        }
-        const vint = _ooOsmLaneVintage(d);
-        el.textContent = sline + (vint ? " " + vint : "");
+        // Row 372(b): drawn live, so a language switch redraws the line from `d` (no request).
+        ooLive(el, () => {
+          const names = (ks) => {
+            const l = ks.map((k) => t((_OO_OSM_STREET_STYLE[(d.classes || []).indexOf(k)] || [k])[0]));
+            try { return new Intl.ListFormat((window.OOI18N && OOI18N.current && OOI18N.current()) || "en", { type: "conjunction" }).format(l); }
+            catch (e) { return l.join(", "); }
+          };
+          let sline;
+          if (d.status === "no-roads") sline = t("No roads ingested for this area.");
+          else if (d.status === "too-many") {
+            const fb = d.fallback || {};
+            sline = fb.status === "clusters" ? t("Too many roads for one view, even of the most important class: drawn as clusters.")
+              : _mapTf("OpenStreetMap, objects in view: {n}. Shapes drawn as points.", { n: fmtNum(fb.total || 0, 0) });
+          }
+          else {
+            sline = _mapTf("OpenStreetMap streets in view: {n}. Drawn: {d}.", { n: fmtNum(d.total, 0), d: fmtNum(d.drawn, 0) });
+            if (d.dropped && d.dropped.length) sline += " " + _mapTf("Left out to stay within the caps: {classes}.", { classes: names(d.dropped) });
+            // Counted and not drawn, so "Drawn" is what is on the canvas and the rest is accounted for.
+            if (d.subpixel) sline += " " + _mapTf("Too small to see at this zoom: {n}.", { n: fmtNum(d.subpixel, 0) });
+            if (d.no_shape) sline += " " + _mapTf("With no stored shape: {n}.", { n: fmtNum(d.no_shape, 0) });
+          }
+          const vint = _ooOsmLaneVintage(d);
+          return sline + (vint ? " " + vint : "");
+        });
         el.title = `${_mapTf(c.streets_method || "", { points: fmtNum(c.points_per_view, 0), vertices: fmtNum(c.vertices_per_view, 0) })} ${timing}`;
         return;
       }
-      let line;
-      if (d.status === "no-lane" || d.status === "not-indexed") line = t("OpenStreetMap: no country's map data is ready here yet.");
-      else if (d.status === "clusters") line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.", { n: fmtNum(d.total, 0), c: fmtNum(d.clusters.length, 0) });
-      else if (d.shapes === "points") line = _mapTf("OpenStreetMap, objects in view: {n}. Shapes drawn as points.", { n: fmtNum(d.total, 0) });
-      else line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn one by one.", { n: fmtNum(d.total, 0) });
-      // Every layer states its data's date (0.6 gate, row 259), not only the street view.
-      const vint = d.status === "no-lane" || d.status === "not-indexed" ? "" : _ooOsmLaneVintage(d);
-      el.textContent = line + (vint ? " " + vint : "");
+      ooLive(el, () => {
+        let line;
+        if (d.status === "no-lane" || d.status === "not-indexed") line = t("OpenStreetMap: no country's map data is ready here yet.");
+        else if (d.status === "clusters") line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn as clusters: {c}.", { n: fmtNum(d.total, 0), c: fmtNum(d.clusters.length, 0) });
+        else if (d.shapes === "points") line = _mapTf("OpenStreetMap, objects in view: {n}. Shapes drawn as points.", { n: fmtNum(d.total, 0) });
+        else line = _mapTf("OpenStreetMap, objects in view: {n}. Drawn one by one.", { n: fmtNum(d.total, 0) });
+        // Every layer states its data's date (0.6 gate, row 259), not only the street view.
+        const vint = d.status === "no-lane" || d.status === "not-indexed" ? "" : _ooOsmLaneVintage(d);
+        return line + (vint ? " " + vint : "");
+      });
       el.title = `${_mapTf(c.method || "", { points: fmtNum(c.points_per_view, 0), vertices: fmtNum(c.vertices_per_view, 0), grid: c.cluster_grid })} `
         + (d.status === "clusters" && c.cluster_edge ? `${t(c.cluster_edge)} ` : "")
         + timing;
@@ -2914,12 +2925,13 @@
       loadOsmVintage();   // Q828: the OSM data's vintage line, read beside the map (not awaited)
       loadOsmCompleteness();   // S05-04 S5: analytic 1, below the map (not awaited)
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Row 372(b): the status lines are drawn live (ooLiveHtml); the map drawn over them lets the host go.
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         _ooMapPayload = await api("/api/insights/map-coverage");
         _renderMapBasis();   // rollup staleness disclosure, when present (else nothing)
         if (!(_ooMapPayload.by_country || []).length) {
-          host.innerHTML = `<div class="muted">${esc(t("No located sources yet — add sources with a country, or collect some articles."))}</div>`;
+          ooLiveHtml(host, () => `<div class="muted">${esc(t("No located sources yet — add sources with a country, or collect some articles."))}</div>`);
           return;
         }
         _renderOoMapLensDesc();
@@ -2931,7 +2943,8 @@
         if (!_ooMapLensTabs) _ooMapLensTabs = ooSubtabs($("oomap-lenses"), selectOoMapLens, {initial: _ooMapLens});
         else _ooMapLensTabs.select(_ooMapLens);
       } catch (e) {
-        host.innerHTML = `<div class="err">${esc(t("Could not load coverage:") + " " + e.message)}</div>`;
+        const why = e.message;
+        ooLiveHtml(host, () => `<div class="err">${esc(t("Could not load coverage:") + " " + why)}</div>`);
       }
     }
 
@@ -3085,6 +3098,9 @@
       loadWikiPages(); loadWikiChanges();
     }
 
+    // Row 372(b): the last dump list drawn, so app-map.js's oo:langchange listener redraws the table from it (its held
+    // pills and resume label are t() output) without a second request.
+    let _wikiDumpsLast = null;
     async function loadWikiDumps() {
       // Populate #dumpread-wiki (the readable editions) BEFORE the dump-FTS status renders:
       // _renderDumpIndexStatus reads those options for the "Edition to index" select, so a
@@ -3093,29 +3109,32 @@
       await loadReadableDumps();
       loadDumpIndexStatus();  // + the full-text index status (indexed editions, build state)
       try {
-        const d = await api("/api/wiki/dumps");
-        const t = $("dump-table");
-        const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-        // R768/R769: a download HELD by a transport change says why (the reason on hover); the queue's ONE control resumes it
-        const heldWhy = {settings: ["Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.", "Held: the settings could not be read"], unprotected: ["Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.", "Held: protected mode was switched off"], proxy: ["Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.", "Held: the proxy was changed"], unverified: ["Held because the app cannot confirm the transport this download was queued under: it was queued before the app was restarted or updated. Resume the queue to download it through the transport now in force.", "Held: queued before a restart"]};
-        const held = (e) => {
-          if (e.status !== "queued" || !e.held_by) return "";
-          const [long, short] = heldWhy[e.held_by] || ["Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.", "Held: protected mode was switched on"];
-          return ` <span class="pill warn" title="${esc(tr(long))}">${esc(tr(short))}</span>`;
-        };
-        if (!d.downloads.length) { t.innerHTML = `<tr><td class="muted">No offline downloads.</td></tr>`; return; }
-        t.innerHTML = "<tr><th>Edition</th><th>Progress</th><th>Status</th><th><span class='sr-only'>Actions</span></th></tr>" +
-          d.downloads.map(e => `<tr>
-            <td><strong>${esc(e.wiki)}</strong> <span class="muted">${esc(e.kind)}</span></td>
-            <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:""}</td>
-            <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${held(e)}${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
-            <td style="white-space:nowrap">
-              ${e.status==='downloading'?`<button class="tiny secondary" data-on-click="pauseDump(${esc(JSON.stringify(e.key))})">Pause</button>`:
-                held(e)?`<button class="tiny secondary" title="${esc(tr("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue(${esc(JSON.stringify(e.resume_token || ""))})">${esc(_resumeQueueLabel(tr, e.resume_transport))}</button>`:
-                (e.status!=='done'?`<button class="tiny secondary" data-on-click="startDump(${esc(JSON.stringify(e.wiki))})">Resume</button>`:"")}
-              <button class="tiny danger" data-on-click="deleteDump(${esc(JSON.stringify(e.key))})">Delete</button>
-            </td></tr>`).join("");
+        _wikiDumpsLast = await api("/api/wiki/dumps");
+        _renderWikiDumps(_wikiDumpsLast);
       } catch (e) { /* dumps optional */ }
+    }
+    function _renderWikiDumps(d) {
+      const t = $("dump-table"); if (!t) return;
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // R768/R769: a download HELD by a transport change says why (the reason on hover); the queue's ONE control resumes it
+      const heldWhy = {settings: ["Held because the safety settings could not be read: nothing is sent until they can be read again. Resume the queue once they can be read.", "Held: the settings could not be read"], unprotected: ["Held because protected mode was switched off: this download had started, or was queued, through your proxy. It does not go on over the direct connection until you resume the queue.", "Held: protected mode was switched off"], proxy: ["Held because the proxy was changed: this download had started, or was queued, through another proxy. Resume the queue to download it through the proxy now set.", "Held: the proxy was changed"], unverified: ["Held because the app cannot confirm the transport this download was queued under: it was queued before the app was restarted or updated. Resume the queue to download it through the transport now in force.", "Held: queued before a restart"]};
+      const held = (e) => {
+        if (e.status !== "queued" || !e.held_by) return "";
+        const [long, short] = heldWhy[e.held_by] || ["Held because protected mode was switched on: this download had started, or was queued, over a direct connection. Resume the queue to download it through your proxy.", "Held: protected mode was switched on"];
+        return ` <span class="pill warn" title="${esc(tr(long))}">${esc(tr(short))}</span>`;
+      };
+      if (!d.downloads.length) { t.innerHTML = `<tr><td class="muted">No offline downloads.</td></tr>`; return; }
+      t.innerHTML = "<tr><th>Edition</th><th>Progress</th><th>Status</th><th><span class='sr-only'>Actions</span></th></tr>" +
+        d.downloads.map(e => `<tr>
+          <td><strong>${esc(e.wiki)}</strong> <span class="muted">${esc(e.kind)}</span></td>
+          <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:""}</td>
+          <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${held(e)}${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
+          <td style="white-space:nowrap">
+            ${e.status==='downloading'?`<button class="tiny secondary" data-on-click="pauseDump(${esc(JSON.stringify(e.key))})">Pause</button>`:
+              held(e)?`<button class="tiny secondary" title="${esc(tr("Resume every held download, in queue order, through the transport now in force."))}" data-on-click="jobResumeQueue(${esc(JSON.stringify(e.resume_token || ""))})">${esc(_resumeQueueLabel(tr, e.resume_transport))}</button>`:
+              (e.status!=='done'?`<button class="tiny secondary" data-on-click="startDump(${esc(JSON.stringify(e.wiki))})">Resume</button>`:"")}
+            <button class="tiny danger" data-on-click="deleteDump(${esc(JSON.stringify(e.key))})">Delete</button>
+          </td></tr>`).join("");
     }
 
     function dumpSelected() {                      // multi-select (maintainer 2026-06-11)
@@ -3257,6 +3276,7 @@
     // (catalogue + a jobs table) are assembled into one. Clicking a button gives instant
     // feedback. "Whole planet" downloads only the continents you DON'T already have.
     let _osmRegions = [], _osmDownloads = [];
+    let _osmListDrawn = false;   // row 372(b): the region list is on screen, so a language switch redraws it
     async function loadOsmMap() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const list = $("osm-region-list"); if (!list) return;
@@ -3272,7 +3292,10 @@
         _renderOsmList();
         _renderOsmPicker();
         _renderOsmHistory();
-      } catch (e) { list.innerHTML = `<div class="muted">${esc(t("Could not load regions."))}</div>`; }
+      } catch (e) {
+        _osmListDrawn = false;   // the listener's repaint must not draw the last list over this line
+        ooLiveHtml(list, () => `<div class="muted">${esc(t("Could not load regions."))}</div>`);
+      }
       const tbl = $("osm-dl-table"); if (tbl) tbl.innerHTML = "";   // merged into the list above
     }
     // Legacy callers (start/pause/delete pollers) refresh the merged list.
@@ -3329,6 +3352,7 @@
         </div>`;
       }).join("");
       list.innerHTML = rows || `<div class="muted">${esc(t("No regions."))}</div>`;
+      _osmListDrawn = true;
     }
 
     // Audit finding 2026-07-17 (L5): a shared, clear-before-set poll timer -- mirrors
@@ -3351,7 +3375,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const c = code || "";
       if (!c) return;
-      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }   // instant feedback
+      if (btn) { btn.disabled = true; ooLive(btn, () => t("Starting…")); }   // instant feedback
       // No extra "are you sure" confirm (field test 2026-06-19 #15): the size is shown in
       // the row; the ONE network-consent popup (ensureOnline) is the only gate that matters.
       if (!await ensureOnline(t("Download an offline map region"))) { loadOsmMap(); return; }
@@ -3362,7 +3386,7 @@
     }
     function resumeOsm(code, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (btn) { btn.disabled = true; btn.textContent = t("Resuming…"); }
+      if (btn) { btn.disabled = true; ooLive(btn, () => t("Resuming…")); }
       return startOsmDownload(code);
     }
     // "Whole planet" = download every continent you don't already hold (skips the
@@ -3371,7 +3395,7 @@
     // WITHOUT re-downloading (a single monolithic planet file cannot skip parts).
     async function startPlanetDownload(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      if (btn) { btn.disabled = true; ooLive(btn, () => t("Starting…")); }
       if (!await ensureOnline(t("Download the offline world map"))) { loadOsmMap(); return; }
       const byCode = _osmDlByCode();
       const busy = (c) => { const s = (byCode[c.code] || {}).status; return s === "done" || s === "downloading" || s === "queued"; };
@@ -3634,6 +3658,18 @@
       if (_osmTrends) _renderOsmTrends();
       _osmGeoScope();
       _osmGeoRender();
+      // Row 372(b): surfaces drawn from what they last read, redrawn here in the new language; none fetches.
+      if (_wikiDumpsLast && $("dump-table") && $("dump-table").querySelector("tr")) _renderWikiDumps(_wikiDumpsLast);
+      if (_osmListDrawn) _renderOsmList();
+      if (_dumpIdxLast && $("dumpfts-index")) _renderDumpIndexStatus(_dumpIdxLast);
+      // The per-country profile tabs and bodies, and the geography panel (its pickers, notes and map), from their caches.
+      const osmProf = $("osm-profile");
+      if (_osmProfileDone.length && osmProf && !osmProf.hidden && $("osm-profile-body")) {
+        _renderOsmProfile();
+        for (let i = 0; i < _osmProfileDone.length; i++) _osmProfileDraw(i);
+      }
+      const osmGeogSec = $("osm-geography");
+      if (_osmGeog && osmGeogSec && !osmGeogSec.hidden) _renderOsmGeography(_osmGeogDone);
     });
     function openSettingsOsm() { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("offlinemap"); }
     // "{country}, as of {date}" (the extract's date, nothing applied since) or, once a daily change file was applied,
@@ -4643,7 +4679,7 @@
     async function osmHistoryReadSize(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!await ensureOnline(t("Read the size of the full-history planet"))) return;
-      if (btn) { btn.disabled = true; btn.textContent = t("Reading…"); }
+      if (btn) { btn.disabled = true; ooLive(btn, () => t("Reading…")); }
       const code = ((_osmHistory || {}).download || {}).code || "planet-history";
       try { _osmHistorySize = await api("/api/geo/downloads/size?code=" + encodeURIComponent(code) + "&consent=true", {method: "POST"}); }
       catch (e) { toast(_failMsg("Size check failed: {error}", e), "err"); }
@@ -4651,7 +4687,7 @@
     }
     async function osmHistoryDownload(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      if (btn) { btn.disabled = true; ooLive(btn, () => t("Starting…")); }
       if (!await ensureOnline(t("Download the full-history planet"))) { _renderOsmHistory(); return; }
       const code = ((_osmHistory || {}).download || {}).code || "planet-history";
       try {
@@ -4678,12 +4714,13 @@
     async function loadStatAgencies() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("stat-agencies"); if (!box) return;
-      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Row 372(b): the status lines are drawn live; the directory drawn over them lets the box go.
+      ooLiveHtml(box, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         _statAgenciesLast = await api("/api/stats/agencies");
         _renderStatAgencies(_statAgenciesLast);
       } catch (e) {
-        box.innerHTML = `<div class="muted">${esc(t("Could not load the statistics directory."))}</div>`;
+        ooLiveHtml(box, () => `<div class="muted">${esc(t("Could not load the statistics directory."))}</div>`);
       }
     }
     function _renderStatAgencies(d) {
@@ -4733,7 +4770,7 @@
       const msg = $("stat-ingest-msg"), btn = $("stat-ingest-btn");
       if (!confirm(t("Add every official-statistics producer to your sources? Those with a known news section are enabled and collected; the rest stay disabled until that address is researched."))) return;
       if (btn) btn.disabled = true;
-      if (msg) msg.textContent = t("Registering…");
+      if (msg) ooLive(msg, () => t("Registering…"));
       try {
         // LOCAL DB write — the endpoint opens ZERO external sockets, so this works in
         // airplane mode and never needs the network-consent gate (no ensureOnline).
@@ -4746,20 +4783,24 @@
           // label: value through the shared frame (R14), the house style this file
           // states beside the dump sizes: "12 created" welded a count to an English
           // participle that agrees with nothing in most of the twelve locales.
-          const split = d.created
-            ? ` · ${ooLabelHtml(esc(t("enabled")), esc(n(d.enabled)))} · ${ooLabelHtml(esc(t("awaiting a news section URL")), esc(n(d.awaiting_news_url)))}`
-            : "";
-          msg.innerHTML = ooLabelHtml(esc(t("created")), `<b>${esc(n(d.created))}</b>`)
-            + ` · ${ooLabelHtml(esc(t("already present")), esc(n(d.skipped_existing)))}`
-            + split
-            + (d.skipped_no_domain ? ` · ${ooLabelHtml(esc(t("skipped (no domain)")), esc(n(d.skipped_no_domain)))}` : "")
-            + (d.caveat ? `<div class="muted" style="margin-top:5px">${ooSaidHtml(d, "caveat")}</div>` : "");
+          // Row 372(b): drawn live from `d`, so a language switch redraws the tally (no request).
+          ooLiveHtml(msg, () => {
+            const split = d.created
+              ? ` · ${ooLabelHtml(esc(t("enabled")), esc(n(d.enabled)))} · ${ooLabelHtml(esc(t("awaiting a news section URL")), esc(n(d.awaiting_news_url)))}`
+              : "";
+            return ooLabelHtml(esc(t("created")), `<b>${esc(n(d.created))}</b>`)
+              + ` · ${ooLabelHtml(esc(t("already present")), esc(n(d.skipped_existing)))}`
+              + split
+              + (d.skipped_no_domain ? ` · ${ooLabelHtml(esc(t("skipped (no domain)")), esc(n(d.skipped_no_domain)))}` : "")
+              + (d.caveat ? `<div class="muted" style="margin-top:5px">${ooSaidHtml(d, "caveat")}</div>` : "");
+          });
         }
         toast(t("Statistics producers registered."), "ok");
       } catch (e) {
         // In the error colour, not the floating .note toast box (R3), and through the
         // shared label frame (R2) -- it read "producers.: <error>".
-        if (msg) msg.innerHTML = `<span style="color:var(--err)">${ooLabelHtml(esc(t("Could not register the producers")), esc(e.message))}</span>`;
+        const why = e.message;
+        if (msg) ooLiveHtml(msg, () => `<span style="color:var(--err)">${ooLabelHtml(esc(t("Could not register the producers")), esc(why))}</span>`);
         else toast(t("Could not register the producers."), "err");
       } finally { if (btn) btn.disabled = false; }
     }
@@ -4789,31 +4830,34 @@
       const series = ($("statfig-series").value || "").trim();
       const country = ($("statfig-country").value || "").trim() || "all";
       const msg = $("statfig-msg"), btn = $("statfig-fetch");
-      if (!series) { if (msg) msg.textContent = t("Enter an indicator or dataset id first."); return; }
+      if (!series) { if (msg) ooLive(msg, () => t("Enter an indicator or dataset id first.")); return; }
       // The fetch egresses over the configured transport -> the ONE consent popup.
       if (typeof ensureOnline === "function" && !await ensureOnline(t("Fetch official statistics figures"))) return;
       const body = src === "worldbank"
         ? { source: "worldbank", indicator: series, country }
         : { source: "eurostat", dataset: series };
       if (btn) btn.disabled = true;
-      if (msg) msg.textContent = t("Fetching…");
+      if (msg) ooLive(msg, () => t("Fetching…"));
       try {
         const d = await api("/api/stats/figures/fetch", { method: "POST", body: JSON.stringify(body) });
         // _govTf, the file's own interpolating helper (see runSeriesCorpus), never a
         // local binding: an identity fallback would print "{fetched}" to the reader.
-        const tally = _govTf("{fetched} fetched · {stored} stored · {duplicate} already had this vintage · {gaps} published gaps", {
-          fetched: "\u0001", stored: fmtNum(d.stored || 0, 0),
-          duplicate: fmtNum(d.duplicate || 0, 0), gaps: fmtNum(d.gaps || 0, 0),
+        // Row 372(b): drawn live from `d`, so a language switch redraws the tally (no request).
+        if (msg) ooLiveHtml(msg, () => {
+          const tally = _govTf("{fetched} fetched · {stored} stored · {duplicate} already had this vintage · {gaps} published gaps", {
+            fetched: "\u0001", stored: fmtNum(d.stored || 0, 0),
+            duplicate: fmtNum(d.duplicate || 0, 0), gaps: fmtNum(d.gaps || 0, 0),
+          });
+          return esc(tally).replace("\u0001", () => `<b>${fmtNum(d.fetched || 0, 0)}</b>`)
+            // The fetch's caveat is the endpoint's fixed sentence, a key (W4).
+            + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(t(d.caveat))}</div>` : "");
         });
-        if (msg) msg.innerHTML = esc(tally).replace("\u0001", () => `<b>${fmtNum(d.fetched || 0, 0)}</b>`)
-          // The fetch's caveat is the endpoint's fixed sentence, a key (W4).
-          + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(t(d.caveat))}</div>` : "");
         $("statfig-view-series").value = series;
         loadStatFigures();
       } catch (e) {
         // Honest verdicts: 409 = airplane mode refusal, 502 = transport/endpoint failure.
         // In the error colour, not the floating .note toast box (the B13 import-dialog fix).
-        if (msg) msg.innerHTML = `<span style="color:var(--err)">${esc(_failMsg("Fetch failed: {error}", e))}</span>`;
+        if (msg) ooLiveHtml(msg, () => `<span style="color:var(--err)">${esc(_failMsg("Fetch failed: {error}", e))}</span>`);
       } finally { if (btn) btn.disabled = false; }
     }
     // The figures and anomalies tables are drawn in the reader's language (R7, R8), so
@@ -5187,7 +5231,8 @@
       const btn = $("statcorpus-run"), msg = $("statcorpus-msg");
       if (!msg) return;
       if (btn) btn.disabled = true;
-      msg.textContent = t("Starting…");
+      // Row 372(b): every line is drawn live (ooLive), so a language switch redraws it from what it holds.
+      ooLive(msg, () => t("Starting…"));
       try {
         await api("/api/governments/series-corpus", {
           method: "POST", body: JSON.stringify({ agency: "worldbank" }),
@@ -5199,15 +5244,16 @@
           const st = await api("/api/governments/series-corpus/status");
           const state = st.state || "";
           if (state === "running") {
-            const p = st.progress || {};
-            msg.textContent = p.detail
-              ? tf("Indexing series: {detail}", { detail: p.detail })
-              : t("Indexing series…");
+            const detail = (st.progress || {}).detail;
+            ooLive(msg, () => (detail
+              ? tf("Indexing series: {detail}", { detail })
+              : t("Indexing series…")));
             await new Promise(r => setTimeout(r, 2000));
             continue;
           }
           if (state === "error") {
-            msg.textContent = tf("Indexing failed: {error}", { error: st.error || t("unknown") });
+            const err = st.error;
+            ooLive(msg, () => tf("Indexing failed: {error}", { error: err || t("unknown") }));
             return;
           }
           const r = st.result || {};
@@ -5218,16 +5264,17 @@
           const vars = {
             created: r.created || 0, updated: r.updated || 0, unchanged: r.unchanged || 0,
           };
-          msg.textContent = r.complete === false
+          const stopped = r.complete === false;
+          ooLive(msg, () => (stopped
             ? tf("{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.", vars)
-            : tf("{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.", vars);
+            : tf("{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.", vars)));
           return;
         }
         // The watcher gave up before the job did. Say so rather than leaving the last
         // progress line standing, which would read as a stall.
-        msg.textContent = t("Still indexing — follow it in the task manager.");
+        ooLive(msg, () => t("Still indexing — follow it in the task manager."));
       } catch (e) {
-        msg.textContent = _failMsg("Indexing failed: {error}", e);
+        ooLive(msg, () => _failMsg("Indexing failed: {error}", e));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -5254,19 +5301,20 @@
       const out = $("dumpread-out");
       // Errors in the error colour and plain lines otherwise (R3): `.note` is the
       // floating toast box, with its shadow and slide-in, and these are not toasts.
-      if (!wiki) { out.innerHTML = `<div style="color:var(--err)">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`; return; }
-      if (!q) { out.innerHTML = `<div style="color:var(--err)">${esc(t("Enter a page title."))}</div>`; return; }
-      out.textContent = t("Loading…");
+      if (!wiki) { ooLiveHtml(out, () => `<div style="color:var(--err)">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`); return; }
+      if (!q) { ooLiveHtml(out, () => `<div style="color:var(--err)">${esc(t("Enter a page title."))}</div>`); return; }
+      ooLive(out, () => t("Loading…"));
       try {
         const d = await api(`/api/wiki/dumps/search?wiki=${encodeURIComponent(wiki)}&q=${encodeURIComponent(q)}`);
         const items = d.items || [];
+        // Row 372(b): drawn live from `d`, so a language switch redraws the lines (no second index scan).
         if (!items.length) {
-          out.innerHTML = `<div>${esc(t("No matching titles in this dump's index."))} <span class="muted">(${esc(_dumpScanned(d.scanned))}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div>`;
+          ooLiveHtml(out, () => `<div>${esc(t("No matching titles in this dump's index."))} <span class="muted">(${esc(_dumpScanned(d.scanned))}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div>`);
           return;
         }
         const rows = items.map(it =>
           `<li><a href="#" data-on-click="dumpReadSetTitle(${esc(JSON.stringify(it.title))});return false">${esc(it.title)}</a></li>`).join("");
-        out.innerHTML = `<div class="card"><div class="muted small">${esc(t("Title matches in your downloaded dump — click one to read its wikitext. Bodies are not full-text-searched."))} <span class="muted">(${esc(_dumpScanned(d.scanned))}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div><ul>${rows}</ul></div>`;
+        ooLiveHtml(out, () => `<div class="card"><div class="muted small">${esc(t("Title matches in your downloaded dump — click one to read its wikitext. Bodies are not full-text-searched."))} <span class="muted">(${esc(_dumpScanned(d.scanned))}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div><ul>${rows}</ul></div>`);
       } catch (e) { out.innerHTML = `<div style="color:var(--err)">${esc(e.message)}</div>`; }
     }
     // A title match in the list opens that page: the one field this touches is the page-title box (A-004).
@@ -5279,22 +5327,24 @@
       const wiki = $("dumpread-wiki").value.trim();
       const title = $("dumpread-title").value.trim();
       const out = $("dumpread-out");
-      if (!wiki) { out.innerHTML = `<div style="color:var(--err)">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`; return; }
-      if (!title) { out.innerHTML = `<div style="color:var(--err)">${esc(t("Enter a page title."))}</div>`; return; }
-      out.textContent = t("Loading…");
+      if (!wiki) { ooLiveHtml(out, () => `<div style="color:var(--err)">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`); return; }
+      if (!title) { ooLiveHtml(out, () => `<div style="color:var(--err)">${esc(t("Enter a page title."))}</div>`); return; }
+      ooLive(out, () => t("Loading…"));
       try {
         const d = await api(`/api/wiki/dumps/page?wiki=${encodeURIComponent(wiki)}&title=${encodeURIComponent(title)}`);
         if (!d.found) {
-          let msg;
-          if (d.reason === "title-not-in-index") {
-            msg = `${esc(t("This title is not in the dump's index."))} <span class="muted">(${esc(_dumpScanned(d.index_lines_scanned))}, ${esc(_dumpSecs(d.scan_seconds))})</span>`;
-          } else if (d.reason === "no-multistream-dump" || d.reason === "no-index") {
-            msg = esc(t("No readable dump for this edition: the multistream file or its index is missing."))
-              + (d.legacy_file_present ? " " + esc(t("An older single-stream file exists but cannot be random-accessed — re-download to enable reading.")) : "");
-          } else {
-            msg = esc(d.reason || "unreadable");
-          }
-          out.innerHTML = `<div style="color:var(--err)">${msg}</div>`;
+          ooLiveHtml(out, () => {
+            let msg;
+            if (d.reason === "title-not-in-index") {
+              msg = `${esc(t("This title is not in the dump's index."))} <span class="muted">(${esc(_dumpScanned(d.index_lines_scanned))}, ${esc(_dumpSecs(d.scan_seconds))})</span>`;
+            } else if (d.reason === "no-multistream-dump" || d.reason === "no-index") {
+              msg = esc(t("No readable dump for this edition: the multistream file or its index is missing."))
+                + (d.legacy_file_present ? " " + esc(t("An older single-stream file exists but cannot be random-accessed — re-download to enable reading.")) : "");
+            } else {
+              msg = esc(d.reason || "unreadable");
+            }
+            return `<div style="color:var(--err)">${msg}</div>`;
+          });
           return;
         }
         _dumpPage = d;
@@ -5318,32 +5368,35 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const out = $("dumpread-out"); const d = _dumpPage;
       if (!out || !d) return;
-      const meta = [
-        d.match === "case-insensitive" ? t("Found via case-insensitive match.") : "",
-        d.rev_timestamp ? `${t("dump revision of")} ${esc(ooIsoDate(d.rev_timestamp))}` : "",
-        esc(`${_dumpScanned(d.index_lines_scanned)} · ${_dumpSecs(d.scan_seconds)}`)
-      ].filter(Boolean).join(" · ");
-      // The readable view is offered only when the strip actually produced text: a page
-      // that is nothing but templates and tables reduces to almost nothing, and an empty
-      // pane labelled "Readable text" would read as an empty PAGE.
-      const plain = (d.plain || "").trim();
-      const canPlain = plain.length > 0;
-      const view = canPlain ? _dumpPageView : "raw";
-      const seg = (m, lbl) => `<button class="ghost tiny${view === m ? " on" : ""}" `
-        + `data-on-click="dumpReadView('${m}')">${esc(lbl)}</button>`;
-      const toggle = canPlain
-        ? `<div class="row" style="gap:6px;margin-top:6px">${seg("plain", t("Readable text"))}${seg("raw", t("Raw wikitext"))}</div>`
-        : `<div class="muted small" style="margin-top:6px">${esc(t("Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext."))}</div>`;
-      const note = view === "plain"
-        ? t("Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.")
-        : t("Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.");
-      out.innerHTML = `<div class="card">
-        <h4>${esc(d.title)} <span class="muted" style="font-weight:normal">(${esc(d.wiki)})</span></h4>
-        <div class="muted small" title="${esc(ooSaidText(d, "method"))}">${meta}</div>
-        ${toggle}
-        <div class="card-caveat" style="margin-top:4px">${esc(note)}</div>
-        <pre style="max-height:420px;overflow:auto;white-space:pre-wrap;margin-top:6px">${esc(view === "plain" ? plain : d.wikitext)}</pre>
-      </div>`;
+      // Row 372(b): drawn live from the page it holds, so a language switch redraws it with no second index scan.
+      ooLiveHtml(out, () => {
+        const meta = [
+          d.match === "case-insensitive" ? t("Found via case-insensitive match.") : "",
+          d.rev_timestamp ? `${t("dump revision of")} ${esc(ooIsoDate(d.rev_timestamp))}` : "",
+          esc(`${_dumpScanned(d.index_lines_scanned)} · ${_dumpSecs(d.scan_seconds)}`)
+        ].filter(Boolean).join(" · ");
+        // The readable view is offered only when the strip actually produced text: a page
+        // that is nothing but templates and tables reduces to almost nothing, and an empty
+        // pane labelled "Readable text" would read as an empty PAGE.
+        const plain = (d.plain || "").trim();
+        const canPlain = plain.length > 0;
+        const view = canPlain ? _dumpPageView : "raw";
+        const seg = (m, lbl) => `<button class="ghost tiny${view === m ? " on" : ""}" `
+          + `data-on-click="dumpReadView('${m}')">${esc(lbl)}</button>`;
+        const toggle = canPlain
+          ? `<div class="row" style="gap:6px;margin-top:6px">${seg("plain", t("Readable text"))}${seg("raw", t("Raw wikitext"))}</div>`
+          : `<div class="muted small" style="margin-top:6px">${esc(t("Nothing readable survives the strip — this page is templates and tables. Showing the raw wikitext."))}</div>`;
+        const note = view === "plain"
+          ? t("Lexical strip, not a render — templates and infoboxes are peeled away; references, comments, tables and file links are removed; link labels are kept. Anything a template would have produced is absent rather than rendered.")
+          : t("Raw wikitext (unrendered), extracted locally from your downloaded dump — no network call.");
+        return `<div class="card">
+          <h4>${esc(d.title)} <span class="muted" style="font-weight:normal">(${esc(d.wiki)})</span></h4>
+          <div class="muted small" title="${esc(ooSaidText(d, "method"))}">${meta}</div>
+          ${toggle}
+          <div class="card-caveat" style="margin-top:4px">${esc(note)}</div>
+          <pre style="max-height:420px;overflow:auto;white-space:pre-wrap;margin-top:6px">${esc(view === "plain" ? plain : d.wikitext)}</pre>
+        </div>`;
+      });
     }
 
     // -- Full-text search over downloaded dump BODIES (local, zero network) --- //
@@ -5353,6 +5406,7 @@
     // opens in the local dump reader above (a snapshot as of the dump date). Reuses
     // GET /api/wiki/dumps/fts-search + /api/wiki/dumps/index (status/build/cancel/clear).
     let _dumpFtsPoll = null;
+    let _dumpIdxLast = null;   // row 372(b): the last index status drawn, redrawn on a language switch
     async function loadDumpIndexStatus() {
       const box = $("dumpfts-index"); if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -5364,11 +5418,15 @@
         if (d.build && d.build.state === "running") {
           if (!_dumpFtsPoll) _dumpFtsPoll = setInterval(loadDumpIndexStatus, 2500);
         } else if (_dumpFtsPoll) { clearInterval(_dumpFtsPoll); _dumpFtsPoll = null; }
-      } catch (e) { box.textContent = t("Full-text index status unavailable."); }
+      } catch (e) {
+        _dumpIdxLast = null;   // the listener's repaint must not draw the last status over this line
+        ooLive(box, () => t("Full-text index status unavailable."));
+      }
     }
     function _renderDumpIndexStatus(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("dumpfts-index"); if (!box) return;
+      _dumpIdxLast = d;
       const eds = d.editions || [];
       // Build-edition select = editions with a downloaded multistream dump (the
       // readable set loadReadableDumps() already populated in #dumpread-wiki).
@@ -5422,7 +5480,8 @@
       try {
         await api("/api/wiki/dumps/index" + (wiki ? "?wiki=" + encodeURIComponent(wiki) : ""), {method:"DELETE"});
         toast(t("Index cleared.")); loadDumpIndexStatus();
-        const out = $("dumpfts-out"); if (out) out.innerHTML = "";
+        // Emptied without writing text (row 372(b)): nothing translated is left to freeze.
+        const out = $("dumpfts-out"); if (out) out.replaceChildren();
       } catch (e) { toast(e.message, "err"); }
     }
     async function dumpFtsSearch() {
@@ -5430,20 +5489,20 @@
       const q = (($("dumpfts-q") || {}).value || "").trim();
       const wiki = (($("dumpfts-wiki") || {}).value || "").trim();
       const out = $("dumpfts-out"); if (!out) return;
-      if (!q) { out.innerHTML = `<div style="color:var(--err)">${esc(t("Enter a full-text query."))}</div>`; return; }
-      out.textContent = t("Loading…");
+      if (!q) { ooLiveHtml(out, () => `<div style="color:var(--err)">${esc(t("Enter a full-text query."))}</div>`); return; }
+      ooLive(out, () => t("Loading…"));
       try {
         const url = "/api/wiki/dumps/fts-search?q=" + encodeURIComponent(q)
           + (wiki ? "&wiki=" + encodeURIComponent(wiki) : "") + "&limit=30";
         const d = await api(url);
         const items = d.items || [];
         if (!items.length) {
-          const msg = d.reason === "no-index"
+          const reason = d.reason;
+          ooLiveHtml(out, () => `<div>${esc(reason === "no-index"
             ? t("No full-text index yet — pick a downloaded edition above and Build index first.")
-            : d.reason === "search-error"
+            : reason === "search-error"
               ? t("The query could not be parsed — try plain words or AND/OR/NOT.")
-              : t("No matches in your indexed dump bodies.");
-          out.innerHTML = `<div>${esc(msg)}</div>`;
+              : t("No matches in your indexed dump bodies."))}</div>`);
           return;
         }
         const rows = items.map(it => {
@@ -5518,10 +5577,12 @@
     }
 
     async function trackWikiNow() {
-      $("wiki-progress").textContent = "Tracking watched pages…";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
+      // Row 372(b): the progress line is drawn live (ooLive), so a language switch redraws it from what it holds.
+      const wp = $("wiki-progress");
+      ooLive(wp, () => t("Tracking watched pages…"));
       try {
         const r = await api(`/api/wiki/track-now?ores=${_ores()}`, {method:"POST"});
-        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
         const off = r.skipped_offline || 0;     // pages the kill switch refused: not "0 new edits" (invariant #14e's corollary)
         // R772(a): the transport changed during the batch, and it stopped there rather than going on over the new one.
         const moved = !r.stopped_by ? ""
@@ -5529,15 +5590,17 @@
             ? t("Stopped: the safety settings could not be read during tracking, so nothing more was fetched. Click Track now again once they can be read.")
             : t("Stopped: the transport changed during tracking. Click Track now again to go on over the transport now in force."));
         if (off && !r.pages) {
-          $("wiki-progress").textContent = t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.");
+          ooLive(wp, () => t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."));
           toast(t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn"); loadWiki(); return;
         }
-        $("wiki-progress").textContent = `${r.pages} page(s): ${r.new_revisions} new edit(s), ${r.flagged} flagged.`
+        ooLive(wp, () => `${r.pages} page(s): ${r.new_revisions} new edit(s), ${r.flagged} flagged.`
           + (off ? " " + ((window.OOI18N && OOI18N.tf) ? OOI18N.tf("{n} not fetched (airplane mode)", {n: off}) : off + " not fetched (airplane mode)") : "")
-          + moved;
+          + (!r.stopped_by ? "" : " " + (r.stopped_by === "settings"
+            ? t("Stopped: the safety settings could not be read during tracking, so nothing more was fetched. Click Track now again once they can be read.")
+            : t("Stopped: the transport changed during tracking. Click Track now again to go on over the transport now in force."))));
         if (moved) { toast(moved.trim(), "warn"); loadWiki(); return; }
         toast("Tracking complete."); loadWiki();
-      } catch (e) { $("wiki-progress").textContent=""; toast(_failMsg("Track now failed: {error}", e), "err"); }
+      } catch (e) { ooLive(wp, () => ""); toast(_failMsg("Track now failed: {error}", e), "err"); }
     }
 
     // Q717 = a's approximate label. ORES is a third party's machine-learning model
@@ -5665,7 +5728,8 @@
       if (!body || _wikiTc.id == null) return;
       const flaggedEl = $("wiki-tc-flagged");
       const flagged = (flaggedEl && flaggedEl.checked) ? "true" : "false";
-      body.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Row 372(b): the status lines are drawn live; the history drawn over them lets the body go.
+      ooLiveHtml(body, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       if (meth) meth.textContent = "";
       _wikiTcLast = null;
       try {
@@ -5683,7 +5747,8 @@
         _renderWikiTC(d, flagged);
       } catch (e) {
         // Additive surface — degrade quietly, never throw.
-        body.innerHTML = `<div class="muted">${esc(ooLabelText(t("Could not load"), e.message))}</div>`;
+        const why = e.message;
+        ooLiveHtml(body, () => `<div class="muted">${esc(ooLabelText(t("Could not load"), why))}</div>`);
       }
     }
 

@@ -58,6 +58,8 @@ function sandbox(responses) {
     "function _govT(s){return s;}",
     "function _govTf(str, vars){return String(str).replace(/\\{(\\w+)\\}/g,(m,k)=>(vars&&vars[k]!=null)?String(vars[k]):m);}",
     "function _failMsg(t, e){return t;}", "function _ores(){return 'false';}",
+    // Row 372(b): the progress line is drawn through ooLive (app-core.js); drawn once here.
+    "function ooLive(el, r){ if (el && r) el.textContent = r(); }",
     extract("tally"), extract("tallyHover"), extract("ingestSource"), extract("ingestBatch"), extract("lawTrack"), extract("trackWikiNow"),
     "return { ingestSource, ingestBatch, lawTrack, trackWikiNow, tally };",
   ].join("\n");
