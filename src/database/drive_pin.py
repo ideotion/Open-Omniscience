@@ -23,7 +23,8 @@ pinned version), so it cannot cover the encrypted store every real operator uses
 
 STATED LIMITS: only connections opened through a SQLAlchemy pool are tracked (the corpus engine and the lane engines). A raw
 ``sqlite3``/``sqlcipher3`` connection a module opens and closes itself is short-lived and, after the erase latched the folder
-(R802), refused. A connection closed before the drive was found changed was closed on the drive the erase last saw.
+(R802), refused. A connection closed before the drive was found changed was closed on the drive the erase last saw. A pool
+connection DETACHED from its pool (``Connection.detach()``; nothing in the app detaches one) is not followed once detached.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -37,6 +38,7 @@ import logging
 import os
 import sys
 import threading
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +49,9 @@ from sqlalchemy.pool import Pool
 _LOG = logging.getLogger("database.drive_pin")
 
 _LOCK = threading.Lock()
-#: id(dbapi connection) -> (connection, its main database file or None when it could not be read). Pool connections only.
+#: id(dbapi connection) -> (a WEAK reference to its pool record, its main database file: "" in memory, None when it could not
+#: be read). Pool connections only. Weak, so tracking never keeps alive a connection its engine let go of: a pool's record is
+#: freed with the engine, and its connection closed by its own deallocation as before (a sqlite3 connection takes no weak reference).
 _LIVE: dict[int, tuple[Any, str | None]] = {}
 #: The connections pinned for the rest of the process (strong references, and an extra reference count each).
 _PINNED: list[Any] = []
@@ -61,16 +65,31 @@ def _main_file(dbapi_connection) -> str | None:
     try:
         for row in dbapi_connection.execute("PRAGMA database_list").fetchall():
             if row[1] == "main":
-                return str(row[2]) or None
+                return str(row[2])  # "" for an in-memory database: on no drive
     except Exception:  # noqa: BLE001 - a file that cannot be read is pinned when any drive is (see _under)
         return None
     return None
 
 
+def _live_connection(key: int, ref: Any) -> Any:
+    """The connection a tracked record still holds under ``key``, or None (the record is gone, closed, or holds another one)."""
+    record = ref() if ref is not None else None
+    conn = getattr(record, "dbapi_connection", None) if record is not None else None
+    return conn if conn is not None and id(conn) == key else None
+
+
 @event.listens_for(Pool, "connect")
-def _track(dbapi_connection, _record) -> None:
+def _track(dbapi_connection, record) -> None:
+    try:
+        ref = weakref.ref(record)
+    except TypeError:  # not a pool record: nothing to follow it by, so it is not tracked
+        return
+    path = _main_file(dbapi_connection)
     with _LOCK:
-        _LIVE[id(dbapi_connection)] = (dbapi_connection, _main_file(dbapi_connection))
+        for key, (old_ref, _p) in list(_LIVE.items()):  # forget the records already freed (their engines were let go of)
+            if key not in _PINNED_IDS and old_ref() is None:
+                del _LIVE[key]
+        _LIVE[id(dbapi_connection)] = (ref, path)
 
 
 @event.listens_for(Pool, "close")
@@ -96,6 +115,8 @@ def _under(path: str | None, base: Path) -> bool:
     """On the drive: the file is in the data folder by its spelling or resolved path. A file that could not be read is ON it."""
     if path is None:
         return True
+    if path == "":
+        return False  # an in-memory database is on no drive
     for b in {os.path.abspath(base), os.path.realpath(base)}:
         for p in {os.path.abspath(path), os.path.realpath(path)}:
             if p == b or p.startswith(b.rstrip(os.sep) + os.sep):
@@ -114,7 +135,9 @@ def _serve_files(con: Any) -> list[str | None]:
     lock, or owns the connection alone (a build's own connection), so this never runs on a connection another thread is using."""
     try:
         return [r[0] for r in con.execute("SELECT path FROM duckdb_databases() WHERE path IS NOT NULL").fetchall()]
-    except Exception:  # noqa: BLE001 - not knowing is on the drive
+    except Exception as exc:  # noqa: BLE001 - not knowing is on the drive
+        if type(exc).__name__ == "ConnectionException":  # DuckDB's "Connection already closed" (and a lost connection)
+            return []  # a connection already closed has nothing left to close or delete
         return [None]
 
 
@@ -177,10 +200,15 @@ def pin_drive(base: Path) -> int:
                 _FROZEN.append(Path(base))  # first: a serve closed from here on, by any thread, is kept (close_or_keep)
         _sa_default.DefaultDialect.do_close = _do_close  # type: ignore[method-assign]  # every later close goes through the skip
         with _LOCK:
-            for key, (conn, path) in list(_LIVE.items()):
-                if key not in _PINNED_IDS and _under(path, base):
-                    _PINNED_IDS.add(key)
-                    _immortal(conn)
+            for key, (ref, path) in list(_LIVE.items()):
+                if key in _PINNED_IDS or not _under(path, base):
+                    continue
+                conn = _live_connection(key, ref)
+                if conn is None:
+                    _LIVE.pop(key, None)
+                    continue
+                _PINNED_IDS.add(key)
+                _immortal(conn)
         _pin_serves(base)
     except Exception as exc:  # noqa: BLE001 - never stops an erase; the result still says the key may be in memory
         _LOG.error("could not pin every connection on the data drive (%s)", type(exc).__name__)  # the type only: no path

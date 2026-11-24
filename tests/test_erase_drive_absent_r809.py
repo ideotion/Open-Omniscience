@@ -654,3 +654,30 @@ def test_a_build_with_its_offload_folder_on_a_frozen_drive_is_never_served(tmp_p
     assert "if spill and (_corpus_encrypted() or _on_frozen_drive(spill)):" in src
     assert "_on_frozen_drive(True)" in src
     assert "rollup_serve._on_frozen_drive(spill)" in Path("src/analytics/map_serve.py").read_text(encoding="utf-8")
+
+
+def test_an_in_memory_pool_connection_is_on_no_drive_and_tracking_keeps_nothing_alive(tmp_path):
+    """CI found the absent-drive result saying the key stays in memory because another test's in-memory pool connection (its main
+    file "") was counted as on the drive. And tracking holds only a weak reference to the pool record, so an engine let go of
+    still closes its connections as before."""
+    import gc
+
+    from sqlalchemy import create_engine, text
+
+    from src.database import drive_pin
+
+    eng = create_engine("sqlite://")
+    with eng.connect() as c:
+        c.execute(text("select 1"))
+    base = tmp_path / "drive" / "OOS data"
+    base.mkdir(parents=True)
+    assert drive_pin.pin_drive(base) == 0
+    eng2 = create_engine(f"sqlite:///{tmp_path / 'x.db'}")
+    with eng2.connect() as c:
+        c.execute(text("select 1"))
+    n = len(drive_pin._LIVE)
+    del eng2, c
+    gc.collect()
+    assert drive_pin.pin_drive(tmp_path) == 0, "a freed engine's connection is never pinned"
+    assert len(drive_pin._LIVE) <= n
+    eng.dispose()
