@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import io
 import re
-import struct
 from dataclasses import dataclass, field
+from struct import error as StructError
 
 from PIL import Image, UnidentifiedImageError
 from PIL.ExifTags import GPSTAGS, TAGS
@@ -93,9 +93,9 @@ def _parse_gps(gps_ifd: dict) -> dict:
 _OBJECT_ADDRESS = re.compile(r"<[^<>]* at 0x[0-9a-fA-F]+>")
 
 
-def _reason(exc: BaseException) -> str:
-    """The error's text without Python object reprs (Pillow names the in-memory buffer)."""
-    return _OBJECT_ADDRESS.sub("the uploaded bytes", record_text(exc))
+def _reason(text: str) -> str:
+    """An error's scrubbed text without Python object reprs (Pillow names the in-memory buffer)."""
+    return _OBJECT_ADDRESS.sub("the uploaded bytes", text)
 
 
 def _read_exif(img) -> tuple[dict, dict]:
@@ -140,7 +140,7 @@ def extract_image_metadata(data: bytes) -> ImageMetadata:
     except ImageError:
         raise
     except Image.DecompressionBombError as exc:
-        raise ImageError(f"image too large to read here: {_reason(exc)}") from exc
+        raise ImageError(f"image too large to read here: {_reason(record_text(exc))}") from exc
     # A malformed file can fail in the decoder or in the EXIF parser with any of these
     # (Pillow 13 raises KeyError on a TIFF whose tag table is cut short): every one is
     # "this is not a readable image", a 400, never an unhandled 500.
@@ -151,9 +151,9 @@ def extract_image_metadata(data: bytes) -> ImageMetadata:
         SyntaxError,
         KeyError,
         IndexError,
-        struct.error,
+        StructError,
     ) as exc:
-        raise ImageError(f"not a readable image: {_reason(exc)}") from exc
+        raise ImageError(f"not a readable image: {_reason(record_text(exc))}") from exc
 
     observations: list[str] = []
     if not exif:
