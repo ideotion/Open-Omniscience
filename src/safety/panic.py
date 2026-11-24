@@ -84,7 +84,10 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
             try:
                 _tidy_after_erase(failed)
             finally:
-                own_open = _dispose_after_erase(generation)  # whatever the tidying above did: the late-commit rewrite must still run
+                # whatever the tidying above did: the late-commit rewrite must still run. R813, stated: a drive found absent,
+                # unidentified, changed or lost had its connections pinned by the erase, and this close skips them; a drive swapped
+                # after the erase's last re-check and before this close is the window left for it (follow-up row 390).
+                own_open = _dispose_after_erase(generation)
     # R792: only now, with the app offline and this process's own pool closed (its close would undo the lock this takes), look
     # for ANOTHER process still holding the store and rewrite while it does, within the bound; the report says what was found.
     from src.paths import erase_owned

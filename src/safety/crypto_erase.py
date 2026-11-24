@@ -758,6 +758,13 @@ def _drive_same(hold: tuple[Path, tuple[int, int], int | None] | None, want_id: 
         st = os.stat(real)
         if (st.st_dev, st.st_ino) != ident:
             return False
+        # A drive's root folder has the same inode on every drive of one file-system type, so the file-system id is compared too
+        # (on Linux it is taken from the volume's own id): where the held descriptor is there, the folder at the path must be on
+        # the same file system as it. Where either cannot be read on this platform, the comparison above stands alone.
+        if fd is not None and hasattr(os, "fstatvfs"):
+            held_fsid, now_fsid = getattr(os.fstatvfs(fd), "f_fsid", None), getattr(os.statvfs(real), "f_fsid", None)
+            if held_fsid is not None and now_fsid is not None and held_fsid != now_fsid:
+                return False
         if marker:
             from src.safety import data_volume
 
@@ -1522,7 +1529,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    sits past its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a
     #    failure. In a folder the app does not own, only the app's entries are reached.
     heads_elsewhere = 0
-    roots = [] if _off_drive() else _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)
+    # The marker is read once more here: 5b overwrites every file's head, the marker's too, so later re-checks compare the folder's
+    # device, inode and file-system id only.
+    roots = [] if _off_drive(marker=True) else _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached)
     for p in _files_under(roots, base, _unlisted, skip=paths["keys_dir"], unreached=_unreached):
         if _kind(p, _unreached) != "file":
             continue

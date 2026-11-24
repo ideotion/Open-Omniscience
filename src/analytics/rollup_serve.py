@@ -502,14 +502,12 @@ def _build_inmemory_and_swap() -> dict | None:
         _progress_end()
         rollup_marker.clear()  # ended by a path Python saw: a marker left behind means a kill
         if not ok:  # a decline or an error: this connection is never served, so it must not leak
-            with contextlib.suppress(Exception):
-                con.close()
+            _close_con(con, spill)
             _remove_spill(spill)  # after the close: DuckDB holds its files open until then
     if spill and _corpus_encrypted():
         # The library was encrypted while this build ran: its offload folder holds plaintext derived data, so the connection is
         # not served. Closed, folder removed; the next request builds again with no offload. Not a stop: no hold is kept.
-        with contextlib.suppress(Exception):
-            con.close()
+        _close_con(con, spill)
         _remove_spill(spill)
         return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
     refused = False
@@ -544,14 +542,10 @@ def _build_inmemory_and_swap() -> dict | None:
             }
             old_spill, _STATE["spill"] = _STATE.get("spill"), spill or None
             if old is not None:
-                try:
-                    old.close()  # safe: serves hold _LOCK, so none is mid-query here
-                except Exception:  # noqa: BLE001
-                    pass
+                _close_con(old, old_spill)  # safe: serves hold _LOCK, so none is mid-query here
             _remove_spill(old_spill)  # the retired connection's folder, now that nothing uses it
     if refused:
-        with contextlib.suppress(Exception):
-            con.close()
+        _close_con(con, spill)
         _remove_spill(spill)
         return {"reason": ENCRYPTED_DURING_BUILD, "at": time.time()}
     _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
@@ -648,10 +642,7 @@ def _refresh_persisted_build() -> bool | None:
             # An in-memory store was handed back (the encryption gate failed, or the persisted open raised) or the engine is off: not the store
             # this function maintains, so it is closed, not recorded, and the call declines.
             if con is not None:
-                try:
-                    con.close()
-                except Exception:  # noqa: BLE001 - closing a store that is not wanted must not turn a decline into a failure
-                    pass
+                _close_con(con, new_spill)  # closing a store that is not wanted must not turn a decline into a failure: never raises
             _remove_spill(new_spill)
             return _persisted_declined(opened.fallback_reason or "engine-off")
     if con is None:
@@ -668,8 +659,7 @@ def _refresh_persisted_build() -> bool | None:
                     # The key was cleared (or set anew) while the store opened outside the lock: the clearing's close found nothing of it
                     # to close, and recorded now it would keep the old key inside DuckDB until the next rebuild (open-on-main row 85). A
                     # clearing from here on finds the lock held, and its close once free sees this store's generation is the old one.
-                    with contextlib.suppress(Exception):
-                        con.close()
+                    _close_con(con, new_spill)
                     _remove_spill(new_spill)
                     return _persisted_declined("no-passphrase")
                 columnar.refresh_keyword_daily(
@@ -704,8 +694,7 @@ def _refresh_persisted_build() -> bool | None:
                 _STATE["token"] = token
                 _STATE["pending"] = False
                 if retired is not None:
-                    with contextlib.suppress(Exception):
-                        retired.close()
+                    _close_con(retired, retired_spill)
                 _remove_spill(retired_spill)  # after the close: DuckDB holds its files open until then
     except Exception:
         with _LOCK:
@@ -713,8 +702,7 @@ def _refresh_persisted_build() -> bool | None:
         # Release the file handle so the next attempt can reopen it cleanly -- unless the store was already recorded as serving (the
         # session's closing commit raised after the swap): closing it then would leave every serve and refresh on a closed connection.
         if opened_now and not recorded:
-            with contextlib.suppress(Exception):
-                con.close()
+            _close_con(con, new_spill)
             _remove_spill(new_spill)  # after the close: DuckDB holds its files open until then
         raise
     _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
@@ -1263,11 +1251,24 @@ def _sweep_spill_folders(root) -> None:
     _OWN_SPILL_SWEPT = True
 
 
+def _close_con(con, spill: str | None = None) -> None:
+    """Close a serve's DuckDB connection, unless the data drive was found absent, unidentified or changed during an erase and the
+    connection is on it (R813, src/database/drive_pin.py): then it is kept open, never closed, for the rest of the process. The caller
+    holds ``_LOCK`` or owns the connection alone. Never raises."""
+    from src.database.drive_pin import close_or_keep
+
+    close_or_keep(con, spill)
+
+
 def _remove_spill(path: str | None) -> None:
     """Remove ONE connection's offload folder, after that connection is closed, and let go of its owner lock."""
     if path:
         import shutil
 
+        from src.database.drive_pin import on_frozen_drive
+
+        if on_frozen_drive(path):
+            return  # R813: the drive at that path changed during an erase; the folder there is not ours to remove
         fd = _SPILL_OWNERS.pop(str(path), None)
         if fd is not None:
             with contextlib.suppress(OSError):
@@ -1899,8 +1900,7 @@ def _drop_if_unusable(con) -> bool:
         _STATE.update(con=None, built_at=0.0, rows=0, bind=None, token=None, pending=False)
         spill, _STATE["spill"] = _STATE.get("spill"), None
         last = _STATE.get("last_build") or {}
-    with contextlib.suppress(Exception):
-        con.close()
+    _close_con(con, spill)
     _remove_spill(spill)
     _LOG.warning("rollup serve: a served query hit a FATAL engine error (%s); the rollup was dropped and the live scan answers", kind)
     if kind == "allocation":

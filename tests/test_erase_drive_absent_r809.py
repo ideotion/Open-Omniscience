@@ -532,3 +532,107 @@ def test_a_pinned_connection_is_never_closed(tmp_path):
         assert (on / "x.db-wal").exists(), "the log of a pinned store is never removed by a close"
     finally:
         drive_pin._reset_for_tests()
+
+
+# --- R813 (the security read of d6954606e): the DuckDB serves and their offload folders on a frozen drive ----------------------
+
+
+class _FakeDuck:
+    """A stand-in for a DuckDB connection: the files it has ATTACHed, and whether it was closed."""
+
+    def __init__(self, files):
+        self.files, self.closed = list(files), False
+
+    def execute(self, _sql):
+        files = self.files
+
+        class _R:
+            def fetchall(self):
+                return [(f,) for f in files]
+
+        return _R()
+
+    def close(self):
+        self.closed = True
+
+
+def test_a_serve_on_a_frozen_drive_is_kept_and_its_offload_folder_stays(tmp_path):
+    from src.analytics import rollup_serve
+    from src.database import drive_pin
+    from src.scheduler import release
+
+    base = tmp_path / "drive" / "OOS data"
+    spill = base / "duckdb_tmp" / "x"
+    spill.mkdir(parents=True)
+    (spill / "t.tmp").write_bytes(b"other drive")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    off = _FakeDuck([str(elsewhere / "c.duckdb")])
+    on_file = _FakeDuck([str(base / "columnar.duckdb")])
+    on_spill = _FakeDuck([])
+    assert drive_pin.close_or_keep(on_file) is False and on_file.closed, "nothing frozen: an ordinary close"
+    on_file.closed = False
+    drive_pin.pin_drive(base)
+    assert drive_pin.close_or_keep(off) is False and off.closed
+    assert drive_pin.close_or_keep(on_file) is True and not on_file.closed
+    assert drive_pin.close_or_keep(on_spill, str(spill)) is True and not on_spill.closed
+    rollup_serve._remove_spill(str(spill))
+    assert (spill / "t.tmp").read_bytes() == b"other drive", "an offload folder on a frozen drive is never removed"
+    # The close the erase makes, and the one once free, take it out of the state and keep it open.
+    saved = dict(rollup_serve._STATE)
+    try:
+        rollup_serve._STATE.update(con=on_spill, spill=str(spill), persisted=False)
+        out = release._close_serves(wait=True)
+        assert "rollup_serve" in out["closed"] and rollup_serve._STATE["con"] is None and not on_spill.closed
+        assert (spill / "t.tmp").exists()
+        rollup_serve._STATE.update(con=on_file, spill=None, persisted=True)
+        release._close_when_free("rollup_serve", on_file, "cleared-key", 1 << 62)
+        assert rollup_serve._STATE["con"] is None and not on_file.closed
+    finally:
+        rollup_serve._STATE.clear()
+        rollup_serve._STATE.update(saved)
+
+
+def test_pinning_takes_a_serve_under_its_own_lock_and_leaves_a_busy_one_to_its_later_close(tmp_path):
+    from src.analytics import rollup_serve
+    from src.database import drive_pin
+
+    base = tmp_path / "drive" / "OOS data"
+    base.mkdir(parents=True)
+    con = _FakeDuck([str(base / "columnar.duckdb")])
+    saved = dict(rollup_serve._STATE)
+    try:
+        rollup_serve._STATE.update(con=con, spill=None, persisted=True)
+        with rollup_serve._LOCK:  # a query is using it: pinning never touches it from another thread
+            drive_pin.pin_drive(base)
+            assert rollup_serve._STATE["con"] is con
+        drive_pin.pin_drive(base)  # free now
+        assert rollup_serve._STATE["con"] is None and rollup_serve._STATE["persisted"] is False and not con.closed
+    finally:
+        rollup_serve._STATE.clear()
+        rollup_serve._STATE.update(saved)
+
+
+def test_a_folder_on_another_file_system_at_the_same_device_and_inode_is_a_change(marked, monkeypatch):
+    data, _outside = marked
+    _app_files(data, marker_id="a1b2c3d4e5f60718")
+    fds: list[int] = []
+    hold = crypto_erase._drive_hold(data, fds)
+    try:
+        assert hold is not None and crypto_erase._drive_same(hold, "a1b2c3d4e5f60718", marker=True)
+        if hold[2] is None or not hasattr(os, "fstatvfs"):
+            pytest.skip("no held descriptor on this platform")
+        real_statvfs = os.statvfs
+
+        class _Other:
+            def __init__(self, st):
+                self._st = st
+
+            def __getattr__(self, name):
+                return getattr(self._st, name) if name != "f_fsid" else self._st.f_fsid + 1
+
+        monkeypatch.setattr(os, "statvfs", lambda p: _Other(real_statvfs(p)))
+        assert crypto_erase._drive_same(hold, "a1b2c3d4e5f60718", marker=False) is False
+    finally:
+        for fd in fds:
+            os.close(fd)

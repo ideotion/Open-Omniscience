@@ -35,7 +35,6 @@ truth; a cold/missing rollup means the seam falls back to the live query.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
 import threading
@@ -195,14 +194,12 @@ def _build_and_swap() -> None:
                 _STATE["pending"] = False
                 served = True
                 if old is not None:
-                    with contextlib.suppress(Exception):
-                        old.close()  # safe: serves hold _LOCK, so none is mid-query here
+                    rollup_serve._close_con(old, old_spill)  # safe: serves hold _LOCK, so none is mid-query here
             rollup_serve._remove_spill(old_spill)  # the retired connection's folder, closed above; deleted outside the lock
         finally:
             if not served:  # a failed or empty build: this connection is never served, so neither it nor its folder may leak
                 if con is not None:
-                    with contextlib.suppress(Exception):
-                        con.close()
+                    rollup_serve._close_con(con, spill)
                 rollup_serve._remove_spill(spill)  # after the close: DuckDB holds its files open until then
         _LOG.info("map serve: built in-memory source_coverage (%s rows)", rows)
     except Exception as exc:  # noqa: BLE001 - a background accelerator must never crash the app
