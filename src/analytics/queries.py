@@ -3901,6 +3901,9 @@ def who_aggregate(
     ).group_by(ArticleEntity.name, ArticleEntity.entity_class)
     if min_articles > 1:
         q = q.having(arts_expr >= min_articles)
+    # Row 398 (anti-capping): ``total`` counts every group the same filters and
+    # threshold keep, so a list cut at ``limit`` can say so instead of guessing.
+    total = int(session.query(func.count()).select_from(q.subquery()).scalar() or 0)
     rows = q.order_by(arts_expr.desc(), men_expr.desc()).limit(limit).all()
 
     coverage = (
@@ -3918,6 +3921,8 @@ def who_aggregate(
     ]
     return {
         "count": len(entities),
+        "total": total,
+        "truncated": total > len(entities),
         "entity_class": cls,
         "days": days,
         "country": cc,
@@ -3943,6 +3948,7 @@ def where_aggregate(
     country: str | None = None,
     limit: int = 50,
     min_articles: int = 1,
+    placed_only: bool = False,
 ) -> dict:
     """Corpus-wide WHERE: places DEDUCED from article text (the When/Where/Who
     substrate, T12), aggregated by name + country.
@@ -3992,6 +3998,14 @@ def where_aggregate(
     )
     if min_articles > 1:
         q = q.having(arts_expr >= min_articles)
+    if placed_only:
+        # Row 398: a map asks for places it can draw. Filtered AFTER the limit, a place
+        # the gazetteer does not know took one of the ``limit`` slots and the map drew
+        # fewer points while more drawable places existed.
+        q = q.having(func.max(ArticleMentionedPlace.lat).isnot(None)).having(
+            func.max(ArticleMentionedPlace.lon).isnot(None)
+        )
+    total = int(session.query(func.count()).select_from(q.subquery()).scalar() or 0)
     rows = q.order_by(arts_expr.desc(), men_expr.desc()).limit(limit).all()
 
     coverage = (
@@ -4018,6 +4032,9 @@ def where_aggregate(
         )
     return {
         "count": len(places),
+        "total": total,
+        "truncated": total > len(places),
+        "placed_only": placed_only,
         "kind": k,
         "days": days,
         "country": cc,
