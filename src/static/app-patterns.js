@@ -191,14 +191,20 @@
     function patternHeadHtml(p, shown, id, t, tf, cap) {
       const when = p && p.computed_at
         ? ((typeof fmtDateTime === "function") ? fmtDateTime(p.computed_at) : String(p.computed_at)) : "";
+      // Row 398: a payload that counts every match (``total``/``truncated``) is believed;
+      // "found" is then the real count, not the cap, and the cut line shows only when the
+      // server says the list was cut. An older payload keeps the guess below.
+      const counted = p && typeof p.total === "number" && typeof p.truncated === "boolean";
+      const found = counted ? p.total : shown;
       const count = when
-        ? tf("{n} found, computed {when}", {n: _patNum(shown), when: when})
-        : tf("{n} found", {n: _patNum(shown)});
+        ? tf("{n} found, computed {when}", {n: _patNum(found), when: when})
+        : tf("{n} found", {n: _patNum(found)});
       const caveat = p && p.caveat ? t(p.caveat) : "";
       const thresholds = patternThresholds(p, t, tf);
       // Only a list that was asked for at most `cap` items can have been cut there.
-      const capped = (cap && shown >= cap)
-        ? `<p class="hint">${_patEsc(tf("Showing the first {n}.", {n: _patNum(cap)}))}</p>` : "";
+      const cut = counted ? p.truncated : (cap && shown >= cap);
+      const capped = cut
+        ? `<p class="hint">${_patEsc(tf("Showing the first {n}.", {n: _patNum(counted ? shown : cap)}))}</p>` : "";
       return `<div class="row pat-head" style="gap:8px;align-items:center;flex-wrap:wrap">
           <span class="pat-count">${_patEsc(count)}</span>
           <button type="button" class="ghost tiny pat-how" aria-expanded="false" aria-controls="${_patEsc(id)}">${_patEsc(t("How this was measured"))}</button>

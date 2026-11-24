@@ -3226,6 +3226,9 @@ def insights_where(
     country: str | None = None,
     limit: int = Query(50, ge=1, le=500),
     min_articles: int = Query(1, ge=1, le=10000),
+    placed_only: bool = Query(
+        False, description="only places the gazetteer can locate, filtered before the limit (a map)"
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     """Corpus-wide WHERE — places deduced from article text at ingest,
@@ -3235,8 +3238,10 @@ def insights_where(
     (``days``) or kind-filtered (``city`` | ``country``).
     """
     country = country_param(country)  # both forms in (S05-02 S2); never a guess
+    # placed_only joins the key only when set, so every default key stays byte-identical.
     key = _ckey("where", kind=kind, days=days, country=country,
-                limit=limit, min_articles=min_articles)
+                limit=limit, min_articles=min_articles,
+                **({"placed_only": True} if placed_only else {}))
     return _deadlined(db, key, lambda: q.where_aggregate(
         db,
         kind=kind,
@@ -3244,6 +3249,7 @@ def insights_where(
         country=country,
         limit=limit,
         min_articles=min_articles,
+        placed_only=placed_only,
     ))
 
 
