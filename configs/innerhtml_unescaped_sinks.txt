@@ -87,10 +87,9 @@ app-analysis.js renderPlaceCard 1
 app-backup.js _renderAtRest 1
 app-backup.js _renderImportSummary 1
 app-backup.js _uxImCheckpointNote 1
-app-backup.js _uxImKeyRows 1
 app-backup.js _uxImLastLine 1
+app-backup.js _uxImPaintChecklist 1
 app-backup.js _uxImRenderStatements 1
-app-backup.js _uxImScan 2
 app-backup.js _uxImTickVerify 1
 app-backup.js _uxPaintInventory 1
 app-backup.js _uxPatchRow 1
