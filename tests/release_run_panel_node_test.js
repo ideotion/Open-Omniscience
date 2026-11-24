@@ -33,12 +33,17 @@ function extract(name) {
 const src =
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
   "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
-  "var window = { OOI18N: { t: (s) => '[' + s + ']' } };\n" +
+  "var lang = '';\n" +
+  "var window = { OOI18N: { t: (s) => '[' + lang + s + ']' } };\n" +
+  // ooLiveHtml (row 364) as the page has it, reduced to what this suite needs: draw now, keep the render.
+  "var kept = new Map();\n" +
+  "function ooLiveHtml(el, render) { if (!el) return; kept.set(el, render); el.innerHTML = render(); }\n" +
+  "function switchTo(l) { lang = l; kept.forEach((r, el) => { el.innerHTML = r(); }); }\n" +
   // A bare `OOI18N` read inside `window.OOI18N && OOI18N.t` needs the global too.
   "var OOI18N = window.OOI18N;\n" +
-  extract("_rrRenderReport") + "\n" +
-  "module.exports = { _rrRenderReport };";
-const { _rrRenderReport } = (() => {
+  extract("_rrRenderReport") + "\n" + extract("_rrReportHtml") + "\n" +
+  "module.exports = { _rrRenderReport, switchTo };";
+const { _rrRenderReport, switchTo } = (() => {
   const m = { exports: {} };
   new Function("module", "exports", src)(m, m.exports);
   return m.exports;
@@ -89,4 +94,10 @@ assert.ok(host2.innerHTML.includes("download?format=json"), "links even with no 
 // 6. a null host is a no-op, never a throw (the renderer may run before the panel exists)
 _rrRenderReport(null, report);
 
-console.log("release_run_panel_node_test: 6 checks passed");
+// 7. row 361: the report is drawn through ooLiveHtml, so a language switch redraws its labels from the
+// report it was given, with no request (before, the labels stayed in the language they were drawn in)
+switchTo("fr:");
+assert.ok(host.innerHTML.includes("[fr:Download report (.json)]"), "the report did not follow the switch: " + host.innerHTML);
+assert.ok(host.innerHTML.includes("[NOT-MEASURABLE-HERE]") && host.innerHTML.includes("INTERIM"), "the redraw kept the report");
+
+console.log("release_run_panel_node_test: 7 checks passed");
