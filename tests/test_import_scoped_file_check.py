@@ -182,7 +182,11 @@ def _live(monkeypatch, path: Path):
 
 def test_a_passing_live_check_clears_the_record(data, monkeypatch):
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
-    from src.backup.merge import _note_unverified_activation, check_live_after_scoped_activation, unverified_activation
+    from src.backup.merge import (
+        _note_unverified_activation,
+        check_live_after_scoped_activation,
+        unverified_activation,
+    )
 
     _live(monkeypatch, _schema(data / "live.db"))
     assert check_live_after_scoped_activation() == {"state": "none"}
@@ -193,7 +197,11 @@ def test_a_passing_live_check_clears_the_record(data, monkeypatch):
 
 def test_a_failing_live_check_keeps_the_record_and_names_the_net(data, monkeypatch):
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
-    from src.backup.merge import _note_unverified_activation, check_live_after_scoped_activation, unverified_activation
+    from src.backup.merge import (
+        _note_unverified_activation,
+        check_live_after_scoped_activation,
+        unverified_activation,
+    )
 
     live = _schema(data / "live.db")
     con = sqlite3.connect(live)
@@ -209,7 +217,11 @@ def test_a_failing_live_check_keeps_the_record_and_names_the_net(data, monkeypat
 
 
 def test_a_check_that_cannot_open_the_corpus_is_not_a_verdict(data, monkeypatch):
-    from src.backup.merge import _note_unverified_activation, check_live_after_scoped_activation, unverified_activation
+    from src.backup.merge import (
+        _note_unverified_activation,
+        check_live_after_scoped_activation,
+        unverified_activation,
+    )
 
     _live(monkeypatch, data / "missing" / "live.db")
     _note_unverified_activation(None)
@@ -349,7 +361,13 @@ def test_another_process_holding_the_file_makes_the_set_unknown(tmp_path, monkey
     import sys
 
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
-    from src.database.connect import WRITE_SET_UNKNOWN, _another_process_holds, unwatch_writes, watch_writes, watched_writes
+    from src.database.connect import (
+        WRITE_SET_UNKNOWN,
+        _another_process_holds,
+        unwatch_writes,
+        watch_writes,
+        watched_writes,
+    )
 
     db = _schema(tmp_path / "w.db")
     con = sqlite3.connect(db)
