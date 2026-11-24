@@ -7715,6 +7715,7 @@
   "not .eml": "非 .eml",
   "not PDF": "非 PDF",
   "not a file": "不是文件",
+  "not a key this app creates; it is not written and stays in the backup": "这不是本应用创建的密钥；不会写入，仍保留在备份中",
   "not a recognised country code": "无法识别的国家/地区代码",
   "not a usable edition code": "不是可用的版本代码",
   "not an ISO code": "非 ISO 代码",

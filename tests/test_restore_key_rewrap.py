@@ -262,12 +262,14 @@ def test_an_mldsa_key_is_not_placed_where_the_library_cannot_read_it(tmp_path, m
     assert not (live / CUSTODY_ML).exists()
 
 
-def test_a_file_that_is_not_a_key_this_app_writes_is_carried_and_said_so(tmp_path, monkeypatch):
+def test_a_file_that_is_not_a_key_this_app_writes_is_not_placed_and_said_so(tmp_path, monkeypatch):
+    """R808 (row 379): it stays in the backup, so the keys folder holds only the app's own names."""
     _hold(monkeypatch, HERE)
     staged, live = _stage(tmp_path, {"keys/notes.txt": b"something an operator kept here"}, SOURCE)
     out = merge.merge_side_files(staged)["keys"]
-    assert out["restored"] == ["keys/notes.txt"] and out["carried_unread"] == ["keys/notes.txt"], out
-    assert (live / "keys" / "notes.txt").read_bytes() == b"something an operator kept here"
+    assert out["restored"] == [] and out["not_app_keys"] == {"count": 1, "listed": 1}, out
+    assert out["not_placed"] == [{"name": "keys/notes.txt", "reason": merge._KEY_NOT_APP, "reason_i18n": out["not_placed"][0]["reason_i18n"]}]
+    assert not (live / "keys" / "notes.txt").exists()
 
 
 def test_a_member_name_outside_the_keys_folder_is_refused(tmp_path, monkeypatch):
@@ -411,8 +413,9 @@ def test_a_key_file_the_library_cannot_parse_is_reported_and_the_import_goes_on(
     _hold(monkeypatch, HERE)
     staged, live = _stage(tmp_path, {EVIDENCE: _unknown_algorithm_pem(), "keys/notes.txt": b"kept"}, SOURCE)
     out = merge.merge_side_files(staged)["keys"]
-    assert [e["name"] for e in out["not_placed"]] == [EVIDENCE], out
-    assert out["restored"] == ["keys/notes.txt"], "the step went on past the file it could not read"
+    # the step went on past the file it could not read: notes.txt was judged too (R808: not a key this app creates)
+    assert {e["name"]: e["reason"] for e in out["not_placed"]}["keys/notes.txt"] == merge._KEY_NOT_APP, out
+    assert [e["name"] for e in out["not_placed"]] == ["keys/notes.txt", EVIDENCE], out
     assert not (live / EVIDENCE).exists()
 
 
