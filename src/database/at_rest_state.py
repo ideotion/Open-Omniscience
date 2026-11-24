@@ -100,16 +100,16 @@ def record_encrypted(name: str, main: Path | None = None) -> None:
             doc["stores"][name] = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True}
             store = dict(rows).get(name)
             mark = _mark(store) if store is not None else None
-            if mark is not None:  # R820 (4): the identity of the file read back with the key, with its salt (row 400; R789)
-                doc["stores"][name].update(dev=int(mark[0]), ino=int(mark[1]), head=mark[2])
-            atomic_replace(path, json.dumps(doc, indent=1, sort_keys=True))
+            if mark is not None:  # R820 (4) / R828 (1): the identity of the file read back with the key, bound by a MAC (R789)
+                doc["stores"][name].update(_bound_entry(doc, mark))
+            atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
     except OSError as exc:
         log_failure(_LOG, "the at-rest record could not be written (the files still say which stores are encrypted)", exc)
 
 
 #: R820 (4): the record's identity fields. A store's (device, inode) when it was read back with the app's key, never a secret; an
 #: entry without them (a record from before R820) is never evidence (R755: additive).
-_IDENT_KEYS = ("dev", "ino", "head")
+_IDENT_KEYS = ("dev", "ino", "mac")
 #: R820 (3): the most of the record the erase reads; a longer file is not the app's record.
 RECORD_MAX_BYTES = 64 * 1024
 _NOTE_LOCK = threading.Lock()
@@ -119,11 +119,11 @@ _NOTED_KEYED: set[tuple[int, int]] = set()
 _NOTED_PLAIN: set[tuple[int, int]] = set()
 
 
-def _mark(path: Path) -> tuple[int, int, str] | None:
-    """The (device, inode, first 16 bytes as hex) of the file at ``path``, all three from ONE descriptor (:func:`store_reader`, so a
-    read never drops this process's locks: R789), so they cannot name two different files. The first 16 bytes of an encrypted store
-    are its SQLCipher salt, random per file and not a secret: a file that later takes the same inode does not carry them (security
-    reads, row 400). None when it cannot be read, is short, or is SQLite's own header. Never raises."""
+def _mark(path: Path) -> tuple[int, int, bytes] | None:
+    """The (device, inode, first 16 bytes) of the file at ``path``, all three from ONE descriptor (:func:`store_reader`, so a read
+    never drops this process's locks: R789), so they cannot name two different files. The 16 bytes of an encrypted store are its
+    SQLCipher salt: they stay in memory here and are NEVER written anywhere (R828 (1)); the record keeps only a MAC of them
+    (:func:`_mac`). None when they cannot be read, are short, or are SQLite's own header. Never raises."""
     from src.database.connect import read_at, store_reader
 
     try:
@@ -134,19 +134,64 @@ def _mark(path: Path) -> tuple[int, int, str] | None:
         return None
     if len(head) < 16 or head == _SQLITE_MAGIC or not stat.S_ISREG(st.st_mode):
         return None
-    return (st.st_dev, st.st_ino, head.hex())
+    return (st.st_dev, st.st_ino, bytes(head))
 
 
-def entry_names(entry: Any, mark: tuple[int, int, str] | None) -> bool:
-    """R820 (1) with the security reads' salt (row 400): whether a record ``entry`` names the very file ``mark`` describes as read
-    back with the key: the same device, inode AND first 16 bytes. An entry from before the salt was kept (no ``head``) is never
-    evidence: the store is then said to look encrypted, and an erase rewrites it whole."""
-    if mark is None or not isinstance(entry, dict) or entry.get("read_back_with_key") is not True:
+#: R828 (1): the record's own random binding key (hex), one per record, never derived from anything and never a secret of the
+#: store: it only lets an entry be matched to a file's first 16 bytes without holding them.
+BINDING_KEY_FIELD = "binding_key"
+
+
+def _binding_key(doc: dict[str, Any]) -> bytes | None:
+    raw = doc.get(BINDING_KEY_FIELD)
+    if not isinstance(raw, str) or len(raw) != 64:
+        return None
+    try:
+        return bytes.fromhex(raw)
+    except ValueError:
+        return None
+
+
+def _mac(key: bytes, head: bytes) -> str:
+    """R828 (1): HMAC-SHA-256 over the 16 bytes: matching needs the bytes, recovering them from it is not possible."""
+    import hashlib
+    import hmac
+
+    return hmac.new(key, head[:16], hashlib.sha256).hexdigest()
+
+
+def _bound_entry(doc: dict[str, Any], mark: tuple[int, int, bytes]) -> dict[str, Any]:
+    """The identity fields of an entry for the file ``mark`` describes, under the record's binding key (made once, at random, the
+    first time one is needed)."""
+    import secrets
+
+    key = _binding_key(doc)
+    if key is None:
+        key = secrets.token_bytes(32)
+        doc[BINDING_KEY_FIELD] = key.hex()
+    return {"dev": int(mark[0]), "ino": int(mark[1]), "mac": _mac(key, mark[2])}
+
+
+def entry_names(entry: Any, mark: tuple[int, int, bytes] | None, doc: dict[str, Any]) -> bool:
+    """R820 (1) / R828 (1): whether a record ``entry`` (of the record ``doc``) names the very file ``mark`` describes as read back
+    with the key: the same device, inode AND a MAC of its first 16 bytes under the record's binding key. An entry without one (from
+    before R828) is never evidence: the store is then said to look encrypted, and an erase rewrites it whole."""
+    key = _binding_key(doc)
+    if mark is None or key is None or not isinstance(entry, dict) or entry.get("read_back_with_key") is not True:
         return False
-    dev, ino, head = entry.get("dev"), entry.get("ino"), entry.get("head")
-    if type(dev) is not int or type(ino) is not int or not isinstance(head, str):
+    dev, ino, mac = entry.get("dev"), entry.get("ino"), entry.get("mac")
+    if type(dev) is not int or type(ino) is not int or not isinstance(mac, str):
         return False
-    return (dev, ino, head) == tuple(mark)
+    import hmac
+
+    return (dev, ino) == (mark[0], mark[1]) and hmac.compare_digest(mac, _mac(key, mark[2]))
+
+
+def _serialisable(doc: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {"version": doc.get("version", RECORD_VERSION), "stores": doc.get("stores", {})}
+    if _binding_key(doc) is not None:
+        out[BINDING_KEY_FIELD] = doc[BINDING_KEY_FIELD]
+    return out
 
 
 def _identity(path: Path) -> tuple[int, int] | None:
@@ -157,7 +202,7 @@ def _identity(path: Path) -> tuple[int, int] | None:
     return (st.st_dev, st.st_ino)
 
 
-def _write_identity(name: str, path: Path, ident: tuple[int, int, str] | None) -> None:
+def _write_identity(name: str, path: Path, ident: tuple[int, int, bytes] | None) -> None:
     """Set (``ident``: a :func:`_mark`) or clear (None) the identity of ``name`` in the record, atomically and under its lock.
     Never raises."""
     from src.safety.file_lock import atomic_replace, file_lock
@@ -174,9 +219,10 @@ def _write_identity(name: str, path: Path, ident: tuple[int, int, str] | None) -
                 entry["read_back_with_key"] = False
             else:
                 entry.setdefault("encrypted_at", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
-                entry.update(read_back_with_key=True, dev=int(ident[0]), ino=int(ident[1]), head=str(ident[2]))
+                entry.pop("head", None)
+                entry.update(read_back_with_key=True, **_bound_entry(doc, ident))
             doc["stores"][name] = entry
-            atomic_replace(path, json.dumps(doc, indent=1, sort_keys=True))
+            atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
     except OSError as exc:
         log_failure(_LOG, "the at-rest record could not be written (the files still say which stores are encrypted)", exc)
 
@@ -217,7 +263,10 @@ def _read_record_at(path: Path) -> dict[str, Any]:
         return {"version": RECORD_VERSION, "stores": {}}
     if not isinstance(doc, dict) or not isinstance(doc.get("stores"), dict):
         return {"version": RECORD_VERSION, "stores": {}}
-    return {"version": RECORD_VERSION, "stores": {str(k): v for k, v in doc["stores"].items() if isinstance(v, dict)}}
+    out: dict[str, Any] = {"version": RECORD_VERSION, "stores": {str(k): v for k, v in doc["stores"].items() if isinstance(v, dict)}}
+    if _binding_key(doc) is not None:
+        out[BINDING_KEY_FIELD] = doc[BINDING_KEY_FIELD]
+    return out
 
 
 def note_main_open(path: Path | str) -> None:
@@ -244,7 +293,8 @@ def note_main_open(path: Path | str) -> None:
             if mark is None or mark[:2] != ident:
                 return  # the file at the path is not the one just opened (or cannot be read): nothing is recorded on a guess,
                 # and it is not marked as handled, so the next open tries again (security read, row 400)
-            if not entry_names(_read_record_at(record)["stores"].get("corpus"), mark):
+            doc = _read_record_at(record)
+            if not entry_names(doc["stores"].get("corpus"), mark, doc):
                 _write_identity("corpus", record, mark)
         elif record.exists():
             entry = _read_record_at(record)["stores"].get("corpus") or {}
@@ -273,9 +323,9 @@ def record_names_identity(raw: bytes | None, ident: tuple[int, int], head: bytes
     entry = stores.get("corpus") if isinstance(stores, dict) else None
     # Row 400 (security reads): the file's own first 16 bytes too, read through the erase's kept handle, so a file that took the
     # same inode later is never named by an older record.
-    if head is None or len(head) < 16 or head[:16] == _SQLITE_MAGIC:
+    if head is None or len(head) < 16 or head[:16] == _SQLITE_MAGIC or not isinstance(doc, dict):
         return False
-    return entry_names(entry, (int(ident[0]), int(ident[1]), head[:16].hex()))
+    return entry_names(entry, (int(ident[0]), int(ident[1]), bytes(head[:16])), doc)
 
 
 def _names_beside(rows: list[tuple[str, Path]]) -> list[tuple[Path, str]]:
@@ -483,7 +533,7 @@ def _evidence(name: str, path: Path, record: dict[str, Any]) -> str | None:
 
         if opened_with_key(ident):
             return "key"
-    return "record" if entry_names(record["stores"].get(name), _mark(path)) else None
+    return "record" if entry_names(record["stores"].get(name), _mark(path), record) else None
 
 
 def claim_for(main: Path | None = None) -> str:

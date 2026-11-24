@@ -66,9 +66,11 @@ def _ident(p: Path) -> tuple[int, int]:
 
 def _record(main: Path, name: str = "corpus") -> None:
     ident = _ident(main)
+    key = os.urandom(32)
     entry = {"encrypted_at": "2026-11-24T00:00:00Z", "read_back_with_key": True, "dev": ident[0], "ino": ident[1],
-             "head": main.read_bytes()[:16].hex()}
-    (main.parent / at_rest_state.RECORD_NAME).write_text(json.dumps({"version": 1, "stores": {name: entry}}), encoding="utf-8")
+             "mac": at_rest_state._mac(key, main.read_bytes()[:16])}
+    doc = {"version": 1, "binding_key": key.hex(), "stores": {name: entry}}
+    (main.parent / at_rest_state.RECORD_NAME).write_text(json.dumps(doc), encoding="utf-8")
 
 
 @pytest.fixture()

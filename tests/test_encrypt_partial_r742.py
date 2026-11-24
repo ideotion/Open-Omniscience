@@ -317,12 +317,21 @@ def test_the_record_holds_names_and_times_only(stores):
     encrypt_tool.encrypt_all(_KEY)
     raw = (stores.parent / at_rest_state.RECORD_NAME).read_text(encoding="utf-8")
     assert _KEY not in raw and str(stores.parent) not in raw
-    for entry in json.loads(raw)["stores"].values():
+    doc = json.loads(raw)
+    # R828 (1): the record's own random binding key, at the top level, and nothing else beside the entries
+    assert set(doc) <= {"version", "stores", "binding_key"}
+    assert "binding_key" not in doc or len(bytes.fromhex(doc["binding_key"])) == 32
+    for name, entry in doc["stores"].items():
         # R820 (4): plus the store's (device, inode) when it was read back with the key; numbers, never a path or a secret
-        # row 400: plus the file's first 16 bytes (its salt: random per file, not a secret), as hex
-        assert set(entry) - {"dev", "ino", "head"} == {"encrypted_at", "read_back_with_key"}
+        # R828 (1): plus a MAC of the file's first 16 bytes, never the bytes themselves
+        assert set(entry) - {"dev", "ino", "mac"} == {"encrypted_at", "read_back_with_key"}
         assert all(type(entry[k]) is int for k in ("dev", "ino") if k in entry)
-        assert "head" not in entry or (isinstance(entry["head"], str) and len(bytes.fromhex(entry["head"])) == 16)
+        assert "mac" not in entry or (isinstance(entry["mac"], str) and len(bytes.fromhex(entry["mac"])) == 32)
+    assert any("mac" in e for e in doc["stores"].values()) and "binding_key" in doc
+    for path in [p for _, p in at_rest_state.stores(stores)]:
+        if path.exists():
+            head = path.read_bytes()[:16]
+            assert head.hex() not in raw.lower() and head.hex().upper() not in raw  # R828 (1): no byte of page 1 is kept
 
 
 def test_an_unreadable_record_reads_as_empty_and_the_state_still_comes_from_the_files(stores):
