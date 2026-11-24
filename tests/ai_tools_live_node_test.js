@@ -1,5 +1,6 @@
 // Settings -> AI and Custody: the setup card, the hero card, the model store, the uninstall box and the custody lines
-// follow a language switch, run as REAL code (row 367, app-ai-tools.js batch A).
+// (row 367, app-ai-tools.js batch A), then the model catalogue, the backend panel with its Ollama buttons and the vLLM
+// status and install boxes (batch B) follow a language switch, run as REAL code.
 //
 // Open Omniscience - Global Intelligence Platform for Investigative Journalism
 // Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -75,7 +76,13 @@ class El {
 }
 
 const IDS = ["ai-setup-box", "ai-hero", "ai-store-box", "ai-uninstall-box", "custody-status", "cust-result", "cust-entries",
-  "cust-gap-record", "cust-root", "cust-ots"];
+  "cust-gap-record", "cust-root", "cust-ots", "llm-catalog-box", "ai-backend-box", "ai-backend-select", "vllm-status-box",
+  "vllm-install-box"];
+// Batch B's module state, read from the shipped file so a rename fails here rather than drifting.
+const STATE_B = ["let _mcRows = null, _mcStatus = null, _mcFollowing = 0;", "const _mcStarting = new Set();",
+  'let _abRender = null, _abFresh = false, _ollBusy = "";', "let _vllmInstalling = false, _vllmProgress = null, _vllmInstallBtn = null;",
+  "let _aiBackendPicks = 0;", "let _aiBackendSaving = 0;"];
+for (const line of STATE_B) assert.ok(APP.includes(line), "the shipped file must declare: " + line);
 
 function harness(answers, opts = {}) {
   const map = Object.assign({}, locale("en"));
@@ -111,8 +118,14 @@ function harness(answers, opts = {}) {
       "loadAiStore", "_aiStoreRedraw", "_aiStoreHtml", "migrateOllamaStore",
       "_gbytes", "loadAiUninstall", "_aiUninstallRedraw", "_aiUninstallPlanHtml", "uninstallAi",
       "renderCustodyStatus", "_custodyStatusHtml", "custodySignerWords", "verifyChain", "viewChain", "custodyAnchorResultHtml", "anchorRoot"].map(extract),
+    ...STATE_B,
+    ...["_mcRedraw", "_mcSay", "loadModelCatalog", "_modelCatalogRowsHtml", "installOneModel",
+      "_abRedraw", "loadAiBackendPanel", "_aiBackendHtml", "launchOllama", "_ollamaAct", "releaseOllama",
+      "_vllmInstallRedraw", "_vllmSay", "loadVllmStatusPanel", "_vllmInstallBtnHtml", "_vllmStatusHtml", "_vllmInstallCost",
+      "vllmCostLine", "vllmLogNotes", "installVllm"].map(extract),
     "return { loadAiSetup, runAiSetup, loadAiHero, aiStartNow, loadAiStore, migrateOllamaStore, loadAiUninstall, uninstallAi," +
-    " renderCustodyStatus, verifyChain, viewChain, anchorRoot, ooLiveRepaint };",
+    " renderCustodyStatus, verifyChain, viewChain, anchorRoot, ooLiveRepaint," +
+    " loadModelCatalog, installOneModel, loadAiBackendPanel, launchOllama, releaseOllama, loadVllmStatusPanel, installVllm };",
   ].join("\n");
   const fmtNum = (x) => String(x);
   const document = { createElement: (tag) => new El(tag.toUpperCase()), documentElement: { dir: "ltr" } };
@@ -125,8 +138,9 @@ function harness(answers, opts = {}) {
     setTimeout: (fn, ms) => { calls.timers.push(ms); return 1; },
     ensureAiEgress: async () => true, ensureOnline: async () => true,
     _aiSetupPlan: async () => opts.plan,
-    _vllmInstallStart: async () => true,
-    _followJob: async (url, onLine) => { for (const l of (opts.jobLines || [])) onLine(l); return opts.jobEnd || { state: "done" }; },
+    _vllmInstallStart: opts.vllmStart || (async () => true),
+    _followJob: opts.follow || (async (url, onLine) => { for (const l of (opts.jobLines || [])) onLine(l); return opts.jobEnd || { state: "done" }; }),
+    _llmPullStartPoll: () => {}, loadLlmModels: () => { calls.models = (calls.models || 0) + 1; },
     prepareOllamaInstall: async () => {}, _installDefaultModel: async () => {},
     aiPillStartOrInstall: async () => {}, refreshAiPanels: () => { calls.refreshed++; },
     loadLlmHealth: () => {},
@@ -319,6 +333,144 @@ const frame = (L, label, text) => L["{prefix}: {text}"].replace("{prefix}", labe
     await h.fns.viewChain();
     h.switchTo("fr");
     assert.strictEqual(out.textContent, FR["Custody entries: {n}"].replace("{n}", "4"));
+  }
+
+  // 6. The model catalogue (batch B): the head and the rows follow a switch; a click's "Starting…" is drawn by the rows'
+  //    render and survives a refresh made while the download runs, as does the status line; the read that follows the
+  //    end draws the last line once, and a later read no longer shows it.
+  {
+    const cat = { backend: "ollama", method: "m", models: [{ key: "k1", label: "Model One", available: true, installed: false,
+      artifact: "a:1", size: "2 GB" }] };
+    let follow = null, release;
+    const h = harness({
+      "/api/llm/models/catalog": () => cat,
+      "POST /api/llm/models/install": () => ({ queued: ["a:1"], backend: "ollama" }),
+    }, { follow: (url, onLine) => { follow = onLine; return new Promise((r) => { release = r; }); } });
+    await h.fns.loadModelCatalog();
+    const rows = () => h.$("mc-rows").innerHTML;
+    assert.ok(rows().includes(">" + esc(locale("en")["Download"]) + "</button>"), rows());
+    h.switchTo("fr");
+    assert.ok(h.$("mc-head").innerHTML.includes(esc(FR["Available models"])), h.$("mc-head").innerHTML);
+    assert.ok(rows().includes(">" + esc(FR["Download"]) + "</button>"), rows());
+    const run = h.fns.installOneModel("k1", null);
+    for (let i = 0; i < 4; i++) await tick();
+    assert.ok(rows().includes(" disabled ") && rows().includes(">" + esc(FR["Starting…"]) + "</button>"), "busy: " + rows());
+    follow("running");   // a bare job state is a key: translated
+    assert.strictEqual(h.$("mc-status").textContent, FR["running"]);
+    follow("pulling 40%");
+    await h.fns.loadModelCatalog();   // a refresh while the download runs
+    assert.ok(rows().includes(">" + esc(FR["Starting…"]) + "</button>"), "the refresh kept the busy button: " + rows());
+    assert.strictEqual(h.$("mc-status").textContent, "pulling 40%", "the refresh kept the running status");
+    await h.fns.loadModelCatalog();   // and a second one, before any new line
+    assert.strictEqual(h.$("mc-status").textContent, "pulling 40%", "a running download's status is not consumed by a read");
+    release({ state: "done", detail: "" }); await run;
+    for (let i = 0; i < 4; i++) await tick();
+    assert.strictEqual(h.$("mc-status").textContent, FR["Done."], "the read that follows the end draws the last line");
+    assert.ok(rows().includes(">" + esc(FR["Download"]) + "</button>") && !rows().includes("disabled"), rows());
+    h.switchTo("de");
+    assert.strictEqual(h.$("mc-status").textContent, DE["Done."]);
+    await h.fns.loadModelCatalog();
+    assert.strictEqual(h.$("mc-status").textContent, "", "a later read no longer shows the old line");
+  }
+  {
+    // a failure no read follows is drawn where it is, follows a switch, and is not kept for the next read
+    const h = harness({
+      "/api/llm/models/catalog": () => ({ backend: "ollama", models: [{ key: "k1", label: "M", available: true, installed: null, artifact: "a" }] }),
+      "POST /api/llm/models/install": () => new Error("boom"),
+    });
+    await h.fns.loadModelCatalog();
+    await h.fns.installOneModel("k1", null);
+    h.switchTo("fr");
+    assert.strictEqual(h.$("mc-status").textContent, FR["Download failed:"] + " boom");
+    await h.fns.loadModelCatalog();
+    assert.strictEqual(h.$("mc-status").textContent, "");
+  }
+
+  // 7. The backend panel (batch B): its words follow a switch; a repaint keeps the operator's live override tick and
+  //    only a fresh read draws the server's value; "Launching…" is drawn by the render while Ollama starts.
+  {
+    let release;
+    const b = { backend: "ollama", reason: "r", gpu: {}, vllm: {}, stored_override: "auto",
+      ollama: { installed: true, running: false, can_launch: true },
+      hardware: { practical: true, overridden: false, override_requested: false, reason: "ok", warnings: [] } };
+    const h = harness({
+      "/api/llm/backend": () => b,
+      "POST /api/llm/ollama/start": () => new Promise((r) => { release = r; }),
+    });
+    await h.fns.loadAiBackendPanel();
+    const box = h.$("ai-backend-box");
+    h.switchTo("fr");
+    assert.ok(box.innerHTML.includes(`<b>${esc(FR["Active backend:"])}</b>`), box.innerHTML);
+    assert.ok(!box.innerHTML.includes('id="ai-hw-override" checked'), box.innerHTML);
+    h.$("ai-hw-override").checked = true;   // the operator ticks; the save is still in flight
+    h.switchTo("de");
+    assert.ok(box.innerHTML.includes('id="ai-hw-override" checked'), "the repaint kept the live tick: " + box.innerHTML);
+    await h.fns.loadAiBackendPanel();       // a fresh read: the server's value
+    assert.ok(!box.innerHTML.includes('id="ai-hw-override" checked'), "a fresh read draws the server's value: " + box.innerHTML);
+    const run = h.fns.launchOllama(null);
+    await tick();
+    assert.ok(box.innerHTML.includes(` disabled data-on-click="launchOllama(this)">${esc(DE["Launching…"])}</button>`), box.innerHTML);
+    h.switchTo("fr");
+    assert.ok(box.innerHTML.includes(`>${esc(FR["Launching…"])}</button>`), box.innerHTML);
+    release({ started: true, ready: true }); await run;
+    assert.ok(box.innerHTML.includes(`>${esc(FR["Launch Ollama"])}</button>`) && !box.innerHTML.includes(" disabled"), box.innerHTML);
+  }
+
+  // 8. vLLM (batch B): the install button follows a switch with its version as data; "Starting the install…" is drawn
+  //    by its render; the progress line survives a refresh during the install, is drawn once by the read after it,
+  //    and is gone from a later read; a status that could not be read says so in the page's language.
+  {
+    let follow = null, release;
+    const s = { installed: false, gpu: { available: true }, verified_version: "0.11.0", base_url: "http://127.0.0.1:8000" };
+    const h = harness({
+      "/api/llm/vllm/status": () => s,
+      "/api/llm/vllm/install/preflight": () => ({ disk: { measured: true, free_gb: 50, floor_gb: 20 }, ram: {}, blocking: [], warnings: [] }),
+    }, { follow: (url, onLine) => { follow = onLine; return new Promise((r) => { release = r; }); } });
+    await h.fns.loadVllmStatusPanel();
+    await tick();
+    const btn = () => h.$("vllm-install-btn").innerHTML;
+    h.switchTo("fr");
+    assert.strictEqual(btn(), `<button data-on-click="installVllm(this)">${esc(FR["Install vLLM"])} (<span translate="no">0.11.0</span>)</button>`);
+    assert.strictEqual(h.$("vllm-install-cost").textContent, FR["{free} GB free, needs {floor} GB"].replace("{free}", "50").replace("{floor}", "20"));
+    const run = h.fns.installVllm(null);
+    for (let i = 0; i < 4; i++) await tick();
+    assert.strictEqual(btn(), `<button disabled>${esc(FR["Starting the install…"])}</button>`);
+    assert.strictEqual(h.$("vllm-install-progress").textContent, FR["Installing — this can take several minutes…"]);
+    await h.fns.loadVllmStatusPanel();   // a refresh during the install
+    assert.strictEqual(btn(), `<button disabled>${esc(FR["Starting the install…"])}</button>`, "the refresh kept the busy button");
+    assert.strictEqual(h.$("vllm-install-progress").textContent, FR["Installing — this can take several minutes…"]);
+    await h.fns.loadVllmStatusPanel();   // and a second one
+    assert.strictEqual(h.$("vllm-install-progress").textContent, FR["Installing — this can take several minutes…"],
+      "a running install's progress is not consumed by a read");
+    h.switchTo("de");
+    assert.strictEqual(h.$("vllm-install-progress").textContent, DE["Installing — this can take several minutes…"]);
+    follow("running");
+    assert.strictEqual(h.$("vllm-install-progress").textContent, DE["running"], "a bare job state follows the page's language");
+    follow("pip: failed to build");
+    release({ state: "error", detail: "pip: failed to build" }); await run;
+    for (let i = 0; i < 4; i++) await tick();
+    assert.strictEqual(h.$("vllm-install-progress").textContent, "pip: failed to build", "the read after the install draws its last line");
+    assert.ok(btn().includes(`>${esc(DE["Install vLLM"])} (`), btn());
+    await h.fns.loadVllmStatusPanel();
+    assert.strictEqual(h.$("vllm-install-progress").textContent, "", "a later read no longer shows it");
+  }
+  {
+    // the operator declines the resource warning: "Install cancelled." is drawn where it is, and no read keeps it
+    const h = harness({ "/api/llm/vllm/status": () => ({ installed: false, gpu: { available: true }, verified_version: "1" }),
+      "/api/llm/vllm/install/preflight": () => new Error("no") }, { vllmStart: async () => null });
+    await h.fns.loadVllmStatusPanel();
+    await h.fns.installVllm(null);
+    h.switchTo("fr");
+    assert.strictEqual(h.$("vllm-install-progress").textContent, FR["Install cancelled."]);
+    assert.ok(h.$("vllm-install-btn").innerHTML.startsWith('<button data-on-click="installVllm(this)">'), "the button is back");
+    await h.fns.loadVllmStatusPanel();
+    assert.strictEqual(h.$("vllm-install-progress").textContent, "", "a later read does not bring the cancel back");
+  }
+  {
+    const h = harness({ "/api/llm/vllm/status": () => new Error("down") });
+    await h.fns.loadVllmStatusPanel();
+    h.switchTo("ja");
+    assert.ok(h.$("vllm-status-box").innerHTML.includes(esc(JA["Could not read vLLM status."])), h.$("vllm-status-box").innerHTML);
   }
 
   console.log("ai_tools_live_node_test.js: OK");

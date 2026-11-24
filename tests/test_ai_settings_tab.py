@@ -55,13 +55,13 @@ def _code(name: str) -> str:
 def test_the_backend_facts_line_names_the_gpu_only_when_there_IS_one():
     """Absence is stated once, in the hardware block below it. A permanent
     "GPU: not detected" made this the first of four identical sentences."""
-    src = _code("loadAiBackendPanel")
+    src = _code("_aiBackendHtml")   # the panel's render (row 367: drawn through ooLiveHtml)
     assert 'gpu.available ? "GPU: "' in src, "the facts line no longer branches on presence"
     assert "not detected" not in src
 
 
 def test_the_vllm_status_line_does_not_restate_gpu_presence():
-    src = _code("loadVllmStatusPanel")
+    src = _code("loadVllmStatusPanel") + _code("_vllmStatusHtml")
     assert "no GPU detected" not in src
     assert "parts.push(s.gpu" not in src
 
@@ -77,19 +77,20 @@ def test_the_vllm_install_box_states_the_CONSEQUENCE_not_a_second_detection():
     assert "Ollama" in src
 
 
-def test_a_disabled_vllm_start_button_says_why():
-    """A disabled control with no explanation is a dead end; the reason rides the
-    #oo-tip hover (invariant #17) rather than becoming a fifth copy in the body."""
-    src = _fn("loadVllmStatusPanel")
-    assert "btn.title" in src
-    assert "vLLM is not installed." in src
+def test_no_reason_is_written_onto_a_vllm_start_button_that_does_not_exist():
+    """The panel used to give `#vllm-start-btn` its disabled state and a hover saying why. That button went with
+    `startVllm` (retired 2026-09-07, PRH-09: the Local AI card starts the backend), so the lookup always found
+    nothing; the write is gone with it (row 367). Should a Start button come back, it needs its reason again."""
+    src = _code("loadVllmStatusPanel")
+    assert "vllm-start-btn" not in src
+    assert 'id="vllm-start-btn"' not in _HTML
 
 
 def test_the_hardware_block_renders_ruling_15_warnings():
     """The tier between "refused" and "fine" -- CPU-only, thin VRAM, a small
     unified-memory Mac. If the warnings are never rendered, ruling 15's whole
     middle tier is invisible and the tab is back to a silent pass."""
-    src = _fn("loadAiBackendPanel")
+    src = _fn("_aiBackendHtml")
     assert "hw.warnings" in src
     assert "hw.name" in src, "a detected accelerator should be named where it is judged"
 
@@ -97,7 +98,7 @@ def test_the_hardware_block_renders_ruling_15_warnings():
 def test_the_override_checkbox_and_both_disclosure_directions_survive():
     """Never a silent block, never a silent enable -- the property the whole gate
     rests on, so the review must not have quietly dropped either half."""
-    src = _fn("loadAiBackendPanel")
+    src = _fn("_aiBackendHtml")
     assert "ai-hw-override" in src
     assert "setAllowImpracticalHw" in src
     assert "AI features are off by default on this hardware." in src

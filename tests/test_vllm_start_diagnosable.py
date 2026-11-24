@@ -219,7 +219,8 @@ def test_the_panel_renders_the_head_and_not_only_the_tail():
 
     app = app_js()
     at = app.index("const lg = s.server_log || {};")
-    block = app[at : app.index("box.innerHTML =", at)]
+    # row 367: the panel is one render (_vllmStatusHtml) that returns its markup; it ends with the log block
+    block = app[at : app.index("refusedNote + kindNote + logBlock", at)]
     assert "lg.head" in block, "the root cause of a startup failure lives in the head"
     assert "lg.elided_bytes" in block, "the gap between the halves must be stated"
     # And the two halves must be rendered in reading order, head first.

@@ -1342,14 +1342,20 @@
       return `<h3 style="margin:16px 0 6px;font-size:13px">${esc(t("In context"))}`
         + `${ctx.term ? ` <span class="muted" translate="no">— ${esc(ctx.term)}</span>` : ""}</h3>` + body;
     }
-    async function loadAnContext(p) {
+    async function loadAnContext(p, run) {
       if (!_anKwData) return;
+      // Row 394: the concordance belongs to the run that asked for it. A newer loadAnalysis
+      // bumps _anRunSeq before it replaces _anKwData, so an old answer (or its failure) is
+      // dropped rather than landing on the new chips. A language re-fetch inside the SAME
+      // run swaps the payload too but is not a new corpus, so only the run is compared.
+      const stale = () => run != null && typeof _anRunSeq !== "undefined" && run !== _anRunSeq;
       const term = (p && p.get && p.get("query")) || anQuery() || "";
       if (!term) { _anKwData._context = null; return; }   // article-id corpus: no single term to concord
       try {
         const ctx = await api("/api/insights/context?term=" + encodeURIComponent(term) + "&limit=12");
+        if (stale()) return;
         _anKwData._context = { term: (ctx.resolved && ctx.resolved.term) || term, mentions: ctx.mentions || [] };
-      } catch (_e) { _anKwData._context = null; }   // best-effort; never break the Keywords subtab
+      } catch (_e) { if (stale()) return; _anKwData._context = null; }   // best-effort; never break the Keywords subtab
       anRenderKwChips();
     }
     async function anFillTentative() {

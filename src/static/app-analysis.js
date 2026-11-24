@@ -572,6 +572,9 @@
       const c = _anCommodity;
       ooLiveHtml(el, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
       const term = anQuery() || c.name || c.symbol;
+      // Row 394: a newer analysis run, or another commodity, owns the panel by the time an
+      // old answer (or its failure) lands; it is dropped rather than drawn over them.
+      const run = _anRunSeq, stale = () => run !== _anRunSeq || _anCommodity !== c;
       try {
         // Price (the commodity's own series) + corpus coverage (this term's article
         // volume over time). Either may be absent — degrade loudly, never fake.
@@ -579,13 +582,14 @@
           api(`/api/commodities/${encodeURIComponent(c.symbol)}/prices`).catch(() => null),
           api(`/api/insights/trend?bucket=week&term=${encodeURIComponent(term)}`).catch(() => null),
         ]);
+        if (stale()) return;
         const prices = (pd && pd.prices) || [];
         const vol = (td && td.resolved) ? (td.points || []) : [];
         const unit = c.unit || (prices[0] ? `${prices[0].currency}/${prices[0].unit}` : "");
         _anPriceLast = {symbol: c.symbol, name: c.name || c.symbol, prices, vol, unit,
                         total: td ? td.total : null};
         _anPriceHtml(el, _anPriceLast);
-      } catch (e) { _anPriceLast = null; el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; _anPriceLast = null; el.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     // The last price overlay drawn, so a LANGUAGE SWITCH can redraw it with no request:
     // its axis label ("Price USD/kg") is text drawn INTO the SVG from t(), which the i18n
@@ -758,6 +762,7 @@
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(term) + lens).catch(() => null),
           api("/api/insights/associations?term=" + encodeURIComponent(term) + "&limit=8" + lens).catch(() => null),
         ]);
+        if (_anTrend.key !== key) return;   // row 394: a newer term or lens owns the chart
         const series = [];
         // THE UNIT IS MENTIONS (the 2026-09-27 re-walk, N-3, P1). Every point's `count`
         // is SUM(KeywordMention.count) -- `_mention_series` and the single-keyword path
@@ -776,6 +781,7 @@
         const palette = ["var(--ok)", "var(--warn)", "#6ea8fe", "#c084fc"];
         const relTrends = await Promise.all(rel.map(rt =>
           api("/api/insights/trend?bucket=week&term=" + encodeURIComponent(rt) + lens).catch(() => null)));
+        if (_anTrend.key !== key) return;
         relTrends.forEach((rd, i) => {
           if (rd && rd.resolved && (rd.points || []).length)
             series.push({ label: rel[i], labelIsData: true, unitKey: "mentions", color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
@@ -791,7 +797,7 @@
         _anTrend.suggested = commoditiesForTerm(term, rel);
         if (_anCommodity && _anCommodity.symbol && _anTrend.suggested.indexOf(_anCommodity.symbol) < 0)
           _anTrend.suggested.unshift(_anCommodity.symbol);
-      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      } catch (e) { if (_anTrend.key !== key) return; host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
       drawAnTrend();
     }
     function anTrendSetMode(m) { _anTrend.mode = m; _anTrend.autoIndexed = false; drawAnTrend(); }
@@ -1019,7 +1025,7 @@
         _anPanelsLast.related = { cd, ld };
         host.innerHTML = _anRelatedHtml(cd, ld);
         host.dataset.done = "1";
-      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (_anRelated.key !== key) return; host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     // The Related tab from its two payloads, so a LANGUAGE SWITCH redraws it with no
     // request (the 2026-09-27 re-walk, N-4): its counts, method line and caveats are t()
@@ -1673,7 +1679,10 @@
         const d = await api("/api/insights/corpus-source-language-facets?" + p.toString());
         if (run != null && run !== _anRunSeq) return;   // superseded by a newer loadAnalysis
         _anArtFacetData = { sources: d.sources || [], languages: d.languages || [] };
-      } catch (e) { _anArtFacetData = { sources: [], languages: [] }; }
+      } catch (e) {
+        if (run != null && run !== _anRunSeq) return;   // row 394: a superseded run's failure never blanks the newer chips
+        _anArtFacetData = { sources: [], languages: [] };
+      }
       _anRenderArtFacetChips();
     }
     function _anToggleArtFacetChip(kind, value) {
@@ -2344,7 +2353,7 @@
         _anKwForCount = d.keyword_for_count || "";
         if (!_anKwForCount) _anKwSort = false;   // no keyword resolved -> no count sort
         const total = d.total || 0, pages = Math.max(1, Math.ceil(total / _AN_ART_PAGE));
-        if (_anArtPage > pages - 1) return _anLoadArticles(p, pages - 1);   // clamp after a narrower filter
+        if (_anArtPage > pages - 1) return _anLoadArticles(p, pages - 1, run);   // clamp after a narrower filter
         // Retained so a LANGUAGE SWITCH can redraw the rail without re-running the
         // search: the rail's text is derived at render time (a tf() frame plus server
         // prose through t()), so the i18n DOM walker cannot reach it and it would
@@ -2357,6 +2366,7 @@
         _anDrawArticles(arts, _anArtLast);
         annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
       } catch (e) {
+        if (run != null && run !== _anRunSeq) return;   // row 394: a superseded run's failure never writes
         // Same honest, rate-limit-aware message as the Search tab (search-lockout
         // fix) -- this subtab hits the SAME /api/articles endpoint, including from a
         // boot-time deep link (?corpus=/?analyze=, app-boot.js._hydrateCardCorpus),
@@ -2559,8 +2569,8 @@
         if (stale()) return;
         _anKwData = d; _anKwHost = kw;   // stash for the tentative-fill action
         anRenderKwChips();
-        loadAnContext(p);   // S4.4: term-in-context concordance under the chips (progressive)
-      } catch (e) { kw.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+        loadAnContext(p, run);   // S4.4: term-in-context concordance under the chips (progressive)
+      } catch (e) { if (stale()) return; kw.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Mindmap: a deterministic radial keyword-association graph seeded on the
       // TOP keyword of the matched set (KEYWORDS ARE CORPORA). Self-contained
       // renderer — never touches the Insights mind-map state. Window params pass
@@ -2603,7 +2613,7 @@
           _anMM.arms = cm;
           renderAnMindmap(g, mm);
         }
-      } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       _anLoadArticles(p, 0, run);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
       _anLoadArtFacets(p, run);   // sources/languages present in this corpus, with counts (item 3 facet controls)
       // When/Where/Who deduced across the matched articles, as CLICKABLE FACETS:
@@ -2614,7 +2624,7 @@
         if (stale()) return;
         _anPanelsLast.www = d;
         $("an-www").innerHTML = _anWwwHtml(d);
-      } catch (e) { $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Links: outbound URLs SHARED by 2+ of the matched articles (shared-origin
       // structure; convergence is corroboration only when paths are independent).
       try {
@@ -2622,7 +2632,7 @@
         if (stale()) return;
         _anPanelsLast.links = d;
         $("an-links").innerHTML = _anLinksHtml(d);
-      } catch (e) { $("an-links").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; $("an-links").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Sentiment: distribution of the STORED per-article VADER tone over the set,
       // with the English-lexicon limitation disclosed (non-English scores unreliable).
       try {
@@ -2630,7 +2640,7 @@
         if (stale()) return;
         _anPanelsLast.sentiment = d;
         $("an-sentiment").innerHTML = _anSentimentHtml(d);
-      } catch (e) { $("an-sentiment").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; $("an-sentiment").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Sources: how each source covers the matched set -- volume, mean tone, span,
       // and the catalogue facts the source ASSERTS about itself.
       // Coverage, never credibility; no ranking (ordered by volume only).
@@ -2652,7 +2662,7 @@
         if (stale()) return;
         _anPanelsLast.sources = d;
         $("an-sources").innerHTML = _anSourcesHtml(d);
-      } catch (e) { $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      } catch (e) { if (stale()) return; $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     // The payloads the Links, Sentiment and Sources panels last drew, so a LANGUAGE
     // SWITCH redraws them with no request (the 2026-09-27 re-walk, N-4): their labels and
@@ -2882,7 +2892,10 @@
           api("/api/insights/corpus-sources?" + p.toString() + "&limit=200"),
           query ? api("/api/framing?query=" + encodeURIComponent(query)).catch(() => null) : Promise.resolve(null),
         ]);
-      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      } catch (e) {
+        if (_anLastParams && _anLastParams.toString() !== key) return;   // row 394: same rule on the failure path
+        host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return;
+      }
       // A NEWER RUN OVER ANOTHER CORPUS OWNS THE PANEL (its own render is on the way).
       if (_anLastParams && _anLastParams.toString() !== key) return;
       _anPanelsLast.competitive = { cs, fr, query };
