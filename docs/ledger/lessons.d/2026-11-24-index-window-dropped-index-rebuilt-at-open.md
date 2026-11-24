@@ -13,3 +13,5 @@ THE RULE: when you make a step that creates something "not at open any more", gr
 creator of the same objects (`CREATE INDEX` over the same names, `ensure_*`), and pin it with a test that watches
 the statements the real open path runs (`before_cursor_execute`), not with a source assertion on the one call you
 moved. Both self-heals now skip what the marker owes (`maintenance._owed_to_bulk_heal`).
+
+(PR #2376.)
