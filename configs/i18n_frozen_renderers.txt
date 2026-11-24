@@ -38,16 +38,6 @@ app-dossier.js dossierSearchHint
 app-evidence.js custodyCheckFile
 app-evidence.js evidenceSave
 app-evidence.js openEvidenceReview
-app-gov-law.js govLoadStandard
-app-gov-law.js lawAddDocument
-app-gov-law.js lawSummarize
-app-gov-law.js loadGovAggregate
-app-gov-law.js loadGovCountries
-app-gov-law.js loadGovMap
-app-gov-law.js loadLawPointer
-app-gov-law.js renderGovCompare
-app-gov-law.js renderGovGroup
-app-gov-law.js renderGovMap
 app-ipcc.js ipccFetch
 app-library.js _renderLibGraphHost
 app-library.js renderArticleLengthFigure

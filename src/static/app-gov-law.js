@@ -113,8 +113,8 @@
         ooCountryCompare);
       if (!codes.length) {
         sel.innerHTML = "";
-        $("gov-country-data").innerHTML =
-          `<div class="muted">${esc(t("Country data loads automatically in the background when online — or use “Load standard country data” to fetch it now."))}</div>`;
+        ooLiveHtml($("gov-country-data"), () =>
+          `<div class="muted">${esc(t("Country data loads automatically in the background when online — or use “Load standard country data” to fetch it now."))}</div>`);
         return;
       }
       // Q308 for a picker: ordered by localised NAME with the code as the secondary
@@ -368,14 +368,14 @@
       const host = $("gov-cmp-body"); if (!host) return;
       const a = $("gov-cmp-a") && $("gov-cmp-a").value, b = $("gov-cmp-b") && $("gov-cmp-b").value;
       if (!a || !b) return;
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       let da, dbb;
       try {
         [da, dbb] = await Promise.all([
           api("/api/governments/country/" + encodeURIComponent(a)),
           api("/api/governments/country/" + encodeURIComponent(b)),
         ]);
-      } catch (e) { _govCmpLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not load these countries."))}</div>`; return; }
+      } catch (e) { _govCmpLast = null; ooLiveHtml(host, () => `<div class="muted">${esc(t("Could not load these countries."))}</div>`); return; }
       _govCmpLast = {da, dbb, a, b};
       host.innerHTML = _govCompareHtml(_govCmpLast);
     }
@@ -489,10 +489,10 @@
     async function loadGovAggregate(code) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("gov-agg-body"); if (!host || !code) return;
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       let d;
       try { d = await api("/api/governments/aggregate/" + encodeURIComponent(code)); }
-      catch (e) { _govAggLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not load this aggregate."))}</div>`; return; }
+      catch (e) { _govAggLast = null; ooLiveHtml(host, () => `<div class="muted">${esc(t("Could not load this aggregate."))}</div>`); return; }
       _govAggLast = d;
       host.innerHTML = _govAggHtml(d);
     }
@@ -569,14 +569,14 @@
       const i = $("gov-grp-ind") && $("gov-grp-ind").value;
       const yr = ($("gov-grp-year") && $("gov-grp-year").value || "").trim();
       if (!g || !i) return;
-      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       let d;
       const q = "/api/governments/group-aggregate?group=" + encodeURIComponent(g)
         + "&indicator=" + encodeURIComponent(i)
         + (yr ? "&year=" + encodeURIComponent(yr) : "")
         + (allowIncomplete ? "&allow_incomplete=true" : "");
       try { d = await api(q); }
-      catch (e) { _govGrpLast = null; host.innerHTML = `<div class="muted">${esc(t("Could not compute this group."))}</div>`; return; }
+      catch (e) { _govGrpLast = null; ooLiveHtml(host, () => `<div class="muted">${esc(t("Could not compute this group."))}</div>`); return; }
       _govGrpLast = {d, allowIncomplete};
       host.innerHTML = _govGroupHtml(d, allowIncomplete);
     }
@@ -802,15 +802,22 @@
       const indicator = sel.value || (_govInds && _govInds[0] && _govInds[0].id);
       if (!indicator) return;
       const host = $("gov-map-host");
-      if (host) host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (host) ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try { _govMapData = await api("/api/governments/map?indicator=" + encodeURIComponent(indicator)); }
       catch (e) { _govMapData = null; }
       // year selector from the data's years (latest first); "" = latest available per country
       const ysel = $("gov-map-year");
       if (ysel && _govMapData) {
         const years = (_govMapData.years || []).slice().reverse();
-        ysel.innerHTML = `<option value="">${esc(t("Latest available"))}</option>`
-          + years.map(y => `<option value="${esc(y)}">${esc(y)}</option>`).join("");
+        // Held, so "Latest available" follows a language switch. A redraw rewrites the options, so it
+        // marks the one picked at that moment as selected: a switch never moves the reader's year.
+        let first = true;
+        ooLiveHtml(ysel, () => {
+          const cur = first ? "" : ysel.value;
+          first = false;
+          const opt = (v, label) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(label)}</option>`;
+          return opt("", t("Latest available")) + years.map(y => opt(String(y), String(y))).join("");
+        });
       }
       renderGovMap();
     }
@@ -826,7 +833,7 @@
         catch (e) { data = null; }
       }
       if (!data || !(data.by_country || []).length) {
-        host.innerHTML = `<div class="muted">${esc(t("Country data loads automatically in the background when online — the map fills in once it lands."))}</div>`;
+        ooLiveHtml(host, () => `<div class="muted">${esc(t("Country data loads automatically in the background when online — the map fills in once it lands."))}</div>`);
         _govMapLast = null;
         $("gov-map-caveat").textContent = "";
         return;
@@ -883,8 +890,14 @@
       // The ONE consent, naming the action like every other gated button (invariant #14):
       // called bare, the popup read "This action needs the network:" and then nothing.
       if (typeof ensureOnline === "function" && !(await ensureOnline(t("Load standard country data")))) return;
-      const old = btn && btn.textContent;
-      if (btn) { btn.disabled = true; btn.textContent = t("Loading…"); }
+      // The button's words are held while the load runs, so they follow a language switch; the
+      // progress is kept as numbers and put into words at each draw. Released at the end, which
+      // brings back the button's own label.
+      let progress = null;
+      const busy = () => progress
+        ? _govTf("Loading… {done} of {total}", { done: fmtNum(progress.done, 0), total: fmtNum(progress.total, 0) })
+        : t("Loading…");
+      if (btn) { btn.disabled = true; ooLive(btn, busy); }
       try {
         // The load runs ~3 min in a background job (returns {started, job}); poll the
         // job to completion and report the REAL stored figures — never the empty
@@ -895,7 +908,8 @@
         const st = await pollJobStatus("/api/governments/load-standard/status", {
           onProgress: (s) => {
             if (btn && s.total) {
-              btn.textContent = _govTf("Loading… {done} of {total}", { done: fmtNum(s.done || 0, 0), total: fmtNum(s.total, 0) });
+              progress = { done: s.done || 0, total: s.total };
+              ooLive(btn, busy);
             }
           },
         });
@@ -920,7 +934,7 @@
       } catch (e) {
         toast((e && e.message) || t("Could not load country data."), "err");
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = old || t("Load standard country data"); }
+        if (btn) { btn.disabled = false; ooLive(btn, null); }
       }
     }
 
@@ -950,16 +964,22 @@
     // BOTH numbers ("23 documents tracked · 0 baselined"). Since the two concepts
     // are legitimately distinct, the pointer now shows both too, matching that
     // established wording exactly instead of collapsing to one misleading word.
+    // The pointer's words for one /api/law/status reading, in the language of the moment. It also writes the hover,
+    // because the hold marks the chip and the walker then leaves its title alone.
+    function _lawPointerLine(host, s, t, tf) {
+      host.title = t("Open the Law subtab — change tracking for statutes, gazettes and IP records.");
+      return "⚖ " + tf("Law: {documents} tracked · {baselined} baselined · {changes} changes",
+        { documents: s.documents, baselined: s.tracked, changes: s.changes });
+    }
     async function loadLawPointer() {
       const host = $("gov-law-pointer"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => v[k]));
       try {
         const s = await api("/api/law/status");
-        host.textContent = "⚖ " + tf("Law: {documents} tracked · {baselined} baselined · {changes} changes",
-          { documents: s.documents, baselined: s.tracked, changes: s.changes });
-        host.title = t("Open the Law subtab — change tracking for statutes, gazettes and IP records.");
-      } catch (e) { host.textContent = ""; }
+        // Held as HTML so the host is marked and its hover is ours to redraw: both follow a language switch.
+        ooLiveHtml(host, () => esc(_lawPointerLine(host, s, t, tf)));
+      } catch (e) { host.textContent = ""; host.removeAttribute("title"); }
     }
     // Colourised unified diff (green added / red removed), bounded for the feed.
     function renderDiff(diff, max = 400) {
@@ -1051,18 +1071,23 @@
       }
       return `<button class="secondary tiny" data-on-click="lawSummarize(${revId}, this)">${esc(t("Summarize this change"))}</button>`;
     }
+    // A toast's words, apart from lawSummarize so its button holds are the only words that function draws.
+    function _lawFailedText(why) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      return t("Failed:") + " " + esc(why);
+    }
     async function lawSummarize(revId, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const host = btn.closest(".law-ai-summary");
-      btn.disabled = true; btn.textContent = t("Summarizing locally…");
+      btn.disabled = true; ooLive(btn, () => t("Summarizing locally…"));
       try {
         const r = await api(`/api/law/revisions/${revId}/summarize`, { method: "POST" });
         if (r.ai_summary) { if (host) host.innerHTML = lawAiSummaryHtml(revId, r.ai_summary); return; }
-        toast(t("Failed:") + " " + esc(r.status || "unavailable"), "err");
+        toast(_lawFailedText(r.status || "unavailable"), "err");
       } catch (e) {
-        toast(t("Failed:") + " " + esc(e.message || e), "err");
+        toast(_lawFailedText(e.message || e), "err");
       }
-      btn.disabled = false; btn.textContent = t("Summarize this change");
+      btn.disabled = false; ooLive(btn, null);   // its own label, drawn with the summary block, comes back
     }
     // Field report 2026-07-17 (S2b): the per-doc last_status was written to the
     // table but never surfaced loudly -- classify it (verdict, from the API) into
@@ -1134,13 +1159,13 @@
       const url = $("law-add-url").value.trim();
       const official_url = $("law-add-official").value.trim() || null;
       if (!jurisdiction || !title || !url) {
-        msg.textContent = t("Jurisdiction, title and URL are all required.");
+        ooLive(msg, () => t("Jurisdiction, title and URL are all required."));
         return;
       }
       const online = await ensureOnline(t("Track a document now"));
       if (!online) return;
       btn.disabled = true;
-      const label = btn.textContent; btn.textContent = t("Adding & tracking…");
+      ooLive(btn, () => t("Adding & tracking…"));
       try {
         const r = await api("/api/law/documents", {
           method: "POST",
@@ -1150,16 +1175,19 @@
         // Keyed on the tracker's exact tag (the exception it caught), never the text-parsed verdict, whose catch-all would
         // call a real failure at an address that merely contains "robots" a robots block (Opus read of #2244).
         const rtag = r.track_result && r.track_result.robots;
-        const robotsWords = rtag === "blocked" ? lawVerdictLabel("robots_blocked", r.robots_host)
-          : rtag === "unread" ? lawVerdictLabel("robots_unread", r.robots_host) : "";
-        msg.textContent = `${t("Added.")} ${t("Status:")} ${robotsWords || r.last_status || r.track_result.status}`;
+        // Held, and the robots words are put into words at each draw, so the whole line follows a switch.
+        ooLive(msg, () => {
+          const robotsWords = rtag === "blocked" ? lawVerdictLabel("robots_blocked", r.robots_host)
+            : rtag === "unread" ? lawVerdictLabel("robots_unread", r.robots_host) : "";
+          return `${t("Added.")} ${t("Status:")} ${robotsWords || r.last_status || r.track_result.status}`;
+        });
         $("law-add-jur").value = ""; $("law-add-title").value = "";
         $("law-add-url").value = ""; $("law-add-official").value = "";
         loadLaw();
       } catch (e) {
-        msg.textContent = e.message;
+        ooLive(msg, () => e.message);
       } finally {
-        btn.disabled = false; btn.textContent = label;
+        btn.disabled = false; ooLive(btn, null);
       }
     }
     async function lawSetWatched(id, watched) {
