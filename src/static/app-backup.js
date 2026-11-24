@@ -565,7 +565,10 @@
         // one of run_restore's stages: an FTS5 'optimize' that runs once after the
         // last item. It is single-threaded and index-scaled, so on a large corpus it
         // is minutes of 100%-of-one-core work AFTER every item already reads "Done".
-        tuning: t("Merging the search index…") };
+        tuning: t("Merging the search index…"),
+        // R827 R7(a): the run's whole-file check of the live corpus, owed when a checkpoint was checked only on
+        // the tables it wrote (ImportQueueManager._check_owed_corpus). Read-only; a Stop waits for it.
+        checking_corpus: t("Checking the whole corpus file…") };
       // verify + restore share the phase names (verifying/reassembling); only a backup
       // uses the write-side names. Default is mode-aware so a verify never falls back to
       // "Backing up…" or shows a raw untranslated phase.
@@ -2457,6 +2460,19 @@
       // "Done" that phase had nowhere to appear -- the header read "1/1 imported", the
       // item read "Done", collection was still paused and one core sat at 100%. The
       // backend was already publishing it; there was simply no element to put it in.
+      // R827 R7(a) / R830: the whole-file check a scoped checkpoint left owed. A failed or unfinished check is said
+      // in plain words and the run is never called complete; a failure names the safety copy kept before the run.
+      const cc = st.corpus_check || null;
+      let corpusCheckLine = "";
+      if (cc && cc.state === "failed") {
+        // The file name is isolated (<bdi translate="no">) so a right-to-left line cannot reorder it and no translator rewrites it.
+        corpusCheckLine = `<div class="card-caveat">${cc.safety_net
+          ? esc(tf("The check of your whole corpus after this import found a problem, so the import is not complete. The safety copy of your corpus from before the import is kept in your data folder as {name}.", { name: "\u0001name\u0002" }))
+            .replace("\u0001name\u0002", `<bdi translate="no" dir="ltr">${esc(String(cc.safety_net))}</bdi>`)
+          : esc(t("The check of your whole corpus after this import found a problem, so the import is not complete."))}</div>`;
+      } else if (cc && cc.state === "unchecked") {
+        corpusCheckLine = `<div class="card-caveat">${esc(t("The check of your whole corpus after this import did not finish, so the import is not complete. It runs again the next time the app starts."))}</div>`;
+      }
       const tail = items.some((i) => i.state === "running") ? "" : _uxImPhaseBits(st.live, t);
       const tailLine = (st.state === "running" && tail) ? `<div>${tail}</div>` : "";
       // The RUN's bar counts STAGES, not items: with every item done the item count is
@@ -2514,6 +2530,7 @@
       const collHover = esc(t("Paused: the collection loop and the Collect now button. Not paused: the background tasks (markets, calendars, law, hazards, crawling and backfill), Wikipedia updates, other background jobs, AI sweeps, start-up upkeep and anything you change in the app. Some background jobs wait at their next batch and carry on after the import, so a batch that is already running can still save to your corpus. Starting collection again yourself while the import runs (the Collection switch, the Start button, or switching the network back on) is not blocked. The import merges the backup into a copy of your corpus and then replaces your corpus with that copy. Whatever is saved to your corpus after the copy was made and before it is replaced is not in the copy, except your settings, agenda and interface choices, which are carried over. Before it makes each copy, the import waits up to 10 minutes for a collection pass that was still running; if one is still running after that, the import goes on and says so."));
       const collHtml = collLines.map((line) => `<div title="${collHover}">${esc(line)}</div>`).join("");
       const bodyHtml = stagedLine
+        + corpusCheckLine
         + tailLine
         + collHtml
         + (st.state === "interrupted" ? _uxImInterruptedHtml(t) : "");

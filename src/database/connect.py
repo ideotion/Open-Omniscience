@@ -1107,20 +1107,221 @@ def connect(
     _target = sqlite_target(str(path))  # a "file:" URI is read the way SQLite reads it, never let through as a name
     if _target is not None:
         refuse_if_erased(_target)
-    with sqlite_opening():  # R789: no Python read closes a descriptor while this open may be taking a lock
-        conn = _connect(
-            path,
-            key=key,
-            create_encrypted=create_encrypted,
-            check_same_thread=check_same_thread,
-            timeout=timeout,
-            cipher_page_size=cipher_page_size,
-            read_only=read_only,
-        )
+    _IN_FACTORY.depth = getattr(_IN_FACTORY, "depth", 0) + 1
+    try:
+        with sqlite_opening():  # R789: no Python read closes a descriptor while this open may be taking a lock
+            conn = _connect(
+                path,
+                key=key,
+                create_encrypted=create_encrypted,
+                check_same_thread=check_same_thread,
+                timeout=timeout,
+                cipher_page_size=cipher_page_size,
+                read_only=read_only,
+            )
+    finally:
+        _IN_FACTORY.depth -= 1
     from src.database.fts_norm import register
 
     register(conn)
+    _watch_this_connection(path, conn)
     return conn
+
+
+# --- R827 R7(a): which tables a restore wrote into its working copy ----------------------- #
+#
+# The import checks a working copy at an intermediate checkpoint with ``PRAGMA quick_check(<table>)`` on the
+# tables it WROTE rather than a walk of the whole file (the full walk runs before the run's final activation).
+# The write set is taken from SQLite's own authorizer on every connection this factory opens to a watched
+# path, so a write through any helper is seen, not only the merge's. It errs toward too many tables: a write
+# fired by a trigger counts, a virtual table's write counts its shadow tables (the caller adds them), and
+# anything that changes the schema of a table or an index, or rewrites the file (REINDEX, writable_schema,
+# incremental_vacuum), or a callback that fails, records ``"*"``: unknown, so the whole file is checked.
+
+#: The write set of a watched path: table names, plus "*" when it cannot be known.
+WRITE_SET_UNKNOWN = "*"
+_WRITE_WATCH: dict[str, set[str]] = {}
+_WRITE_WATCH_LOCK = threading.Lock()
+_FILE_WIDE_PRAGMAS = frozenset({"writable_schema", "incremental_vacuum", "schema_version"})
+
+
+def _watch_key(path: Path | str) -> str | None:
+    try:
+        return str(Path(path).resolve())
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+#: The connect() factory's own opens (the recorder is installed on them): the audit hook below leaves them alone.
+_IN_FACTORY = threading.local()
+
+
+def _unrecorded_open(event: str, args: tuple) -> None:
+    """``sys.addaudithook`` for CPython's ``sqlite3.connect`` event: an open of a WATCHED file that did not come through
+    :func:`connect` has no recorder, so whatever it writes is unseen and the set becomes unknown. Read-only opens
+    (``mode=ro``) cannot write and are left alone. Returns at once when nothing is watched; never raises (an audit
+    hook that raises would fail the caller's open)."""
+    if event != "sqlite3.connect" or not _WRITE_WATCH or getattr(_IN_FACTORY, "depth", 0):
+        return
+    try:
+        name = args[0] if args else None
+        if isinstance(name, bytes):
+            name = os.fsdecode(name)
+        if not isinstance(name, (str, os.PathLike)):
+            return
+        name = os.fspath(name)
+        if name.startswith("file:") and "mode=ro" in name.partition("?")[2]:
+            return
+        from src.paths import sqlite_target
+
+        target = sqlite_target(name)
+        key = _watch_key(target) if target else None
+        with _WRITE_WATCH_LOCK:
+            seen = _WRITE_WATCH.get(key) if key is not None else None
+        if seen is not None:
+            seen.add(WRITE_SET_UNKNOWN)
+    except Exception:  # noqa: BLE001 - when this cannot tell, every watched set becomes unknown: the whole file is checked
+        with _WRITE_WATCH_LOCK:
+            for seen in _WRITE_WATCH.values():
+                seen.add(WRITE_SET_UNKNOWN)
+
+
+_AUDIT_HOOK_ADDED = False
+
+
+def _add_audit_hook_once() -> None:
+    global _AUDIT_HOOK_ADDED
+    with _WRITE_WATCH_LOCK:
+        if _AUDIT_HOOK_ADDED:
+            return
+        _AUDIT_HOOK_ADDED = True
+    sys.addaudithook(_unrecorded_open)
+
+
+def _another_process_holds(path: Path | str) -> bool | None:
+    """Whether ANOTHER process holds a POSIX lock on ``path`` or its ``-wal``/``-shm`` right now: every SQLite connection
+    in WAL mode does, for as long as it is open. Read from ``/proc/locks`` by inode, so this process opens no descriptor
+    on the files (closing one would drop its own SQLite locks, R789). None where it cannot be told (no ``/proc/locks``:
+    every system but Linux). Only a yes or no comes out; no process id is kept."""
+    try:
+        raw = Path("/proc/locks").read_text(encoding="ascii", errors="replace")
+    except OSError:
+        return None
+    ids: set[tuple[int, int, int]] = set()
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            st = os.stat(f"{path}{suffix}")
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return None
+        ids.add((os.major(st.st_dev), os.minor(st.st_dev), st.st_ino))
+    return _foreign_lock_in(raw, ids, os.getpid())
+
+
+def _foreign_lock_in(raw: str, ids: set[tuple[int, int, int]], me: int) -> bool | None:
+    """``/proc/locks`` lines: ``N: KIND MODE TYPE PID MAJ:MIN:INODE START END`` (a ``->`` blocked waiter adds one field)."""
+    for line in raw.splitlines():
+        parts = line.replace("->", " ").split()
+        try:
+            at = next(i for i, part in enumerate(parts) if part.count(":") == 2)
+            pid = int(parts[at - 1])
+            maj, mnr, ino = parts[at].split(":")
+            key = (int(maj, 16), int(mnr, 16), int(ino))
+        except (StopIteration, ValueError, IndexError):
+            continue  # a line not in this shape names no file of ours
+        if key in ids and pid != me:
+            return True
+    return False
+
+
+def watch_writes(path: Path | str) -> set[str]:
+    """Start recording which tables of ``path`` the connections this process opens write; returns the live set
+    (shared by every later call for the same path until :func:`unwatch_writes`)."""
+    _add_audit_hook_once()
+    key = _watch_key(path)
+    if key is None:
+        return {WRITE_SET_UNKNOWN}
+    with _WRITE_WATCH_LOCK:
+        return _WRITE_WATCH.setdefault(key, set())
+
+
+def watched_writes(path: Path | str) -> set[str] | None:
+    """The write set recorded for ``path`` so far, or None when it is not watched (unknown).
+
+    The set is a proof only while every writer of the file was recorded (Plan, row 408 R7a: fail safe by default).
+    Writes from this process through :func:`connect` are; an open of the file through the standard driver anywhere
+    else in this process makes the set unknown (:func:`_unrecorded_open`); and another process holding the file open
+    now, or a system where that cannot be told, makes it unknown here. A process that reports its own tables adds them
+    to the set :func:`watch_writes` returns (or adds :data:`WRITE_SET_UNKNOWN`)."""
+    key = _watch_key(path)
+    with _WRITE_WATCH_LOCK:
+        got = _WRITE_WATCH.get(key) if key is not None else None
+    if got is None:
+        return None
+    _note_foreign_holder(path, got)
+    with _WRITE_WATCH_LOCK:
+        return set(got)
+
+
+def _note_foreign_holder(path: Path | str, seen: set[str]) -> None:
+    try:
+        held = _another_process_holds(path)
+    except Exception:  # noqa: BLE001 - could not be told: unknown
+        held = None
+    if held is not False:
+        with _WRITE_WATCH_LOCK:
+            seen.add(WRITE_SET_UNKNOWN)
+
+
+def unwatch_writes(path: Path | str) -> None:
+    key = _watch_key(path)
+    if key is not None:
+        with _WRITE_WATCH_LOCK:
+            _WRITE_WATCH.pop(key, None)
+
+
+def _watch_this_connection(path: Path | str, conn) -> None:
+    if not _WRITE_WATCH:
+        return
+    key = _watch_key(path)
+    with _WRITE_WATCH_LOCK:
+        seen = _WRITE_WATCH.get(key) if key is not None else None
+    if seen is None:
+        return
+    _note_foreign_holder(path, seen)  # sampled at every open as well as at the check, so a holder that leaves early is seen
+    # The authorizer's action codes are SQLite's own C constants, the same numbers in every driver (sqlite3, sqlcipher3).
+    import sqlite3 as _s
+
+    ok = _s.SQLITE_OK
+    writes = {_s.SQLITE_INSERT, _s.SQLITE_UPDATE, _s.SQLITE_DELETE}
+    triggers = {_s.SQLITE_CREATE_TRIGGER, _s.SQLITE_DROP_TRIGGER}
+    file_wide = {
+        _s.SQLITE_CREATE_TABLE, _s.SQLITE_DROP_TABLE, _s.SQLITE_CREATE_INDEX, _s.SQLITE_DROP_INDEX,
+        _s.SQLITE_ALTER_TABLE, _s.SQLITE_CREATE_VTABLE, _s.SQLITE_DROP_VTABLE, _s.SQLITE_REINDEX,
+    }
+    pragma = _s.SQLITE_PRAGMA
+
+    def _record(action, arg1, arg2, db, _trigger):  # names only: a PRAGMA's value (a key, say) is never kept
+        try:
+            if db not in (None, "main"):
+                return ok
+            if action in writes and arg1:
+                seen.add(str(arg1))
+            elif action in triggers:
+                seen.add("sqlite_master")  # the schema itself is checked; the tables keep their pages
+            elif action in file_wide:
+                seen.add(WRITE_SET_UNKNOWN)
+            elif action == pragma and arg2 is not None and str(arg1 or "").lower() in _FILE_WIDE_PRAGMAS:
+                seen.add(WRITE_SET_UNKNOWN)
+        except Exception:  # noqa: BLE001 - recording never refuses a statement; it makes the set unknown instead
+            seen.add(WRITE_SET_UNKNOWN)
+        return ok
+
+    try:
+        conn.set_authorizer(_record)
+    except Exception:  # noqa: BLE001 - a connection that cannot record makes the set unknown: the whole file is checked
+        seen.add(WRITE_SET_UNKNOWN)
 
 
 def state_for_header(header: bool | None) -> str:
