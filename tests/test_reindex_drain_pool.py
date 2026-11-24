@@ -16,13 +16,14 @@ import signal
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 import src.analytics.reindex_parallel as RP
 import src.analytics.store as S
 from src.analytics.extract import BaselineExtractor
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests._app_engine import app_sqlite_engine
 
 _TEXTS = (
     "The WHO warned about drought and inflation in Paris on 5 March 2024. Climate policy shifted. ",
@@ -38,7 +39,7 @@ def db(monkeypatch):
     monkeypatch.delenv("OO_REINDEX_WORKERS", raising=False)
     monkeypatch.delenv("OO_REINDEX_POOL_RECYCLE_ARTICLES", raising=False)
     monkeypatch.setattr(S, "_PRECOMPUTE_WINDOW", _WINDOW)
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="S", domain="x.test", country="fr"))
@@ -69,7 +70,7 @@ def _mentions(db) -> set[tuple]:
 
 def _serial_reference(n: int, monkeypatch) -> set[tuple]:
     """The same corpus drained with no pool at all: the reference every pooled drain must equal."""
-    engine = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
+    engine = app_sqlite_engine(":memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     s.add(Source(name="S", domain="x.test", country="fr"))
