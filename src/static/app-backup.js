@@ -4360,7 +4360,9 @@
         const driveLost = r.drive_lost === true;
         // R820 (6): an encrypted main database whose first page could not be overwritten keeps its key on the disk: never clean.
         const keyLeft = r.corpus_encryption === "encrypted_key_left";
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext && !keyLeft;
+        // R828 (2): the app's at-rest record could not be overwritten and removed: "key material may remain", never clean.
+        const recordLeft = r.at_rest_record === "left";
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
@@ -4463,6 +4465,7 @@
           (keptForeign
             ? (keptCount ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds items the app did not create (count: {n}).", { n: fmtNum(keptCount, 0) }))}</div>` : "")
             : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
+          (recordLeft ? `<div class="card-caveat">${esc(t("The app’s at-rest record could not be overwritten and removed, so key material may remain on the disk: the erase may be incomplete."))}</div>` : "") +
           (keysLeft ? `<div class="card-caveat">${esc(tfw("Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}` +
             // the app's own exact file names only (never another entry of the folder), so the operator knows which to remove
             ((r.keys_left_names || []).length ? ` <bdi translate="no" dir="ltr">${esc(r.keys_left_names.join(", "))}</bdi>` : "") + `</div>` : "") +

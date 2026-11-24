@@ -5744,6 +5744,7 @@
   "The app will not remove the damaged file the repair set aside ({name}, {size}) in {folder}: what is there now is not the file the repair recorded, or it is a link. It stays until you remove it yourself.": "应用不会移除 {folder} 中修复时搁置的损坏文件（{name}，{size}）：现在那里的不是修复所记录的文件，或者它是一个链接。它会一直保留，直到你自行移除。",
   "The app's own bookkeeping. No article's content is changed.": "应用自身的记账。不会更改任何文章的内容。",
   "The app's own connection to it could not be confirmed closed.": "无法确认应用自身与它的连接已关闭。",
+  "The app’s at-rest record could not be overwritten and removed, so key material may remain on the disk: the erase may be incomplete.": "应用的静态加密记录无法被覆盖和删除，因此磁盘上可能仍留有密钥材料：擦除可能不完整。",
   "The archive holds past days only.": "档案只包含过去的日子。",
   "The archive starts on 1 January 1940.": "档案始于 1940 年 1 月 1 日。",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "分支之间有重叠：包含该概念两种语言词形的文章会同时计入两条分支，但在中心只计一次，因此各分支相加并不等于该总数。当多种语言共用同一种拼写时，这些分支会承载相同的文章并说明这一点。仅为计数，绝非评分。",

@@ -242,7 +242,9 @@ def _record_bytes(path: Path) -> bytes | None:
             return None
         chunks: list[bytes] = []
         got = 0
-        while got <= RECORD_MAX_BYTES:
+        while True:  # the guard-clause form (src/utils/interrupts.py; R161/R163)
+            if got > RECORD_MAX_BYTES:
+                break
             b = os.read(fd, RECORD_MAX_BYTES + 1 - got)
             if not b:
                 break

@@ -5744,6 +5744,7 @@
   "The app will not remove the damaged file the repair set aside ({name}, {size}) in {folder}: what is there now is not the file the repair recorded, or it is a link. It stays until you remove it yourself.": "لن يزيل التطبيق الملف التالف الذي وضعه الإصلاح جانبًا ({name}، {size}) في {folder}: فما هو موجود هناك الآن ليس الملف الذي سجّله الإصلاح، أو هو رابط. وسيبقى حتى تزيله بنفسك.",
   "The app's own bookkeeping. No article's content is changed.": "المحاسبة الداخلية للتطبيق نفسه. لا يتغيّر محتوى أي مقالة.",
   "The app's own connection to it could not be confirmed closed.": "تعذّر التأكد من إغلاق اتصال التطبيق نفسه بها.",
+  "The app’s at-rest record could not be overwritten and removed, so key material may remain on the disk: the erase may be incomplete.": "تعذّرت الكتابة فوق سجلّ التطبيق الخاص بتشفير البيانات المخزّنة وحذفه، لذا قد تبقى مواد المفاتيح على القرص: قد يكون المحو غير مكتمل.",
   "The archive holds past days only.": "لا يحتوي الأرشيف إلا على أيام مضت.",
   "The archive starts on 1 January 1940.": "يبدأ الأرشيف في 1 يناير 1940.",
   "The arms overlap: an article carrying two languages' forms of the concept is counted on both arms and once at the centre, so the arms do not add up to it. Where several languages share one spelling the arms carry the same articles and say so. Counts only, never a score.": "تتداخل الفروع: المقال الذي يحمل صيغتَي المفهوم بلغتين يُحسب على كلا الفرعين ومرةً واحدة في المركز، لذلك لا يساوي مجموع الفروع هذا الإجمالي. وحين تتشارك عدة لغات الإملاء نفسه، تحمل الفروع المقالات نفسها وتوضّح ذلك. عدّ فقط، ولا درجة أبدًا.",
