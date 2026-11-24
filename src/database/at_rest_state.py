@@ -236,16 +236,14 @@ def note_main_open(path: Path | str) -> None:
             return  # no positive evidence either way (a disposal on another thread, say): the record is left as it is
         keyed = how == "keyed"
         with _NOTE_LOCK:
-            seen = _NOTED_KEYED if keyed else _NOTED_PLAIN
-            if ident in seen:
+            if ident in (_NOTED_KEYED if keyed else _NOTED_PLAIN):
                 return
-            seen.add(ident)
-            (_NOTED_PLAIN if keyed else _NOTED_KEYED).discard(ident)
         record = _record_path(p)
         if keyed:
             mark = _mark(p)
             if mark is None or mark[:2] != ident:
-                return  # the file at the path is not the one just opened (or cannot be read): nothing is recorded on a guess
+                return  # the file at the path is not the one just opened (or cannot be read): nothing is recorded on a guess,
+                # and it is not marked as handled, so the next open tries again (security read, row 400)
             if not entry_names(_read_record_at(record)["stores"].get("corpus"), mark):
                 _write_identity("corpus", record, mark)
         elif record.exists():
@@ -254,6 +252,9 @@ def note_main_open(path: Path | str) -> None:
             # the file system may hand out again) is never evidence either (security read, row 396).
             if "dev" in entry or "ino" in entry:
                 _write_identity("corpus", record, None)
+        with _NOTE_LOCK:
+            (_NOTED_KEYED if keyed else _NOTED_PLAIN).add(ident)
+            (_NOTED_PLAIN if keyed else _NOTED_KEYED).discard(ident)
     except Exception as exc:  # noqa: BLE001 - bookkeeping never fails an open
         log_failure(_LOG, "the at-rest record could not be updated after an open", exc, level=logging.DEBUG)
 
