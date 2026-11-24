@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-24,analytics/bulk-build,The drain index window opens from a 15% backlog when the store is larger than RAM (row 407c),shipped,PR #2383; row 407c; R825,src/analytics/bulk_build.py,"drain_window_plan reads the main store file size and physical RAM once at the run's start: 0.15 when the store is larger than RAM (measured on 10.25M mention rows under a 2 GB cgroup: 20% backlog 18.9% faster, 6% 4.8% slower), 1.0 when it fits or a reading is missing; the chosen share and its basis are logged and returned in the plan"
