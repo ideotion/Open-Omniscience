@@ -122,7 +122,9 @@ def test_a_stamped_extract_dates_the_view(osm_lane_dir, tmp_path):
 def test_the_lane_legend_states_the_date_on_every_layer_it_draws():
     legend = function_source(MAP_JS, "_ooOsmLaneLegend")
     assert legend.count("_ooOsmLaneVintage(d)") == 2, "the street view AND the object/cluster views"
-    assert "el.textContent = line + (vint ? \" \" + vint : \"\");" in legend
+    # Row 372(b): the line is drawn through ooLive, so the render returns it and a language switch redraws it.
+    assert "return line + (vint ? \" \" + vint : \"\");" in legend
+    assert "ooLive(el, () => {" in legend
 
 
 # --------------------------------------------------------------- the downloaded-region preview

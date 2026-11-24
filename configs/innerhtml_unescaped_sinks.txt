@@ -293,6 +293,7 @@ app-map.js _renderOsmPicker 3
 app-map.js _renderOsmProfile 1
 app-map.js _renderOsmTrends 1
 app-map.js _renderStatAgencies 2
+app-map.js _renderWikiDumps 1
 app-map.js _renderWikiTC 1
 app-map.js _statMapDraw 1
 app-map.js dumpFtsSearch 1
@@ -308,7 +309,6 @@ app-map.js loadRevisionAnomalies 1
 app-map.js loadStatFigures 1
 app-map.js loadStatSubs 1
 app-map.js loadWikiChanges 1
-app-map.js loadWikiDumps 1
 app-map.js loadWikiPages 1
 app-map.js ooMap 1
 app-map.js renderStatChart 1
