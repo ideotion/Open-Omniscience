@@ -64,7 +64,9 @@ function load(page, opts) {
   opts = opts || {};
   const src = [
     constLine("_PARTS_PER_CLICK"), constLine("_ALL_DIAG_POLL_CEILING_MS"),
-    "let _partsSet = null;", "let _partsGen = 0;", "let _partsBusy = 0;", "let _diagAgainLast = null;",
+    "let _partsSet = null;", "let _partsGen = 0;", "let _partsBusy = 0;", "let _diagAgainLast = null;", "let _partsStatusRender = null;",
+    // ooLive (app-core.js, row 364) draws a render as the node's text; its repaint is tested in oo_live_node_test.js
+    "function ooLive(el, render) { if (render) { const v = render(); el.textContent = v == null ? '' : String(v); } }",
     extract("_partsFiles"), extract("_partsWindow"), extract("_partsNextLabel"),
     extract("_partsStatus"), extract("_partsRender"), extract("_partsOffer"), extract("_partsTyped"),
     extract("_partsSave"), extract("partsSaveNext"), extract("partsSaveRest"), extract("partsSaveFrom"),
