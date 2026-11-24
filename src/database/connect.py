@@ -1802,14 +1802,15 @@ class _DigestBeside:
     taken while copying, and on one thread it nearly doubled the copy's time on ext4). ``hashlib`` releases the GIL
     for large updates, as ``pread``/``write`` do, so the two overlap. Chunks are handed over in order through a
     bounded queue (at most ``depth`` chunks held), so the hash is of exactly the bytes read, in the order written.
-    :meth:`close` waits for the hash to take every chunk and re-raises anything that failed on its thread."""
+    :meth:`close` waits for the hash to take every chunk and raises :class:`StoreCopyRefused` when the hash failed on its
+    thread (fixed words: the hash's own error is never carried)."""
 
     def __init__(self, digest: object, depth: int = 4) -> None:
         import queue
 
         self._digest = digest
         self._q: queue.Queue = queue.Queue(maxsize=depth)
-        self._error: BaseException | None = None
+        self._failed = False
         self._thread = threading.Thread(target=self._run, name="oo-copy-digest", daemon=True)
         self._thread.start()
 
@@ -1818,22 +1819,24 @@ class _DigestBeside:
             data = self._q.get()
             if data is None:
                 return
-            if self._error is None:
+            if not self._failed:
                 try:
                     self._digest.update(data)  # type: ignore[attr-defined]
-                except BaseException as exc:  # noqa: BLE001 - re-raised on the copying thread by close()
-                    self._error = exc
+                except BaseException:  # noqa: BLE001 - said on the copying thread by update()/close()
+                    self._failed = True
+
+    def _raise_if_failed(self) -> None:
+        if self._failed:
+            raise StoreCopyRefused("the sha256 of the copy could not be taken; the copy was discarded")
 
     def update(self, data: bytes) -> None:
-        if self._error is not None:
-            raise self._error
+        self._raise_if_failed()
         self._q.put(data)
 
     def close(self) -> None:
         self._q.put(None)
         self._thread.join()
-        if self._error is not None:
-            raise self._error
+        self._raise_if_failed()
 
 
 def _copy_fd(src_p: Path, fd: int, dest_p: Path, *, chunk: int, use_sendfile: bool, digest: object = None) -> None:
@@ -1946,6 +1949,7 @@ def verified_store_copy(src_p: Path, dest_p: Path, *, read_back: bool = True) ->
             with store_reader(src_p) as fd:
                 src_bytes = os.fstat(fd).st_size
             _fsync_file(dest_p)  # on disk before anything relies on it (R830)
+            _fsync_dir(dest_p.parent)  # and its name too, so a power cut after the swap cannot lose the net's entry
             copy_bytes = os.stat(dest_p, follow_symlinks=False).st_size
             if copy_bytes != src_bytes:
                 raise StoreCopyRefused(
@@ -1971,6 +1975,18 @@ def _fsync_file(path: Path) -> None:
         os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def _fsync_dir(path: Path) -> None:
+    """Flush a directory's entries (POSIX); where a directory cannot be opened for that (Windows), nothing is done."""
+    if os.name != "posix":
+        return
+    with contextlib.suppress(OSError):
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0))
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
 
 def store_copy_reads_back(dest_p: Path, facts: dict, *, should_stop=None) -> None:

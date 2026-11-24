@@ -950,6 +950,9 @@ def _net_read_back_alongside(net: tuple[Path, dict] | None, timings: object = No
     if not state["ok"]:
         raise MergeError(str(state["error"] or _NET_NOT_VERIFIED))
     facts["read_back"] = True
+    # Only now is it the run's safety net: a later item of the run reuses it without reading it again, so it is
+    # recorded as the run's net only once it has read back whole (security read of #2379).
+    _remember_run_snapshot(path)
 
 
 def _drop_unverified_net(path: Path) -> None:
@@ -6877,6 +6880,42 @@ def _remember_run_snapshot(path: Path) -> None:
         _RUN_SNAPSHOT = (token, path)
 
 
+#: The safety net THIS thread's run_restore took and has not yet handed to its commit (R830; security read of #2379).
+_NET_PENDING = threading.local()
+
+
+def _release_pending_net(net: Path) -> None:
+    """A run_restore that took a safety net ended without its commit taking it (a refusal, a preview, a held item, an
+    exception): nothing was done to the live corpus with it. A net this run recorded as its own (read back whole, an
+    import run that will reuse it) is kept and only its staging registration released, so the ordinary snapshot
+    pruning sees it; any other (not read back, or a lone restore that will not reuse it) is removed."""
+    if _run_scoped_snapshot() == net:
+        from src.backup.stream_backup import unregister_active_staging
+
+        with suppress(Exception):
+            unregister_active_staging(net)
+        return
+    _drop_unverified_net(net)
+
+
+def _settle_pending_net(fn: Any) -> Any:
+    """Wrap :func:`run_restore` so that every way out of it settles the safety net it took (see
+    :func:`_release_pending_net`); one place, instead of one per return and per exception path."""
+
+    @functools.wraps(fn)
+    def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        _NET_PENDING.net = None
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            net = getattr(_NET_PENDING, "net", None)
+            _NET_PENDING.net = None
+            if net is not None:
+                _release_pending_net(net)
+
+    return _wrapped
+
+
 def _take_safety_net_with_the_copy(working: Path, timings: object = None) -> tuple[Path, dict] | None:
     """R827 R5/R6(a): the run's pre-restore safety net, taken BEFORE the merge, from which the working copy is cloned.
 
@@ -6910,6 +6949,8 @@ def _take_safety_net_with_the_copy(working: Path, timings: object = None) -> tup
     if not same_device:
         preflight_free_space(working.parent, need, what="restore")
     net = net_dir / f"pre-restore-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.db"
+    if net.exists() or net.is_symlink():
+        return None  # never replace a snapshot already there (same second): the old path names its own
     register_active_staging(net)  # the age sweep never takes it; released by the commit tail's guard
     try:
         with _sub_timer(timings)("snapshot_working_copy:safety_net"):
@@ -6920,7 +6961,10 @@ def _take_safety_net_with_the_copy(working: Path, timings: object = None) -> tup
     if facts is None:
         unregister_active_staging(net)
         return None
-    _remember_run_snapshot(net)
+    # NOT yet the run's net: that is recorded by _net_read_back_alongside once the copy has read back whole. Until the
+    # commit takes it as its safety net, a run_restore that ends any other way removes or releases it
+    # (:func:`_settle_pending_net`).
+    _NET_PENDING.net = net
     return net, facts
 
 
@@ -9978,6 +10022,7 @@ def refuse_half_migrated_store() -> None:
         raise HalfMigratedStoreRefused(f"nothing was restored: {unfinished_message(journal.get('state'), path)}")
 
 
+@_settle_pending_net
 def run_restore(
     staged: StagedArtifact,
     *,
@@ -10493,6 +10538,8 @@ def run_restore(
     from src.backup.stream_backup import active_staging
 
     _reuse = _net_here[0] if _net_here is not None else _run_scoped_snapshot()
+    # From here the net is the commit's safety net, released by the guard below: the run's cleanup never touches it.
+    _NET_PENDING.net = None
     _snapshot_guard = ExitStack()
     # Registered whether it is being WRITTEN now or REUSED from an earlier item of this
     # run: the age-based sweep never touches a registered path, so the run's one safety

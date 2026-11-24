@@ -310,8 +310,68 @@ def test_a_hash_that_fails_on_its_thread_fails_the_copy_and_removes_it(tmp_path)
     src.write_bytes(b"z" * 100_000)
     fd = os.open(src, os.O_RDONLY)
     try:
-        with pytest.raises(OSError, match="hash failed"):
+        with pytest.raises(C.StoreCopyRefused, match="could not be taken"):
             C._copy_fd(src, fd, tmp_path / "dst.bin", chunk=4096, use_sendfile=False, digest=_Broken())
     finally:
         os.close(fd)
     assert not (tmp_path / "dst.bin").exists()
+
+
+def test_the_net_is_the_runs_only_after_it_reads_back(tmp_path, monkeypatch):
+    import src.backup.merge as m
+
+    net, facts = _net_facts(tmp_path)
+    monkeypatch.setattr(m, "_RUN_SNAPSHOT", None)
+    monkeypatch.setattr("src.scheduler.runner.exclusive_window_token", lambda: 7)
+    assert m._run_scoped_snapshot() is None
+    with m._net_read_back_alongside((net, facts), None):
+        assert m._run_scoped_snapshot() is None, "not reused by a later item before it has read back"
+    assert m._run_scoped_snapshot() == net
+
+
+def _settled(tmp_path, monkeypatch, *, token: int, verified: bool, raises: bool):
+    import src.backup.merge as m
+    from src.backup.stream_backup import is_active_staging, register_active_staging
+
+    net, _facts = _net_facts(tmp_path)
+    monkeypatch.setattr(m, "_RUN_SNAPSHOT", (token, net) if (verified and token) else None)
+    monkeypatch.setattr("src.scheduler.runner.exclusive_window_token", lambda: token)
+    register_active_staging(net)
+
+    def _restore():
+        m._NET_PENDING.net = net
+        if raises:
+            raise ValueError("refused later on")
+        return {"committed": False}
+
+    wrapped = m._settle_pending_net(_restore)
+    if raises:
+        with pytest.raises(ValueError, match="refused later on"):
+            wrapped()
+    else:
+        assert wrapped() == {"committed": False}
+    return m, net, is_active_staging(net)
+
+
+@pytest.mark.parametrize("raises", [False, True])
+def test_a_restore_that_does_not_commit_removes_a_net_nothing_will_reuse(tmp_path, monkeypatch, raises):
+    for token, verified in ((0, True), (0, False), (7, False)):
+        m, net, registered = _settled(tmp_path, monkeypatch, token=token, verified=verified, raises=raises)
+        assert not net.exists() and not registered, (token, verified)
+        assert m._NET_PENDING.net is None
+
+
+def test_the_runs_verified_net_is_kept_for_the_next_item_and_released_to_pruning(tmp_path, monkeypatch):
+    m, net, registered = _settled(tmp_path, monkeypatch, token=7, verified=True, raises=True)
+    assert net.exists() and not registered and m._run_scoped_snapshot() == net
+
+
+def test_the_commit_takes_the_net_before_any_swap_and_run_restore_is_settled():
+    src = (_ROOT / "src/backup/merge.py").read_text(encoding="utf-8")
+    restore = python_function_source(src, "run_restore")
+    hand = restore.index("_NET_PENDING.net = None")
+    assert restore.index("_reuse = _net_here[0] if _net_here is not None else _run_scoped_snapshot()") < hand
+    assert hand < restore.index('_abort_point("pre_restore_snapshot")'), "handed over before the commit's first step"
+    assert "@_settle_pending_net\ndef run_restore(" in src
+    take = python_function_source(src, "_take_safety_net_with_the_copy")
+    assert "_remember_run_snapshot" not in take, "recorded as the run's net only after the read-back"
