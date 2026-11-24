@@ -616,6 +616,36 @@ def ensure_article_keyword_indexed_column(engine: Engine) -> list[str]:
     return added
 
 
+#: R824 (row 405): the stage version and carry provenance on both stamp tables. The live store is never put through alembic, so
+#: an existing install gets them here (create_all builds them on a fresh one). No backfill: NULL is "written before the record".
+_STAMP_PROVENANCE_COLUMNS: dict[str, tuple[str, ...]] = {
+    "article_index_stamps": ("stage_version", "carried_from_batch"),
+    "article_www_stamps": ("stage_version", "carried_from_batch"),
+}
+
+
+def ensure_stamp_provenance_columns(engine: Engine) -> list[str]:
+    """Self-heal the stamp tables' ``stage_version`` and ``carried_from_batch`` (R824; idempotent, additive, a plain ADD COLUMN)."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        for table, columns in _STAMP_PROVENANCE_COLUMNS.items():
+            if not conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name=:t"), {"t": table}
+            ).fetchone():
+                continue
+            existing = {r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()}  # noqa: S608  # nosec B608 # module-local literals
+            for name in columns:
+                if name in existing:
+                    continue
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} INTEGER"))  # nosec B608 # module-local literals
+                added.append(f"{table}.{name}")
+    if added:
+        _LOG.info(f"added stamp provenance column(s): {', '.join(added)}")
+    return added
+
+
 def ensure_article_top_keyword_columns(engine: Engine) -> list[str]:
     """Self-heal the articles top-keyword precompute columns (idempotent, additive).
 

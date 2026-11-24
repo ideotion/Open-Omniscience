@@ -8662,6 +8662,7 @@
   "{n} more table is empty in this backup.": "此备份中另有 {n} 个表为空。",
   "{n} more tables are empty in this backup.": "此备份中另有 {n} 个表为空。",
   "{n} more tabs": "另外 {n} 个标签页",
+  "{n} more were already extracted before this version recorded whether an extraction came from a backup.": "另有 {n} 篇在此版本开始记录提取是否来自备份之前就已提取。",
   "{n} more — open the World map": "另有 {n} 个 — 打开世界地图",
   "{n} more, below the M{m} display floor — open the World map": "另有 {n} 个，低于 M{m} 显示门槛 — 打开世界地图",
   "{n} ms": "{n} 毫秒",

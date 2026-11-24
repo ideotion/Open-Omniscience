@@ -8662,6 +8662,7 @@
   "{n} more table is empty in this backup.": "इस बैकअप में {n} और तालिका खाली है।",
   "{n} more tables are empty in this backup.": "इस बैकअप में {n} और तालिकाएँ खाली हैं।",
   "{n} more tabs": "{n} और टैब",
+  "{n} more were already extracted before this version recorded whether an extraction came from a backup.": "{n} और लेख पहले ही निकाले जा चुके थे, इससे पहले कि यह संस्करण दर्ज करे कि निकासी किसी बैकअप से आई थी या नहीं।",
   "{n} more — open the World map": "{n} और — विश्व मानचित्र खोलें",
   "{n} more, below the M{m} display floor — open the World map": "{n} और, M{m} प्रदर्शन सीमा से नीचे — विश्व मानचित्र खोलें",
   "{n} ms": "{n} मिलीसेकंड",

@@ -35,16 +35,11 @@ from src.analytics.extract import get_extractor
 from src.analytics.store import index_article
 from src.backup.merge import _BACKLOG_SQL, _STATUS_MERGED, _stage_counts
 from src.database.models import Article
-from tests.test_derived_carry import (  # noqa: F401 - the module fixture is used by name
-    _N,
-    _merge_only,
-    _restore,
-    _schema,
-    _scalar,
-    _session,
-    _variant,
-    backup,
-)
+from tests import test_derived_carry as _dc
+from tests.test_derived_carry import _N, _merge_only, _restore, _scalar, _schema, _session, _variant
+
+#: The module fixture, used by name (assigned rather than imported, so a test's ``backup`` parameter does not read as a redefinition).
+backup = _dc.backup
 
 
 def test_the_stage_versions_are_the_two_hand_bumped_constants():
@@ -197,24 +192,88 @@ def test_the_backlog_counts_carried_extracted_here_and_awaiting_per_stage(backup
         con.close()
     assert row[0] == batch_id and row[2] == _N and row[3] == 0
     assert _stage_counts(row) == {
-        "kw": {"carried": _N, "extracted_here": 0, "awaiting": 0},
-        "www": {"carried": 0, "extracted_here": 0, "awaiting": _N},
+        "kw": {"carried": _N, "extracted_here": 0, "not_recorded": 0, "awaiting": 0},
+        "www": {"carried": 0, "extracted_here": 0, "not_recorded": 0, "awaiting": _N},
+    }
+    assert _stage_counts(row, lost=2)["www"]["awaiting"] == _N - 2, "a stand-in is never re-indexed, so it never awaits"
+
+
+def test_a_stamp_older_than_the_record_is_not_claimed_as_extracted_here(backup, tmp_path, monkeypatch):
+    # The www half is left out so the batch stays pending (a batch carried whole is complete and leaves the backlog).
+    variant = _variant(backup, tmp_path, "half.db", "DELETE FROM article_www_stamps")
+    _counts, _batch_id, working = _merge_only(variant, tmp_path, monkeypatch)
+    con = sqlite3.connect(working)
+    try:
+        con.execute("UPDATE article_index_stamps SET stage_version = NULL, carried_from_batch = NULL")
+        con.commit()
+        row = con.execute(
+            _BACKLOG_SQL,
+            {"s": _STATUS_MERGED, "engine": baseline_engine_id(), "kw_legacy": baseline_engine_id(), "www_engine": www_engine_id()},
+        ).fetchone()
+    finally:
+        con.close()
+    assert _stage_counts(row) == {
+        "kw": {"carried": 0, "extracted_here": 0, "not_recorded": _N, "awaiting": 0},
+        "www": {"carried": 0, "extracted_here": 0, "not_recorded": 0, "awaiting": _N},
     }
 
 
-def test_the_import_report_names_what_differed_in_plain_words():
-    from src.backup.import_reports import render_import_report_markdown
+def test_the_carry_records_this_machines_own_engines(backup, tmp_path, monkeypatch):
+    counts, _batch_id, working = _merge_only(backup, tmp_path, monkeypatch)
+    assert counts["_derived_carry"]["carried"]["articles"] == _N
+    con = sqlite3.connect(working)
+    try:
+        rows = dict(con.execute("SELECT engine, components FROM index_engines").fetchall())
+    finally:
+        con.close()
+    assert set(rows) == {baseline_engine_id(), www_engine_id()}
+    for engine, blob in rows.items():
+        assert recorded_components(engine, blob) is not None
 
-    carry = {
-        "planned": 3, "stamped": 3, "www_planned": 0, "www_stamped": 0,
-        "differences": {"available": True, "articles": 5, "could_not_be_read": 2,
-                        "components": {"indexer": 5, "distributions:simplemma": 1, "unrecognised": 1}},
-        "www_differences": {"available": False},
-    }
-    md = render_import_report_markdown({"kind": "restore", "plan": {"_derived_carry": carry}})
-    assert "## Extraction reused from the backup" in md
-    assert "Keywords and dates: 3 articles reused, of 3" in md
-    assert "the extraction version: 5" in md and "the installed dictionary simplemma: 1" in md
-    assert "a part this version of the app does not know: 1" in md
-    assert "could not be read (the backup does not record what that engine was): 2" in md
-    assert "could not be worked out on this computer" in md
+
+def test_a_hostile_engine_record_never_fails_the_merge(backup, tmp_path, monkeypatch):
+    """Invalid UTF-8, a BLOB, an oversized text: each is "could not be read", and the restore goes on (security read A, MUST)."""
+    engine, _blob = _foreign_record(indexer=INDEXER_VERSION - 1)
+    for name, value in (
+        ("badutf8.db", "CAST(X'7B22696E6465786572223AFF7D' AS TEXT)"),
+        ("blob.db", "X'7B7D'"),
+        ("huge.db", "'{\"x\":\"' || hex(zeroblob(40000)) || '\"}'"),
+    ):
+        variant = _variant(
+            backup, tmp_path, name,
+            f"UPDATE article_index_stamps SET engine = '{engine}'",
+            f"INSERT INTO index_engines (engine, stage, components) VALUES ('{engine}', 'kw', {value})",
+        )
+        counts, _b, _w = _merge_into(variant, tmp_path, name, monkeypatch)
+        diff = counts["_derived_carry"]["differences"]
+        assert diff["could_not_be_read"] == _N and diff["components"] == {}, (name, diff)
+
+
+def test_an_old_schema_store_gains_the_columns_and_indexes(backup, tmp_path):
+    """The live store never goes through alembic: boot's self-heal adds the two columns, and index_article then stamps (security read B)."""
+    import shutil
+
+    from src.database.maintenance import ensure_stamp_provenance_columns
+
+    path = tmp_path / "old.db"
+    shutil.copyfile(backup, path)
+    con = sqlite3.connect(path)
+    for table in ("article_index_stamps", "article_www_stamps"):
+        con.execute(f"ALTER TABLE {table} DROP COLUMN stage_version")  # noqa: S608
+        con.execute(f"ALTER TABLE {table} DROP COLUMN carried_from_batch")  # noqa: S608
+    con.commit()
+    con.close()
+    engine, s = _session(path)
+    try:
+        assert sorted(ensure_stamp_provenance_columns(engine)) == [
+            "article_index_stamps.carried_from_batch", "article_index_stamps.stage_version",
+            "article_www_stamps.carried_from_batch", "article_www_stamps.stage_version",
+        ]
+        assert ensure_stamp_provenance_columns(engine) == [], "idempotent"
+        aid = int(s.execute(text("SELECT MIN(id) FROM articles")).scalar())
+        index_article(s, s.get(Article, aid), extractor=get_extractor("baseline"))
+    finally:
+        s.close()
+        engine.dispose()
+    assert _scalar(path, "SELECT stage_version FROM article_index_stamps WHERE article_id = ?", aid) == INDEXER_VERSION
+    assert _scalar(path, "SELECT COUNT(*) FROM article_index_stamps WHERE stage_version IS NULL") == _N - 1, "no backfill"

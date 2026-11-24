@@ -1260,8 +1260,9 @@ jobs:
 
       # R824 (row 405): the golden-corpus OUTPUT digest of each extraction stage is recorded under THIS job's environment (the
       # lock's pinned dictionaries), the one environment CI holds still: the test job resolves the newest release of every
-      # unbounded dependency, so a digest recorded there would move with an upstream release and with no change here. Required
-      # here (never skipped), so an output change under an unchanged INDEXER_VERSION / WWW_INDEXER_VERSION fails this job.
+      # unbounded dependency, so a digest recorded there would move with an upstream release and with no change here. Never skipped
+      # here (OO_GOLDEN_OUTPUT_REQUIRED), so an output change under an unchanged INDEXER_VERSION / WWW_INDEXER_VERSION fails this job;
+      # the job itself is not (yet) a required check of the branch ruleset, so a red here blocks nothing until the maintainer adds it.
       - name: Extraction output digests match their versions (golden corpus, lock environment)
         env:
           OO_GOLDEN_OUTPUT_REQUIRED: "1"

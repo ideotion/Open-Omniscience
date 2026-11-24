@@ -8662,6 +8662,7 @@
   "{n} more table is empty in this backup.": "[zero]{n} جدول آخر فارغ في هذه النسخة.[one]{n} جدول آخر فارغ في هذه النسخة.[two]{n} جدولان آخران فارغان في هذه النسخة.[few]{n} جداول أخرى فارغة في هذه النسخة.[many]{n} جدولًا آخر فارغًا في هذه النسخة.[other]{n} جدول آخر فارغ في هذه النسخة.",
   "{n} more tables are empty in this backup.": "[zero]{n} جدول آخر فارغ في هذه النسخة.[one]{n} جدول آخر فارغ في هذه النسخة.[two]{n} جدولان آخران فارغان في هذه النسخة.[few]{n} جداول أخرى فارغة في هذه النسخة.[many]{n} جدولًا آخر فارغًا في هذه النسخة.[other]{n} جدول آخر فارغ في هذه النسخة.",
   "{n} more tabs": "[zero]{n} علامة تبويب أخرى[one]{n} علامة تبويب أخرى[two]{n} علامتا تبويب أخريان[few]{n} علامات تبويب أخرى[many]{n} علامة تبويب أخرى[other]{n} علامة تبويب أخرى",
+  "{n} more were already extracted before this version recorded whether an extraction came from a backup.": "{n} أخرى كانت مستخرجة بالفعل قبل أن يسجّل هذا الإصدار ما إذا كان الاستخراج قد جاء من نسخة احتياطية.",
   "{n} more — open the World map": "{n} أخرى — افتح خريطة العالم",
   "{n} more, below the M{m} display floor — open the World map": "{n} أخرى، دون عتبة العرض M{m} — افتح خريطة العالم",
   "{n} ms": "{n} ملي ثانية",

@@ -8662,6 +8662,7 @@
   "{n} more table is empty in this backup.": "このバックアップでは他に {n} 個のテーブルが空です。",
   "{n} more tables are empty in this backup.": "このバックアップでは他に {n} 個のテーブルが空です。",
   "{n} more tabs": "ほか {n} 個のタブ",
+  "{n} more were already extracted before this version recorded whether an extraction came from a backup.": "さらに {n} 件は、抽出がバックアップ由来かどうかをこのバージョンが記録する前に、すでに抽出済みでした。",
   "{n} more — open the World map": "他に {n} 件 — 世界地図を開く",
   "{n} more, below the M{m} display floor — open the World map": "他に {n} 件（表示しきい値 M{m} 未満）— 世界地図を開く",
   "{n} ms": "{n} ミリ秒",

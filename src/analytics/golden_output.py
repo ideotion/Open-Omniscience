@@ -110,25 +110,49 @@ def scripts_covered(fixture: dict) -> list[str]:
     for a in fixture["articles"]:
         counts = script_counts(a.get("text") or "")
         if counts:
-            seen.add(main_script(a["text"]))
+            main = main_script(a["text"])
+            if main:
+                seen.add(main)
             seen |= {k for k in ("Hiragana", "Katakana") if counts.get(k)}
     return sorted(s for s in seen if s)
 
 
+#: The gazetteer files an install GENERATES (from its own OSM data, or a full city build) and the repo does not track: they change
+#: the www rows per machine, so their presence and bytes are part of the environment. Every other data file the stages read
+#: (stoplists, rings, the shipped sample gazetteer) is in the repository and is judged by the output digest itself, never treated
+#: as "another environment": an edit to one is a change to what the stage writes, a --bump or a checked --same.
+INSTALL_GENERATED_DATA: tuple[str, ...] = ("configs/cities.yml", "configs/places_gazetteer.yml")
+
+
+def _generated_data_digest() -> str | None:
+    root = Path(__file__).resolve().parents[2]
+    present = [(rel, (root / rel).read_bytes()) for rel in INSTALL_GENERATED_DATA if (root / rel).is_file()]
+    if not present:
+        return None
+    h = hashlib.sha256()
+    for rel, data in present:
+        h.update(rel.encode() + b"\0" + hashlib.sha256(data).digest())
+    return h.hexdigest()
+
+
 def environment(stage: str) -> dict:
-    """What the stage's rows depend on besides the code: the stage's engine identity minus its
-    schema, extractor, version and code. Two digests are comparable only when these are equal."""
+    """What the stage's rows depend on besides the code and the repository's own data files: the dictionaries, switches,
+    interpreter and Unicode tables, and the gazetteer files this install generated (:data:`INSTALL_GENERATED_DATA`). Two digests
+    are comparable only when these are equal."""
     from src.analytics import engine_identity as ei
 
+    keep: tuple[str, ...]
     if stage == "kw":
         comp = ei.engine_components(extractor_name="baseline")
-        keep = ("data", "distributions", "switches", "python", "unicode")
+        keep = ("distributions", "switches", "python", "unicode")
     elif stage == "www":
         comp = ei.www_engine_components()
-        keep = ("data", "python", "unicode")
+        keep = ("python", "unicode")
     else:
         raise ValueError(f"unknown stage {stage!r}")
-    return {k: comp[k] for k in keep}
+    out = {k: comp[k] for k in keep}
+    out["generated_gazetteers"] = _generated_data_digest()
+    return out
 
 
 def _num(v):
@@ -151,7 +175,7 @@ def _canonical(conn) -> dict[str, dict[str, list]]:
     kw = {
         "keyword_mentions": _rows(
             conn,
-            f"SELECT {art.format(col='m.article_id')}, {kw_text.format(col='m.keyword_id')}, m.count, m.first_offset, "
+            f"SELECT {art.format(col='m.article_id')}, {kw_text.format(col='m.keyword_id')}, m.count, m.first_offset, "  # noqa: S608  # nosec B608 # module-local literals, never input
             f"m.observed_on, m.country, m.city, m.language, {src.format(col='m.source_id')}, m.extractor "
             "FROM keyword_mentions m",
         ),
@@ -162,24 +186,24 @@ def _canonical(conn) -> dict[str, dict[str, list]]:
         ),
         "articles": _rows(
             conn,
-            f"SELECT hash, language, detected_language, sentiment_score, sentiment_label, "
+            f"SELECT hash, language, detected_language, sentiment_score, sentiment_label, "  # noqa: S608  # nosec B608 # module-local literals, never input
             f"{kw_text.format(col='top_keyword_id')}, top_keyword_count, top_keyword_tied_n FROM articles",
         ),
         "article_mentioned_dates": _rows(
             conn,
-            f"SELECT {art.format(col='d.article_id')}, d.mentioned_on, d.precision, d.snippet, d.confidence, "
+            f"SELECT {art.format(col='d.article_id')}, d.mentioned_on, d.precision, d.snippet, d.confidence, "  # noqa: S608  # nosec B608 # module-local literals, never input
             "d.extractor, d.status FROM article_mentioned_dates d",
         ),
     }
     www = {
         "article_mentioned_places": _rows(
             conn,
-            f"SELECT {art.format(col='p.article_id')}, p.name, p.country, p.kind, p.mentions, p.snippet, "
+            f"SELECT {art.format(col='p.article_id')}, p.name, p.country, p.kind, p.mentions, p.snippet, "  # noqa: S608  # nosec B608 # module-local literals, never input
             "p.lat, p.lon, p.note, p.extractor FROM article_mentioned_places p",
         ),
         "article_entities": _rows(
             conn,
-            f"SELECT {art.format(col='e.article_id')}, e.name, e.entity_class, e.mentions, e.snippet, e.note, "
+            f"SELECT {art.format(col='e.article_id')}, e.name, e.entity_class, e.mentions, e.snippet, e.note, "  # noqa: S608  # nosec B608 # module-local literals, never input
             "e.extractor FROM article_entities e",
         ),
     }
@@ -218,12 +242,12 @@ def run_pass(fixture: dict | None = None) -> dict[str, dict[str, list]]:
             try:
                 ids: dict[str, int] = {}
                 for so in fx["sources"]:
-                    row = Source(
+                    src_row = Source(
                         name=so["name"], domain=so["domain"], language=so.get("language"), country=so.get("country")
                     )
-                    s.add(row)
+                    s.add(src_row)
                     s.flush()
-                    ids[so["name"]] = row.id
+                    ids[so["name"]] = src_row.id
                 domains = {so["name"]: so["domain"] for so in fx["sources"]}
                 arts = []
                 for a in fx["articles"]:

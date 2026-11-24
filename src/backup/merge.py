@@ -4637,61 +4637,94 @@ def _engine_mix(con, plan: dict, key: str, table: str) -> None:
         plan[key + "_other"] = other
 
 
+#: The largest ``index_engines.components`` text the carry plan reads (R824): a real record is under 1 KB. A longer one is not read
+#: (it counts as could not be read), so a crafted backup cannot make the plan hold megabytes per engine.
+_ENGINE_RECORD_MAX_BYTES = 16_384
+#: The most distinct foreign engines the plan looks up a record for; the articles of the rest count as could not be read.
+_ENGINE_RECORDS_MAX = 1_000
+
+
 def _engine_differences(con, plan: dict, key: str, table: str, accepted: tuple[str, ...] | None, stage: str) -> None:
     """``plan[key]``: for the incoming stamps in ``table`` that do NOT name this machine's engine for ``stage``, which components differ,
     each by name with the number of articles whose stamp differs in it (R824, row 405; Plan: name every component, never guess one).
 
     The incoming store's ``index_engines`` row says what each id is a hash of; a row is believed only when it recomputes to its own id
-    (``recorded_components``). A stamp with no such row -- a backup made before the record existed, or a row that does not recompute --
-    counts under ``could_not_be_read``, never under a component. An article whose engine differs in two components counts under both, so
-    the component counts do not add up to ``articles``. Counts and component names only: a component VALUE (a dictionary version, a digest)
-    is never copied into the report."""
+    (``recorded_components``). A stamp with no such row -- a backup made before the record existed, a row that does not recompute, one
+    that is not UTF-8 text or is over :data:`_ENGINE_RECORD_MAX_BYTES` -- counts under ``could_not_be_read``, never under a component.
+    An article whose engine differs in two components counts under both, so the component counts do not add up to ``articles``. Counts
+    and component names only: a component VALUE (a dictionary version, a digest) is never copied into the report.
+
+    A DIAGNOSTIC: it decides nothing the carry does, so any failure here (a hostile or damaged backup table included, the operator's
+    Stop excepted) leaves ``{"available": False}`` and the merge goes on."""
+    try:
+        _engine_differences_read(con, plan, key, table, accepted, stage)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:  # noqa: BLE001 - a diagnostic never decides whether a restore succeeds
+        if "interrupted" in str(exc).lower():  # the operator's Stop aborts the statement this way (_step_watch): it stays a Stop
+            raise
+        log_failure(_LOG, "could not name what differs in the incoming engines; carry unaffected", exc, level=logging.WARNING)
+        plan[key] = {"available": False}
+
+
+def _engine_differences_read(con, plan: dict, key: str, table: str, accepted: tuple[str, ...] | None, stage: str) -> None:
     from src.analytics.engine_identity import (
+        STAMP_PREFIX,
+        WWW_STAMP_PREFIX,
         component_differences,
         engine_record,
         recorded_components,
         www_engine_record,
     )
 
-    try:
-        own_id, own_blob = engine_record(extractor_name="baseline") if stage == "kw" else www_engine_record()
-        own = json.loads(own_blob)
-    except Exception as exc:  # noqa: BLE001 - no local record, no comparison; the carry decides on its own as before
-        log_failure(_LOG, "could not compute this machine's engine components; differences not named", exc, level=logging.WARNING)
-        plan[key] = {"available": False}
+    plan[key] = {"available": False}
+    if not any(r[1] == "engine" for r in _q(con, f"PRAGMA inc.table_info({table})")):  # nosec B608 # two module-local literal table names
         return
+    own_id, own_blob = engine_record(extractor_name="baseline") if stage == "kw" else www_engine_record()
+    own = json.loads(own_blob)
+    prefix = STAMP_PREFIX if stage == "kw" else WWW_STAMP_PREFIX
     mine = set(accepted or (own_id,))
-    rows = [(str(e), int(n)) for e, n in _q(con, f"SELECT engine, COUNT(*) FROM inc.{table} GROUP BY engine")]  # noqa: S608  # nosec B608 # two module-local literal table names
-    others = [(e, n) for e, n in rows if e not in mine]
+    # The engine read as bytes: a stamp's engine is the backup's text, and one that is not UTF-8 must not stop the read.
+    rows = _q(con, f"SELECT CAST(engine AS BLOB), COUNT(*) FROM inc.{table} GROUP BY engine")  # noqa: S608  # nosec B608 # two module-local literal table names
+    others: list[tuple[str | None, int]] = []
+    for raw, n in rows:
+        try:
+            engine = bytes(raw).decode("utf-8") if raw is not None else None
+        except (TypeError, UnicodeDecodeError):
+            engine = None
+        if engine not in mine:
+            others.append((engine, int(n)))
     out: dict = {"available": True, "articles": sum(n for _e, n in others), "components": {}, "could_not_be_read": 0}
     plan[key] = out
-    if not others:
-        return
-    records: dict[str, str] = {}
-    if _inc_has_table(con, "index_engines"):
-        names = tuple(e for e, _n in others)
-        for i in range(0, len(names), 500):
-            part = names[i:i + 500]
-            records.update(
-                (str(e), c)
-                for e, c in _q(
-                    con,
-                    f"SELECT engine, components FROM inc.index_engines WHERE engine IN ({','.join('?' * len(part))})",  # noqa: S608  # nosec B608 # one "?" per id
-                    part,
-                )
-            )
+    named = [(e, n) for e, n in others if e is not None and e.startswith(prefix)]
+    out["could_not_be_read"] += sum(n for e, n in others if e is None or not e.startswith(prefix))
+    out["could_not_be_read"] += sum(n for _e, n in named[_ENGINE_RECORDS_MAX:])
+    named = named[:_ENGINE_RECORDS_MAX]
+    has_records = _inc_has_table(con, "index_engines")
     counts = out["components"]
-    for engine, n in others:
-        theirs = recorded_components(engine, records.get(engine))
-        if theirs is None:
-            out["could_not_be_read"] += n
-            continue
-        named = component_differences(theirs, own)
-        if not named:  # equal components hash to an id this machine accepts; anything else is not a reading to name
-            out["could_not_be_read"] += n
-            continue
-        for name in named:
-            counts[name] = counts.get(name, 0) + n
+    for i in range(0, len(named), 200):
+        part = named[i:i + 200]
+        records: dict[str, str] = {}
+        if has_records:
+            for e, blob in _q(
+                con,
+                "SELECT engine, CAST(components AS BLOB) FROM inc.index_engines"  # noqa: S608  # nosec B608 # one "?" per id
+                f" WHERE engine IN ({','.join('?' * len(part))}) AND typeof(components) = 'text'"
+                f" AND length(CAST(components AS BLOB)) <= {_ENGINE_RECORD_MAX_BYTES}",
+                tuple(e for e, _n in part),
+            ):
+                try:
+                    records[str(e)] = bytes(blob).decode("utf-8")
+                except (TypeError, UnicodeDecodeError):
+                    continue
+        for engine, n in part:
+            theirs = recorded_components(engine, records.get(engine))
+            differing = component_differences(theirs, own) if theirs is not None else []
+            if not differing:  # no record it can recompute, or equal components (an id this machine accepts): never a guess
+                out["could_not_be_read"] += n
+                continue
+            for name in differing:
+                counts[name] = counts.get(name, 0) + n
 
 
 def _plan_derived_carry(con, batch_id, results) -> None:
@@ -5051,6 +5084,29 @@ def _plan_derived_carry(con, batch_id, results) -> None:
         plan["reason"] = "every verified article was refused by a keyword guard"
 
 
+def _record_local_engines(con, engine: str, www_engine: str | None) -> None:
+    """The carried stamps name this machine's engines, so this store's ``index_engines`` gets their records (R824, row 405): a later
+    restore of a backup of THIS store can then name what differs, even when no pass has run here yet. Insert-or-ignore, only for the
+    record whose id IS the stamped one, and only when the table exists (an old-schema working copy is left as it is)."""
+    if not _has_column(con, "main", "index_engines", "components"):
+        return
+    from datetime import UTC, datetime
+
+    from src.analytics.engine_identity import engine_record, www_engine_record
+
+    now = datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ")
+    for stage, stamped, record in (("kw", engine, lambda: engine_record(extractor_name="baseline")), ("www", www_engine, www_engine_record)):
+        if not stamped:
+            continue
+        own_id, blob = record()
+        if own_id != stamped:
+            continue
+        con.execute(
+            "INSERT OR IGNORE INTO main.index_engines (engine, stage, components, recorded_at) VALUES (?, ?, ?, ?)",
+            (own_id, stage, blob, now),
+        )
+
+
 def _carry_derived_rows(con, batch_id, results) -> dict:
     """Write the planned articles' derived rows, stamps and counter deltas (R24).
 
@@ -5084,6 +5140,7 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
 
     kw_prov_cols, kw_prov_vals, kw_prov = _provenance("article_index_stamps", "kw")
     www_prov_cols, www_prov_vals, www_prov = _provenance("article_www_stamps", "www")
+    _record_local_engines(con, engine, www_engine)
     # Every temp table below is declared with its key, never built with CREATE TABLE AS:
     # a CTAS table has NO index, and each is probed per row -- carry_win by range once per
     # window, carry_delta once per touched keyword by the counter UPDATE. Unindexed, the
@@ -9015,12 +9072,15 @@ def mark_reindex_complete(batch_id: int) -> None:
 #: R824 (row 405): the per-stage columns after ``certified`` -- keyword stamps current, of them carried at an import (``carried_from_batch``
 #: set), and the same two for the places-and-entities stamp -- give the three counts per stage (carried, extracted here, awaiting). For that
 #: the www stamp is joined on the article itself rather than through the keyword stamp, and ``certified`` (both stamps) is counted from the
-#: two joins.
+#: two joins. A current stamp with no recorded ``stage_version`` was written before stamps recorded where they came from (an import or a
+#: pass of an older build): it is counted apart as ``not_recorded``, never claimed as "extracted on this computer".
 _BACKLOG_SQL = (
     "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n,"
     " COUNT(CASE WHEN st.article_id IS NOT NULL AND ws.article_id IS NOT NULL THEN 1 END) AS certified,"
     " COUNT(st.article_id) AS kw_current, COUNT(st.carried_from_batch) AS kw_carried,"
-    " COUNT(ws.article_id) AS www_current, COUNT(ws.carried_from_batch) AS www_carried"
+    " COUNT(ws.article_id) AS www_current, COUNT(ws.carried_from_batch) AS www_carried,"
+    " COUNT(CASE WHEN st.article_id IS NOT NULL AND st.stage_version IS NULL THEN 1 END) AS kw_not_recorded,"
+    " COUNT(CASE WHEN ws.article_id IS NOT NULL AND ws.stage_version IS NULL THEN 1 END) AS www_not_recorded"
     " FROM merge_batches b"
     " LEFT JOIN merged_rows m"
     "   ON m.batch_id = b.id AND m.table_name = 'articles'"
@@ -9107,18 +9167,28 @@ def _backlog_rows(session) -> list[tuple]:
     # between them can make a batch owe less than it does for one poll, never a negative number. The one race found is a stamp deleted between
     # the reads (a stand-in is never stamped and a merged batch gets no new rows): the first statement counted that article as certified, the
     # second counts it as unstamped, and the raw figure would take it off the owed count twice.
-    return [(*r[:4], min(lost.get(int(r[0]), 0), max(0, int(r[2]) - int(r[3]))), _stage_counts(r)) for r in rows]
+    out = []
+    for r in rows:
+        held = min(lost.get(int(r[0]), 0), max(0, int(r[2]) - int(r[3])))
+        out.append((*r[:4], held, _stage_counts(r, held)))
+    return out
 
 
-def _stage_counts(row) -> dict:
-    """The three counts per stage for one backlog row (R824, row 405): ``carried`` at an import, ``extracted_here`` (current stamp, written
-    by a pass on this machine) and ``awaiting`` (no current stamp for that stage). Measured from the stamps, never estimated; a stand-in is
-    never stamped and counts as awaiting here, as it does nowhere else, so ``awaiting`` is an upper bound by the batch's stand-ins."""
+def _stage_counts(row, lost: int = 0) -> dict:
+    """The counts per stage for one backlog row (R824, row 405): ``carried`` at an import, ``extracted_here`` (a current stamp a pass on
+    this machine wrote and recorded), ``not_recorded`` (a current stamp written before stamps recorded where they came from: carried or
+    extracted, nobody can now say which) and ``awaiting`` (no current stamp for that stage). Measured from the stamps, never estimated;
+    ``lost`` (the batch's stand-ins, never stamped and never re-indexed) is left out of ``awaiting`` as it is out of the owed count."""
     n = int(row[2])
     out = {}
-    for stage, current, carried in (("kw", row[4], row[5]), ("www", row[6], row[7])):
-        cur, car = int(current or 0), int(carried or 0)
-        out[stage] = {"carried": car, "extracted_here": max(0, cur - car), "awaiting": max(0, n - cur)}
+    for stage, current, carried, unknown in (("kw", row[4], row[5], row[8]), ("www", row[6], row[7], row[9])):
+        cur, car, unk = int(current or 0), int(carried or 0), int(unknown or 0)
+        out[stage] = {
+            "carried": car,
+            "extracted_here": max(0, cur - car - unk),
+            "not_recorded": unk,
+            "awaiting": max(0, n - cur - int(lost or 0)),
+        }
     return out
 
 
@@ -9185,7 +9255,7 @@ def reindex_backlog() -> dict:
         for r, o, c in zip(rows, owed, certified, strict=True)
     ]
     stages = {
-        stage: {k: sum(int(r[5][stage][k]) for r in rows) for k in ("carried", "extracted_here", "awaiting")}
+        stage: {k: sum(int(r[5][stage][k]) for r in rows) for k in ("carried", "extracted_here", "not_recorded", "awaiting")}
         for stage in ("kw", "www")
     }
     return {

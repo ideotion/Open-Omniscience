@@ -8662,6 +8662,7 @@
   "{n} more table is empty in this backup.": "[one]Ещё {n} таблица пуста в этой копии.[few]Ещё {n} таблицы пусты в этой копии.[many]Ещё {n} таблиц пусты в этой копии.[other]Ещё {n} таблицы пусты в этой копии.",
   "{n} more tables are empty in this backup.": "[one]Ещё {n} таблица пуста в этой копии.[few]Ещё {n} таблицы пусты в этой копии.[many]Ещё {n} таблиц пусты в этой копии.[other]Ещё {n} таблицы пусты в этой копии.",
   "{n} more tabs": "Ещё вкладок: {n}",
+  "{n} more were already extracted before this version recorded whether an extraction came from a backup.": "Ещё {n} были извлечены до того, как эта версия начала записывать, пришло ли извлечение из резервной копии.",
   "{n} more — open the World map": "Ещё {n} — открыть карту мира",
   "{n} more, below the M{m} display floor — open the World map": "Ещё {n}, ниже порога отображения M{m} — открыть карту мира",
   "{n} ms": "{n} мс",

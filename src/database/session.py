@@ -486,6 +486,7 @@ def init_db() -> None:
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
         ensure_source_qualification_columns,
+        ensure_stamp_provenance_columns,
         ensure_supergroup_ring_column,
         ensure_watch_filters_column,
         ensure_wiki_text_columns,
@@ -548,6 +549,9 @@ def init_db() -> None:
     ensure_article_fetched_host_column(engine)
     _init_step("ensure_source_catalog_baseline_column")
     ensure_source_catalog_baseline_column(engine)
+    # The stamps' stage version and carry provenance (R824, row 405; self-heal, no backfill): index_article writes both.
+    _init_step("ensure_stamp_provenance_columns")
+    ensure_stamp_provenance_columns(engine)
 
     # The read seam over the derived keyword rows (segmented-index step 0, R96): create the
     # view for a database made before it existed, or re-create it if the table's columns

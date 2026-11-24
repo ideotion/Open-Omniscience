@@ -2722,7 +2722,7 @@
     }
 
     // R824 (row 405): per stage, the imported articles whose extraction was reused from the
-    // backup, done on this computer, and still to do -- three counts read from the stamps,
+    // backup, done on this computer, and still to do (and the stamps too old to say) -- counts read from the stamps,
     // never estimated. A stage the backlog did not report is left out, never drawn as zeros.
     function _uxImStageLines(bk, tf) {
       const st = bk && bk.stages;
@@ -2737,6 +2737,11 @@
         out.push({ ok: Number(s.awaiting) === 0, text: tf(tpl, {
           carried: fmtNum(Number(s.carried), 0), here: fmtNum(Number(s.extracted_here), 0),
           awaiting: fmtNum(Number(s.awaiting), 0) }) });
+        // A stamp written before stamps recorded where they came from: carried or extracted here, nobody can say which now.
+        if (Number(s.not_recorded) > 0) {
+          out.push({ ok: true, text: tf("{n} more were already extracted before this version recorded whether an extraction came from a backup.", {
+            n: fmtNum(Number(s.not_recorded), 0) }) });
+        }
       }
       return out;
     }

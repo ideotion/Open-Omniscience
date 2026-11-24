@@ -8662,6 +8662,7 @@
   "{n} more table is empty in this backup.": "{n} tabla más está vacía en esta copia.",
   "{n} more tables are empty in this backup.": "{n} tablas más están vacías en esta copia.",
   "{n} more tabs": "{n} pestañas más",
+  "{n} more were already extracted before this version recorded whether an extraction came from a backup.": "Otros {n} ya estaban extraídos antes de que esta versión registrara si una extracción venía de una copia de seguridad.",
   "{n} more — open the World map": "{n} más — abrir el mapa del mundo",
   "{n} more, below the M{m} display floor — open the World map": "{n} más, por debajo del umbral de visualización M{m} — abrir el mapa del mundo",
   "{n} ms": "{n} ms",

@@ -695,7 +695,11 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
     from src.database.models import ArticleWwwStamp
 
     try:
-        from src.analytics.engine_identity import WWW_INDEXER_VERSION, www_engine_record, www_inputs_digest
+        from src.analytics.engine_identity import (
+            WWW_INDEXER_VERSION,
+            www_engine_record,
+            www_inputs_digest,
+        )
 
         current, record = www_engine_record()
         inputs = www_inputs_digest(raw_content=raw_content, country=country)

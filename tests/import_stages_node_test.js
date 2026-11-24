@@ -176,6 +176,15 @@ test("a pending backlog adds carried, extracted here and awaiting per stage", ()
   assert(out[2].text.indexOf("86 extracted on this computer, 7 still to extract") !== -1 && out[2].ok === false, out[2].text);
 });
 
+test("stamps older than the record are counted apart, never as extracted here", () => {
+  const bk = { available: true, articles_pending: 5, stages: {
+    kw: { carried: 0, extracted_here: 0, not_recorded: 40, awaiting: 0 } } };
+  const out = mod._uxImAnalyticsStatement({ state: "idle" }, { state: "idle", backlog: bk }, t, tf);
+  const joined = out.map((l) => l.text).join(" | ");
+  assert(joined.indexOf("0 extracted on this computer") !== -1, joined);
+  assert(joined.indexOf("40 more were already extracted before this version recorded") !== -1, joined);
+});
+
 test("a backlog without stage counts draws no stage line, never zeros", () => {
   const out = mod._uxImAnalyticsStatement({ state: "idle" }, { state: "idle", backlog: { available: true, articles_pending: 4 } }, t, tf);
   assert(out.length === 1, JSON.stringify(out));
