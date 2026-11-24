@@ -22,7 +22,9 @@ METHOD (source only; nothing is executed):
   ``esc(`` exempts nothing, and markup inside a string literal is never a value.
 * Files: ``simple/vendor`` and ``guis/vendor`` (vendored, sha256-pinned) and the top-level ``sw.js`` are left out,
   by exact path.
-* Sink: ``.innerHTML`` / ``.outerHTML`` assigned with ``=``, ``+=``, ``||=``, ``&&=`` or ``??=``, or the arguments of
+* Sink: ``ooLiveHtml(el, render)`` (app-core.js, row 361), whose second argument is read like a right-hand side, an
+  arrow's parameter list left out and its body (expression or block, every name in it) read whole; and
+  ``.innerHTML`` / ``.outerHTML`` assigned with ``=``, ``+=``, ``||=``, ``&&=`` or ``??=``, or the arguments of
   ``.insertAdjacentHTML(``. The right-hand side runs to a ``;`` or ``,`` at its own depth, a bracket that closes past
   it, or a line end outside a template literal where the expression does not go on (neither the line's last character
   nor the next line's first is an operator); a template's own line breaks never end it (a security read of row 376).
@@ -89,6 +91,10 @@ SKIPPED_FILES = ("sw.js",)
 TOP = "(top level)"
 
 _SINK = re.compile(r"\.(?:innerHTML|outerHTML)\s*(?:\+|\|\||&&|\?\?)?=(?!=)|\.insertAdjacentHTML\s*\(")
+#: app-core.js's ooLiveHtml(el, render): it writes render()'s return into el.innerHTML now and again on a language switch
+#: (row 361), so its second argument is a sink like an assignment's right-hand side.
+_LIVE_HTML = re.compile(r"(?<![\w$.])(?<!function )ooLiveHtml\s*\(")
+_ARROW_HEAD = re.compile(r"^\s*(?:async\s+)?(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>")
 _ESCAPER = re.compile(r"(?<![\w$.])(?:esc|escHtml)\s*\(")
 # One string literal (its text is already blanked in the skeleton, so only the quotes and spaces are left).
 _T_LITERAL = re.compile(r"(?<![\w$])(?:OOI18N\.)?t\s*\(\s*([\"'`])\s*\1\s*\)")
@@ -222,6 +228,18 @@ def scan_source(fname: str, js: str) -> list[Hit]:
         else:
             rhs = skel[m.end() : _rhs_end(skel, m.end())]
         if values_left(rhs):
+            hits.append(Hit(fname, _unit_at(units, m.start()), skel.count("\n", 0, m.start()) + 1))
+    for m in _LIVE_HTML.finditer(skel):
+        end = _close(skel, m.end() - 1, "(", ")")
+        args = skel[m.end() : end]
+        cut = _rhs_end(args, 0)  # the first argument (the element) ends at its own depth-0 comma
+        if cut >= len(args) or args[cut] != ",":
+            continue  # one argument only: nothing is rendered
+        render = args[cut + 1 :]
+        head = _ARROW_HEAD.match(render)
+        if head:  # an arrow's parameters are no values; its body (an expression or a block) is read whole
+            render = " " * head.end() + render[head.end() :]
+        if values_left(render):
             hits.append(Hit(fname, _unit_at(units, m.start()), skel.count("\n", 0, m.start()) + 1))
     return hits
 

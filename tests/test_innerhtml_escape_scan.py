@@ -178,3 +178,29 @@ def test_hits_are_counted_per_innermost_named_unit():
         "f.js inner 2",
         "f.js outer 1",
     ]
+
+
+# ---- ooLiveHtml(el, render): a sink too (row 361 moved renderers onto it) -----------------------
+
+
+@pytest.mark.parametrize(
+    "stmt,hits",
+    [
+        ("ooLiveHtml(el, () => esc(row.name));", 0),
+        ('ooLiveHtml(el, () => `<b>${esc(t("Saved"))}</b>`);', 0),
+        ("ooLiveHtml(el, (x) => esc(x));", 0),  # an arrow's parameters are no values
+        ("ooLiveHtml(el, null);", 0),  # nothing rendered
+        ("ooLiveHtml(el);", 0),
+        ("ooLiveHtml(el, () => row.name);", 1),
+        ("ooLiveHtml(el, () => '<b>' + row.name + '</b>');", 1),
+        ("ooLiveHtml(el, render);", 1),  # a function the scan cannot read is counted
+        ("ooLiveHtml(el, () => { const h = esc(row.name); return h; });", 1),  # a block body is read whole (strict)
+        ("x.ooLiveHtml(el, () => row.name);", 0),  # only the app's own helper is the sink
+    ],
+)
+def test_oolivehtml_is_read_as_a_sink(stmt, hits):
+    assert _hits(f"function f(el, row, render) {{ {stmt} }}") == hits
+
+
+def test_the_oolivehtml_definition_is_no_sink():
+    assert _hits("function ooLiveHtml(el, render) { _take(el, null, render); }") == 0
