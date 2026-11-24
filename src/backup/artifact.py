@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+from src.backup.regular_file import create_new
 from src.paths import data_dir
 
 _LOG = logging.getLogger("backup.artifact")
@@ -856,8 +857,9 @@ def read_volume_backup(
 
     import time
 
-    staging = (staging_root or data_dir()) / f".restore-{secrets.token_hex(8)}"
-    staging.mkdir(parents=True, exist_ok=False)
+    from src.backup.stream_backup import make_restore_staging
+
+    staging = make_restore_staging(staging_root or data_dir())  # R829 (B): private, 0700, a new name
     temp_zip = staging / "_reassembled.zip"
     stage_a_timings: dict[str, float] = {}
     # This staging holds decrypted volumes and then the plaintext corpus: marked as a live job's while this runs, and
@@ -948,13 +950,16 @@ def _safe_extract(zf: zipfile.ZipFile, staging: Path) -> None:
             raise ArtifactError(f"unsafe member path in artifact: {name!r}")
         targets.append((info, target))
     preflight_free_space(staging, needed, what="restore")
+    from src.backup.stream_backup import STAGING_FILE_MODE, private_mkdirs
+
     for info, target in targets:
+        # R829 (B): every folder and file of an extracted restore is owner-only, like the staging folder that holds it.
         if info.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
+            private_mkdirs(target)
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
+        private_mkdirs(target.parent)
         left = info.file_size
-        with zf.open(info) as src, open(target, "wb") as dst:
+        with zf.open(info) as src, create_new(target, mode=STAGING_FILE_MODE) as dst:
             while True:
                 chunk = src.read(min(_EXTRACT_CHUNK, left + 1))
                 if not chunk:
@@ -1004,8 +1009,9 @@ def read_artifact(
     root = staging_root or data_dir()
     preflight_free_space(root, len(blob), what="restore")
 
-    staging = root / f".restore-{secrets.token_hex(8)}"
-    staging.mkdir(parents=True, exist_ok=False)
+    from src.backup.stream_backup import make_restore_staging
+
+    staging = make_restore_staging(root)  # R829 (B): private, 0700, a new name
 
     # Anything below this point that raises (a malformed zip, a missing member, a
     # signature/hash mismatch in _finalize_staged...) must not leave the extracted
@@ -1016,7 +1022,10 @@ def read_artifact(
     try:
         if blob[:16] == _SQLITE_MAGIC:
             corpus = staging / "corpus.db"
-            corpus.write_bytes(blob)
+            from src.backup.stream_backup import STAGING_FILE_MODE
+
+            with create_new(corpus, mode=STAGING_FILE_MODE) as fh:  # owner read and write only (R829 B)
+                fh.write(blob)
             stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
             return StagedArtifact(
                 kind="legacy-ooenc" if was_encrypted else "legacy-db",
