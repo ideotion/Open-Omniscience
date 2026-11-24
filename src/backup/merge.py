@@ -7395,6 +7395,21 @@ _KEY_NOT_APP = "not a key this app creates; it is not written and stays in the b
 #: How many of those are listed by name (each name made printable and cut); the count covers every one.
 _KEY_NOT_APP_LISTED = 50
 _KEY_NAME_SHOWN_MAX = 120
+#: R811: the kinds of key file each signer of this app writes (two for custody and annotations, Ed25519 alone for the
+#: evidence signer), from the same names; a signer's files are placed all together or not at all.
+_KEY_KINDS: dict[str, frozenset[str]] = {
+    who: frozenset(kind for name in _APP_KEY_FILES for suffix, kind in _KEY_FORMS if name == f"{who}{suffix}")
+    for who in {name[: -len(suffix)] for name in _APP_KEY_FILES for suffix, _kind in _KEY_FORMS if name.endswith(suffix)}
+}
+_KEY_PAIR_LONE = "only one half of this key pair was in the backup; it is not written and stays in the backup"
+#: R811 (a security read of row 386): a manifest may list one name twice; no copy of it is placed, nor the rest of its pair
+_KEY_LISTED_TWICE = "the backup lists this key file more than once; no copy is written, and it stays in the backup"
+_KEY_PAIR_MISMATCH = "the two halves of this key pair do not match; neither is written, and they stay in the backup"
+#: R811 (3), with the R800 label; {name} is always the app's own file name, never one from the backup
+_KEY_NONE_HERE = (
+    'This installation has no key named {name}, and the one in the backup was not placed, so records signed by it '
+    'will show as "Signed by another installation".'
+)
 #: One restore of key files at a time in this process (R801): two at once could let one take back the marker the
 #: other relies on before it places a key.
 _KEY_RESTORE_LOCK = threading.Lock()
@@ -7454,6 +7469,8 @@ def _reseal_key(
                 public = None
         except Exception:  # noqa: BLE001 - SigningError, and what the library raises for a file it cannot read: not this passphrase
             continue
+        if kind == "ml_dsa" and not _mldsa_halves_match(pk, sk):
+            return _KEY_PAIR_MISMATCH  # R811 (1): its public key is not the one its secret key signs for
         if (form == "wrapped" and cand == held) or (form == "plaintext" and held is None):
             return raw, "as_carried", public, i
         if held is None:  # R613: never decrypted to disk on an install that holds no passphrase
@@ -7473,6 +7490,35 @@ def _reseal_key(
             return _KEY_NOT_SAME
         return (sealed, "resealed", public, i) if same else _KEY_NOT_SAME
     return _KEY_NOT_OPENED
+
+
+def _mldsa_halves_match(pk: bytes, sk: bytes) -> bool:
+    """R811 (1): an ML-DSA key file's public key is the one its secret key signs for (one sign-and-verify round trip
+    over fixed bytes, through the verifier the app itself uses). Only called where the post-quantum library is here."""
+    from src.custody import signing
+
+    probe = b"open-omniscience restore: does this ML-DSA public key belong to this secret key"
+    try:
+        return signing._mldsa_verify(signing._mldsa, pk, probe, signing._mldsa.sign(sk, probe))
+    except Exception:  # noqa: BLE001 - a secret key the library will not sign with matches nothing
+        return False
+
+
+#: FIPS 204 ML-DSA-65: the public key's length, and where the secret key keeps tr = SHAKE256(public key) (64 bytes)
+_MLDSA65_PK_LEN = 1952
+_MLDSA65_TR = slice(_MLDSA65_PK_LEN + 64, _MLDSA65_PK_LEN + 128)
+
+
+def _mldsa65_tr_matches(data: bytes) -> bool:
+    """R811 (1) without the post-quantum library (a security read of row 386): an ML-DSA-65 key file (public key then
+    secret key) whose secret key does not carry the hash of its public key (FIPS 204 keeps tr = SHAKE256(pk) inside the
+    secret key) holds a public key from another pair. Plain hashlib, so it runs where the library is absent; it catches
+    a foreign or swapped public key, not a secret key altered elsewhere (the round trip where the library is here does)."""
+    import hashlib
+
+    if len(data) != _MLDSA65_PLAIN_LEN:
+        return False
+    return hashlib.shake_256(data[:_MLDSA65_PK_LEN]).digest(64) == data[_MLDSA65_TR]
 
 
 def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes | None) -> tuple[bytes, str, None, int] | str:
@@ -7495,6 +7541,8 @@ def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes 
             data = signing._unwrap(raw, cand)
         except Exception:  # noqa: BLE001 - the GCM tag check: not this passphrase
             continue
+        if not _mldsa65_tr_matches(data):
+            return _KEY_PAIR_MISMATCH
         if cand == held:
             return raw, "as_carried", None, i
         if not held:
@@ -7507,6 +7555,8 @@ def _move_wrapped_mldsa(raw: bytes, candidates: list[bytes | None], held: bytes 
         return (sealed, "resealed", None, i) if back == data else _KEY_NOT_SAME
     if len(raw) != _MLDSA65_PLAIN_LEN:
         return _KEY_NO_PQC
+    if not _mldsa65_tr_matches(raw):
+        return _KEY_PAIR_MISMATCH
     if not held:
         return raw, "as_carried", None, 0  # a plaintext key on an install that writes plaintext: as carried
     sealed = signing.seal_mldsa_key(raw, b"", held)
@@ -7673,12 +7723,28 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
             continue
         pairs.setdefault(slot[0], []).append((name, path, slot[1]))
 
+    lone = 0
     for who, halves in sorted(pairs.items()):
         names = [name for name, _path, _kind in halves]
-        if any(
+        has_local = any(
             (keys_dir / f"{who}{suffix}").exists() or (keys_dir / f"{who}{suffix}").is_symlink()
             for suffix, _kind in _KEY_FORMS
-        ):
+        )
+        if len({name for name, _path, _kind in halves}) != len(halves):
+            # a name listed twice (literally, or once with "\\"): which copy is meant cannot be told, so none is placed
+            for name in sorted(set(names)):
+                why = _KEY_LISTED_TWICE if names.count(name) > 1 else _KEY_PAIR_HALF
+                out["not_placed"].append({"name": name, **said("reason", why)} if why == _KEY_LISTED_TWICE else {"name": name, "reason": why})
+            _say_no_key_here(out, who, keys_dir)
+            continue
+        if {kind for _name, _path, kind in halves} != _KEY_KINDS[who]:
+            # R811: one half of a signer's pair is never placed on its own (the existing key here, if any, is untouched)
+            lone += len(names)
+            for name in names:
+                out["not_placed"].append({"name": name, **said("reason", _KEY_PAIR_LONE)})
+            _say_no_key_here(out, who, keys_dir)
+            continue
+        if has_local:
             out["kept_local"].extend(names)  # the existing identity ALWAYS wins, both halves of it
             continue
         placeable: list[tuple[str, bytes, str, str | None, int]] = []
@@ -7690,11 +7756,22 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
             else:
                 placeable.append((name, *sealed))
         if refused:
-            for name in names:
-                out["not_placed"].append({"name": name, "reason": refused.get(name, _KEY_PAIR_HALF)})
+            if _KEY_PAIR_MISMATCH in refused.values():
+                # R811 (1): neither half is placed; the mismatch is said on the ML-DSA file it is in, and the other half
+                # keeps its own reason, or the pair's
+                for name in names:
+                    own = refused.get(name, _KEY_PAIR_HALF)
+                    out["not_placed"].append({"name": name, **said("reason", own)} if own == _KEY_PAIR_MISMATCH else {"name": name, "reason": own})
+            else:
+                for name in names:
+                    out["not_placed"].append({"name": name, "reason": refused.get(name, _KEY_PAIR_HALF)})
+            _say_no_key_here(out, who, keys_dir)
             continue
+        # R811 (2): a pair is placed whole or not at all; what this call placed is reported only once all of it is
         made: list[tuple[Path, tuple[int, int, int, int]]] = []  # the halves THIS call created, and which file each is
-        for i, (name, data, how, public, opener) in enumerate(placeable):
+        done: list[tuple[str, str, str | None, int]] = []
+        raced: str | None = None
+        for name, data, how, public, opener in placeable:
             local = base / name
             try:
                 placed = _place_key_file(local, data)
@@ -7703,14 +7780,29 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
                 _take_back_key_files(made)
                 raise
             if not placed:
-                # another caller made this key while the restore ran: theirs wins, and so does the rest of its pair
-                out["kept_local"].append(name)
-                for later, *_rest in placeable[i + 1 :]:
-                    out["not_placed"].append({"name": later, "reason": _KEY_PAIR_RACED})
+                raced = name
                 break
-            placed_names.append(name)
-            with suppress(OSError):
+            try:
                 made.append((local, keyfile.identity(os.lstat(local))))
+            except FileNotFoundError:
+                pass  # gone already (or placed under another spelling of the name): nothing at this name to take back
+            except OSError:
+                # the file just made is there but cannot be looked at, so it could not be taken back later: stop here,
+                # as for a write error (a security read of row 386)
+                _take_back_key_files(made)
+                raise
+            done.append((name, how, public, opener))
+        if raced is not None:
+            # another caller made this key while the restore ran: theirs wins, and the halves this call had already
+            # placed are taken back (only while each is still the file this call made), so no pair is left half ours
+            _take_back_key_files(made)
+            out["kept_local"].append(raced)
+            for name in names:
+                if name != raced:
+                    out["not_placed"].append({"name": name, "reason": _KEY_PAIR_RACED})
+            continue
+        for name, how, public, opener in done:
+            placed_names.append(name)
             out["restored"].append(name)
             if how == "resealed":
                 out["resealed"].append(name)
@@ -7718,6 +7810,7 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
                 out["still_encrypted"].append({"name": name, "opened_with": roles[opener]})
             if public is not None:
                 out["identities"].append({"name": name, "ed25519_public_key": public})
+    out["lone_halves"] = lone
     out["not_app_keys"] = {"count": not_app, "listed": min(not_app, _KEY_NOT_APP_LISTED)}
     _settle_restore_marker(keys_dir / _EVIDENCE_KEY_FILE, made_marker, bool(placed_names))
     return out
@@ -7732,6 +7825,15 @@ def _shown_key_name(name: str) -> str:
     if len(text) <= _KEY_NAME_SHOWN_MAX:
         return text
     return text[:_KEY_NAME_SHOWN_MAX] + f" ... (+{len(text) - _KEY_NAME_SHOWN_MAX} more characters)"
+
+
+def _say_no_key_here(out: dict, who: str, keys_dir: Path) -> None:
+    """R811 (3): when a signer's key from the backup is not placed and this installation has no Ed25519 key of that
+    signer (the one records show the signer by), say what it means; the restore never makes a key itself."""
+    from src.shared_text import said
+
+    if not os.path.lexists(keys_dir / f"{who}_ed25519.pem"):
+        out.setdefault("notes", []).append(said("note", _KEY_NONE_HERE, name=f"{who}_ed25519.pem"))
 
 
 def _settle_restore_marker(
