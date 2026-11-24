@@ -138,6 +138,22 @@ def test_an_unread_memory_or_disk_figure_declines_the_window(tmp_path, monkeypat
         eng.dispose()
 
 
+@pytest.mark.parametrize("unread", ["memory", "disk"])
+def test_one_unread_reading_declines_the_window(tmp_path, monkeypatch, unread):
+    """Both readings must have been made: plenty of disk says nothing about whether the sort fits in memory."""
+    monkeypatch.setattr("src.database.article_indexes._available_ram_bytes", lambda: None if unread == "memory" else 64 * 10**9)
+    monkeypatch.setattr("src.database.article_indexes._free", lambda _p: None if unread == "disk" else 10**12)
+    eng = _file_engine(tmp_path / "a.db")
+    s = sessionmaker(bind=eng, future=True)()
+    try:
+        _stamp(s, 10)
+        plan = drain_window_plan(s, _backlog(s, 10))
+        assert plan["open"] is False and plan["reason"] == "memory or disk not measured"
+    finally:
+        s.close()
+        eng.dispose()
+
+
 def test_short_memory_declines_the_window_and_says_so(tmp_path, monkeypatch):
     monkeypatch.setattr("src.database.article_indexes._available_ram_bytes", lambda: 1)
     monkeypatch.setattr("src.database.article_indexes._free", lambda _p: 10**12)
@@ -400,6 +416,16 @@ def test_short_memory_keeps_the_marker_and_the_task_manager_says_why(tmp_path, m
     s = sessionmaker(bind=eng, future=True)()
     assert read_state(s) is not None and not set(planned) & _indexes(s), "never claimed rebuilt"
     s.close()
+
+    # The job has ended (a finished job is not listed), so the task manager's own row carries the line.
+    from src.api import jobs as jobs_api
+
+    monkeypatch.setattr("src.database.session.engine", eng)
+    monkeypatch.setitem(jobs_api._kw_index_cache, "at", 0.0)
+    monkeypatch.setattr(jobs_api, "_KW_INDEX_TTL_S", -1.0)
+    rows = jobs_api._keyword_index_rows()
+    assert len(rows) == 1 and rows[0]["kind"] == bb.HEAL_JOB_KIND and rows[0]["state"] == "paused"
+    assert rows[0]["detail_i18n"] == bb.FRAME_WAITING_MEMORY and set(rows[0]["detail_vars"]) == {"free", "needed"}
     eng.dispose()
 
 
@@ -595,12 +621,22 @@ def test_a_busy_collector_never_opens_the_window(real_store):
 def test_a_drain_that_yields_to_an_import_leaves_the_marker_and_the_next_run_adopts_it(real_store):
     """The restore waits 30 s for this drain; a rebuild over a corpus is longer. So the yield leaves the
     marker for the working copy, and the next drain run (or the heal) rebuilds."""
+    import src.backup.merge as merge_mod
     from src.api import backup_v2 as bv2
 
     eng, state, rec, seen_during = real_store
     ctx = _DrainCtx()
-    ctx.yielding = True  # an import asked the machine
-    out = bv2._reindex_resume_worker(ctx)
+    inner = merge_mod.reindex_imported_articles
+
+    def _import_arrives(batch_id, **kw):
+        ctx.yielding = True  # an import asks for the machine during the first batch
+        return inner(batch_id, **kw)
+
+    merge_mod.reindex_imported_articles = _import_arrives
+    try:
+        out = bv2._reindex_resume_worker(ctx)
+    finally:
+        merge_mod.reindex_imported_articles = inner
     assert out["index_window"]["left_open_for_import"] is True
     present, marker = _store_state(eng)
     planned = set(droppable_indexes(keep=DRAIN_KEEP))
@@ -613,14 +649,61 @@ def test_a_drain_that_yields_to_an_import_leaves_the_marker_and_the_next_run_ado
     assert out2["index_window"]["adopted"] is True and out2["index_window"]["complete"] is True
 
 
-def test_an_operator_stop_still_rebuilds(real_store):
+def test_a_run_already_stopping_never_opens_the_window(real_store):
+    """A run cancelled (or told to yield) before its first batch drops nothing: dropping 13 indexes only to
+    rebuild them at once, or to leave them for an import, is a full sort for nothing."""
     from src.api import backup_v2 as bv2
 
     eng, state, rec, seen_during = real_store
     out = bv2._reindex_resume_worker(_DrainCtx(stopping=True))
     present, marker = _store_state(eng)
     assert marker is None and set(droppable_indexes(keep=DRAIN_KEEP)) <= present
-    assert out.get("index_window", {}).get("complete", True) is True
+    assert "index_window" not in out, "no window was opened"
+
+
+def test_an_operator_stop_mid_run_still_rebuilds(real_store, monkeypatch):
+    import src.backup.merge as merge_mod
+    from src.api import backup_v2 as bv2
+
+    eng, state, rec, seen_during = real_store
+    ctx = _DrainCtx()
+    inner = merge_mod.reindex_imported_articles
+
+    def _stop_after(batch_id, **kw):
+        ctx.stopping = True  # the operator presses Stop during the first batch
+        return inner(batch_id, **kw)
+
+    monkeypatch.setattr("src.backup.merge.reindex_imported_articles", _stop_after)
+    out = bv2._reindex_resume_worker(ctx)
+    assert seen_during and not set(droppable_indexes(keep=DRAIN_KEEP)) & seen_during[0], "the window was open"
+    present, marker = _store_state(eng)
+    assert marker is None and set(droppable_indexes(keep=DRAIN_KEEP)) <= present
+    assert out["index_window"]["complete"] is True
+
+
+def test_an_engaged_storage_guard_leaves_the_marker_for_later(real_store, monkeypatch):
+    from src.api import backup_v2 as bv2
+    from src.scheduler.storage_guard import storage_guard
+
+    eng, state, rec, seen_during = real_store
+    ctx = _DrainCtx()
+    import src.backup.merge as merge_mod
+
+    inner = merge_mod.reindex_imported_articles
+    engaged = {"now": False}
+
+    def _engage_after(batch_id, **kw):
+        out = inner(batch_id, **kw)
+        engaged["now"] = True  # the guard engages after the last batch, before the rebuild
+        return out
+
+    monkeypatch.setattr("src.backup.merge.reindex_imported_articles", _engage_after)
+    monkeypatch.setattr(storage_guard, "engaged_now", lambda: engaged["now"])
+    monkeypatch.setattr(storage_guard, "wait_if_engaged", lambda *a, **k: False)
+    out = bv2._reindex_resume_worker(ctx)
+    assert out["index_window"].get("left_open_for_storage_guard") is True
+    present, marker = _store_state(eng)
+    assert marker is not None and not set(droppable_indexes(keep=DRAIN_KEEP)) & present
 
 
 def test_the_waiting_line_names_only_what_was_short():

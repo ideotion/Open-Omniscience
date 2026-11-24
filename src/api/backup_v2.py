@@ -1475,7 +1475,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             _marker = _bb.read_state(_s)
             if _marker is not None and _marker["planned"]:
                 ix_window.update(open=True, adopted=True)
-            elif _marker is None and batches and _collector_idle():
+            elif _marker is None and batches and not ctx.stopping and not _yield_to_import() and _collector_idle():
                 plan = _bb.drain_window_plan(_s, int(bk.get("articles_pending") or 0))
                 ix_window["plan"] = {k: v for k, v in plan.items() if k != "preflight"}
                 if plan["open"]:
@@ -1626,6 +1626,10 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         if ix_window.get("open"):
             if _yield_to_import():
                 ix_window["left_open_for_import"] = True
+            elif _guard_engaged_now():
+                # R398: the rebuild writes every index through the write-ahead log; while the storage guard holds it
+                # waits, the marker kept, for the next drain run or the heal at the next start.
+                ix_window["left_open_for_storage_guard"] = True
             else:
                 def _rebuilding(done: int, total: int) -> None:
                     n = min(done + 1, total)

@@ -545,8 +545,12 @@ def drain_window_plan(session: Session, backlog_articles: int) -> dict:
         return out
     room = rebuild_preflight(session, rows + projected)
     out["preflight"] = room
+    if room.get("ram_available_bytes") is None or room.get("disk_free_bytes") is None:
+        # Opening is optional: BOTH readings must have been made (the heal, which has no choice, goes ahead on one).
+        out["reason"] = "memory or disk not measured"
+        return out
     if room.get("sufficient") is not True:
-        out["reason"] = "memory or disk not measured" if room.get("sufficient") is None else "not enough memory or disk"
+        out["reason"] = "not enough memory or disk"
         return out
     out["open"] = True
     out["reason"] = "open"
@@ -584,6 +588,8 @@ def finish_window(session: Session, *, on_progress: Callable[[int, int], None] |
             if room.get("sufficient") is False:
                 _LOG.warning("keyword indexes not rebuilt yet: short on %s; the marker stays", ", ".join(room["short_on"]))
                 return {"complete": False, "created": [], "missing": missing, "waiting": room}
+            if on_progress is not None:
+                on_progress(len(planned) - len(missing), len(planned))  # the line shows from the first index, not after it
         created = _rebuild_missing(session, planned, on_progress=on_progress)
         left = [n for n in planned if n not in _existing_indexes(session.connection())]
         if left:
@@ -593,6 +599,50 @@ def finish_window(session: Session, *, on_progress: Callable[[int, int], None] |
     except Exception as exc:  # noqa: BLE001 - the marker outliving us is the recovery path
         log_failure(_LOG, "keyword index rebuild failed; the marker stays for the heal", exc, level=logging.WARNING)
         return {"complete": False, "created": [], "reason": type(exc).__name__}
+
+
+def _storage_guard_engaged() -> bool:
+    """The storage guard (R398) holds: a rebuild writes every index through the write-ahead log, so it waits, the marker
+    kept, as the drain's batches do. An unreadable guard is not a reason to wait."""
+    try:
+        from src.scheduler.storage_guard import storage_guard
+
+        return bool(storage_guard.engaged_now())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def owed_waiting_line(engine: Engine | None = None):
+    """The waiting line for an open window that NOTHING is rebuilding now, else None: read from the store and the
+    same two readings each time, never remembered from a finished job (a finished job's row is not listed, so a
+    line written only to it would vanish as it was written). For the task manager's own row. Never raises."""
+    try:
+        from src.jobs.background import get_job
+
+        for kind in (HEAL_JOB_KIND, "reindex-resume"):
+            job = get_job(kind)
+            if job is not None and job.status().get("state") == "running":
+                return None
+        if engine is None:
+            from src.database import session as _s
+
+            engine = _s.engine
+        from sqlalchemy.orm import sessionmaker
+
+        s = sessionmaker(bind=engine, future=True)()
+        try:
+            state = read_state(s)
+            if state is None or not state["planned"]:
+                return None
+            if not [n for n in state["planned"] if n not in _existing_indexes(s.connection())]:
+                return None
+            room = rebuild_preflight(s, mention_rows_bound(s))
+        finally:
+            s.close()
+        return waiting_line(room) if room.get("sufficient") is False else None
+    except Exception as exc:  # noqa: BLE001 - the task manager never fails for a row
+        log_failure(_LOG, "could not read the keyword index window for the task manager", exc, level=logging.INFO)
+        return None
 
 
 def _heal_worker(ctx, **_kw) -> dict:
@@ -613,9 +663,8 @@ def _heal_worker(ctx, **_kw) -> dict:
         state = read_state(session)
         if state is None:
             return {"complete": True, "created": []}
-        planned = list(state["planned"])
-        present = _existing_indexes(session.connection())
-        _progress(sum(1 for n in planned if n in present), len(planned))
+        if _storage_guard_engaged():
+            return {"complete": False, "created": [], "reason": "storage guard engaged"}
         out = finish_window(session, on_progress=_progress)
     if out.get("waiting"):
         ctx.set_progress(detail=waiting_line(out["waiting"]))
