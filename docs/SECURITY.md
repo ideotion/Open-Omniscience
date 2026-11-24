@@ -962,6 +962,24 @@ imply a protection we cannot deliver.
   could be reused after a delete the app did not make while no pool was disposed, which is not guarded), and the
   first-page fallback never reaches "encrypted" from the record, so an erase there without in-process evidence says "could
   not be determined".
+  **"Encrypted" is said only on evidence, everywhere (R821, row 400).** The same rule as the erase's, for every place that
+  tells a person or a report that the corpus is encrypted: the Settings at-rest panel, the lock screen, `GET
+  /api/system/doctor`, `GET /api/system/lock-state` (`at_rest_claim` and `at_rest_evidence` beside the lock word), the
+  terminal panel, the benchmark and performance reports, the encrypt tool and `scripts/encrypt_db.py`, and the click-through
+  harness. Evidence is a keyed open in this process, or this installation's record naming the very file: its (device,
+  inode) AND its first 16 bytes (its SQLCipher salt, random per file and not a secret, read from the same descriptor as the
+  identity, R789), so a file that later takes the same inode is never named by an older record; the erase checks the same
+  bytes through its kept handle. A record without them (older builds) is no evidence. A header that is not SQLite's, alone,
+  is "looks encrypted; not yet checked with your key"; SQLite's own header is "not encrypted", whatever the record says.
+  The lock word ("unlocked-encrypted", "locked") stays a control word, never a claim: reports say
+  "unlocked-looks-encrypted" without evidence. Nothing is encrypted, skipped as "already encrypted", recorded or finished on
+  a header: the finish of pending stores and the encrypt route first prove the library with the held key (a read-only,
+  cache-bypassing probe under the probe lock, recorded with the identity and salt taken before it only when they are
+  unchanged after it), and `encrypt_db.py` without evidence changes nothing and says to unlock once and rerun.
+  `--require-encrypted` needs the doctor's keyed reading after the walk, else it refuses as not verified. Every read of the
+  record is no-follow, non-blocking, a regular file only and at most 64 KiB. LIMITS: the probe's before-and-after check does
+  not see the library swapped away and back within the probe; on Windows the record read cannot refuse a link (no
+  `O_NOFOLLOW`), though the size and regular-file checks hold.
   **A data folder the app does not own (R711).** Ownership is where the app put the
   folder, never what is in it (the app writes its own files at every start): the default location and the first-launch
   `OOS data` folder are the app's; a folder set by hand in `OO_DATA_DIR` is shared when it is, on the path it leads to, the
