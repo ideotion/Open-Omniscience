@@ -744,7 +744,7 @@ def test_release_run_panel_node_suite() -> None:
     proc = subprocess.run(["node", str(_ROOT / "tests" / "release_run_panel_node_test.js")],
                           capture_output=True, text=True, cwd=_ROOT, timeout=60)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "6 checks passed" in proc.stdout
+    assert "7 checks passed" in proc.stdout
 
 
 # --------------------------------------------------------------------------- #
