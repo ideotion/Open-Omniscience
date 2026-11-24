@@ -163,7 +163,7 @@ def test_the_validation_walk_reads_the_file_first_and_still_checks_it(tmp_path, 
     con.close()
     seen: list = []
     real = sqlite_backup._warm_sequentially
-    monkeypatch.setattr(sqlite_backup, "_warm_sequentially", lambda p: (seen.append(p), real(p)))
+    monkeypatch.setattr(sqlite_backup, "_warm_sequentially", lambda p, *a: (seen.append(p), real(p, *a)))
     assert validate_sqlite_file(db) == 2
     assert seen == [db]
 

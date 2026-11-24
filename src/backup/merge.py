@@ -811,8 +811,171 @@ def _sub_timer(timings: object):
     return _sub
 
 
+@contextmanager
+def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]:
+    """Run the staged copy's ``PRAGMA quick_check`` on its own thread while the body (the merge) runs.
+
+    R827 R3(a). The walk read every page of the staged copy BEFORE the merge, 32 minutes of the
+    field's largest import, on the critical path. The merge only READS the staged copy (it is
+    attached as ``inc`` and never written), so the two read it side by side: SQLite releases the
+    GIL while a statement runs.
+
+    Nothing reaches the live corpus without passing: on a normal exit the block WAITS for the walk
+    and raises :class:`MergeError` with the validator's own fixed words when it failed -- the same
+    refusal ``prepare_staged_corpus`` raised before, now raised before the verify stage and so
+    before any swap, and the import queue discards the checkpoint group on it as it does for any
+    raised failure. When the body raises instead, the walk is stopped (interrupted, and asked again
+    until its thread ends) and the body's own exception goes on unchanged.
+
+    Timed as two sub-stages, recorded on the caller's thread: ``merge:quick_check`` (the walk's own
+    time) and ``merge:quick_check_wait`` (how long the merge then waited for it)."""
+    from src.backup.sqlite_backup import BackupError, validate_sqlite_file
+
+    stop = threading.Event()
+    guard = threading.Lock()
+    state: dict[str, object] = {"conn": None, "error": None, "seconds": None}
+
+    def _connected(conn: sqlite3.Connection) -> None:
+        with guard:
+            state["conn"] = conn
+            if stop.is_set():
+                conn.interrupt()
+
+    def _walk() -> None:
+        t0 = time.monotonic()
+        try:
+            validate_sqlite_file(path, connection_cb=_connected, should_stop=stop.is_set)
+        except BackupError as exc:
+            from src.monitoring.secret_scrub import record_text
+
+            state["error"] = record_text(exc)  # the validator's own fixed words; a driver's text is withheld
+        except BaseException:  # noqa: BLE001 - any other failure is a refusal too, never a pass
+            state["error"] = "the integrity check could not run, so the backup was not merged"
+        finally:
+            state["seconds"] = time.monotonic() - t0
+            with guard:
+                state["conn"] = None
+
+    walker = threading.Thread(target=_walk, name="oo-import-quick-check", daemon=True)
+    finished = False
+    try:
+        walker.start()  # inside the try: the finally below stops and joins whatever it started
+        yield
+        finished = True
+    finally:
+        if not finished:
+            stop.set()
+        t_wait = time.monotonic()
+        while walker.is_alive():
+            if not finished:
+                with guard:
+                    conn = state["conn"]
+                    if isinstance(conn, sqlite3.Connection):
+                        with suppress(Exception):
+                            conn.interrupt()
+            walker.join(timeout=0.5)
+        _record = getattr(timings, "record", None)
+        if _record is not None:
+            with suppress(Exception):
+                _record("merge:quick_check_wait", time.monotonic() - t_wait)
+                if isinstance(state["seconds"], float):
+                    _record("merge:quick_check", state["seconds"])
+    if state["error"] is not None:
+        raise MergeError(str(state["error"]))
+
+
+#: R830: the words an import refused on a safety copy that did not read back as the corpus it was copied from.
+_NET_NOT_VERIFIED = (
+    "the safety copy of your corpus could not be verified against the corpus it was copied from, so the backup "
+    "was not merged; your corpus was not changed"
+)
+
+
+@contextmanager
+def _net_read_back_alongside(net: tuple[Path, dict] | None, timings: object = None) -> Iterator[None]:
+    """R830 (amends R827 R5/R6): read the run's safety net back from disk and hash it on its own thread while the body
+    (the merge) runs, and refuse before the swap when it does not match.
+
+    :func:`_take_safety_net_with_the_copy` copies the live corpus with its sha256 taken from the bytes as they are
+    read, flushes the copy and checks its size and that it opens under the key -- the cheap checks, on the critical
+    path. The read-back of the whole copy, compared with that hash, is the part that costs a full read; it runs here
+    beside the merge instead (the merge never reads or writes the net: it works on a clone of it).
+
+    Nothing reaches the live corpus without passing: on a normal exit the block WAITS for the read-back, and a
+    mismatch (or a read-back that could not run) removes the net, forgets it as the run's safety net and raises
+    :class:`MergeError` -- before the verify stage and so before any swap, with the live corpus untouched. When the
+    body raises instead, the read-back is stopped and the body's own exception goes on unchanged; a net whose
+    read-back had not passed by then is removed and forgotten the same way, because nothing later in the run
+    re-verifies the net it reuses. ``net`` None (no net taken in this call) does nothing.
+
+    Timed as ``merge:net_read_back`` (its own time) and ``merge:net_read_back_wait`` (how long the merge waited)."""
+    if net is None:
+        yield
+        return
+    from src.database.connect import store_copy_reads_back
+
+    path, facts = net
+    stop = threading.Event()
+    state: dict[str, object] = {"ok": False, "error": None, "seconds": None}
+
+    def _read() -> None:
+        t0 = time.monotonic()
+        try:
+            store_copy_reads_back(path, facts, should_stop=stop.is_set)
+            state["ok"] = True
+        except BaseException:  # noqa: BLE001 - a mismatch or a read that could not run is a refusal, never a pass
+            state["error"] = _NET_NOT_VERIFIED
+        finally:
+            state["seconds"] = time.monotonic() - t0
+
+    reader = threading.Thread(target=_read, name="oo-import-net-read-back", daemon=True)
+    reader.start()
+    finished = False
+    try:
+        yield
+        finished = True
+    finally:
+        if not finished:
+            stop.set()
+        t_wait = time.monotonic()
+        reader.join()
+        _record = getattr(timings, "record", None)
+        if _record is not None:
+            with suppress(Exception):
+                _record("merge:net_read_back_wait", time.monotonic() - t_wait)
+                if isinstance(state["seconds"], float):
+                    _record("merge:net_read_back", state["seconds"])
+        if not state["ok"]:
+            _drop_unverified_net(path)
+    if not state["ok"]:
+        raise MergeError(str(state["error"] or _NET_NOT_VERIFIED))
+    facts["read_back"] = True
+    # Only now is it the run's safety net: a later item of the run reuses it without reading it again, so it is
+    # recorded as the run's net only once it has read back whole (security read of #2379).
+    _remember_run_snapshot(path)
+
+
+def _drop_unverified_net(path: Path) -> None:
+    """Remove a safety net whose read-back did not pass (or never finished), so nothing later trusts it: forgotten as
+    the run's net, its staging registration released, the file removed. The live corpus is not touched."""
+    from src.backup.stream_backup import unregister_active_staging
+
+    global _RUN_SNAPSHOT
+    with _RUN_SNAPSHOT_LOCK:
+        if _RUN_SNAPSHOT is not None and _RUN_SNAPSHOT[1] == path:
+            _RUN_SNAPSHOT = None
+    with suppress(Exception):
+        unregister_active_staging(path)
+    with suppress(OSError):
+        path.unlink(missing_ok=True)
+
+
 def prepare_staged_corpus(
-    staged: StagedArtifact, *, allow_unverified: bool = False, timings: object = None
+    staged: StagedArtifact,
+    *,
+    allow_unverified: bool = False,
+    timings: object = None,
+    defer_quick_check: bool = False,
 ) -> str:
     """Validate + upgrade the staged corpus to the running schema. Never touches
     the live DB; the staged copy is disposable. Returns the artifact's original
@@ -824,7 +987,12 @@ def prepare_staged_corpus(
     ``prepare_staged:upgrade`` (the alembic chain, which on an artifact several
     revisions behind runs real migrations over the whole corpus). Optional so every
     existing caller and test is untouched, and so a timing failure can never break a
-    restore."""
+    restore.
+
+    ``defer_quick_check`` (R827 R3(a)): the open and the required-tables look still run here, before
+    the upgrade, and the page walk is left to the caller, which runs it alongside the merge
+    (:func:`_quick_check_alongside`) and refuses before the swap when it fails. Nothing reaches the
+    live corpus without it."""
     from src.backup.sqlite_backup import BackupError, validate_sqlite_file
     from src.database.migrate import file_revision, known_revisions, upgrade_database_file
 
@@ -876,7 +1044,7 @@ def prepare_staged_corpus(
 
     try:
         with _sub("prepare_staged:validate"):
-            validate_sqlite_file(staged.corpus_path)
+            validate_sqlite_file(staged.corpus_path, quick_check=not defer_quick_check)
     except BackupError as exc:
         raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text
 
@@ -6693,6 +6861,13 @@ def _run_scoped_snapshot() -> Path | None:
     return prior[1] if prior[1].exists() else None
 
 
+def _run_token() -> int:
+    """This import run's exclusive-window token (0 for a lone restore)."""
+    from src.scheduler.runner import exclusive_window_token
+
+    return int(exclusive_window_token() or 0)
+
+
 def _remember_run_snapshot(path: Path) -> None:
     """Record a freshly-written safety net as THIS run's, so later items reuse it."""
     from src.scheduler.runner import exclusive_window_token
@@ -6703,6 +6878,98 @@ def _remember_run_snapshot(path: Path) -> None:
     global _RUN_SNAPSHOT
     with _RUN_SNAPSHOT_LOCK:
         _RUN_SNAPSHOT = (token, path)
+
+
+#: The safety net THIS thread's run_restore took and has not yet handed to its commit (R830; security read of #2379).
+_NET_PENDING = threading.local()
+
+
+def _release_pending_net(net: Path) -> None:
+    """A run_restore that took a safety net ended without its commit taking it (a refusal, a preview, a held item, an
+    exception): nothing was done to the live corpus with it. A net this run recorded as its own (read back whole, an
+    import run that will reuse it) is kept and only its staging registration released, so the ordinary snapshot
+    pruning sees it; any other (not read back, or a lone restore that will not reuse it) is removed."""
+    try:
+        kept = _run_scoped_snapshot() == net
+    except Exception:  # noqa: BLE001 - in a finally: never replace the restore's own outcome; unknown means remove
+        kept = False
+    if kept:
+        from src.backup.stream_backup import unregister_active_staging
+
+        with suppress(Exception):
+            unregister_active_staging(net)
+        return
+    _drop_unverified_net(net)
+
+
+def _settle_pending_net(fn: Any) -> Any:
+    """Wrap :func:`run_restore` so that every way out of it settles the safety net it took (see
+    :func:`_release_pending_net`); one place, instead of one per return and per exception path."""
+
+    @functools.wraps(fn)
+    def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        _NET_PENDING.net = None
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            net = getattr(_NET_PENDING, "net", None)
+            _NET_PENDING.net = None
+            if net is not None:
+                _release_pending_net(net)
+
+    return _wrapped
+
+
+def _take_safety_net_with_the_copy(working: Path, timings: object = None) -> tuple[Path, dict] | None:
+    """R827 R5/R6(a): the run's pre-restore safety net, taken BEFORE the merge, from which the working copy is cloned.
+
+    The import used to copy the whole live corpus twice: the working copy here, and the safety net at the commit
+    (``pre_restore_snapshot``). Now the safety net is copied from the live corpus once, verified WHOLE (its size and
+    sha256 against the source's, taken under the same write-gate hold: :func:`verified_store_copy`), and the working
+    copy is cloned from it (extents shared where the filesystem can, so on Btrfs/XFS/APFS-class storage the second
+    copy is nearly free; on ext4/NTFS it is still a full copy). The safety net is never written to; the commit
+    reuses it instead of copying the live corpus a second time.
+
+    Free space for both copies is checked first, before anything is written. Every failure leaves the live corpus
+    byte-identical: nothing here writes to it. Returns ``(path, {"bytes", "sha256"})``, or None when the verified
+    byte copy cannot be made (a plaintext store, the write gate off, a busy checkpoint): the caller then copies the
+    way it did before."""
+    from src.backup.artifact import preflight_free_space
+    from src.backup.sqlite_backup import live_db_path
+    from src.backup.stream_backup import register_active_staging, unregister_active_staging
+    from src.database.connect import is_encrypted_file, verified_store_copy
+    from src.database.writer import gate_enabled
+
+    live = live_db_path()
+    if not live.is_file() or not is_encrypted_file(live) or not gate_enabled():
+        return None  # the verified byte copy is for the encrypted store under the write gate; else the old path
+    need = live.stat().st_size
+    with suppress(OSError):
+        need += live.with_name(live.name + "-wal").stat().st_size
+    net_dir = data_dir()
+    working.parent.mkdir(parents=True, exist_ok=True)
+    same_device = net_dir.stat().st_dev == working.parent.stat().st_dev
+    preflight_free_space(net_dir, need * (2 if same_device else 1), what="restore")
+    if not same_device:
+        preflight_free_space(working.parent, need, what="restore")
+    net = net_dir / f"pre-restore-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.db"
+    if net.exists() or net.is_symlink():
+        return None  # never replace a snapshot already there (same second): the old path names its own
+    register_active_staging(net)  # the age sweep never takes it; released by the commit tail's guard
+    try:
+        with _sub_timer(timings)("snapshot_working_copy:safety_net"):
+            facts = verified_store_copy(live, net, read_back=False)  # R830: the read-back runs beside the merge
+    except BaseException:
+        unregister_active_staging(net)
+        raise
+    if facts is None:
+        unregister_active_staging(net)
+        return None
+    # NOT yet the run's net: that is recorded by _net_read_back_alongside once the copy has read back whole. Until the
+    # commit takes it as its safety net, a run_restore that ends any other way removes or releases it
+    # (:func:`_settle_pending_net`).
+    _NET_PENDING.net = net
+    return net, facts
 
 
 def _verify_fts(con, has_fts: bool, articles: int) -> dict:
@@ -9766,6 +10033,7 @@ def refuse_half_migrated_store() -> None:
         raise HalfMigratedStoreRefused(f"nothing was restored: {unfinished_message(journal.get('state'), path)}")
 
 
+@_settle_pending_net
 def run_restore(
     staged: StagedArtifact,
     *,
@@ -9971,7 +10239,8 @@ def run_restore(
         # was several revisions behind). Optimising either without knowing which is
         # the guessing that already cost a night on this import.
         original_rev = prepare_staged_corpus(
-            staged, allow_unverified=allow_unverified, timings=timings
+            staged, allow_unverified=allow_unverified, timings=timings,
+            defer_quick_check=True,  # R827 R3(a): the page walk runs alongside the merge below
         )
 
     working = Path(working_copy) if working_copy is not None else staged.staging_dir / "working.db"
@@ -10024,12 +10293,27 @@ def run_restore(
     # after the snapshot, or in a CARRIED working copy that takes none, is carried
     # forward by ``_carry_live_settings`` just before the swap.
     _trust_history = resolve_trust_fetch_history(trust_fetch_history)
+    # R827 R5/R6(a): the run's safety net is taken HERE, verified whole, and the working copy is cloned from it, so
+    # the commit below reuses it instead of copying the live corpus a second time. Only where the commit will need one
+    # (a committing restore on a machine it owns, with no net yet this run) and where a later commit can find it (a
+    # held item's commit comes in a later call, through the run's token).
+    _net_here: tuple[Path, dict] | None = None
     with timings.stage("snapshot_working_copy"):
         if not carried:
             if working.exists():
                 working.unlink()
             working.parent.mkdir(parents=True, exist_ok=True)
-            snapshot_preserving(live_db_path(), working, allow_file_copy=exclusive)
+            if commit and exclusive and _run_scoped_snapshot() is None and (
+                not hold_after_merge or _run_token()
+            ):
+                _net_here = _take_safety_net_with_the_copy(working, timings)
+            if _net_here is not None:
+                from src.database.connect import clone_file
+
+                with _sub_timer(timings)("snapshot_working_copy:clone"):
+                    clone_file(_net_here[0], working)
+            else:
+                snapshot_preserving(live_db_path(), working, allow_file_copy=exclusive)
 
     meta = {
         "artifact_kind": staged.kind,
@@ -10118,7 +10402,14 @@ def run_restore(
             pass
 
     _abort_point("merge")
-    with timings.stage("merge"):
+    # R827 R3(a): the staged copy's quick_check runs beside the merge and is waited for at its end;
+    # a failure raises here, before the verify stage and any swap.
+    # R830: the safety net's read-back runs beside it too, and is waited for there; a mismatch refuses before the swap.
+    with (
+        timings.stage("merge"),
+        _quick_check_alongside(staged.corpus_path, timings),
+        _net_read_back_alongside(_net_here, timings),
+    ):
         _step_clock["t"] = time.monotonic()
         counts, batch_id = merge_corpus(
             staged.corpus_path, working, meta,
@@ -10235,6 +10526,12 @@ def run_restore(
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = data_dir() / f"pre-restore-{ts}.db"
+    for _ in range(3):  # never overwrite a snapshot of the same second (the pruner reads only this exact name shape)
+        if not (snapshot.exists() or snapshot.is_symlink()):
+            break
+        time.sleep(1.0)
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        snapshot = data_dir() / f"pre-restore-{ts}.db"
     # W5 (2026-07-26 hardware diagnostics) + skeptic fix (2026-07-27): register
     # this snapshot as an ACTIVE staging path BEFORE writing it starts, not
     # after -- a data-loss-lens LIVE repro (real snapshot_preserving() against
@@ -10257,7 +10554,9 @@ def run_restore(
 
     from src.backup.stream_backup import active_staging
 
-    _reuse = _run_scoped_snapshot()
+    _reuse = _net_here[0] if _net_here is not None else _run_scoped_snapshot()
+    # From here the net is the commit's safety net, released by the guard below: the run's cleanup never touches it.
+    _NET_PENDING.net = None
     _snapshot_guard = ExitStack()
     # Registered whether it is being WRITTEN now or REUSED from an earlier item of this
     # run: the age-based sweep never touches a registered path, so the run's one safety
@@ -10273,6 +10572,16 @@ def run_restore(
                 snapshot_preserving(live_db_path(), snapshot, allow_file_copy=exclusive)
                 _remember_run_snapshot(snapshot)
                 report["pre_restore_snapshot"] = str(snapshot)
+            elif _net_here is not None:
+                report["pre_restore_snapshot"] = str(_reuse)
+                report["pre_restore_snapshot_verified"] = {
+                    "bytes": _net_here[1]["bytes"],
+                    "sha256": _net_here[1]["sha256"],
+                    "note": (
+                        "taken before the merge, from the corpus as it was, and checked whole against it "
+                        "(size and sha256); the merge worked on a copy of it, never on it"
+                    ),
+                }
             else:
                 report["pre_restore_snapshot"] = str(_reuse)
                 report["pre_restore_snapshot_reused"] = (
