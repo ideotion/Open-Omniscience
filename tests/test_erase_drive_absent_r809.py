@@ -636,3 +636,21 @@ def test_a_folder_on_another_file_system_at_the_same_device_and_inode_is_a_chang
     finally:
         for fd in fds:
             os.close(fd)
+
+
+def test_a_build_with_its_offload_folder_on_a_frozen_drive_is_never_served(tmp_path):
+    """A build that ends after the drive was found changed is not swapped in (left in the state it would be freed at shutdown,
+    and DuckDB would delete its offload files by path, on the other drive): it is kept, and its folder stays."""
+    from src.analytics import rollup_serve
+    from src.database import drive_pin
+
+    base = tmp_path / "drive" / "OOS data"
+    spill = base / "duckdb_tmp" / "y"
+    spill.mkdir(parents=True)
+    drive_pin.pin_drive(base)
+    assert rollup_serve._on_frozen_drive(str(spill)) and rollup_serve._on_frozen_drive(True)
+    assert not rollup_serve._on_frozen_drive(str(tmp_path / "elsewhere"))
+    src = Path("src/analytics/rollup_serve.py").read_text(encoding="utf-8")
+    assert "if spill and (_corpus_encrypted() or _on_frozen_drive(spill)):" in src
+    assert "_on_frozen_drive(True)" in src
+    assert "rollup_serve._on_frozen_drive(spill)" in Path("src/analytics/map_serve.py").read_text(encoding="utf-8")

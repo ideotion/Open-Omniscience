@@ -119,7 +119,10 @@ def _remove_spill(path: str) -> None:
     if mod is not None:
         mod._remove_spill(path)
     else:
-        shutil.rmtree(path, ignore_errors=True)
+        from src.database.drive_pin import on_frozen_drive
+
+        if not on_frozen_drive(path):  # R813: never on a drive found changed during an erase
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def _close_serves(*, wait: bool = True) -> dict[str, Any]:

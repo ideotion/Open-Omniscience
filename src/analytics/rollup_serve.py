@@ -514,8 +514,8 @@ def _build_inmemory_and_swap() -> dict | None:
     with _LOCK:
         # Again under the lock the encryption's close takes (open-on-main row 50): a build that passed the check above just
         # before the library was encrypted would otherwise swap in, after that close, a connection whose folder holds plaintext.
-        if spill and _corpus_encrypted():
-            refused = True
+        if spill and (_corpus_encrypted() or _on_frozen_drive(spill)):
+            refused = True  # R813: a build whose offload folder is on a drive found changed during an erase is kept, never served
         else:
             old = _STATE["con"]
             _STATE["con"] = con
@@ -655,7 +655,7 @@ def _refresh_persisted_build() -> bool | None:
             token = serve_gate.change_token(s)
             epoch = get_corpus_epoch(s)
             with _LOCK:
-                if opened_now and (key_gen < 0 or _key_generation() != key_gen):
+                if opened_now and (key_gen < 0 or _key_generation() != key_gen or _on_frozen_drive(True)):
                     # The key was cleared (or set anew) while the store opened outside the lock: the clearing's close found nothing of it
                     # to close, and recorded now it would keep the old key inside DuckDB until the next rebuild (open-on-main row 85). A
                     # clearing from here on finds the lock held, and its close once free sees this store's generation is the old one.
@@ -1249,6 +1249,13 @@ def _sweep_spill_folders(root) -> None:
         if made < started - _SPILL_START_SLACK_S:
             shutil.rmtree(child, ignore_errors=True)  # older than the process holding its pid: a reused pid's orphan
     _OWN_SPILL_SWEPT = True
+
+
+def _on_frozen_drive(path) -> bool:
+    """R813: ``path`` is on a data drive found absent, unidentified or changed during an erase (``True``: any drive is)."""
+    from src.database import drive_pin
+
+    return bool(drive_pin._FROZEN) if path is True else drive_pin.on_frozen_drive(path)
 
 
 def _close_con(con, spill: str | None = None) -> None:
