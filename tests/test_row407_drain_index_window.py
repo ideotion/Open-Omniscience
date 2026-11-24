@@ -142,10 +142,8 @@ def test_the_share_depends_on_whether_the_store_fits_in_ram(tmp_path, roomy, mon
 
 def test_an_unreadable_store_size_keeps_the_default_share(monkeypatch):
     """An in-memory store (no file to stat) keeps 1.0 even when RAM reads tiny."""
-    from sqlalchemy import create_engine
-
     monkeypatch.setattr("src.config.memory_budget.budget_ram_mb", lambda: (1e-6, "test"))
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     s = sessionmaker(bind=eng, future=True)()
     try:
         t = bb.drain_threshold(s)
