@@ -364,7 +364,12 @@ def test_the_boot_path_calls_the_heal():
 
     src = Path("src/database/session.py").read_text(encoding="utf-8")
     assert "from src.analytics.bulk_build import heal_bulk_build" in src
-    assert "heal_bulk_build(engine)" in src
-    assert src.index("ensure_hot_indexes(engine, include_deferred=False)") < src.index("heal_bulk_build(engine)"), (
+    assert "heal_bulk_build(engine, inline=False)" in src, "R825 (b): the open path only reads the marker"
+    assert src.index("ensure_hot_indexes(engine, include_deferred=False)") < src.index("heal_bulk_build(engine, inline=False)"), (
         "the hot-index heal runs first; this one finishes what it cannot cover"
     )
+    # And the rebuild itself is started, in the background, by the boot sequence and after a restore.
+    boot = Path("src/api/boot_sequence.py").read_text(encoding="utf-8")
+    assert "from src.analytics.bulk_build import start_heal" in boot and boot.count("_queue_keyword_index_heal()") >= 2
+    merge = Path("src/backup/merge.py").read_text(encoding="utf-8")
+    assert "from src.analytics.bulk_build import start_heal" in merge

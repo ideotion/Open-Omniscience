@@ -2944,8 +2944,11 @@
       // below apply to it.
       // The article list's index build and the repair of a damaged library file draw their detail the same way: the
       // "saving waits" caveat while they run, the numbers of the repair, and the keyed reason a refusal carries (the
-      // row's own error is English only). The daily keyword counts' build (R625) draws its "day N of M" line.
-      if (j.kind === "wiki-walk" || j.kind === "article-indexes" || j.kind === "repair-database" || j.kind === "keyword-day-counts") {
+      // row's own error is English only). The daily keyword counts' build (R625) draws its "day N of M" line. The
+      // re-index drain and the keyword indexes' rebuild (R825) draw "rebuilding the keyword indexes: N of M", or why
+      // it waits for memory or disk space.
+      if (j.kind === "wiki-walk" || j.kind === "article-indexes" || j.kind === "repair-database" || j.kind === "keyword-day-counts"
+          || j.kind === "reindex-resume" || j.kind === "keyword-indexes") {
         const line = j.detail ? _framedText(j.detail, j.detail_i18n, j.detail_vars, t) : "";
         return line ? `<div class="muted" style="font-size:11px">${esc(line)}</div>` : "";
       }

@@ -375,11 +375,27 @@ def _queue_day_counts() -> None:
         log_failure(_LOG, "boot daily keyword counts not queued", exc, level=logging.INFO)
 
 
+def _queue_keyword_index_heal() -> None:
+    """Start the background rebuild of the keyword indexes an index window left dropped (R825, row 407), when
+    the re-index drain is not about to: the drain adopts an open window and rebuilds it at its own end. Only
+    STARTS the job (src/analytics/bulk_build.py ``start_heal``), never builds here; reads stay correct
+    meanwhile, only slower. Never raises."""
+    try:
+        from src.analytics.bulk_build import start_heal
+
+        outcome = start_heal()
+        if outcome != "none":
+            _LOG.info("boot keyword index rebuild: %s", outcome)
+    except Exception as exc:  # noqa: BLE001 - the marker stays; the next start asks again
+        log_failure(_LOG, "boot keyword index rebuild not queued", exc, level=logging.INFO)
+
+
 def _start_reindex() -> None:
     _queue_title_index()
     with _LOCK:
         pending = _STATE["reindex_pending"]
     if pending is None:
+        _queue_keyword_index_heal()
         # Not while a re-index resumes: its drain bumps the corpus epoch every batch, so a build started now would end
         # "epoch-moved" and be thrown away. The idle maintenance starts it once the drain is over (it stands back while
         # a re-index runs, the same rule).
@@ -393,6 +409,7 @@ def _start_reindex() -> None:
         "started" if started else f"not started ({detail})", pending,
     )
     if not started:
+        _queue_keyword_index_heal()
         raise _Skipped("declined")
 
 
