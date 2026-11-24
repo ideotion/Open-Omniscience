@@ -104,6 +104,12 @@ class StageTimings:
         self._values[name] = value
         self._emit("end", name, value)
 
+    def started_earlier(self, seconds: float) -> None:
+        """Count ``seconds`` of work measured BEFORE this recorder was built into ``wall_s``: an import's stage A (the
+        reader that staged the artifact timed it, then handed it over), recorded with :meth:`record`, so the wall time
+        is never less than a stage it reports (row 410-A: the seal made stage A long enough to show it)."""
+        self._t0 -= max(0.0, float(seconds))
+
     def report(self) -> dict:
         """``{"stages": {name: seconds, ...}, "wall_s": total_since_construction}``.
 

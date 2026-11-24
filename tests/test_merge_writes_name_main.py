@@ -106,6 +106,7 @@ _ALLOWED: dict[str, str] = {
     "_attach_scratch: PRAGMA oo_scratch.journal_mode is not a known read-only pragma on a schema that is not main": "set on the merge's own disposable scratch database only (named), never on main or the backup",
     "_attach_scratch: PRAGMA oo_scratch.synchronous is not a known read-only pragma on a schema that is not main": "as above: the scratch file is thrown away whatever happens",
     "_attach_scratch: PRAGMA oo_scratch.cache_size is not a known read-only pragma on a schema that is not main": "as above: bounds the scratch's page cache, which is the low-memory path's whole point",
+    "merge_corpus: PRAGMA inc.cache_size is not a known read-only pragma on a schema that is not main": "row 410-A: the keyed staged copy's own page cache, a connection setting that writes nothing to the file; without it every page read again is decrypted again",
     "merge_custody: sql": "the two SELECTs appended to `sources` just above (a chain's rows are only fetched by _custody_rows); no write reaches it",
 }
 
@@ -994,6 +995,7 @@ def test_a_callable_used_as_a_value_names_what_it_is():
 _CROSS_MODULE_CALLEES: dict[str, str] = {
     "src.backup.country_codes.normalise_staged_country_codes": "writes only `{schema}.\"table\"` UPDATEs (schema='inc', the disposable staged copy, on purpose; its docstring says never main) and a SAVEPOINT",
     "src.backup.country_codes.store_form_of": "a read of the country-form marker of one named schema (`read_form_in`: a SELECT on `{schema}.app_state`)",
+    "src.backup.staged_key.check_staged_schema": "row 410-A: one SELECT of `sqlite_master` on the staged file's OWN connection (`_staged_group_rows_or_none` opens it), writes nothing",
     "src.database.connect._is_sqlcipher_conn": "reads the connection's type",
     "src.database.connect.attach": "the one ATTACH, with a bound path and a fixed alias",
     "src.database.fts.index_articles": "writes through `_index_rows`, which names `main.` (test_the_fts_bulk_indexer_the_merge_calls_names_main)",

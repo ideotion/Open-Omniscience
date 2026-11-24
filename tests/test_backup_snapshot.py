@@ -109,13 +109,26 @@ class Store:
 
 
 def _rows(path: Path) -> int:
-    con = sqlite3.connect(path)
+    from src.backup.staged_key import db_errors, open_staged
+
+    if not staged_key_is_keyed(path):
+        con = sqlite3.connect(path)
+    else:
+        con = open_staged(path)  # a staged copy the restore sealed (R829 A)
     try:
         return int(con.execute("SELECT COUNT(*) FROM articles").fetchone()[0])
-    except sqlite3.OperationalError:
+    except db_errors() as exc:
+        if "no such table" not in str(exc):
+            raise
         return 0
     finally:
         con.close()
+
+
+def staged_key_is_keyed(path: Path) -> bool:
+    from src.backup.staged_key import is_keyed
+
+    return is_keyed(path)
 
 
 @pytest.fixture
@@ -465,7 +478,9 @@ def test_the_copy_holds_no_write_gate_and_its_facts_are_the_copys_own(
     assert n >= 400 and n % BATCH == 0, "the image tore a commit"
     assert staged.manifest["corpus"]["tables"]["articles"] == n
     assert staged.manifest["corpus"]["articles_commitment"]["n"] == n
-    con = sqlite3.connect(staged.corpus_path)
+    from src.backup.staged_key import open_staged
+
+    con = open_staged(staged.corpus_path)  # sealed as it was staged (row 410-A)
     try:
         assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     finally:

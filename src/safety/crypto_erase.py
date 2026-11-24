@@ -2030,9 +2030,11 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    erase were stopped before it got there. Fail toward shredding more: no file is told apart by its contents (an
     #    encrypted page is indistinguishable from noise), so every regular file's head goes, a -wal or -journal is rewritten
     #    whole and a -shm head is zeroed. It runs AFTER the keys, the cache, the anchors and the passphrase (a large folder
-    #    costs one write and sync per file, and nothing may delay those). NOT covered by it, stated: PLAINTEXT staging (backup
-    #    members, an extracted restore, a reassembling archive) has no salt to lose, and an encrypted member inside an archive
-    #    sits past its head; both are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a
+    #    costs one write and sync per file, and nothing may delay those). An import's staged corpus and custody log are keyed
+    #    (row 410-A: the member's own key, or a random one held only in memory), so this head is their salt too. NOT covered by
+    #    it, stated: PLAINTEXT staging (public lane and file members, a reassembling archive, a member in the minutes between
+    #    its extraction and its seal) has no salt to lose, and an encrypted member inside an archive sits past its head; both
+    #    are destroyed only by step 6's full rewrite. A folder that cannot be listed is named as a
     #    failure. In a folder the app does not own, only the app's entries are reached.
     heads_elsewhere = 0
     # The marker is read once more here: 5b overwrites every file's head, the marker's too, so later re-checks compare the folder's

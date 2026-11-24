@@ -169,21 +169,24 @@ def validate_sqlite_file(
     path = Path(path)
     if not path.exists() or path.stat().st_size == 0:
         raise BackupError("uploaded file is empty or missing")
+    from src.backup.staged_key import db_errors, is_keyed, open_staged
     from src.database.connect import is_encrypted_file
 
-    if is_encrypted_file(path):
+    keyed = is_keyed(path)  # a staged copy the import keyed itself (R829 A): encrypted, and read with its key
+    if not keyed and is_encrypted_file(path):
         raise BackupError(
             "this file is an ENCRYPTED database (raw SQLCipher bytes). Restore the "
             ".oobak.ooenc backup artifact instead -- raw encrypted files cannot be "
             "validated or merged without their original context"
         )
+    errors = db_errors()
     try:
-        # Read-only URI connection: never mutate the candidate file.
-        from src.database.read_only_uri import open_plain_read_only
-
-        conn = open_plain_read_only(path)
-    except sqlite3.Error as exc:  # pragma: no cover - defensive
+        # Read-only connection: never mutate the candidate file. Hardened for a foreign file (R829 A1).
+        conn = open_staged(path)
+    except errors as exc:  # pragma: no cover - defensive
         raise BackupError(f"cannot open uploaded file as SQLite: {record_text(exc)}") from None
+    except Exception:  # noqa: BLE001 - StagedKeyError: fixed words of its own, never a key
+        raise BackupError("the staged copy of the backup could not be opened with its key") from None
     try:
         if connection_cb is not None:
             connection_cb(conn)
@@ -191,8 +194,9 @@ def validate_sqlite_file(
             if _validate_warm_enabled():
                 # Same check, read in a cheaper order (P1.3, measured 2026-11-15): see _warm_sequentially.
                 _warm_sequentially(path, should_stop)
-                with suppress(sqlite3.Error):
-                    conn.execute(f"PRAGMA mmap_size={_VALIDATE_MMAP_BYTES}")
+                if not keyed:  # SQLCipher reads through its own page cipher, never a map
+                    with suppress(*errors):
+                        conn.execute(f"PRAGMA mmap_size={_VALIDATE_MMAP_BYTES}")
             if should_stop is not None and should_stop():
                 raise BackupError("integrity check stopped before it finished")
             check = conn.execute("PRAGMA quick_check").fetchone()
@@ -202,7 +206,9 @@ def validate_sqlite_file(
             r[0]
             for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
-    except sqlite3.DatabaseError as exc:
+    except errors as exc:
+        if isinstance(exc, sqlite3.Error) and not isinstance(exc, sqlite3.DatabaseError):
+            raise
         raise BackupError(f"not a valid SQLite database: {record_text(exc)}") from None
     finally:
         conn.close()

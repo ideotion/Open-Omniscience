@@ -28,6 +28,7 @@ from src.backup.volumes import MANIFEST_MAX_BYTES as VOLUMES_MANIFEST_MAX_BYTES
 from src.backup.volumes import MANIFEST_NAME
 from tests.js_source_helper import python_function_source
 from tests.test_stream_backup import _backup, _make_corpus
+from tests.staged_db import same_database
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="pipes and /dev/zero")
 
@@ -54,7 +55,7 @@ def _within(seconds: float, fn):
 def _restores(tmp: Path, dest: Path, corpus: Path) -> None:
     staged = read_stream_backup(dest, "pw", staging_root=tmp / "st")
     assert staged.signature_state == "verified"
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
 
 
 @pytest.fixture

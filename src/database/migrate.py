@@ -39,13 +39,16 @@ def file_revision(path: Path) -> str | None:
     """
     import sqlite3
 
-    from src.database.read_only_uri import open_plain_read_only
+    from src.backup.staged_key import _driver, is_keyed, open_staged
 
-    conn = open_plain_read_only(path)
+    conn = open_staged(path)  # keyed when an import sealed the file (R829 A), else the plaintext read it always was
+    missing: tuple[type[BaseException], ...] = (sqlite3.OperationalError,)
+    if is_keyed(path):
+        missing = (sqlite3.OperationalError, _driver().OperationalError)
     try:
         try:
             row = conn.execute("SELECT version_num FROM alembic_version LIMIT 1").fetchone()
-        except sqlite3.OperationalError:
+        except missing:
             return None  # no alembic_version table
         return row[0] if row else None
     finally:
@@ -87,7 +90,19 @@ def upgrade_database_file(path: Path, target: str = "head") -> str | None:
     from alembic import command
     from sqlalchemy import create_engine
 
-    eng = create_engine(f"sqlite:///{path}", future=True, hide_parameters=True)  # as the corpus engine: no values in an error
+    from src.backup.staged_key import is_keyed, open_staged
+
+    if is_keyed(path):
+        # An import's staged copy, keyed (R829 A): every connection the migration opens is the keyed one, its key given
+        # to the engine through the C API, never in SQL text or the URL.
+        eng = create_engine(
+            "sqlite://",
+            creator=lambda: open_staged(path, read_only=False, check_same_thread=False),
+            future=True,
+            hide_parameters=True,
+        )
+    else:
+        eng = create_engine(f"sqlite:///{path}", future=True, hide_parameters=True)  # as the corpus engine: no values in an error
     try:
         with eng.begin() as conn:
             cfg = _alembic_config()

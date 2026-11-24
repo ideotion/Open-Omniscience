@@ -88,7 +88,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from src.monitoring import storage_events
-from src.monitoring.secret_scrub import is_driver_error, log_failure
+from src.monitoring.secret_scrub import log_failure
 from src.shared_text import said
 
 if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
@@ -2648,6 +2648,9 @@ def read_stream_backup(
                 staging, was_encrypted=True, verified_absent=verified_absent
             )
             stage_a_timings["finalize"] = round(time.monotonic() - t3, 3)
+            from src.backup.artifact import seal_staged_members
+
+            seal_staged_members(staged, stage_a_timings)  # R829 A2: a corpus not encrypted in its backup; A1 already keyed
             staged.stage_a_timings = stage_a_timings
             from src.backup.artifact import give_key_passphrases
 
@@ -2759,7 +2762,9 @@ def _preflight_staging(
 
     members = m.get("members") or []
     total = sum(int(mm.get("plaintext_bytes", 0)) for mm in members)
-    if m.get("corpus_encrypted"):
+    if not m.get("corpus_encrypted"):
+        # R829 A2: a plaintext corpus is sealed into a keyed copy beside it before the plaintext goes. An encrypted one
+        # is read as it is (A1), with no second copy.
         corpus = next((mm for mm in members if mm.get("role") == "corpus"), None)
         if corpus:
             total += int(corpus.get("plaintext_bytes", 0))
@@ -2789,10 +2794,18 @@ def _prepare_staged_corpus_files(
     keys = [k for k in (corpus_passphrase, get_passphrase(), passphrase) if k]
 
     if m.get("corpus_encrypted"):
-        plain = staging / "corpus.db"
-        # Opening with the right key also replays a carried WAL before export.
-        _export_plaintext_with_keys(cpath, plain, keys)
-        cpath.unlink(missing_ok=True)
+        # R829 A1: the encrypted member is never exported to plaintext. It is opened as it is, with the passphrase that
+        # opens it (which also folds a carried WAL into it), and every later reader opens it with that key.
+        _adopt_encrypted_member(cpath, keys)
+        target = staging / "corpus.db"
+        if cpath != target:
+            from src.backup import staged_key
+
+            key = staged_key.key_for(cpath)
+            staged_key.forget(cpath)
+            os.replace(cpath, target)
+            if key is not None:
+                staged_key.register(target, key)
         for suffix in ("-wal", "-shm"):
             cpath.with_name(cpath.name + suffix).unlink(missing_ok=True)
         verified_absent.add(corpus_member)
@@ -2809,11 +2822,8 @@ def _prepare_staged_corpus_files(
 
     custody = staging / "custody_log.db"
     if custody.exists() and is_encrypted_file(custody):
-        tmp = staging / "custody_log.db.plain"
-        _export_plaintext_with_keys(custody, tmp, keys)
-        os.replace(tmp, custody)
-        # The plaintext differs from the manifest's (encrypted) member bytes —
-        # those were verified during reassembly, before the conversion.
+        _adopt_encrypted_member(custody, keys)  # R829 A3: as the corpus, never exported
+        # Folding its log may have rewritten it after its bytes were verified during reassembly.
         verified_absent.add("custody_log.db")
     return frozenset(verified_absent)
 
@@ -2829,55 +2839,27 @@ def _fold_plain_wal(db_path: Path) -> None:
         con.close()
 
 
-def _export_plaintext_with_keys(src: Path, dest: Path, keys: list[str]) -> None:
-    """Decrypt a staged SQLCipher member into a plaintext copy, trying each
-    candidate key in order. Fails loudly (naming the fix) when none opens it."""
-    from src.database.connect import StoreHeldError, WrongPassphraseError, connect, held_by_another
-
-    last: str | None = None
-    held = False
-    for key in dict.fromkeys(keys):
-        try:
-            conn = connect(src, key=key, check_same_thread=False)
-        except StoreHeldError:
-            # Row 156: another program holds the staged file. A lock is not about the key, so no other key opens it now
-            # either, and "none of the passphrases open it" would be untrue.
-            held = True
-            break
-        except WrongPassphraseError:
-            continue
-        except Exception as exc:  # noqa: BLE001 - file trouble is named by its class; a driver's words are not carried
-            if held_by_another(exc):
-                held = True
-                break
-            last = None if is_driver_error(exc) else type(exc).__name__
-            continue
-        try:
-            dest.unlink(missing_ok=True)
-            # R829 (B): the plaintext copy is made owner-only before a byte goes in, and SQLite gives its journal the
-            # database file's own mode. An empty file is an empty database to the ATTACH.
-            create_new(dest, mode=STAGING_FILE_MODE).close()
-            conn.execute("ATTACH DATABASE ? AS snap KEY ''", (str(dest),))
-            cur = conn.cursor()
-            try:
-                cur.execute("SELECT sqlcipher_export('snap')")
-            finally:
-                cur.close()
-            conn.execute("DETACH DATABASE snap")
-            return
-        except Exception as exc:
-            if not held_by_another(exc):
-                raise
-            # Taken after the key was checked: the same answer, in use, try again.
-            held = True
-            break
-        finally:
-            conn.close()
-    if held:
-        raise VolumeError(member_in_use(src.name)) from None
-    raise VolumeError(
+def _no_key_opens(last: str | None = None) -> str:
+    return (
         "the corpus member is SQLCipher-encrypted and none of the available "
         "passphrases open it — the backup carries the source store's own "
         "encryption; pass that passphrase (corpus_passphrase) to restore"
         + (f" (opening it also failed with {last}, which is not a wrong passphrase)" if last else "")
-    ) from None
+    )
+
+
+def _adopt_encrypted_member(src: Path, keys: list[str]) -> None:
+    """R829 A1: register the staged encrypted member under the passphrase that opens it, never writing a plaintext
+    byte. Fails loudly (naming the fix) when none opens it, and as "in use" when another program holds it."""
+    from src.backup.staged_key import StagedKeyError, adopt_member
+
+    try:
+        opened = adopt_member(src, keys)
+    except StagedKeyError:
+        raise VolumeError(member_in_use(src.name)) from None
+    except OSError as exc:  # file trouble is named by its class; its words (a path) are not carried
+        raise VolumeError(_no_key_opens(type(exc).__name__)) from None
+    if not opened:
+        raise VolumeError(_no_key_opens()) from None
+
+

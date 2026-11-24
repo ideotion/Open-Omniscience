@@ -443,7 +443,8 @@ def _delete_in(cur: sqlite3.Cursor, table: str, col: str, ids: list[int]) -> Non
 
 
 def _drop_newsletter_articles(db_path: Path) -> int:
-    """Remove imported-newsletter articles from a PLAINTEXT corpus snapshot copy.
+    """Remove imported-newsletter articles from a corpus snapshot copy (a staged copy the import keyed is opened with
+    its key, R829 A).
 
     Operates ONLY on the disposable backup snapshot (never the live DB). Deletes the
     newsletter-source articles AND every dependent row (any table with an ``article_id``
@@ -451,7 +452,9 @@ def _drop_newsletter_articles(db_path: Path) -> int:
     finds no orphans. The empty source rows are LEFT (harmless; a future re-import of
     fixed .eml re-attaches to them). Returns the number of articles dropped.
     """
-    con = sqlite3.connect(str(db_path))
+    from src.backup.staged_key import open_staged
+
+    con = open_staged(db_path, read_only=False)  # keyed when the import sealed it (R829 A)
     try:
         return _drop_newsletter_rows(con)
     finally:
@@ -893,6 +896,7 @@ def read_volume_backup(
         temp_zip.unlink(missing_ok=True)
         staged = _finalize_staged(staging, was_encrypted=True)
         stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
+        seal_staged_members(staged, stage_a_timings)
         staged.stage_a_timings = stage_a_timings
         give_key_passphrases(staged, corpus_passphrase, passphrase)
         return staged
@@ -1027,7 +1031,7 @@ def read_artifact(
             with create_new(corpus, mode=STAGING_FILE_MODE) as fh:  # owner read and write only (R829 B)
                 fh.write(blob)
             stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
-            return StagedArtifact(
+            bare = StagedArtifact(
                 kind="legacy-ooenc" if was_encrypted else "legacy-db",
                 staging_dir=staging,
                 corpus_path=corpus,
@@ -1039,6 +1043,8 @@ def read_artifact(
                 encrypted=was_encrypted,
                 stage_a_timings=stage_a_timings,
             )
+            seal_staged_members(bare, stage_a_timings)
+            return bare
 
         if blob[:4] != _ZIP_MAGIC:
             raise ArtifactError("not an Open Omniscience backup (unknown format)")
@@ -1050,6 +1056,7 @@ def read_artifact(
             _safe_extract(zf, staging)
         staged = _finalize_staged(staging, was_encrypted)
         stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
+        seal_staged_members(staged, stage_a_timings)
         staged.stage_a_timings = stage_a_timings
         give_key_passphrases(staged, None, passphrase if was_encrypted else None)
         return staged
@@ -1180,11 +1187,51 @@ def _finalize_staged(
     )
 
 
+def seal_staged_members(staged: StagedArtifact, stage_a_timings: dict[str, float] | None = None) -> None:
+    """R829 A2: nothing a backup brings stays on disk in plaintext for the import's duration. Called by every reader
+    once its staged artifact is built and verified: a corpus or custody log the reassembly already opened with its own
+    key (A1) is left as it is, and a plaintext one is sealed now, after its bytes passed their checks, under a random
+    key held only in this process. A refused artifact (a hash failure) is removed unsealed a moment later. Timed as its
+    own ``stage_a:seal``."""
+    import time
+
+    if staged.hash_failures:
+        return
+    t0 = time.monotonic()
+    _seal_staged(staged.corpus_path)
+    if staged.custody_path is not None:
+        _seal_staged(staged.custody_path)
+    if stage_a_timings is not None:
+        stage_a_timings["seal"] = round(time.monotonic() - t0, 3)
+
+
+def _seal_staged(path: Path) -> None:
+    """Seal one staged plaintext SQLite file (R829 A2); a file the import already keyed, or that is not there, is left."""
+    from src.backup import staged_key
+    from src.database.connect import is_encrypted_file
+
+    if staged_key.is_keyed(path) or not path.is_file() or path.is_symlink():
+        return
+    if is_encrypted_file(path) is not False:
+        return  # not a plaintext SQLite file: the validation names what it is
+    try:
+        staged_key.seal_plaintext(path)
+    except staged_key.NotADatabase:
+        return  # nothing a database holds is in it; the validation refuses it in its own words
+    except staged_key.StagedKeyError as exc:
+        from src.monitoring.secret_scrub import record_text
+
+        raise ArtifactError(record_text(exc)) from None  # fixed words of its own, scrubbed as every record is
+
+
 def cleanup_staging(staged: StagedArtifact) -> None:
-    """Remove a staging directory (after merge, or on any failure path)."""
+    """Remove a staging directory (after merge, or on any failure path), and forget the keys of its staged copies."""
     import shutil
 
+    from src.backup.staged_key import forget_under
+
     shutil.rmtree(staged.staging_dir, ignore_errors=True)
+    forget_under(staged.staging_dir)
 
 
 def cleanup_stale_staging(max_age_hours: float = 24.0) -> int:

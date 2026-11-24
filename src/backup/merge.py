@@ -772,6 +772,33 @@ def _report_import_scale(corpus_path: Path) -> dict:
     return facts
 
 
+def _staged_keyed(path: Path) -> bool:
+    """Whether the import keyed this staged file (R829 A): its readers then need the encrypting driver even on a
+    plaintext install."""
+    from src.backup.staged_key import is_keyed
+
+    return is_keyed(path)
+
+
+def _check_staged_schema_file(path: Path) -> None:
+    """Refuse a staged corpus whose schema holds what the app does not make (``staged_key.check_staged_schema``), before
+    any row of it is read. Raises :class:`MergeError` with fixed words."""
+    from src.backup.staged_key import StagedKeyError, check_staged_schema, db_errors, open_staged
+
+    try:
+        conn = open_staged(path)
+        try:
+            check_staged_schema(conn)
+        finally:
+            conn.close()
+    except StagedKeyError as exc:
+        from src.monitoring.secret_scrub import record_text
+
+        raise MergeError(record_text(exc)) from None  # fixed words of its own, scrubbed as every record is
+    except db_errors():
+        raise MergeError("the backup's corpus schema could not be read, so it was not merged") from None
+
+
 def _sub_timer(timings: object):
     """A ``with _sub("name"):`` that records a sub-stage, or does nothing.
 
@@ -835,7 +862,7 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
     guard = threading.Lock()
     state: dict[str, object] = {"conn": None, "error": None, "seconds": None}
 
-    def _connected(conn: sqlite3.Connection) -> None:
+    def _connected(conn: Any) -> None:
         with guard:
             state["conn"] = conn
             if stop.is_set():
@@ -870,9 +897,9 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
             if not finished:
                 with guard:
                     conn = state["conn"]
-                    if isinstance(conn, sqlite3.Connection):
+                    if conn is not None:  # the stdlib's or sqlcipher3's connection (a keyed staged copy, R829 A)
                         with suppress(Exception):
-                            conn.interrupt()
+                            conn.interrupt()  # type: ignore[attr-defined]
             walker.join(timeout=0.5)
         _record = getattr(timings, "record", None)
         if _record is not None:
@@ -1047,6 +1074,11 @@ def prepare_staged_corpus(
             validate_sqlite_file(staged.corpus_path, quick_check=not defer_quick_check)
     except BackupError as exc:
         raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text
+
+    # The staged file is foreign input (R829 A1, R826 b): its schema is checked against the app's own before any row
+    # of it is read -- the revision just below is the first row, and the upgrade after it runs SQL on the file.
+    with _sub("prepare_staged:schema"):
+        _check_staged_schema_file(staged.corpus_path)
 
     original_rev = file_revision(staged.corpus_path)
     if original_rev is None:
@@ -1317,17 +1349,22 @@ def _staged_group_rows_or_none(staged_corpus: Path | str) -> dict[str, int] | No
     For :func:`check_memory_once_staged`, which runs BEFORE the staged file is validated: a file
     that cannot be counted here answers None (no early verdict) rather than a refusal, because
     the validation a moment later is what names a damaged file, in its own words, and the
-    merge's own count still runs after it. Read-only and plaintext by design: a staged member is
-    a plain SQLite file (:func:`src.database.connect.attach`'s note), and ``mode=ro`` never
-    writes the main file (a WAL-mode header can still leave ``-wal``/``-shm`` side files in the
-    private staging directory, which ``cleanup_staging`` removes with it)."""
-    from src.database.read_only_uri import open_plain_read_only
+    merge's own count still runs after it. Read-only (keyed when the import sealed the file, R829 A),
+    and ``mode=ro`` never writes the main file (a WAL-mode header can still leave ``-wal``/``-shm``
+    side files in the private staging directory, which ``cleanup_staging`` removes with it). A
+    schema the app does not make answers None too: no row of it is read here, and the validation
+    refuses it in its own words."""
+    from src.backup.staged_key import check_staged_schema, open_staged
 
     try:
-        con = open_plain_read_only(staged_corpus)
+        con = open_staged(staged_corpus)
     except Exception:  # noqa: BLE001 - not countable here: the validation names it
         return None
     try:
+        try:
+            check_staged_schema(con)
+        except Exception:  # noqa: BLE001 - refused by the validation a moment later, in its own words
+            return None
         present = {
             str(r[0]).lower()
             for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
@@ -2452,7 +2489,7 @@ def merge_corpus(
     from src.database.connect import attach
     from src.database.connect import connect as db_connect
 
-    con = db_connect(working_copy, check_same_thread=False)
+    con = db_connect(working_copy, check_same_thread=False, sqlcipher_host=_staged_keyed(staged_corpus))
     con.isolation_level = None  # explicit BEGIN/COMMIT (auto-BEGIN would collide)
     # Where the temp structures live depends on whether the working copy is ENCRYPTED. See
     # _temp_store_for: a PLAIN copy keeps its temp storage on disk (RAM per inserted row is the
@@ -2493,7 +2530,15 @@ def merge_corpus(
     fts_title_trigger_ddl = _fts_insert_trigger_ddl(con, _FTS_TITLE_INSERT_TRIGGER)
     try:
         con.execute("PRAGMA foreign_keys=OFF")  # order is FK-safe; checked at the end
-        attach(con, staged_corpus, "inc")  # staged members are plaintext by design
+        attach(con, staged_corpus, "inc")  # keyed when the import sealed it (R829 A), else a plaintext member
+        if cache_mb and _staged_keyed(staged_corpus):
+            # A keyed ``inc`` decrypts every page it reads again: with the default cache a read in index order costs up
+            # to 8.5x the plaintext one (measured, row 410), and it costs nothing more once ``inc`` has its own cache.
+            # An attached schema keeps the default unless it is told, whatever ``main`` has.
+            try:
+                con.execute(f"PRAGMA inc.cache_size=-{int(cache_mb) * 1024}")
+            except Exception:  # noqa: BLE001 - a tuning PRAGMA must never break a merge
+                pass
         # The source joins key on (domain, feed_key): ``_merge_sources`` registers the incoming keys as a SQL function
         # (``oo_inc_feed_key``, derived by the ONE feed normaliser) before its first statement.
         con.execute("BEGIN IMMEDIATE")
@@ -7315,7 +7360,7 @@ def verify_merge(
     from src.database.connect import connect as db_connect
 
     _sub = _sub_timer(timings)
-    con = db_connect(working_copy, check_same_thread=False)
+    con = db_connect(working_copy, check_same_thread=False, sqlcipher_host=_staged_keyed(staged_corpus))
     try:
         v: dict = {}
         has_fts = bool(
@@ -8844,9 +8889,9 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
     its ancestors' chains, so on a 1-million-article backup that was gigabytes: two
     imports on a 7 GB machine were killed in this stage at 5.6 and 6.0 GB, after hours
     of merging, before the swap."""
-    from src.database.read_only_uri import open_plain_read_only
+    from src.backup.staged_key import open_staged
 
-    src = open_plain_read_only(staged_custody)
+    src = open_staged(staged_custody)  # keyed when the import sealed it (R829 A3)
     try:
         src_tables = {
             r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -10485,6 +10530,8 @@ def run_restore(
     # 7 lettered stages (A-G) converge into ONE report.
     for _name, _seconds in (staged.stage_a_timings or {}).items():
         timings.record(f"stage_a:{_name}", _seconds)
+    with suppress(Exception):  # its steps ran one after another, before this recorder existed
+        timings.started_earlier(sum(float(v) for v in (staged.stage_a_timings or {}).values()))
 
     if commit:
         # The half-migrated ask first: the writer check stops jobs and restarts them only on its own refusal (row 325).

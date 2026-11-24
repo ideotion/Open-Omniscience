@@ -873,6 +873,7 @@ def _connect(
     timeout: float = 30.0,
     cipher_page_size: int | None = None,
     read_only: bool = False,
+    sqlcipher_host: bool = False,
 ):
     """Open ``path`` with the right driver and key for ITS state.
 
@@ -1016,6 +1017,14 @@ def _connect(
         return conn
 
     if state is False:
+        if sqlcipher_host:
+            # A plaintext store opened through the encrypting driver, keyless: the same plaintext file, on a connection
+            # that can ATTACH an encrypted staged copy with its key (R829 A2 on a plaintext install).
+            from sqlcipher3 import dbapi2 as sqc
+
+            if read_only:
+                return sqc.connect(_read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout)
+            return sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
         if read_only:
             return sqlite3.connect(
                 _read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout
@@ -1089,6 +1098,7 @@ def connect(
     timeout: float = 30.0,
     cipher_page_size: int | None = None,
     read_only: bool = False,
+    sqlcipher_host: bool = False,
 ):
     """Open ``path`` (see :func:`_connect` for the driver and key rules) with the search
     index's transform functions registered.
@@ -1099,6 +1109,9 @@ def connect(
 
     ``read_only=True`` opens an existing file ``mode=ro`` and writes nothing, its leftover log included:
     see :func:`_connect` for why ``PRAGMA query_only`` is not that.
+
+    ``sqlcipher_host=True`` opens a PLAINTEXT file through the encrypting driver, keyless, so the connection can attach
+    an encrypted staged copy of an import (R829 A2 on a plaintext install). An encrypted file is unaffected.
 
     R802: a store in a folder an erase in this process has started on is never opened (``DataFolderErased``): an open of a missing file
     would make a fresh store in the folder being erased, and one that is there is the erase's to destroy."""
@@ -1116,6 +1129,7 @@ def connect(
             timeout=timeout,
             cipher_page_size=cipher_page_size,
             read_only=read_only,
+            sqlcipher_host=sqlcipher_host,
         )
     from src.database.fts_norm import register
 
@@ -1196,9 +1210,14 @@ def main_header_state(path: Path | str) -> bool | None:
 
 
 def attach(conn, path: Path | str, alias: str) -> None:
-    """ATTACH a PLAINTEXT database (staged artifact members are plaintext by
-    design). On a SQLCipher connection the empty KEY clause is mandatory or the
-    attached DB would inherit the main key; stdlib sqlite3 has no KEY clause."""
+    """ATTACH a staged database. A staged corpus or custody log the import keyed (R829 A, ``src.backup.staged_key``)
+    is attached with its key as a bound parameter; anything else is a PLAINTEXT member (lanes, files). On a SQLCipher
+    connection the empty KEY clause is mandatory or the attached DB would inherit the main key; stdlib sqlite3 has no
+    KEY clause."""
+    from src.backup.staged_key import attach_staged
+
+    if attach_staged(conn, path, alias):
+        return
     with sqlite_opening():  # R789: an ATTACH opens a file the audit hook does not see
         if _is_sqlcipher_conn(conn):
             conn.execute(f'ATTACH DATABASE ? AS "{alias}" KEY \'\'', (str(path),))

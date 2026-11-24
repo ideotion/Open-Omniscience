@@ -43,6 +43,8 @@ from src.backup.stream_backup import (
 )
 from src.backup.volumes import MANIFEST_NAME, VolumeError, VolumeStopped, load_manifest
 from src.safety.crypto import EncryptionError
+from src.backup.staged_key import open_staged
+from tests.staged_db import same_database
 
 VOL = 65536  # small volumes so a tiny corpus spans many
 
@@ -106,7 +108,7 @@ def test_round_trip_and_no_corpus_materialization(tmp_path):
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
     assert staged.signature_state == "verified"
     assert staged.hash_failures == []
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
     assert (staged.staging_dir / "app_settings.json").read_text(encoding="utf-8") == '{"k": 1}'
     assert (staged.staging_dir / "logs/empty.log").read_text(encoding="utf-8") == ""  # 0-byte member
     assert staged.encrypted is True
@@ -145,7 +147,7 @@ def test_unchanged_rerun_reuses_every_volume_but_the_envelope(tmp_path):
     assert s2["volumes_emitted"] <= 1
     assert s2["volumes_reused"] == s1["volumes"] - s2["volumes_emitted"]
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
 
 
 def test_same_length_byte_change_is_detected_by_checksum_never_size_mtime(tmp_path):
@@ -164,7 +166,7 @@ def test_same_length_byte_change_is_detected_by_checksum_never_size_mtime(tmp_pa
     s = _backup(tmp_path, dest, corpus)
     assert s["volumes_emitted"] == 2  # exactly: the changed slice + the envelope
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == bytes(data)
+    assert same_database(staged.corpus_path, bytes(data))
 
 
 def test_new_passphrase_disables_reuse_and_the_set_stays_single_key(tmp_path):
@@ -243,7 +245,7 @@ def test_interrupted_backup_cannot_be_mistaken_for_complete_and_resumes(tmp_path
     deep = verify_stream_backup(dest, passphrase="pw")
     assert deep["ok"] is True and deep["decrypted"] is True
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st2")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
 
 
 def test_resume_after_source_changed_mid_gap_yields_one_consistent_state(tmp_path):
@@ -265,7 +267,7 @@ def test_resume_after_source_changed_mid_gap_yields_one_consistent_state(tmp_pat
 
     _backup(tmp_path, dest, corpus)
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
 
 
 def test_interrupted_refresh_keeps_the_previous_backup_restorable(tmp_path):
@@ -279,10 +281,12 @@ def test_interrupted_refresh_keeps_the_previous_backup_restorable(tmp_path):
     _backup(tmp_path, dest, corpus)
     old_bytes = corpus.read_bytes()
 
-    data = bytearray(old_bytes)
-    for off in range(VOL, len(data), VOL):  # change every slice
-        data[off + 3] ^= 0xFF
-    corpus.write_bytes(bytes(data))
+    con = sqlite3.connect(corpus)  # change every slice, as a database that still reads whole (a staged copy is sealed)
+    con.execute("UPDATE articles SET content = replace(content, 'x', 'y')")
+    con.commit()
+    con.close()
+    data = corpus.read_bytes()
+    assert sum(1 for off in range(0, len(data), VOL) if data[off:off + VOL] != old_bytes[off:off + VOL]) > 1
     with pytest.raises(VolumeStopped):
         _backup(tmp_path, dest, corpus, should_stop=_interrupt_after(3))
 
@@ -290,12 +294,12 @@ def test_interrupted_refresh_keeps_the_previous_backup_restorable(tmp_path):
     report = verify_stream_backup(dest)
     assert report["ok"] is True, report["problems"]
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st-old")
-    assert staged.corpus_path.read_bytes() == old_bytes
+    assert same_database(staged.corpus_path, old_bytes)
 
     s = _backup(tmp_path, dest, corpus)  # resume completes the refresh
     assert s["resumed"] is True
     staged2 = read_stream_backup(dest, "pw", staging_root=tmp_path / "st-new")
-    assert staged2.corpus_path.read_bytes() == bytes(data)
+    assert same_database(staged2.corpus_path, bytes(data))
 
 
 def test_cancelled_refresh_cleanup_spares_the_previous_complete_set(tmp_path):
@@ -317,7 +321,7 @@ def test_cancelled_refresh_cleanup_spares_the_previous_complete_set(tmp_path):
     assert removed >= 0
     assert not (dest / BUILDING_NAME).exists()
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == old_bytes  # previous backup intact
+    assert same_database(staged.corpus_path, old_bytes)  # previous backup intact
 
 
 def test_cancelled_first_build_vanishes_entirely(tmp_path):
@@ -370,7 +374,7 @@ def test_parity_recovers_a_corrupt_volume_end_to_end(tmp_path):
     report = verify_stream_backup(dest)
     assert report["ok"] is False and report["recoverable"] is True
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
 
 
 def test_rewritten_manifest_fails_its_signature(tmp_path):
@@ -736,8 +740,9 @@ def test_encrypted_corpus_member_converts_with_its_own_passphrase(tmp_path):
     )
     assert staged.signature_state == "verified" and staged.hash_failures == []
     assert staged.corpus_path.name == "corpus.db"
-    assert staged.corpus_path.read_bytes()[:16] == b"SQLite format 3\x00"
-    c = sqlite3.connect(staged.corpus_path)
+    # R829 (A1): read in place under its own passphrase, never exported to plaintext
+    assert staged.corpus_path.read_bytes()[:16] != b"SQLite format 3\x00"
+    c = open_staged(staged.corpus_path)
     assert c.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 200
     c.close()
     # the encrypted member was verified then reclaimed (staging disk, not doubled)
@@ -790,7 +795,7 @@ def test_residual_wal_is_carried_and_folded_at_restore(tmp_path):
 
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
     assert staged.hash_failures == []
-    c = sqlite3.connect(staged.corpus_path)
+    c = open_staged(staged.corpus_path)  # sealed as it is staged (R829 A2)
     assert c.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 350  # wal folded
     c.close()
     assert not (staged.staging_dir / "corpus.db-wal").exists()

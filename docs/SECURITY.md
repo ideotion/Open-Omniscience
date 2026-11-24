@@ -778,8 +778,18 @@ imply a protection we cannot deliver.
   whose files are created owner-only (0600), so another local user cannot read the decrypted members or the plaintext
   copy of the incoming corpus whatever the data folder's own mode is; the boot sweep removes only a real folder of ours
   (never a link, a junction, a file or another user's folder named like one) and never follows a link inside it (R829 B).
-  Until R829 (A) keys that copy, it is plaintext on disk for the life of the import, and the erase treats it as a file
-  with no evidence of its identity: rewritten in full, after the key-material pass. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
+  The incoming corpus and custody log are never kept there in plaintext (R829 A, row 410-A,
+  `src/backup/staged_key.py`): an encrypted member is read in place under the passphrase that opens it, never exported,
+  and a plaintext one (a zip upload, a legacy volume set, a bare database, a corpus not encrypted in its backup) is
+  sealed as soon as its checks pass into a SQLCipher copy under a random 256-bit key held only in the importing
+  process's memory, never written and never derived from a passphrase, and its plaintext file is unlinked (not
+  overwritten: the window is the extraction and checks, and storage that remaps blocks keeps old ones either way). The key
+  reaches SQLite only through the C API or a bound `ATTACH ... KEY ?` with no statement trace watching (a trace expands
+  bound values into its text); a crash leaves a file nobody can read, which the boot sweep removes. Every connection to
+  a staged file runs with `trusted_schema` off and `cell_size_check` on, and a schema holding a trigger, view or virtual
+  table the app does not make is refused before any row is read. Public members (lanes, wiki dumps, maps, models) stay
+  plaintext inside the private folder. The erase treats every staging file as a file with no evidence of its identity:
+  its head goes in the pass above and it is rewritten in full, after the key-material pass. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
   junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a
   data, keys or cache folder that is itself a link; a key file, `anchors.db`, a cache file or a
   sidecar that is itself a link is NOT destroyed: its link is removed and it is named in `overwrite_failures`); a hard-linked

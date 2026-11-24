@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+from src.backup import staged_key
 from src.backup import stream_backup as sb
 from src.backup.stream_backup import (
     CorpusSource,
@@ -96,7 +97,9 @@ def test_a_volume_set_restore_stages_owner_only(tmp_path, permissive_umask):
         volume_size=65536,
     )
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes()[:16] == b"SQLite format 3\x00"
+    # R829 (A2): a corpus that was plaintext in its backup is sealed under a random in-memory key as it is staged
+    assert staged.corpus_path.read_bytes()[:16] != b"SQLite format 3\x00"
+    assert staged_key.key_for(staged.corpus_path).origin == "ephemeral"
     _assert_private_tree(staged.staging_dir)
 
 
@@ -144,7 +147,7 @@ def _sqlcipher_available() -> bool:
 
 @posix_only
 @pytest.mark.skipif(not _sqlcipher_available(), reason="sqlcipher3 not installed")
-def test_the_plaintext_export_of_an_encrypted_corpus_is_owner_only(tmp_path, permissive_umask):
+def test_an_encrypted_corpus_is_staged_owner_only_and_never_exported(tmp_path, permissive_umask):
     from src.database.connect import connect
 
     corpus = tmp_path / "corpus.db"
@@ -162,7 +165,9 @@ def test_the_plaintext_export_of_an_encrypted_corpus_is_owner_only(tmp_path, per
         side_members=[], volume_size=65536,
     )
     staged = read_stream_backup(dest, "backup-pw", staging_root=tmp_path / "st", corpus_passphrase="corpus-secret")
-    assert staged.corpus_path.read_bytes()[:16] == b"SQLite format 3\x00"  # still plaintext until R829 (A)
+    # R829 (A1): the encrypted member is read in place under its own passphrase, never exported to plaintext
+    assert staged.corpus_path.read_bytes()[:16] != b"SQLite format 3\x00"
+    assert staged_key.key_for(staged.corpus_path).origin == "member"
     assert _mode(staged.corpus_path) == 0o600
     _assert_private_tree(staged.staging_dir)
 
