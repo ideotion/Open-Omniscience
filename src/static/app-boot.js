@@ -144,6 +144,8 @@
       // from what it last drew (the alerts payload; the cards, position and pause state) -- never a fetch.
       try { if (typeof repaintHomeAlerts === "function") repaintHomeAlerts(); } catch (_e) {}
       try { if (typeof repaintLeadsCarousel === "function") repaintLeadsCarousel(); } catch (_e) {}
+      // Row 367: the task manager's Active, Queue, Schedule and Coverage panels redraw from what they last read; never fetch.
+      try { if (typeof repaintTaskManager === "function") repaintTaskManager(); } catch (_e) {}
       // Home's "Most recent" and "Latest in your corpus" panels and the Settings
       // Collection toggle are the same class, seen only on a switch that STARTS in a
       // non-English locale: the walker had recorded their French text as "the English",

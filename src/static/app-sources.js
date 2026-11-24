@@ -394,7 +394,8 @@
       // read `fr` while every row under it read `FRA`).
       const one = v.length !== 1 ? "" : (id === "src-msel-country" ? ooCountryCode(v[0])
         : (id === "src-msel-language" ? ooLangCode(v[0]) : v[0]));
-      sum.textContent = v.length === 0 ? t("Any") : (v.length === 1 ? one : v.length + " " + t("selected"));
+      // Held (row 367): "Any" and "selected" follow a language switch; the picked values are taken now.
+      ooLive(sum, () => (v.length === 0 ? t("Any") : (v.length === 1 ? one : v.length + " " + t("selected"))));
     }
     async function loadSrcFacets() {
       let f; try { f = await api("/api/sources/facets"); } catch (e) { return; }
@@ -577,7 +578,7 @@
     async function qualifyAssist(sourceId, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const row = document.getElementById("src-trail-" + sourceId);
-      if (btn) { btn.disabled = true; btn.textContent = t("Checking…"); }
+      if (btn) { btn.disabled = true; ooLive(btn, () => t("Checking…")); }
       try {
         const r = await api("/api/diagnostics/qualification-assist/run",
           {method: "POST", body: JSON.stringify({source_id: sourceId})});
@@ -587,21 +588,22 @@
         // put a Latin colon and commas into every locale's line (2026-09-27 re-walk O-5).
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
         const num = (x) => (x != null ? fmtNum(x, 0) : "?");
-        const msg = tf("AI check: {checked} checked — {articles} read as articles, {junk} as navigation soup, {unreadable} unreadable — a proposal only; nothing about this source was changed.",
+        // A function, so a held line puts it into words again at each draw.
+        const msg = () => tf("AI check: {checked} checked — {articles} read as articles, {junk} as navigation soup, {unreadable} unreadable — a proposal only; nothing about this source was changed.",
           { checked: num(r.checked), articles: num(r.article_count), junk: num(r.junk_count), unreadable: num(r.unparseable_count) });
         // A failed canary means the run itself is untrustworthy, which matters more
         // than any of its numbers — so it is stated first, not buried.
         const bad = r.canary && r.canary.ok === false;
         if (row) {
           row.style.display = "";
-          row.firstElementChild.innerHTML =
+          ooLiveHtml(row.firstElementChild, () =>
             (bad ? `<div class="card-caveat">${esc(t("The canary check FAILED — treat this run's numbers as unreliable."))}</div>` : "")
-            + `<div class="small">${esc(msg)}</div>`;
-        } else if (typeof toast === "function") { toast(msg); }
+            + `<div class="small">${esc(msg())}</div>`);
+        } else if (typeof toast === "function") { toast(msg()); }
       } catch (e) {
         if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
       }
-      if (btn) { btn.disabled = false; btn.textContent = t("AI check"); }
+      if (btn) { btn.disabled = false; ooLive(btn, () => t("AI check")); }
     }
 
     // -- Discovery-trail / qualified-citations panel (2026-07-20 ruling, items 1+2) -- //
@@ -617,7 +619,7 @@
       row.style.display = "";
       const cell = row.querySelector("td");
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      cell.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(cell, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const [prov, tally, ips] = await Promise.all([
           api(`/api/sources/${id}/provenance`),
@@ -634,7 +636,10 @@
           pending: tally.pending || [], never_registered: tally.never_registered || [],
         };
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => String(x).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
-        cell.innerHTML = _srcTrailHtml(id, prov, tally) + (ips ? srcIpsHtml(ips, t, tf) : "");
+        // Held from what was read: a language switch redraws the panel without a request. A drill list opened inside it
+        // changes its text, so the switch lets the panel go rather than redraw it, and the drill list follows on its own.
+        // (Today the same switch also redraws the managed-sources table, which closes the panel: app-boot.js.)
+        ooLiveHtml(cell, () => _srcTrailHtml(id, prov, tally) + (ips ? srcIpsHtml(ips, t, tf) : ""));
       } catch (e) { cell.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     function _srcTrailHtml(id, prov, tally) {
@@ -717,18 +722,20 @@
       const host = $("src-trail-cls-" + id); if (!host) return;
       const arr = (_srcTrailData[id] && _srcTrailData[id][cls]) || [];
       host.style.display = "";
-      host.innerHTML = arr.length
+      // Held (row 367): it sits inside the held trail panel, where the walker does not go, so its hover is keyed here.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      ooLiveHtml(host, () => arr.length
         ? arr.map(d => {
             const jump = `<a href="#" data-on-click="srcJumpToDomain(${esc(JSON.stringify(d.domain))});return false">${esc(d.domain)}</a>`;
             // "the sources' sources" grammar: also link to THIS source's own
             // citing articles for that domain, not just the domain's own row.
             const ids = d.sample_article_ids || [];
             const artsLink = ids.length
-              ? ` <a href="#" data-on-click="openAnalysisForIds(${esc(JSON.stringify(ids))}, ${esc(JSON.stringify(d.domain))});return false" title="Open the articles that cite this domain">↗</a>`
+              ? ` <a href="#" data-on-click="openAnalysisForIds(${esc(JSON.stringify(ids))}, ${esc(JSON.stringify(d.domain))});return false" title="${esc(t("Open the articles that cite this domain"))}">↗</a>`
               : "";
             return jump + artsLink;
           }).join(", ")
-        : `<span class="muted">—</span>`;
+        : `<span class="muted">—</span>`);
     }
     // Jump to a cited domain's OWN management row (the drill's "linking to that
     // source's own management row" -- the pending/qualified/disqualified classes'
@@ -780,6 +787,9 @@
     }
 
     async function importSources() {
+      // Its own tf: there is no global one, and a bare call threw after the rows were stored, so a good import read as failed.
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) =>
+        String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
       const f = $("imp-file").files[0];
       if (!f) { toast("Choose a CSV file first.", "err"); return; }
       $("imp-result").textContent = "Importing…";
@@ -789,13 +799,16 @@
         const d = await res.json();
         if (!res.ok) throw new Error(d.detail || res.statusText);
         const errs = (d.parse_errors || []).concat(d.errors || []);
+        const unread = (d.unreadable_country && d.unreadable_country.count > 0) ? d.unreadable_country.count : 0;
         $("imp-result").innerHTML =
           `<span class="pill ok">imported</span> created ${d.created}, updated ${d.updated}, ` +
           `skipped ${d.skipped}.` +
           (errs.length ? ` <span class="muted">First issues: ${errs.slice(0,5).map(esc).join("; ")}</span>` : "") +
           // Countries that are not a code or a name are kept as typed and never overwrite a stored country: say so.
-          ((d.unreadable_country && d.unreadable_country.count > 0)
-            ? ` <span class="muted">${esc(tf("{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.", {n: d.unreadable_country.count}))}</span>` : "");
+          (unread ? ` <span class="muted imp-unread"></span>` : "");
+        // Held (row 367): this sentence follows a language switch; the rest of the line is the walker's.
+        if (unread) ooLive($("imp-result").querySelector(".imp-unread"), () =>
+          tf("{n} country value(s) in the sheet are not a country code or name: kept as typed, and a country already stored is never overwritten.", {n: unread}));
         toast(`Import: +${d.created} new, ${d.updated} updated.`);
         loadManagedSources(); loadSources(); loadDbStats(); loadCoverage();
       } catch (e) { $("imp-result").textContent = ""; toast(_failMsg("Import failed: {error}", e), "err"); }
@@ -844,6 +857,25 @@
         : "";
     }
 
+    // One feed's result line, in the words of the moment; it also writes the line's hover (the line is held and marked).
+    function _srcFeedResultLine(el, tl) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      el.title = tallyHover(tl);
+      return t("Feed result —") + " " + tally(tl);
+    }
+    // The batch's result line, the same way.
+    function _srcBatchResultLine(el, r, allOff, off) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      el.title = allOff ? "" : tallyHover(r.aggregate);
+      return allOff ? _srcAirplaneNothing()
+        : tf("Done: {fetched} of {requested} fetched", {fetched: r.ingested - off, requested: r.requested}) + (off ? ` · ${tf("{n} not fetched (airplane mode)", {n: off})}` : "") + ` · ${tally(r.aggregate)}`;
+    }
+    // A refusal by airplane mode, in the words of the moment (a held line calls it again at each draw).
+    function _srcAirplaneNothing() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.");
+    }
     async function ingestSource() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const id = $("ing-source").value;
@@ -853,11 +885,12 @@
       try {
         const r = await api(`/api/sources/${id}/ingest`, {method: "POST"});
         if (r.tally && r.tally.skipped_offline) {   // refused by airplane mode: a clean zero would read as "the feed is quiet"
-          const msg = t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.");
-          $("ingest-result").textContent = msg; toast(msg, "warn"); return;
+          ooLive($("ingest-result"), _srcAirplaneNothing); toast(_srcAirplaneNothing(), "warn"); return;
         }
-        $("ingest-result").textContent = t("Feed result —") + " " + tally(r.tally);
-        $("ingest-result").title = tallyHover(r.tally);
+        // Held (row 367) as HTML, so the line is marked: the walker then leaves its hover to the render, and both follow
+        // a language switch (an unmarked line's title is the walker's, which puts back the first one it saw).
+        const res = $("ingest-result");
+        ooLiveHtml(res, () => esc(_srcFeedResultLine(res, r.tally)));
         toast("Ingest complete."); doSearch({refresh: true});
       } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
@@ -968,9 +1001,10 @@
         // A FAILED read and an EMPTY answer are different facts and must not print
         // as one: the catch used to fall through to "No sources match these
         // filters.", which reports the catalogue as searched when nothing was read.
-        list.innerHTML = `<div class="muted">${esc(BI.failed
+        const failed = BI.failed;
+        ooLiveHtml(list, () => `<div class="muted">${esc(failed
           ? t("Could not load the source catalogue.")
-          : t("No sources match these filters."))}</div>`;
+          : t("No sources match these filters."))}</div>`);
       }
       else {
         list.innerHTML = rows.map(s => {
@@ -992,10 +1026,10 @@
       if (cap) {
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
           String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
-        cap.textContent = BI.capped
-          ? tf("Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.",
-               {n: rows.length})
-          : "";
+        const n = rows.length;
+        if (BI.capped) {
+          ooLive(cap, () => tf("Showing the first {n} matching sources. Refine the filters to reach the rest of the catalogue.", {n}));
+        } else { ooLive(cap, null); cap.textContent = ""; }
         cap.hidden = !BI.capped;
       }
     }
@@ -1025,8 +1059,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
         String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
-      $("bi-status").textContent = tf("Fetching feeds: {n}… (polite and rate-limited; this may take a while)", {n: ids.length});
-      $("bi-status").title = "";
+      const st = $("bi-status");
+      st.title = "";
+      ooLive(st, () => tf("Fetching feeds: {n}… (polite and rate-limited; this may take a while)", {n: ids.length}));
       $("bi-results").innerHTML = "";
       try {
         const r = await api("/api/sources/ingest-batch", {method: "POST", body: JSON.stringify({source_ids: ids})});
@@ -1034,20 +1069,19 @@
         // tally; `skipped_offline` is what says it was not fetched (invariant #14e's corollary).
         const off = (r.aggregate && r.aggregate.skipped_offline) || 0;
         const allOff = off > 0 && off >= r.ingested;
-        $("bi-status").textContent = allOff
-          ? t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.")
-          : tf("Done: {fetched} of {requested} fetched", {fetched: r.ingested - off, requested: r.requested}) + (off ? ` · ${tf("{n} not fetched (airplane mode)", {n: off})}` : "") + ` · ${tally(r.aggregate)}`;
-        $("bi-status").title = allOff ? "" : tallyHover(r.aggregate);
-        $("bi-results").innerHTML = `<table class="bi-res"><tr><th>Source</th><th>Result</th></tr>` +
+        // Held (row 367), the line, its hover and the table: all follow a language switch, drawn from this answer. The
+        // line is held as HTML so it is marked and its hover is the render's, not the walker's.
+        ooLiveHtml(st, () => esc(_srcBatchResultLine(st, r, allOff, off)));
+        ooLiveHtml($("bi-results"), () => `<table class="bi-res"><tr><th>${esc(t("Source"))}</th><th>${esc(t("Result"))}</th></tr>` +
           r.results.map(x => { const hov = (x.status === "ok" && x.tally && !x.tally.skipped_offline) ? tallyHover(x.tally) : "";
             return `<tr><td>${esc(x.source || ("#" + x.source_id))}</td>` +
             `<td${hov ? ` title="${esc(hov)}"` : ""}>${x.status === "ok"
               ? ((x.tally && x.tally.skipped_offline) ? `<span class="pill warn">${esc(t("Not fetched (airplane mode)"))}</span>` : esc(tally(x.tally)))
               : `<span class="pill warn">${esc(batchIngestStatusWords(x.status, t))}</span>${x.detail ? " " + ooLabelHtml(esc(t("Error")), `<code dir="ltr">${esc(x.detail)}</code>`) : ""}`}</td></tr>`; }).join("") +
-          `</table>`;
-        if (allOff) { toast(t("Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again."), "warn"); return; }
+          `</table>`);
+        if (allOff) { toast(_srcAirplaneNothing(), "warn"); return; }
         toast("Batch ingest complete."); doSearch({refresh: true});
-      } catch (e) { $("bi-status").textContent = ""; toast(_failMsg("Batch ingest failed: {error}", e), "err"); }
+      } catch (e) { st.textContent = ""; toast(_failMsg("Batch ingest failed: {error}", e), "err"); }
       finally { btn.disabled = false; }
     }
 
@@ -1060,7 +1094,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const lines = (c && c.retired) || [];
       box.hidden = !lines.length;
-      txt.textContent = lines.map((s) => t(s)).join(" ");
+      ooLive(txt, () => lines.map((s) => t(s)).join(" "));   // held (row 367): the server's sentences follow a switch
     }
     async function dismissRetiredMode(btn) {
       btn.disabled = true;
