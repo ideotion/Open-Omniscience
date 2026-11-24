@@ -335,7 +335,7 @@ def heal_bulk_build(engine: Engine, *, inline: bool = True) -> list[str]:
     """Finish an interrupted bulk build. Returns the indexes created.
 
     ``inline=False`` (what ``init_db`` passes since R825 (b)) builds NOTHING: it reads the marker and logs
-    what is owed, and the background heal (:func:`start_heal`, the boot sequence's ``keyword-indexes`` step)
+    what is owed, and the background heal (:func:`start_heal`, started by the boot sequence's re-index step)
     rebuilds it with its progress shown and its memory checked.
 
     This is the half that makes R23's live-store choice survivable. It exists because
@@ -364,7 +364,10 @@ def heal_bulk_build(engine: Engine, *, inline: bool = True) -> list[str]:
             _LOG.warning("bulk-build marker present but unusable; not inventing a plan")
             return []
         if not inline:
-            missing = [n for n in planned if n not in _existing_indexes(session.connection())]
+            from src.utils.interrupts import kept
+
+            present = _existing_indexes(session.connection())
+            missing = kept(planned, lambda n: n not in present)  # a frame of its own: init_db reaches this (tests/test_loop_heads_reach.py)
             _LOG.warning(
                 "a bulk build is open: %d keyword index(es) owed, rebuilt in the background after the start-up checks",
                 len(missing),
