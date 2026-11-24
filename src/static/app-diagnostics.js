@@ -716,12 +716,13 @@
       const out = $("session-forensics-out");
       if (!out) return;
       if (btn) btn.disabled = true;
-      out.innerHTML = '<div class="muted">' + esc(t("Loading…")) + "</div>";
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the report from this reading.
+      ooLiveHtml(out, () => '<div class="muted">' + esc(t("Loading…")) + "</div>");
       try {
         const d = await api("/api/diagnostics/session-forensics");
-        out.innerHTML = _renderSessionForensics(d, t);
+        ooLiveHtml(out, () => _renderSessionForensics(d, t));
       } catch (e) {
-        out.innerHTML = '<div class="note err">' + esc(t("Could not load session forensics.")) + " " + esc(e.message) + "</div>";
+        ooLiveHtml(out, () => '<div class="note err">' + esc(t("Could not load session forensics.")) + " " + esc(e.message) + "</div>");
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -757,14 +758,15 @@
       if (!out) return;
       const me = ++_countryFormTicket;
       if (btn) btn.disabled = true;
-      out.innerHTML = '<div class="muted">' + esc(t("Loading…")) + "</div>";
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the form from this reading.
+      ooLiveHtml(out, () => '<div class="muted">' + esc(t("Loading…")) + "</div>");
       try {
         const d = await api("/api/diagnostics/country-form" + (withEstimate ? "?estimate=true" : ""));
         if (me !== _countryFormTicket) return;
-        out.innerHTML = _renderCountryForm(d, t);
+        ooLiveHtml(out, () => _renderCountryForm(d, t));
       } catch (e) {
         if (me !== _countryFormTicket) return;
-        out.innerHTML = '<div class="note err">' + esc(t("Could not read the country form.")) + " " + esc(e.message) + "</div>";
+        ooLiveHtml(out, () => '<div class="note err">' + esc(t("Could not read the country form.")) + " " + esc(e.message) + "</div>");
       } finally {
         if (btn && me === _countryFormTicket) btn.disabled = false;
       }
@@ -844,24 +846,32 @@
       try {
         const d = await api("/api/diagnostics/keyword-growth");
         const dlg = $("chart-enlarge"); if (!dlg) { toast(t("Could not open the chart.")); return; }
-        const ttl = $("chart-enlarge-title"); if (ttl) ttl.textContent = t("Keyword-growth curve");
-        const note = $("chart-enlarge-note");
-        if (note) { note.textContent = ooSaidText(d, "caveat"); note.style.display = d.caveat ? "" : "none"; }
-        const body = $("chart-enlarge-body"); if (!body) return;
-        const tot = d.totals || {}, heaps = d.heaps || {}, rate = d.minting_rate_per_1000_words || {};
-        // Each "Label: n" through the ONE keyed separator frame (W18; B14's Z3), and each
-        // count through fmtNum, not the browser's locale.
-        const head = ooLabelHtml(esc(t("Keywords")), `<b>${fmtNum(tot.keywords || 0, 0)}</b>`) + " · "
-          + ooLabelHtml(esc(t("words")), `<b>${fmtNum(tot.tokens || 0, 0)}</b>`)
-          + (heaps.beta != null ? ` · Heaps β = <b>${esc(String(heaps.beta))}</b>` : "")
-          + (rate.start != null && rate.end != null
-              ? " · " + ooLabelHtml(esc(t("new keywords / 1,000 words")),
-                `<b>${esc(String(rate.start))} → ${esc(String(rate.end))}</b>`) : "");
-        body.innerHTML = `<div class="hint" style="margin-bottom:6px">${head}</div>` + _growthSvg(d.series, t);
+        // Row 361: the title, the caveat and the body draw through ooLive/ooLiveHtml, so a language switch with the
+        // dialog open redraws them from this reading. The dialog is SHARED (chartEnlarge writes it directly and leaves
+        // its title to the i18n walker), so the three nodes are released when it closes.
+        const ids = ["chart-enlarge-title", "chart-enlarge-note", "chart-enlarge-body"];
+        ooLive($(ids[0]), () => t("Keyword-growth curve"));
+        const note = $(ids[1]);
+        if (note) { ooLive(note, () => ooSaidText(d, "caveat")); note.style.display = d.caveat ? "" : "none"; }
+        const body = $(ids[2]); if (!body) return;
+        ooLiveHtml(body, () => _keywordGrowthHtml(d, t));
+        dlg.addEventListener("close", () => { ids.forEach((id) => ooLive($(id), null)); }, { once: true });
         if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       } catch (e) {
         toast(t("Could not load the keyword-growth curve."));
       } finally { if (btn) btn.disabled = false; }
+    }
+    function _keywordGrowthHtml(d, t) {
+      const tot = d.totals || {}, heaps = d.heaps || {}, rate = d.minting_rate_per_1000_words || {};
+      // Each "Label: n" through the ONE keyed separator frame (W18; B14's Z3), and each
+      // count through fmtNum, not the browser's locale.
+      const head = ooLabelHtml(esc(t("Keywords")), `<b>${fmtNum(tot.keywords || 0, 0)}</b>`) + " · "
+        + ooLabelHtml(esc(t("words")), `<b>${fmtNum(tot.tokens || 0, 0)}</b>`)
+        + (heaps.beta != null ? ` · Heaps β = <b>${esc(String(heaps.beta))}</b>` : "")
+        + (rate.start != null && rate.end != null
+            ? " · " + ooLabelHtml(esc(t("new keywords / 1,000 words")),
+              `<b>${esc(String(rate.start))} → ${esc(String(rate.end))}</b>`) : "");
+      return `<div class="hint" style="margin-bottom:6px">${head}</div>` + _growthSvg(d.series, t);
     }
 
     // All-diagnostics archive as a BACKGROUND job (D2, field-test Item 10): the old button
@@ -1789,23 +1799,23 @@
     // geometry is ooTimeline (src/static/ootimeline.js, pure); this is the wiring:
     // fetch, the summary strip, the SVG, wheel/drag/double-click on the time axis.
     let _chronoData = null, _chronoSpan = null, _chronoTimer = null, _chronoReadAt = 0;
-    let _chronoDrag = null, _chronoWindowBound = false;
+    let _chronoDrag = null, _chronoWindowBound = false, _chronoView = null;
     const _chronoDur = (s) => (window.ooTimeline ? ooTimeline.fmtDur(s) : String(s));
     const _chronoWhen = (iso) => (iso ? ((typeof fmtDateTime === "function") ? fmtDateTime(iso) : String(iso)) : "—");
 
     async function loadChronology(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const st = $("chrono-status");
-      const set = (m) => { if (st) st.textContent = m; };
+      const set = (render) => ooLive(st, render);   // row 361: the line follows a language switch
       const anchor = ($("chrono-anchor") && $("chrono-anchor").value) || "run";
       if (btn) btn.disabled = true;
       try {
         const d = await api("/api/diagnostics/chronology?anchor=" + encodeURIComponent(anchor));
         _chronoData = d; _chronoSpan = null; _chronoReadAt = Date.now();
         _chronoRender(d);
-        set(t("Read from the session ledger") + " · " + _chronoWhen(d.generated_at));
+        set(() => t("Read from the session ledger") + " · " + _chronoWhen(d.generated_at));
       } catch (e) {
-        set(t("Failed:") + " " + ((e && e.message) || ""));
+        set(() => t("Failed:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1889,7 +1899,6 @@
 
     function _chronoDraw(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const host = $("chrono-timeline");
       if (!host || !window.ooTimeline) return;
       const width = Math.max(320, host.clientWidth || (host.parentElement ? host.parentElement.clientWidth : 0) || 800);
@@ -1897,6 +1906,53 @@
       const L = ooTimeline.layout(d, { width: width, now: now, padL: 76, padR: 10,
                                        t0: _chronoSpan ? _chronoSpan.t0 : undefined, t1: _chronoSpan ? _chronoSpan.t1 : undefined });
       if (!_chronoSpan) _chronoSpan = { t0: L.t0, t1: L.t1 };
+      // Row 361: the timeline and its legend draw through ooLiveHtml/ooLive, so a language switch redraws their
+      // labels and hovers from this layout. The SVG is re-created by every draw, so its listeners live on the HOST,
+      // bound once, and read the layout last drawn.
+      _chronoView = { d: d, L: L };
+      ooLiveHtml(host, () => _chronoSvgHtml(L, width));
+      ooLive($("chrono-legend"), () => t("Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = suspend; dotted outline = no record; dashed end = the end has no time."));
+      if (host.dataset.chronoBound) return;
+      host.dataset.chronoBound = "1";
+      const tAt = (clientX) => {
+        const svg = $("chrono-svg"), V = _chronoView.L;
+        const r = svg ? svg.getBoundingClientRect() : { left: 0 };
+        return V.t0 + (clientX - r.left - V.padL) / Math.max(1, V.plotW) * (V.t1 - V.t0);
+      };
+      host.addEventListener("wheel", (ev) => {
+        if (!_chronoView || !ev.target.closest || !ev.target.closest("#chrono-svg")) return;
+        ev.preventDefault();
+        _chronoSpan = ooTimeline.zoomAround(_chronoSpan, tAt(ev.clientX), ev.deltaY > 0 ? 1.25 : 0.8, _chronoView.L.full);
+        _chronoDraw(_chronoView.d);
+      }, { passive: false });
+      // The drag: ONE pair of window listeners for the life of the page (the SVG is
+      // re-created on every zoom or pan, so binding them per render would stack).
+      host.addEventListener("mousedown", (ev) => {
+        if (!_chronoView || !ev.target.closest || !ev.target.closest("#chrono-svg")) return;
+        const V = _chronoView;
+        _chronoDrag = { x: ev.clientX, t0: _chronoSpan.t0, t1: _chronoSpan.t1, plotW: V.L.plotW, full: V.L.full, data: V.d };
+      });
+      if (!_chronoWindowBound) {
+        _chronoWindowBound = true;
+        window.addEventListener("mousemove", (ev) => {
+          const g = _chronoDrag;
+          if (!g) return;
+          const dt = -(ev.clientX - g.x) / Math.max(1, g.plotW) * (g.t1 - g.t0);
+          _chronoSpan = ooTimeline.pan({ t0: g.t0, t1: g.t1 }, dt, g.full);
+          _chronoDraw(g.data);
+        });
+        window.addEventListener("mouseup", () => { _chronoDrag = null; });
+      }
+      host.addEventListener("dblclick", (ev) => {
+        if (!_chronoView || !ev.target.closest || !ev.target.closest("#chrono-svg")) return;
+        const full = _chronoView.L.full;
+        _chronoSpan = { t0: full.t0, t1: full.t1 };
+        _chronoDraw(_chronoView.d);
+      });
+    }
+    function _chronoSvgHtml(L, width) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
       const H = L.height;
       const parts = [];
       parts.push('<svg id="chrono-svg" width="' + width + '" height="' + H + '" viewBox="0 0 ' + width + ' ' + H + '" role="img" '
@@ -1969,39 +2025,7 @@
       }
       if (L.nowVisible) parts.push('<line x1="' + L.nowX + '" y1="0" x2="' + L.nowX + '" y2="' + (H - 16) + '" stroke="var(--accent)" stroke-width="1" title="' + esc(t("now")) + '"/>');
       parts.push('</svg>');
-      host.innerHTML = parts.join("");
-      const legend = $("chrono-legend");
-      if (legend) legend.textContent = t("Wheel = zoom at the cursor · drag = pan · double-click = the whole span · hover a bar for the exact reading. Hatched = suspend; dotted outline = no record; dashed end = the end has no time.");
-      const svg = $("chrono-svg");
-      if (!svg) return;
-      const full = L.full;
-      const tAt = (clientX) => {
-        const r = svg.getBoundingClientRect();
-        const x = clientX - r.left;
-        return L.t0 + (x - L.padL) / Math.max(1, L.plotW) * (L.t1 - L.t0);
-      };
-      svg.addEventListener("wheel", (ev) => {
-        ev.preventDefault();
-        _chronoSpan = ooTimeline.zoomAround(_chronoSpan, tAt(ev.clientX), ev.deltaY > 0 ? 1.25 : 0.8, full);
-        _chronoDraw(d);
-      }, { passive: false });
-      // The drag: ONE pair of window listeners for the life of the page (the SVG is
-      // re-created on every zoom or pan, so binding them per render would stack).
-      svg.addEventListener("mousedown", (ev) => {
-        _chronoDrag = { x: ev.clientX, t0: _chronoSpan.t0, t1: _chronoSpan.t1, plotW: L.plotW, full: full, data: d };
-      });
-      if (!_chronoWindowBound) {
-        _chronoWindowBound = true;
-        window.addEventListener("mousemove", (ev) => {
-          const g = _chronoDrag;
-          if (!g) return;
-          const dt = -(ev.clientX - g.x) / Math.max(1, g.plotW) * (g.t1 - g.t0);
-          _chronoSpan = ooTimeline.pan({ t0: g.t0, t1: g.t1 }, dt, g.full);
-          _chronoDraw(g.data);
-        });
-        window.addEventListener("mouseup", () => { _chronoDrag = null; });
-      }
-      svg.addEventListener("dblclick", () => { _chronoSpan = { t0: full.t0, t1: full.t1 }; _chronoDraw(d); });
+      return parts.join("");
     }
 
 
@@ -2783,7 +2807,8 @@
     // Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3.
     let _gbQueries = null;
     async function goldBuilderLoad(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // The button's labels are written as the ENGLISH key for the i18n walker to translate, and to translate again on a
+      // switch (row 361): the button carries a translated title, which ooLive's marker would freeze.
       const body = $("gold-builder-body"); if (!body) return;
       if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
       try {
@@ -2791,7 +2816,7 @@
         _gbQueries = (d.queries || []).map((q) => ({ ...q, relevances: {} }));
         _gbRenderBuilder(d.note, d.grading);
       } catch (e) { body.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
-      if (btn) { btn.disabled = false; btn.textContent = t("Build an IR gold set (grade queries 0/1/2)"); }
+      if (btn) { btn.disabled = false; btn.textContent = "Build an IR gold set (grade queries 0/1/2)"; }
     }
     function _gbRenderBuilder(note, grading) {
       const body = $("gold-builder-body"); if (!body) return;
