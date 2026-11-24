@@ -579,11 +579,20 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
                 st = os.fstat(fd)
             except OSError:
                 st = None
+            # A sidecar with other names may be a link to a file that is not the store's (security read): never written.
             if st is None or not stat.S_ISREG(st.st_mode) or (st.st_dev, st.st_ino) != (dev, ino) and suffix == "" \
-                    or st.st_dev != dev:
-                os.close(fd)  # never written: another file, a FIFO, socket or device, or a file on another device
+                    or st.st_dev != dev or suffix != "" and st.st_nlink > 1:
+                # Never written: another file, a FIFO, socket or device, a file on another device, or one that cannot be looked at.
+                if st is not None and not stat.S_ISREG(st.st_mode):
+                    os.close(fd)
+                else:
+                    # A regular file (or one fstat could not read) may be a file this process's pool still has open: closing this
+                    # descriptor would drop the pool's locks on it (R789). Kept, never written (cap 0), let go by the late pass.
+                    _HELD.setdefault(generation, []).append((fd, "keep", 0))
                 if suffix == "":
                     return _untouched("changed")
+                rec["reason"] = rec["reason"] or ("write_failed" if st is None else "changed")  # never "in full" (security read)
+                deleted = False  # left at its name; step 6 or a later look may still find it gone
                 continue
             if suffix == "":
                 rec["other_names"] = max(0, st.st_nlink - 1)
@@ -707,13 +716,19 @@ def finish_plaintext_rewrite(report: dict, generation: int, own_open: int | None
             rec["state"] = "first_page" if head and head[0][3] > 0 else "not_overwritten"
             rec["reason"] = rec["reason"] or "pool"
         else:
-            if rec["state"] is None and may_write and callable(plain_rewrite_notice):
+            # The notice says the file is already deleted: said only when it is (security read).
+            if rec["state"] is None and may_write and rec["deleted"] and callable(plain_rewrite_notice):
                 with contextlib.suppress(Exception):
                     plain_rewrite_notice()
             with _HELD_LOCK:
                 _rewrite_plain(rec, may_write=may_write)
         if not rec["deleted"] and rec.get("touched"):
             rec["deleted"] = not any(os.path.lexists(p) for p in parts)  # step 6 may have removed one whose unlink failed
+    except KeyboardInterrupt:  # R818 (a): a stop outside the rewrite itself (the notice, a check) is said too, never lost
+        head = [e for e in rec.pop("_held", []) if e[1] == "head"]
+        if rec["state"] is None:
+            rec["state"] = "first_page" if head and head[0][3] > 0 else "not_overwritten"
+        rec["reason"] = rec["reason"] or "stopped"
     except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
         rec["state"] = rec["state"] or "not_overwritten"
         rec["reason"] = rec["reason"] or "write_failed"

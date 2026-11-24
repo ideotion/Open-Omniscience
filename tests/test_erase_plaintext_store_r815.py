@@ -349,28 +349,36 @@ def test_the_page_fails_closed_and_says_the_store_apart():
 # ---------------------------------------------------------------- R818: fast destruction first, body after the pool
 
 
-def _store_with_log(tmp_path: Path) -> tuple[Path, Path, Path, bytes]:
-    """A plaintext store, a log beside it holding the rows, and a second name for each, to read them after the unlink."""
+def _store_with_log(tmp_path: Path) -> tuple[Path, Path, int, bytes]:
+    """A plaintext store, a log beside it holding the rows, a second name for the store and a read-only descriptor on the log (a
+    second NAME for a log is refused by the erase, so the log is read after the unlink through this descriptor)."""
     db = tmp_path / "main.db"
     _plain_db(db)
     wal = db.with_name(db.name + "-wal")
     wal.write_bytes(WITNESS * 8)
-    link, wal_link = tmp_path / "other.db", tmp_path / "other.db-wal-name"
+    link = tmp_path / "other.db"
     os.link(db, link)
-    os.link(wal, wal_link)
-    return db, link, wal_link, link.read_bytes()[:4096]
+    wal_fd = os.open(wal, os.O_RDONLY)
+    return db, link, wal_fd, link.read_bytes()[:4096]
+
+
+def _read_fd(fd: int) -> bytes:
+    try:
+        return os.pread(fd, os.fstat(fd).st_size, 0)
+    finally:
+        os.close(fd)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
 def test_a_stop_before_the_body_rewrite_finds_page_one_and_the_log_already_destroyed(tmp_path):
-    db, link, wal_link, page1 = _store_with_log(tmp_path)
+    db, link, wal_fd, page1 = _store_with_log(tmp_path)
     generation = crypto_erase.new_hold_generation()
     try:
         rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, [])
         # the erase stops here: no body rewrite has run
         assert not db.exists() and rec["deleted"] is True
         assert link.read_bytes()[:4096] != page1, "page 1 is destroyed before the unlink (R818)"
-        assert WITNESS[:34] not in wal_link.read_bytes(), "the log is destroyed whole before the unlink (R818)"
+        assert WITNESS[:34] not in _read_fd(wal_fd), "the log is destroyed whole before the unlink (R818)"
         assert WITNESS[:34] in link.read_bytes()[4096:], "only the body waits for the rewrite"
     finally:
         crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
@@ -379,7 +387,8 @@ def test_a_stop_before_the_body_rewrite_finds_page_one_and_the_log_already_destr
 @pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
 @pytest.mark.parametrize("own_open", [1, None])
 def test_a_pool_not_confirmed_closed_leaves_the_body_and_says_so(tmp_path, own_open):
-    db, link, _wal_link, page1 = _store_with_log(tmp_path)
+    db, link, wal_fd, page1 = _store_with_log(tmp_path)
+    os.close(wal_fd)
     generation = crypto_erase.new_hold_generation()
     report: dict = {}
     try:
@@ -399,7 +408,8 @@ def test_a_pool_not_confirmed_closed_leaves_the_body_and_says_so(tmp_path, own_o
 
 @pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
 def test_a_confirmed_closed_pool_rewrites_the_body_after_the_notice(tmp_path, monkeypatch):
-    db, link, _wal_link, _page1 = _store_with_log(tmp_path)
+    db, link, wal_fd, _page1 = _store_with_log(tmp_path)
+    os.close(wal_fd)
     said: list[int] = []
     monkeypatch.setattr(crypto_erase, "plain_rewrite_notice", lambda: said.append(1))
     generation = crypto_erase.new_hold_generation()
@@ -418,7 +428,8 @@ def test_a_confirmed_closed_pool_rewrites_the_body_after_the_notice(tmp_path, mo
 
 @pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
 def test_a_stop_during_the_body_rewrite_is_partially_overwritten(tmp_path, monkeypatch):
-    db, link, _wal_link, _page1 = _store_with_log(tmp_path)
+    db, link, wal_fd, _page1 = _store_with_log(tmp_path)
+    os.close(wal_fd)
     generation = crypto_erase.new_hold_generation()
     try:
         rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, [])
@@ -435,3 +446,71 @@ def test_a_stop_during_the_body_rewrite_is_partially_overwritten(tmp_path, monke
     assert rec["state"] == "partially_overwritten" and rec["reason"] == "stopped", rec
     words = crypto_erase.plaintext_store_sentences({"plaintext_store": rec})
     assert crypto_erase.PLAIN_STORE_REASON["stopped"] in words and crypto_erase.PLAIN_STORE_REST not in words
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a FIFO")
+def test_a_log_that_is_not_a_regular_file_is_never_said_rewritten_in_full(tmp_path):
+    """Security read: a sidecar the erase skips (not a regular file, another device, unreadable) gives a reason, so the result is
+    never "overwritten in full"; it is never written."""
+    db = tmp_path / "main.db"
+    _plain_db(db)
+    wal = db.with_name(db.name + "-wal")
+    with contextlib.suppress(FileNotFoundError):
+        wal.unlink()
+    os.mkfifo(wal)
+    rec = _erase_plain(db, crypto_erase._pin_file(db))
+    assert rec["state"] != "overwritten" and rec["reason"] == "changed", rec
+
+
+def test_the_panic_late_pass_is_armed_only_after_the_last_use_of_the_kept_descriptors():
+    """Security read (row 392): the late pass closes the kept descriptors; armed before a body rewrite of minutes, it would close
+    them under the holder check that follows (an empty probe read as "none", or a lock taken on a reused descriptor number)."""
+    import inspect
+
+    from src.safety import panic
+
+    src = inspect.getsource(panic.panic_wipe)
+    assert "_dispose_after_erase(generation, arm_late=not erased)" in src
+    assert src.index("finish_plaintext_rewrite(report, generation, own_open)") < src.index("finish_holder_check(report, generation)") \
+        < src.index("_arm_late_rescrub(generation)")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
+def test_a_log_name_linked_to_another_file_is_never_written(tmp_path):
+    """Security read: a sidecar name that is a hard link (it may lead to a file that is not the store's) is never written."""
+    db = tmp_path / "main.db"
+    _plain_db(db)
+    other = tmp_path / "unrelated.bin"
+    other.write_bytes(WITNESS)
+    wal = db.with_name(db.name + "-wal")
+    with contextlib.suppress(FileNotFoundError):
+        wal.unlink()
+    os.link(other, wal)
+    rec = _erase_plain(db, crypto_erase._pin_file(db))
+    assert other.read_bytes() == WITNESS, "the other file is never written"
+    assert rec["state"] != "overwritten" and rec["reason"] == "changed", rec
+
+
+def test_the_notice_is_said_only_when_the_file_is_deleted(monkeypatch):
+    said: list[int] = []
+    monkeypatch.setattr(crypto_erase, "plain_rewrite_notice", lambda: said.append(1))
+    generation = crypto_erase.new_hold_generation()
+    rec = {"state": None, "reason": None, "other_names": 0, "deleted": False, "touched": True, "_held": []}
+    crypto_erase._PLAIN_PENDING[generation] = (rec, True, [])
+    report: dict = {}
+    crypto_erase.finish_plaintext_rewrite(report, generation, 0)
+    assert said == [] and report["plaintext_store"]["state"] != "overwritten"
+
+
+def test_a_stop_outside_the_rewrite_is_said_and_the_report_kept(monkeypatch):
+    def stop():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(crypto_erase, "plain_rewrite_notice", stop)
+    monkeypatch.setattr(crypto_erase, "_rewrite_plain", lambda rec, may_write: (_ for _ in ()).throw(KeyboardInterrupt))
+    generation = crypto_erase.new_hold_generation()
+    rec = {"state": None, "reason": None, "other_names": 0, "deleted": True, "touched": True, "_held": [[-1, "head", (0, 0), 4096, False]]}
+    crypto_erase._PLAIN_PENDING[generation] = (rec, True, [])
+    report: dict = {}
+    crypto_erase.finish_plaintext_rewrite(report, generation, 0)
+    assert report["plaintext_store"]["state"] == "first_page" and report["plaintext_store"]["reason"] == "stopped"

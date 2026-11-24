@@ -907,7 +907,7 @@ imply a protection we cannot deliver.
   head-only passes. Its identity (device, inode, its folder's device, read with `lstat`) is read before anything of it is
   opened, and a file that is gone, cannot be identified, is a link or is another file is never touched; on the data drive the
   drive checks (R802/R805/R812) apply too. In pass 3's place each of its files (main, `-wal`, `-journal`, `-shm`) is opened
-  no-follow through a handle on its folder, checked to be a regular file, its handle kept with the wipe's kept descriptors,
+  no-follow through a handle on its folder, checked to be a regular file (a `-wal`, `-journal` or `-shm` with other names, on another device or unreadable is never written, and the result is never "in full"), its handle kept with the wipe's kept descriptors,
   what step 1 always destroyed at once destroyed through that handle (page 1 random, a `-wal`/`-journal` whole, the `-shm` head
   zeroed; R818), and unlinked at once. Only at the very end of the erase, after every key, salt page and unlink, and only once
   the app's own pool on the store is disposed (R818 (b): disposal failed or unconfirmed leaves the body, said as "had its
@@ -915,8 +915,8 @@ imply a protection we cannot deliver.
   through the kept handle (`SEEK_DATA`/`SEEK_HOLE`, else the logical size stopping before the 64 MiB reserve, R797), after a
   `fstat` check that it is the same regular file, and fsynced; there is no deadline: the CLI prints, and the page shows before
   the request, that it may take several minutes and that closing the app stops it, by when the file is already deleted, and a stop
-  partway is said as "only partially overwritten" wherever a report is still made. The late pass then rewrites page 1 again
-  and closes the handles (R789); another holder is said under R792. Where
+  partway is said as "only partially overwritten" wherever a report is still made. The late pass, armed only after the body rewrite and the
+  holder check (both use the kept handles), then rewrites page 1 again and closes the handles (R789); another holder is said under R792. Where
   an open file cannot be unlinked (Windows: no share-delete open here) the order is the old one, the first page then the
   unlink, said as "had its first page overwritten". It is never counted in "Wiped n/n": the result says it was overwritten in
   full, only partially overwritten or not overwritten, with the reason, whether it was deleted, and how many other names (hard
