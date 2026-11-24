@@ -364,8 +364,6 @@ def heal_bulk_build(engine: Engine, *, inline: bool = True) -> list[str]:
             _LOG.warning("bulk-build marker present but unusable; not inventing a plan")
             return []
         if not inline:
-            from src.utils.interrupts import kept
-
             present = _existing_indexes(session.connection())
             missing = kept(planned, lambda n: n not in present)  # a frame of its own: init_db reaches this (tests/test_loop_heads_reach.py)
             _LOG.warning(
