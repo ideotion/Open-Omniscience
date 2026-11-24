@@ -161,10 +161,41 @@ def _note_open(p: Path, keyed: bool) -> None:
 
 
 def opened_with_key(ident: tuple[int, int]) -> bool:
-    """R819 (1): whether this process read the file with this (device, inode) under a key, and has not since opened it as
-    plaintext. State the process already holds: no file is read."""
+    """R819 (1): whether this process read the file with this (device, inode) under a key, has not since opened it as plaintext,
+    and (POSIX) still holds a descriptor on it. State the process already holds: no file is read. The descriptor matters: while
+    one is open the file system cannot hand that inode to another file, so the file at the erase's pin is the very one read under
+    the key; once every descriptor is closed the inode may be reused by a plaintext file the app never opened (security reads,
+    row 396). Where descriptors cannot be listed the answer is False, and the erase falls back to its record (R820)."""
     with _lock:
-        return ident in _opened_with_key
+        if ident not in _opened_with_key:
+            return False
+    if os.name == "nt":
+        return True  # an open file is never deleted or replaced on Windows here (no share-delete); the pool disposal forgets it
+    return _holds_descriptor_on(ident)
+
+
+def _holds_descriptor_on(ident: tuple[int, int]) -> bool:
+    for folder in ("/proc/self/fd", "/dev/fd"):
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            continue
+        for n in names:
+            try:
+                st = os.fstat(int(n))  # this process's own descriptor: a stat, never a read
+            except (OSError, ValueError):
+                continue
+            if (st.st_dev, st.st_ino) == tuple(ident):
+                return True
+        return False
+    return False
+
+
+def forget_keyed_reads() -> None:
+    """Drop every identity read under a key: called when the app's own pool is disposed (restore, repair, unlock, power), after
+    which the store at the path may be another file. The next keyed read records it again."""
+    with _lock:
+        _opened_with_key.clear()
 
 
 def _guard_the_key() -> None:

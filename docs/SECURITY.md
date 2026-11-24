@@ -947,9 +947,15 @@ imply a protection we cannot deliver.
   mismatch and the full rewrite. The result names one of three states on the CLI and in the HTTP answer
   (`corpus_encryption`): encrypted and its key destroyed (or its first page could not be overwritten, so its key may still
   be on the disk), not encrypted, or could not be determined; a store whose state could not be determined is never called
-  "unencrypted" in words. LIMIT: an inode the file system hands to a new plaintext file while this process still lists it
-  can carry the in-process evidence over only if no connection of the app ever opened the new file, since every open
-  re-reads the header and a plaintext one forgets it.
+  "unencrypted" in words. The in-process evidence counts only while the process still holds a descriptor on that very file
+  (POSIX: listed from the process's own descriptors, a `fstat` each, never a read), since only then can the file system not
+  hand its inode to another file; a disposal of the app's pool forgets it all (restore, repair, unlock and power dispose
+  before they swap files), and a plaintext open of the corpus removes any identity the record names. An encrypted main
+  database whose first page could not be overwritten is said as such, and neither the result nor the free-space scrub
+  after it calls it unrecoverable. The record's `.lock` goes with the record. LIMIT (Windows): the in-process evidence has no
+  descriptor check there (an open file is not deleted or replaced while held, and the disposal forgets it), and the
+  first-page fallback never reaches "encrypted" from the record, so an erase there without in-process evidence says "could
+  not be determined".
   **A data folder the app does not own (R711).** Ownership is where the app put the
   folder, never what is in it (the app writes its own files at every start): the default location and the first-launch
   `OOS data` folder are the app's; a folder set by hand in `OO_DATA_DIR` is shared when it is, on the path it leads to, the

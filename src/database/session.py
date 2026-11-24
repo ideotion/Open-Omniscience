@@ -1078,6 +1078,15 @@ _LEFT_BEHIND_LOCK = threading.Lock()
 _LEFT_BEHIND: int | None = 0
 
 
+def _forget_keyed_reads() -> None:
+    try:
+        from src.database.connect import forget_keyed_reads
+
+        forget_keyed_reads()
+    except Exception as exc:  # noqa: BLE001 - a disposal never fails on bookkeeping; the erase then has less evidence, never more
+        logging.getLogger(__name__).debug("keyed-read evidence not cleared (%s)", type(exc).__name__)
+
+
 def dispose_engine() -> dict[str, Any]:
     """Dispose the engine's connection pool (call on app shutdown), and say what the pool held when it did.
 
@@ -1098,6 +1107,7 @@ def dispose_engine() -> dict[str, Any]:
     global _LEFT_BEHIND
     seen = pool_checkouts()
     engine.dispose()
+    _forget_keyed_reads()  # R819 (1): after a disposal the store at the path may be another file (restore, repair, a swap)
     n = seen.get("checked_out")
     with _LEFT_BEHIND_LOCK:
         earlier = _LEFT_BEHIND

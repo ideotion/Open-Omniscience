@@ -156,10 +156,21 @@ def test_quick_crypto_erase_destroys_dbs_keys_and_removes_dir(tmp_path):
     assert report["passphrase_cleared"] is False
 
 
+_READ_BACK: list = []
+
+
+@pytest.fixture(autouse=True)
+def _close_read_backs():
+    yield
+    while _READ_BACK:
+        with contextlib.suppress(Exception):
+            _READ_BACK.pop().close()
+
+
 def _read_back(path: Path) -> None:
-    """R819 (1): the app reads its store under its key before an erase can call it encrypted; a store only ever created in this
-    process (never read back) is "could not be determined"."""
-    connect(path, key=_PW).close()
+    """R819 (1): the app reads its store under its key, and its pool keeps the connection open, before an erase can call it
+    encrypted from what the process holds; a store only ever created in this process, or no longer held open, is not evidence."""
+    _READ_BACK.append(connect(path, key=_PW, check_same_thread=False))
 
 
 def _evidence(monkeypatch) -> None:

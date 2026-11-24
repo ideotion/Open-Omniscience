@@ -259,6 +259,14 @@ def plaintext_store_sentences(report: dict) -> list[str]:
 _LAST_ERASE_ENCRYPTED: bool | None = None
 
 
+def _guarantee_state(report: dict) -> bool | None:
+    """R820 (6): ``encrypted_corpus`` as far as the guarantee may lean on it: an encrypted main database whose first page could not
+    be overwritten (``encrypted_key_left``) keeps its key on the disk, so it is never "unrecoverable" (None: the unknown sentence)."""
+    if report.get("corpus_encryption") == "encrypted_key_left":
+        return None
+    return report.get("encrypted_corpus")
+
+
 def _clean_note(encrypted: bool | None) -> str:
     """R815 (3): the note of a clean erase; the crypto-erase guarantee only when the main database is known to be encrypted."""
     return _LIMIT_NOTE if encrypted is True else _plain_sentence(encrypted) + _DEFENCE_TAIL
@@ -530,6 +538,7 @@ def _read_record_fd(dfd: int) -> bytes | None:
     from src.database.at_rest_state import RECORD_MAX_BYTES, RECORD_NAME
 
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
+    _drop_record_lock(Path(), dfd)
     try:
         fd = os.open(RECORD_NAME, flags, dir_fd=dfd)
     except OSError:
@@ -726,7 +735,7 @@ def _fast_destruction_complete(rec: dict) -> bool:
     head = False
     for _fd, kind, _ident, written, done in rec.get("_held", []):
         if kind == "head":
-            head = written > 0
+            head = written >= len(_SQLITE_MAGIC)  # at least the 16-byte salt, never a short write
             if not head:
                 return False
         elif kind == "whole" and not done:
@@ -770,8 +779,12 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
         rec["other_names"] = max(0, os.lstat(db).st_nlink - 1)
     try:
         # R819 (d) / R820 (2): the first bytes in one bounded, unbuffered read, before its first page is overwritten
-        with open(db, "rb", buffering=0) as fh:
-            rec["header"] = _header_kind(fh.read(len(_SQLITE_MAGIC)))
+        fd = os.open(db, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            st = os.fstat(fd)  # the very file pinned, never a file swapped in or reached through a link
+            rec["header"] = _header_kind(os.read(fd, len(_SQLITE_MAGIC))) if (st.st_dev, st.st_ino) == pin[:2] else None
+        finally:
+            os.close(fd)
     except OSError:
         rec["header"] = None
     rec["form"] = "plain" if rec["header"] == "sqlite" else "unknown"
@@ -807,6 +820,21 @@ def _drop_record_beside(db: Path) -> None:
     with contextlib.suppress(OSError):
         if stat.S_ISREG(os.lstat(p).st_mode):
             p.unlink()
+    _drop_record_lock(db.parent)
+
+
+def _drop_record_lock(folder: Path, dfd: int | None = None) -> None:
+    """The record's lock file (``file_lock``'s ``.lock`` beside it) goes with the record: a regular file only, never through a link.
+    Never raises."""
+    from src.database.at_rest_state import RECORD_NAME
+
+    name = RECORD_NAME + ".lock"
+    with contextlib.suppress(OSError):
+        if dfd is not None:
+            if stat.S_ISREG(os.lstat(name, dir_fd=dfd).st_mode):
+                os.unlink(name, dir_fd=dfd)
+        elif stat.S_ISREG(os.lstat(folder / name).st_mode):
+            (folder / name).unlink()
 
 
 def _read_record_path(folder: Path) -> bytes | None:
@@ -819,12 +847,19 @@ def _read_record_path(folder: Path) -> bytes | None:
         st = os.lstat(p)
         if not stat.S_ISREG(st.st_mode) or st.st_size > RECORD_MAX_BYTES:
             return None
-        with open(p, "rb") as fh:
-            raw = fh.read(RECORD_MAX_BYTES + 1)
+        fd = os.open(p, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            fst = os.fstat(fd)
+            if (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino) or not stat.S_ISREG(fst.st_mode):
+                return None  # another file swapped in between the look and the open: never read, never removed
+            raw = os.read(fd, RECORD_MAX_BYTES + 1)
+        finally:
+            os.close(fd)
     except OSError:
         return None
     with contextlib.suppress(OSError):
         p.unlink()
+    _drop_record_lock(folder)
     return raw if len(raw) <= RECORD_MAX_BYTES else None
 
 
@@ -1797,8 +1832,8 @@ def finish_holder_check(report: dict, generation: int) -> str:
     if state != HOLDER_NONE:
         report["limit"] = (
             (_drive_failure_sentence(report) + " " if report.get("drive_lost") else "")  # R809: said first, whatever else is said
-            + (_LIMIT_NOTE_NOT_CLEAN if report.get("encrypted_corpus") is True
-               else _NOT_CLEAN_PLAIN_SENTENCE + " " + _clean_note(report.get("encrypted_corpus")))
+            + (_LIMIT_NOTE_NOT_CLEAN if _guarantee_state(report) is True
+               else _NOT_CLEAN_PLAIN_SENTENCE + " " + _clean_note(_guarantee_state(report)))
             + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
         )
         _LOG.warning("CRYPTO-ERASE: %s", "another program had the database open during the erase; the erase may be "
@@ -2029,7 +2064,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             wiped += w
             if s and not overwritten:
                 overwrite_failures.append(str(p))
-    if plain_main is not None and plain_pin is not None and not (_under(plain_main, base) and _off_drive()):  # R812: else untouched
+    main_unreached = plain_main is not None and plain_pin is not None and _under(plain_main, base) and _off_drive()
+    if plain_main is not None and plain_pin is not None and not main_unreached:  # R812: else untouched
         plain_rec = _open_and_unlink_plain(plain_main, plain_pin, generation, missed)
         # R819 (4) / R820 (1): settled now, after the store's first page and log were destroyed through the kept handles. SQLite's
         # own header is "not encrypted", whatever any record says; "encrypted" needs another header AND the app's record naming this
@@ -2049,6 +2085,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                 elif not ok:
                     overwrite_failures.append(str(plain_main))
         plain_rec["form"] = "plain" if encrypted is False else "unknown"
+        if not plain_rec["touched"] and not _under(plain_main, base):
+            _drop_record_beside(plain_main)  # R820 (3): the app's record goes even when the file at the path is not the store
         if not plain_rec["touched"]:
             # Not this store's file at that place: its own sidecars still get step 1's old treatment (a log whole, a log index's
             # head zeroed), counted as before, and the file at the path is never written.
@@ -2343,7 +2381,13 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             len(overwrite_failures),
             _masked(overwrite_failures, base),
         )
-    _LAST_ERASE_ENCRYPTED = encrypted
+    # R820 (6): the guarantee only for "encrypted"; a store whose first page (its salt) could not be overwritten keeps its key on the
+    # disk, so neither the result nor the free-space scrub after it may call it unrecoverable (security reads, row 396).
+    corpus_encryption = (None if main_pin in (None, "absent") or main_unreached
+                         else "not_encrypted" if encrypted is False else "unknown" if encrypted is None
+                         else "encrypted" if main_db is not None and _real(main_db).name in headers else "encrypted_key_left")
+    guaranteed: bool | None = encrypted if encrypted is not True or corpus_encryption in ("encrypted", None) else None
+    _LAST_ERASE_ENCRYPTED = guaranteed
     _LOG.warning(
         "CRYPTO-ERASE executed on %s (encrypted=%s, %d/%d files, %d headers, %d keys, "
         "%d overwrite failures)",
@@ -2368,9 +2412,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "encrypted_corpus": encrypted,
         # R819 (4): the three states said in words (CORPUS_ENCRYPTION), on the CLI and in the HTTP answer.
         # None when the erase found no main database to judge (none configured, out of reach, or nothing at its place).
-        "corpus_encryption": (None if main_pin in (None, "absent")
-                              else "not_encrypted" if encrypted is False else "unknown" if encrypted is None
-                              else "encrypted" if main_db is not None and _real(main_db).name in headers else "encrypted_key_left"),
+        "corpus_encryption": corpus_encryption,
         # R815 / R817: the plaintext main database, in the data folder or outside it (None when there is none): never counted above.
         "plaintext_store": plaintext_store,
         "copies_destroyed": copies_destroyed,
@@ -2416,8 +2458,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         + _DEFENCE_TAIL if drive_lost
         else (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
         + (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
-        + (_LIMIT_NOTE_UNLISTED + ("" if encrypted is True else " " + _plain_sentence(encrypted)) if unlisted_folders
-           else _clean_note(encrypted)),
+        + (_LIMIT_NOTE_UNLISTED + ("" if guaranteed is True else " " + _plain_sentence(guaranteed)) if unlisted_folders
+           else _clean_note(guaranteed)),
     }
 
 

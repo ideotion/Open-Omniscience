@@ -141,7 +141,7 @@ def _write_identity(name: str, path: Path, ident: tuple[int, int] | None) -> Non
             doc = _read_record_at(path)
             entry = dict(doc["stores"].get(name) or {})
             if ident is None:
-                if not entry or (entry.get("dev"), entry.get("ino")) == (None, None):
+                if "dev" not in entry and "ino" not in entry:
                     return
                 for k in _IDENT_KEYS:
                     entry.pop(k, None)
@@ -190,7 +190,9 @@ def note_main_open(path: Path | str) -> None:
                 _write_identity("corpus", record, ident)
         elif record.exists():
             entry = _read_record_at(record)["stores"].get("corpus") or {}
-            if (entry.get("dev"), entry.get("ino")) == ident:
+            # Whatever identity it names: the corpus at this path is plaintext now, so an older one (a replaced file whose inode
+            # the file system may hand out again) is never evidence either (security read, row 396).
+            if "dev" in entry or "ino" in entry:
                 _write_identity("corpus", record, None)
     except Exception as exc:  # noqa: BLE001 - bookkeeping never fails an open
         log_failure(_LOG, "the at-rest record could not be updated after an open", exc, level=logging.DEBUG)

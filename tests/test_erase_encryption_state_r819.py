@@ -362,3 +362,81 @@ def test_the_page_says_the_state_and_never_calls_an_unknown_store_unencrypted():
     for words in crypto_erase.PLAIN_STORE_STATE_UNKNOWN.values():
         assert json.dumps(words) in js
     assert "r.corpus_encryption" in js and 'ps.form === "unknown"' in js
+
+
+# ---------------------------------------------------------------- the security reads (row 396)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the descriptor check is POSIX")
+def test_in_process_evidence_needs_a_descriptor_still_held(tmp_path):
+    """Once every descriptor on it is closed, the inode may be handed to a plaintext file the app never opened. (SQLite itself may
+    keep a descriptor after a close; one still held keeps the inode from reuse, so the check stays sound.)"""
+    f = tmp_path / "store.db"
+    f.write_bytes(os.urandom(4096))
+    ident = _ident(f)
+    with connect_module._lock:
+        connect_module._opened_with_key.add(ident)
+    assert not connect_module.opened_with_key(ident), "nothing of this process holds it"
+    fd = os.open(f, os.O_RDONLY)
+    try:
+        assert connect_module.opened_with_key(ident)
+    finally:
+        os.close(fd)
+    assert not connect_module.opened_with_key(ident)
+
+
+@sqlcipher_only
+def test_a_pool_disposal_forgets_the_keyed_reads(tmp_path, monkeypatch):
+    db = tmp_path / "store.db"
+    _encrypted_db(db)
+    held = connect(db, key=_PW)
+    try:
+        from src.database import session
+
+        monkeypatch.setattr(session.engine, "dispose", lambda: None)
+        session.dispose_engine()
+        assert not connect_module.opened_with_key(_ident(db))
+    finally:
+        held.close()
+
+
+def test_a_first_page_that_could_not_be_overwritten_never_gets_the_guarantee(tmp_path, monkeypatch):
+    data = _data(tmp_path)
+    main = data / crypto_erase._MAIN_DB
+    main.write_bytes(os.urandom(8192))
+    monkeypatch.setattr(connect_module, "opened_with_key", lambda ident: True)
+    real = crypto_erase._overwrite
+    monkeypatch.setattr(crypto_erase, "_overwrite",
+                        lambda p, **k: False if Path(p).name == crypto_erase._MAIN_DB else real(p, **k))
+    real_shred = crypto_erase._shred
+
+    def shred(p, **k):
+        if Path(p).name == crypto_erase._MAIN_DB:
+            s, _ok, w = real_shred(p, **k)
+            return s, False, w
+        return real_shred(p, **k)
+
+    monkeypatch.setattr(crypto_erase, "_shred", shred)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["corpus_encryption"] == "encrypted_key_left"
+    assert GUARANTEE not in report["limit"], report["limit"]
+    assert crypto_erase._LAST_ERASE_ENCRYPTED is not True
+    assert crypto_erase._guarantee_state(report) is None
+
+
+def test_a_short_head_write_is_not_a_complete_fast_destruction():
+    rec = {"reason": None, "_held": [[3, "head", (1, 2), 8, False], [4, "whole", (1, 2), 100, True]]}
+    assert crypto_erase._fast_destruction_complete(rec) is False
+    rec["_held"][0][3] = 4096
+    assert crypto_erase._fast_destruction_complete(rec) is True
+
+
+@posix_only
+def test_the_record_s_lock_goes_with_it(tmp_path):
+    main = tmp_path / "internal" / crypto_erase._MAIN_DB
+    _plain_db(main)
+    _record(main.parent, None)
+    lock = main.parent / (at_rest_state.RECORD_NAME + ".lock")
+    lock.write_bytes(b"")
+    crypto_erase._drop_record_beside(main)
+    assert not lock.exists() and not (main.parent / at_rest_state.RECORD_NAME).exists()

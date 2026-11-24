@@ -4353,7 +4353,9 @@
         // during the erase (partially erased, the rest not checked).
         const driveAbsent = r.drive_absent === true;
         const driveLost = r.drive_lost === true;
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext;
+        // R820 (6): an encrypted main database whose first page could not be overwritten keeps its key on the disk: never clean.
+        const keyLeft = r.corpus_encryption === "encrypted_key_left";
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext && !keyLeft;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
