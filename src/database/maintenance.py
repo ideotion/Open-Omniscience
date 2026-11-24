@@ -274,6 +274,20 @@ _INDEX_REQUIRES: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 
 
+def _owed_to_bulk_heal(conn) -> set[str]:
+    """The indexes an open bulk-build marker names (``derived_meta`` key ``bulk_build_open``), else empty.
+    Read raw: this runs inside ``init_db`` before anything else may have opened the ORM."""
+    from src.analytics.bulk_build import BULK_BUILD_KEY
+
+    try:
+        row = conn.execute(text("SELECT value FROM derived_meta WHERE key = :k"), {"k": BULK_BUILD_KEY}).fetchone()
+    except Exception:  # noqa: BLE001 - no derived_meta yet: nothing can be owed
+        return set()
+    if row is None:
+        return set()
+    return {p for p in str(row[0] or "").split("\n")[1:] if p}
+
+
 def ensure_hot_indexes(engine: Engine, *, include_deferred: bool = True) -> list[str]:
     """Create any missing hot-path indexes (idempotent). Returns those created.
 
@@ -291,10 +305,15 @@ def ensure_hot_indexes(engine: Engine, *, include_deferred: bool = True) -> list
             ).fetchall()
         }
         cols_of: dict[str, set[str]] = {}
+        # R825 (b): an index an open bulk-build window dropped is the background heal's to rebuild
+        # (src/analytics/bulk_build.py), never a CREATE INDEX inside the call that opens the database.
+        owed = _owed_to_bulk_heal(conn) if not include_deferred else set()
         for name, ddl in HOT_INDEXES.items():
             if name in existing:
                 continue
             if not include_deferred and name in DEFERRED_INDEXES:
+                continue
+            if name in owed:
                 continue
             need = _INDEX_REQUIRES.get(name)
             if need is not None:
@@ -996,7 +1015,8 @@ def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
             conn.execute(text("ALTER TABLE keyword_mentions ADD COLUMN language VARCHAR(10)"))
             added.append("language")
         idx = {r[1] for r in conn.execute(text("PRAGMA index_list(keyword_mentions)")).fetchall()}
-        if "ix_keyword_mentions_source_id" not in idx:
+        # R825 (b): an index an open bulk-build window dropped is the background heal's, never this open path's.
+        if "ix_keyword_mentions_source_id" not in idx and "ix_keyword_mentions_source_id" not in _owed_to_bulk_heal(conn):
             conn.execute(
                 text("CREATE INDEX ix_keyword_mentions_source_id ON keyword_mentions(source_id)")
             )

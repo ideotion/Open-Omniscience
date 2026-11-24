@@ -1460,6 +1460,34 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             log_failure(_LOG, "could not open the counter-deferral marker; counters stay maintained", exc, level=logging.WARNING)
         return deferring
 
+    # THE INDEX WINDOW (R825, row 407: D46 (a) on R23's window). One exclusive run of this drain may drop the
+    # mention and when/where/who indexes a re-index pays per row, and rebuild each ONCE at its end. Opened only
+    # here, only when the collector is idle at the start, and only when bulk_build.drain_window_plan says the
+    # backlog is past the measured break-even AND the rebuild's in-memory sort fits (never a temporary file:
+    # SQLCipher leaves an index sort's spill in the clear). A marker an earlier run left open (it yielded to an
+    # import, see the finally) is ADOPTED whatever the backlog, so its indexes are rebuilt at this run's end.
+    # Reads stay correct meanwhile: the unique indexes and ix_mention_article are never dropped.
+    from src.analytics import bulk_build as _bb
+
+    ix_window: dict = {"open": False}
+    try:
+        with session_scope() as _s:
+            _marker = _bb.read_state(_s)
+            if _marker is not None and _marker["planned"]:
+                ix_window.update(open=True, adopted=True)
+            elif _marker is None and batches and _collector_idle():
+                plan = _bb.drain_window_plan(_s, int(bk.get("articles_pending") or 0))
+                ix_window["plan"] = {k: v for k, v in plan.items() if k != "preflight"}
+                if plan["open"]:
+                    with corpus_lease("reindex-resume"):
+                        ix_window["dropped"] = _bb.open_window(_s, keep=_bb.DRAIN_KEEP, reason="post-import re-index drain")
+                    ix_window["open"] = True
+                else:
+                    _LOG.info("re-index drain: index window not opened (%s)", plan["reason"])
+    except Exception as exc:  # noqa: BLE001 - a window that could not open leaves the live indexes; the marker covers a half-open one
+        # The marker may have been committed before the failure: the finally asks the store again.
+        log_failure(_LOG, "re-index drain: could not open the index window", exc, level=logging.WARNING)
+
     if batches:
         _bump("reindex-resume:start")
     clean_end = False  # every batch walked, nothing raised, nothing stopped the run
@@ -1577,6 +1605,41 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                 queue.insert(0, b)
         clean_end = not out["stopped"]
     finally:
+        # R825: the window's indexes are rebuilt here, FIRST (the counter reconcile below reads the covering
+        # index), under the corpus lease so a swap waits for the rebuild rather than landing under it. EXCEPT
+        # when an import claims the machine: the restore waits only _STOP_FOR_RESTORE_S for this job, and a
+        # rebuild over a corpus is longer, so the marker is LEFT OPEN. The working copy carries it, and the
+        # drain the import starts again adopts it and rebuilds at its end; a process that dies meanwhile is
+        # healed by the background heal at the next start (bulk_build.start_heal). Never silently missing.
+        if not ix_window.get("open"):
+            # Ask the store again: a marker that appeared during the run (the background heal declines while this
+            # drain runs) is this run's to finish too, never left for a next start.
+            try:
+                with session_scope() as _s:
+                    _marker = _bb.read_state(_s)
+                    # An unreadable marker reads as open (``read_state``) but names nothing to rebuild: the
+                    # heal and the disclosure keep it; this run takes no lease for it.
+                    if _marker is not None and _marker["planned"]:
+                        ix_window.update(open=True, adopted=True)
+            except Exception as exc:  # noqa: BLE001 - the next start's heal asks again
+                log_failure(_LOG, "re-index drain: could not read the index-window marker", exc, level=logging.INFO)
+        if ix_window.get("open"):
+            if _yield_to_import():
+                ix_window["left_open_for_import"] = True
+            else:
+                def _rebuilding(done: int, total: int) -> None:
+                    n = min(done + 1, total)
+                    ctx.set_progress(detail=Framed(_bb.FRAME_REBUILDING.format(index=n, total=total), _bb.FRAME_REBUILDING, index=n, total=total))
+
+                try:
+                    with corpus_lease("reindex-resume"), session_scope() as _s:
+                        ix_window.update(_bb.finish_window(_s, on_progress=_rebuilding))
+                    if ix_window.get("waiting"):
+                        vals = _bb._waiting_values(ix_window["waiting"])
+                        ctx.set_progress(detail=Framed(_bb.FRAME_WAITING.format(**vals), _bb.FRAME_WAITING, **vals))
+                except Exception as exc:  # noqa: BLE001 - the marker stays; the heal finishes it
+                    log_failure(_LOG, "re-index drain: index rebuild failed; the marker stays for the heal", exc, level=logging.WARNING)
+            out["index_window"] = {k: v for k, v in ix_window.items() if k != "waiting"}
         # In a finally for the same reason as the bump below, and BEFORE it: whatever
         # ended the run -- a cancel, a crash on the last batch -- the counters it stopped
         # maintaining must be reconciled and the disclosure lifted. A run that ends early

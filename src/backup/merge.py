@@ -9714,7 +9714,14 @@ def start_jobs_stopped_for_restore() -> list[str]:
             return []
         from src.jobs.background import start_jobs_after_refusal
 
-        return start_jobs_after_refusal(kinds)
+        started = start_jobs_after_refusal(kinds)
+        # R825: a store swapped in with an open index window (the working copy carries the drain's marker) gets
+        # its keyword indexes back: by the drain started again (it adopts the marker), else by the background
+        # heal, which declines while the drain runs and finds nothing to do without a marker.
+        from src.analytics.bulk_build import start_heal
+
+        start_heal()
+        return started
     except Exception:  # noqa: BLE001 - a job left stopped keeps its durable mark and its own Resume
         return []
 
