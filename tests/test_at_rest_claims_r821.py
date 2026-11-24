@@ -66,7 +66,8 @@ def _ident(p: Path) -> tuple[int, int]:
 
 def _record(main: Path, name: str = "corpus") -> None:
     ident = _ident(main)
-    entry = {"encrypted_at": "2026-11-24T00:00:00Z", "read_back_with_key": True, "dev": ident[0], "ino": ident[1]}
+    entry = {"encrypted_at": "2026-11-24T00:00:00Z", "read_back_with_key": True, "dev": ident[0], "ino": ident[1],
+             "head": main.read_bytes()[:16].hex()}
     (main.parent / at_rest_state.RECORD_NAME).write_text(json.dumps({"version": 1, "stores": {name: entry}}), encoding="utf-8")
 
 
@@ -238,7 +239,7 @@ def test_the_lock_state_fallback_reads_the_server_s_claim(monkeypatch):
     def fake(url):
         if url.endswith("/doctor"):
             raise OSError("locked")
-        return {"state": "locked", "at_rest_claim": "looks_encrypted", "driver": True}
+        return {"state": "locked", "at_rest_claim": "looks_encrypted", "at_rest_evidence": "header", "driver": True}
 
     monkeypatch.setattr(runner, "_get_json", fake)
     row = runner._probe_at_rest("B", "http://127.0.0.1:1", "before-walk")
@@ -249,3 +250,86 @@ def test_require_encrypted_needs_the_keyed_reading_after_the_walk():
     src = (ROOT / "scripts" / "ui_clickthrough_run.py").read_text(encoding="utf-8")
     after = src.split('_record_at_rest(report, label, url, "after-walk")')[1]
     assert 'r.get("evidence") == "key"' in after and "NOT VERIFIED" in after and "SystemExit(2)" in after
+
+
+# ---------------------------------------------------------------- the security reads (row 400)
+
+
+def test_a_file_that_took_the_same_inode_is_not_named_by_the_record(data):
+    """The record carries the file's own first 16 bytes (its salt: random per file, not a secret): a randomised file that later
+    takes the same (device, inode) does not match them."""
+    _record(data)
+    with open(data, "r+b") as fh:  # the same inode, another file's first page
+        fh.write(os.urandom(16))
+    assert at_rest_state.status(data)["stores"][0]["state"] == "looks_encrypted"
+    assert at_rest_state.claim_for(data) == "looks_encrypted"
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFO")
+def test_the_record_is_never_read_through_a_link_a_fifo_or_at_any_size(data):
+    rec = data.parent / at_rest_state.RECORD_NAME
+    os.mkfifo(data.parent / "fifo")
+    rec.symlink_to(data.parent / "fifo")
+    assert at_rest_state.read_record(data) == {"version": at_rest_state.RECORD_VERSION, "stores": {}}, "never blocks, never follows"
+    rec.unlink()
+    rec.write_bytes(b" " * (at_rest_state.RECORD_MAX_BYTES + 1))
+    assert at_rest_state.read_record(data)["stores"] == {}
+
+
+def test_the_proof_records_nothing_when_the_file_changes_under_the_probe(data, monkeypatch):
+    calls: list[int] = []
+
+    def swapping_probe(path, key):
+        calls.append(1)
+        other = path.parent / "other.db"
+        _randomised_plaintext(other)
+        os.replace(other, path)  # a restore or a repair between the two marks
+        return {"state": "encrypted", "key_checked": True}
+
+    monkeypatch.setattr(at_rest_state, "_probe", swapping_probe)
+    assert at_rest_state.prove_corpus(_KEY, data) is False and calls == [1]
+    assert "corpus" not in at_rest_state.read_record(data)["stores"]
+
+
+def test_the_proof_records_the_very_file_it_opened(data, monkeypatch):
+    monkeypatch.setattr(at_rest_state, "_probe", lambda path, key: {"state": "encrypted", "key_checked": True})
+    assert at_rest_state.prove_corpus(_KEY, data) is True
+    row = at_rest_state.status(data)["stores"][0]
+    assert row["state"] == "encrypted" and row["evidence"] == "record"
+
+
+def test_nothing_is_finished_under_a_key_that_does_not_open_the_library(data):
+    _record(data)  # the record alone: not proof that THIS key opens it
+    called: list[str] = []
+    out = at_rest_state.finish_pending(_KEY, data, encrypt=lambda *a, **kw: called.append(a[0]) or {})
+    assert out["finished"] == [] and called == []
+
+
+def test_a_retry_never_says_every_store_is_encrypted_beside_a_library_that_only_looks_so():
+    words = unlock_mod._nothing_left_words({"looks_encrypted": ["corpus"], "busy": [], "unchecked": [], "not_this_key": []})
+    assert words == unlock_mod.NOTHING_LEFT_BUT_UNCHECKED
+
+
+def test_the_lock_state_says_what_its_claim_rests_on(data):
+    out = unlock_mod.lock_state()
+    assert out["at_rest_claim"] == "looks_encrypted" and out["at_rest_evidence"] == "header"
+    _record(data)
+    out = unlock_mod.lock_state()
+    assert out["at_rest_claim"] == "encrypted" and out["at_rest_evidence"] == "record"
+
+
+@pytest.mark.skipif(not connect_module.have_driver(), reason="sqlcipher3 not installed")
+def test_the_doctor_carries_the_keyed_reading_when_the_held_key_opens_the_library(tmp_path, monkeypatch):
+    """--require-encrypted reads the doctor's evidence after the walk: a library the held key opens says "key", never the
+    record's or the header's word."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("OO_DB_PLAINTEXT", raising=False)
+    main = tmp_path / "open_omniscience.db"
+    con = connect_module.connect(main, key=_KEY, create_encrypted=True)
+    con.execute("CREATE TABLE t(x)")
+    con.commit()
+    con.close()
+    monkeypatch.setattr(unlock_mod, "main_db_path", lambda: main)
+    set_passphrase(_KEY)
+    corpus = unlock_mod.doctor()["corpus"]
+    assert corpus["state"] == "encrypted" and corpus["evidence"] == "key" and corpus.get("cipher")

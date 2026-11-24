@@ -248,8 +248,12 @@ def doctor() -> dict:
         if main is None or "corpus" not in by_store:
             return _store(main)
         line = _line("corpus", main)
-        if line["state"] == "encrypted":  # the cipher, read as before; an unreadable library says why instead of "absent"
-            line.update({k: v for k, v in _store(main).items() if k == "cipher"})
+        if line["state"] in ("encrypted", "looks_encrypted"):
+            # the cipher, read as before; an unreadable library says why instead of "absent". R821: when the held key opens it here,
+            # that keyed reading is the evidence the line carries (a record, or a header, is not).
+            keyed = _store(main)
+            if keyed.get("evidence") == "key":
+                line.update(keyed)
         return line
 
     lanes = {spec.kind: _line(f"lane:{spec.kind}", data_dir() / spec.filename) for spec in all_lanes()}
@@ -346,7 +350,8 @@ def _nothing_left_words(st: dict) -> str:
     """The 409 of a retry with nothing pending: a store not checked to its end first (busy, a read error after its header, a swap in
     progress: a moment later may differ, and a store whose header could not be read may be plaintext), then a store under another
     passphrase, else every store is encrypted. Never "every store is already encrypted" while one of the first two holds."""
-    if st.get("busy") or (st.get("key_held") and st.get("unchecked")):
+    if st.get("busy") or (st.get("key_held") and st.get("unchecked")) or st.get("looks_encrypted"):
+        # R821: a store that only LOOKS encrypted (the library among them) is not checked either, never "already encrypted"
         return NOTHING_LEFT_BUT_UNCHECKED
     if st.get("not_this_key"):
         return NOTHING_LEFT_BUT_NOT_THIS_KEY
@@ -374,6 +379,9 @@ def encrypt_db(body: EncryptBody) -> dict:
         # R742: a run whose library was encrypted and whose other stores were not is FINISHED here, never refused with "only a
         # plaintext store": the retry resumes. Only with the passphrase the library is open with, so no store is ever encrypted
         # under a second key; the comparison cannot raise and answers for every text.
+        held_key = get_passphrase()
+        if held_key is not None:
+            at_rest_state.prove_corpus(held_key)  # R821: the library proven with the key it is open with, before it counts
         st = at_rest_state.status()
         if not st["pending"]:
             raise HTTPException(status_code=409, detail=_nothing_left_words(st))
@@ -561,6 +569,12 @@ def data_volume_close_now() -> dict:
     return {"ok": True}
 
 
+def _claim_fields(at_rest_state) -> dict:
+    p = main_db_path()
+    claim, evidence = at_rest_state.claim_with_evidence(p) if p is not None else ("unknown", None)
+    return {"at_rest_claim": claim, "at_rest_evidence": evidence}
+
+
 @router.get("/lock-state")
 def lock_state() -> dict:
     from src.database import at_rest_state
@@ -571,7 +585,7 @@ def lock_state() -> dict:
         "state": state,
         # R821: what may be SAID about the store at rest ("encrypted" only with evidence, else "looks_encrypted"); ``state`` is the
         # lock gate's word, which says whether a key is held, never that it opened the file.
-        "at_rest_claim": at_rest_state.claim_for(main_db_path()) if main_db_path() is not None else "unknown",
+        **_claim_fields(at_rest_state),
         "locked": state in ("locked", "fresh"),
         "plaintext_mode": plaintext_mode(),
         "driver": have_driver(),

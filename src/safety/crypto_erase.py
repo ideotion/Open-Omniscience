@@ -565,13 +565,22 @@ def _read_record_fd(dfd: int) -> bytes | None:
     return raw
 
 
-def _record_names_main(raw: bytes | None, ident: tuple[int, int]) -> bool:
+def _record_names_main(raw: bytes | None, ident: tuple[int, int], head: bytes | None) -> bool:
     from src.database.at_rest_state import record_names_identity
 
     try:
-        return record_names_identity(raw, ident)
+        return record_names_identity(raw, ident, head)
     except Exception:  # noqa: BLE001 - an unreadable record is "could not be determined" (R820 (1))
         return False
+
+
+def _head_of(fd: int) -> bytes | None:
+    """The first 16 bytes of a kept main file, in one bounded read (None when they cannot be read in full)."""
+    try:
+        head = os.pread(fd, len(_SQLITE_MAGIC), 0)
+    except OSError:
+        return None
+    return head if len(head) == len(_SQLITE_MAGIC) else None
 
 
 def _header_of(fd: int) -> str | None:
@@ -648,6 +657,7 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
             return _untouched("changed")  # another folder (another drive) at that place
         folder_ok = True
         deleted = True
+        head16: bytes | None = None
         # The main file first (its identity decides everything), then the log index (its head zeroed, so no connection trusts it
         # again), then the logs, as step 1's passes order them.
         for suffix in ("", "-shm", "-wal", "-journal"):
@@ -704,6 +714,7 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
                 rec["other_names"] = max(0, st.st_nlink - 1)
                 rec["touched"] = True
                 rec["header"] = _header_of(fd)  # R819 (d): through the handle just kept, before its first page is destroyed
+                head16 = _head_of(fd)  # row 400: its first 16 bytes (the salt), matched against the record's
                 rec["form"] = "plain" if rec["header"] == "sqlite" else "unknown"  # R819 (4): SQLite's own header, else not known
             # Kept with this wipe's descriptors at once (R817 (3)): closed only by the late pass, after the app's own pool on the
             # store, and seen by the holder rule; never left open if the erase stops before the rewrite.
@@ -721,7 +732,7 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
         rec["deleted"] = deleted
         # R820 (3): the app's record beside the store, read only now (the main file's first page is destroyed: the key is gone),
         # through the pinned folder's handle, no-follow, a regular file only, size-bounded; then destroyed (it is the app's).
-        rec["record_ok"] = rec["touched"] and _record_names_main(_read_record_fd(dfd), (dev, ino))
+        rec["record_ok"] = rec["touched"] and _record_names_main(_read_record_fd(dfd), (dev, ino), head16)
         return rec
     finally:
         if folder_ok and not rec["touched"]:
@@ -784,12 +795,15 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
     rec.update(reason=None, touched=True)
     with contextlib.suppress(OSError):
         rec["other_names"] = max(0, os.lstat(db).st_nlink - 1)
+    fallback_head: bytes | None = None
     try:
         # R819 (d) / R820 (2): the first bytes in one bounded, unbuffered read, before its first page is overwritten
         fd = os.open(db, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0))
         try:
             st = os.fstat(fd)  # the very file pinned, never a file swapped in or reached through a link
-            rec["header"] = _header_kind(os.read(fd, len(_SQLITE_MAGIC))) if (st.st_dev, st.st_ino) == pin[:2] else None
+            raw16 = os.read(fd, len(_SQLITE_MAGIC)) if (st.st_dev, st.st_ino) == pin[:2] else None
+            rec["header"] = _header_kind(raw16) if raw16 is not None else None
+            fallback_head = raw16 if raw16 is not None and len(raw16) == len(_SQLITE_MAGIC) else None
         finally:
             os.close(fd)
     except OSError:
@@ -815,7 +829,7 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
     rec["state"] = "first_page" if head_ok else "not_overwritten"
     rec["reason"] = None if head_ok and rec["reason"] is None else (rec["reason"] or "write_failed")
     rec["deleted"] = deleted
-    rec["record_ok"] = head_ok and _record_names_main(_read_record_path(db.parent), pin[:2])  # R820 (3): after the first page
+    rec["record_ok"] = head_ok and _record_names_main(_read_record_path(db.parent), pin[:2], fallback_head)  # R820 (3)
     return rec
 
 

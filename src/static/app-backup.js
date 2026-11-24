@@ -4254,7 +4254,9 @@
       } else if (ar.complete) {
         overall = `<div><b>${esc(t("Every store is encrypted."))}</b></div>`;
       }
-      if (ar.key_held && d.corpus.state === "encrypted" && unchecked.length) {
+      // R821: a library that only LOOKS encrypted while a key is held is "not checked yet" too, never counted as encrypted
+      if (ar.key_held && d.corpus.state === "looks_encrypted" && !unchecked.includes("corpus")) unchecked.unshift("corpus");
+      if (ar.key_held && (d.corpus.state === "encrypted" || d.corpus.state === "looks_encrypted") && unchecked.length) {
         // Row 153: while a store is in use, being encrypted or unreadable the summary says so (beside a pending line too).
         overall += `<div class="caveat">${esc(tfw("Not checked yet against this passphrase: {names} (in use, being encrypted, or a read error). Until then, do not count them as encrypted. Open this panel again in a moment.", { names: names(unchecked) }))}</div>`;
       }
@@ -4272,7 +4274,8 @@
         `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>` +
         lanes.map((k) => `<div>${ooLabelHtml(esc(tfw("Source store ({kind})", { kind: laneWord(k) })), `<b>${esc(word(d.lanes[k]))}</b>`)}</div>`).join("");
       // The panel stays for a plaintext library, and (R742) for an encrypted one whose other stores are not finished.
-      $("atrest-encrypt").style.display = (d.corpus.state === "plaintext" || (d.corpus.state === "encrypted" && pending.length)) ? "" : "none";
+      $("atrest-encrypt").style.display = (d.corpus.state === "plaintext" || (d.corpus.state === "encrypted" && pending.length)
+        || (ar.key_held && d.corpus.state === "looks_encrypted")) ? "" : "none";
     }
     async function encryptCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

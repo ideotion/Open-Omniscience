@@ -319,8 +319,10 @@ def test_the_record_holds_names_and_times_only(stores):
     assert _KEY not in raw and str(stores.parent) not in raw
     for entry in json.loads(raw)["stores"].values():
         # R820 (4): plus the store's (device, inode) when it was read back with the key; numbers, never a path or a secret
-        assert set(entry) - {"dev", "ino"} == {"encrypted_at", "read_back_with_key"}
+        # row 400: plus the file's first 16 bytes (its salt: random per file, not a secret), as hex
+        assert set(entry) - {"dev", "ino", "head"} == {"encrypted_at", "read_back_with_key"}
         assert all(type(entry[k]) is int for k in ("dev", "ino") if k in entry)
+        assert "head" not in entry or (isinstance(entry["head"], str) and len(bytes.fromhex(entry["head"])) == 16)
 
 
 def test_an_unreadable_record_reads_as_empty_and_the_state_still_comes_from_the_files(stores):

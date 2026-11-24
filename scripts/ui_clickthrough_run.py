@@ -811,7 +811,8 @@ def _probe_at_rest(label: str, url: str, when: str) -> dict:
     mapped = _LOCK_STATE_TO_AT_REST.get(str(lock.get("state")))
     if mapped is not None and lock.get("at_rest_claim") in ("encrypted", "looks_encrypted", "plaintext", "absent"):
         mapped = lock["at_rest_claim"]
-        row["evidence"] = "record" if mapped == "encrypted" else "header"
+        if lock.get("at_rest_evidence"):
+            row["evidence"] = lock["at_rest_evidence"]  # the server's own word: "key", "record" or "header"
     if mapped is None:
         # The vocabulary moved. Say so rather than inferring a verdict from a word we do not
         # know -- a wrong "plaintext" here would be a fabricated finding about the app.
@@ -2569,7 +2570,10 @@ def main() -> None:
         verified = sorted({r["state"] for r in report.at_rest if r["state"] in ("B", "C", "D") and r.get("when") == "after-walk"
                            and r.get("detected") == "encrypted" and r.get("evidence") == "key"})
         if not verified:
-            (out_dir / "report.json").write_text(json.dumps(asdict(report), indent=2), encoding="utf-8")
+            # The report is kept for the operator, marked so it can never be read as an encrypted run.
+            doc = asdict(report)
+            doc["encryption_verified"] = False
+            (out_dir / "report.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
             _log(
                 "REFUSING: --require-encrypted was passed and encryption was NOT VERIFIED: no seeded, walked state was "
                 "opened with the key after the walk (the doctor's reading with evidence 'key'). A header or this "
