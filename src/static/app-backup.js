@@ -709,6 +709,7 @@
         // single lost /volumes/status poll printed a fatal "Backup failed: NetworkError"
         // over a healthy multi-hour job.
         let fails = 0;                    // consecutive poll-transport failures
+        let lastGood = null;              // the last status a poll returned (row 366: the hiccup line's prefix)
         const MAX_FAILS = 40;             // give up POLLING (not the job) after ~minutes of backoff
         const tick = async () => {
           // R701: a watcher that is no longer THE one (a newer watcher took over, or the
@@ -724,8 +725,11 @@
             if (fails > MAX_FAILS) {
               return reject(new Error(t("Lost contact with the backup job — check the task manager; it may still be running.")));
             }
-            const pfx = prefix;  // row 366: drawn again in the language the operator switches to, with the prefix it had
-            ooLiveHtml(ui.label, () => withPrefix(`<span class="muted">${esc(t("Connection hiccup — retrying…"))}</span>`, pfx));
+            // Row 366: drawn again in the language the operator switches to; the prefix is worked out again from the
+            // last good status too, since `prefix` holds it already translated.
+            const last = lastGood, pinned = prefix;
+            ooLiveHtml(ui.label, () => withPrefix(`<span class="muted">${esc(t("Connection hiccup — retrying…"))}</span>`,
+              ui.prefixOf && last ? ui.prefixOf(last) : pinned));
             setTimeout(tick, Math.min(1200 * Math.pow(1.6, fails - 1), 15000));
             return;
           }
@@ -733,6 +737,7 @@
           const state = s.state || "";
           if (ui.onTick) ui.onTick(s);
           if (ui.prefixOf) prefix = ui.prefixOf(s);
+          lastGood = s;
           const view = _uxProgressView(kind, s, t);
           _uxPaintBar(ui.bar, view);
           // A client-side rule-of-three ETA for byte/fraction-based jobs (folder copy);
