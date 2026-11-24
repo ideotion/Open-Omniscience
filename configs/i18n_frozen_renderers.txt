@@ -23,11 +23,6 @@ app-ai-tools.js runAiSetup
 app-ai-tools.js uninstallAi
 app-ai-tools.js verifyChain
 app-ai-tools.js viewChain
-app-analysis.js _advCopyLink
-app-analysis.js _advFillFacets
-app-analysis.js _advHistToggle
-app-analysis.js _advSave
-app-analysis.js _advSaveNearDefault
 app-analysis.js _bulkRenderQueue
 app-analysis.js _synthCount
 app-analysis.js _synthRenderResult
@@ -36,8 +31,6 @@ app-analysis.js _synthRun
 app-analysis.js aiRunPrompt
 app-analysis.js aiRunPromptStart
 app-analysis.js bulkLlm
-app-analysis.js loadAnalysis
-app-analysis.js renderAnCompetitive
 app-analysis.js renderAnMindmap
 app-analysis.js synthesizeResults
 app-backup.js _uxCancelExport
