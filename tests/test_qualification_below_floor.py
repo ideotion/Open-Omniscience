@@ -253,7 +253,8 @@ def test_the_sources_panel_reads_the_plan_not_the_floor_alone():
     from tests.js_source_helper import function_source, read_static
 
     js = read_static("app-ai-tools.js")
-    idle = function_source(js, "loadQualifyBulk")
+    # the idle line is a render since row 367: the loader, its line and the decline test read together
+    idle = "".join(function_source(js, n) for n in ("loadQualifyBulk", "_qualifyBulkLine", "_qualifyBulkDeclined"))
     assert "st.cohort" in idle and 'co.mode === "declined"' in idle
     assert "instead of the whole corpus" in idle
     start = function_source(js, "qualifyBulkStart")

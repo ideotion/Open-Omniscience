@@ -776,49 +776,60 @@
         + _qualTf("To run it anyway, restart the app with {env}=1.", { env: env || "OO_ALLOW_BIG_SCANS" });
     }
 
+    // Row 367: the status line is a render over the status this read got (ooLive), so a language switch redraws it.
+    function _qualifyBulkDeclined(st) {
+      // FD03 b (2026-09-29): below the floor a pass judges against a bounded sample of
+      // the newest articles, so the floor alone no longer stops anything. Only a
+      // `declined` plan (even the sample does not fit) is a refusal; an older server
+      // with no `cohort` block keeps the floor's own answer.
+      const co = st.cohort || null, fl = st.floor || {};
+      return co ? co.mode === "declined" : !!fl.declines;
+    }
+    function _qualifyBulkLine(st) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (st.running) {
+        // The job's line with its keyed frame, as the run's own progress writes it --
+        // a panel opened mid-run showed the English detail on a translated page.
+        return (st.detail ? _framedText(st.detail, st.detail_i18n, st.detail_vars, t) : t("Working…"))
+          + (st.progress ? ` (${fmtNum(st.done, 0)}/${fmtNum(st.total, 0)})` : "");
+      }
+      const bl = st.backlog || {};
+      const backlog = (bl.unqualified || 0) + (bl.due_disqualified || 0);
+      // A SENTENCE, one keyed frame per count with its full stop inside: the decline
+      // below follows on the same line, and "6 candidates awaiting qualification
+      // Qualification is declined…" read as one run-on clause (re-walk S-12). The
+      // singular frame also stops "1 candidates" in English.
+      let line = backlog
+        ? _qualTf(backlog === 1 ? "{n} candidate awaiting qualification." : "{n} candidates awaiting qualification.",
+                  {n: fmtNum(backlog, 0)})
+        : t("No candidates awaiting qualification.");
+      // FD03 = a (2026-09-24): below the memory floor every qualification pass
+      // declines. Said here, with the switch that lifts it, rather than left for
+      // the operator to infer from a backlog that never moves.
+      const fl = st.floor || {}, co = st.cohort || null;
+      const sep = () => (/[。！？]$/.test(line) ? "" : " ");
+      if (_qualifyBulkDeclined(st)) {
+        line += sep() + _qualDeclinedText(fl.reason, fl.override_env, fl.reason_i18n, fl.reason_vars);
+      } else if (co && co.mode === "sample") {
+        line += sep()
+          + _qualTf("This machine is below the memory floor, so candidates are judged against the newest {n} articles instead of the whole corpus.",
+                    {n: fmtNum(co.sample_articles || 0, 0)});
+      }
+      return line;
+    }
+
     async function loadQualifyBulk() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("qualify-bulk-status");
       if (!out) return;
       try {
         const st = await api("/api/sources/qualify-bulk/status");
-        const bl = st.backlog || {};
-        const backlog = (bl.unqualified || 0) + (bl.due_disqualified || 0);
         const cancelBtn = $("qualify-bulk-cancel-btn");
+        ooLive(out, () => _qualifyBulkLine(st));
         if (st.running) {
-          // The job's line with its keyed frame, as the run's own progress writes it --
-          // a panel opened mid-run showed the English detail on a translated page.
-          out.textContent = (st.detail ? _framedText(st.detail, st.detail_i18n, st.detail_vars, t) : t("Working…"))
-            + (st.progress ? ` (${fmtNum(st.done, 0)}/${fmtNum(st.total, 0)})` : "");
           if (cancelBtn) cancelBtn.style.display = "";
         } else {
-          // A SENTENCE, one keyed frame per count with its full stop inside: the decline
-          // below follows on the same line, and "6 candidates awaiting qualification
-          // Qualification is declined…" read as one run-on clause (re-walk S-12). The
-          // singular frame also stops "1 candidates" in English.
-          out.textContent = backlog
-            ? _qualTf(backlog === 1 ? "{n} candidate awaiting qualification." : "{n} candidates awaiting qualification.",
-                      {n: fmtNum(backlog, 0)})
-            : t("No candidates awaiting qualification.");
-          // FD03 = a (2026-09-24): below the memory floor every qualification pass
-          // declines. Said here, with the switch that lifts it, rather than left for
-          // the operator to infer from a backlog that never moves.
-          const fl = st.floor || {};
-          // FD03 b (2026-09-29): below the floor a pass judges against a bounded sample of
-          // the newest articles, so the floor alone no longer stops anything. Only a
-          // `declined` plan (even the sample does not fit) is a refusal; an older server
-          // with no `cohort` block keeps the floor's own answer.
-          const co = st.cohort || null;
-          const declined = co ? co.mode === "declined" : !!fl.declines;
-          const sep = () => (/[。！？]$/.test(out.textContent) ? "" : " ");
-          if (declined) {
-            out.textContent += sep()
-              + _qualDeclinedText(fl.reason, fl.override_env, fl.reason_i18n, fl.reason_vars);
-          } else if (co && co.mode === "sample") {
-            out.textContent += sep()
-              + _qualTf("This machine is below the memory floor, so candidates are judged against the newest {n} articles instead of the whole corpus.",
-                        {n: fmtNum(co.sample_articles || 0, 0)});
-          }
+          const declined = _qualifyBulkDeclined(st);
           // A CONTROL THAT RENDERS CLAIMS ITS CAPABILITY (re-walk S-7): below the floor the
           // job declines, so the button that starts it is disabled and DESCRIBED BY the
           // line above it, which names the refusal and its override -- it used to open the
@@ -842,12 +853,13 @@
           }
           if (cancelBtn) cancelBtn.style.display = "none";
         }
-      } catch (e) { out.textContent = t("Could not load qualification status."); }
+      } catch (e) { ooLive(out, () => t("Could not load qualification status.")); }
     }
     async function qualifyBulkStart(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("qualify-bulk-status");
-      const say = (msg) => { if (out) out.textContent = msg; };
+      // a render (row 367), so each line follows a language switch
+      const say = (render) => { if (out) ooLive(out, render); };
       // THE REFUSAL COMES BEFORE THE CONSENT POPUP (re-walk S-7): a machine whose passes
       // decline (FD03 b: even the cohort sample does not fit) gets the named refusal, read
       // over loopback, never a popup for a job that cannot egress.
@@ -862,11 +874,11 @@
           && !await ensureOnline(t("Qualify the source backlog — a background job that trial-fetches a few articles from each candidate to judge extraction validity")))
         return;
       if (btn) btn.disabled = true;
-      say(t("Starting…"));
+      say(() => t("Starting…"));
       try {
         const d = await api("/api/sources/qualify-bulk", {method: "POST"});
         if (d && d.started === false && d.job && d.job.state === "running") {
-          say(t("Already running — see the task manager."));
+          say(() => t("Already running — see the task manager."));
         }
         const cancelBtn = $("qualify-bulk-cancel-btn");
         if (cancelBtn) cancelBtn.style.display = "";
@@ -877,18 +889,18 @@
             const p = s.progress ? ` ${fmtNum(s.done, 0)}/${fmtNum(s.total, 0)}` : "";
             // The job's line arrives with its keyed frame (detail_i18n / detail_vars), so
             // it is written in the UI language, not piped through in English (B19, Q12).
-            say((s.detail ? _framedText(s.detail, s.detail_i18n, s.detail_vars, t) : t("Working…")) + p);
+            say(() => (s.detail ? _framedText(s.detail, s.detail_i18n, s.detail_vars, t) : t("Working…")) + p);
           },
         });
         if (st && st.state === "error") {
-          say(t("Qualification failed — see console"));
+          say(() => t("Qualification failed — see console"));
           console.error("qualifyBulkStart", st.error);
         } else if (_jobStillRunning(st)) {
-          say(t("Still running in the background — see the task manager."));
+          say(() => t("Still running in the background — see the task manager."));
         } else if (st && st.result && st.result.declined) {
           // A named refusal, never "0 qualified" read as a finished run (QUAL-1).
           const d = st.result.declined;
-          say(_qualDeclinedText(d.reason, d.override_env, d.reason_i18n, d.reason_vars));
+          say(() => _qualDeclinedText(d.reason, d.override_env, d.reason_i18n, d.reason_vars));
         } else if (st && st.result) {
           // Each count is ONE keyed frame chosen by the count, the noun inside it
           // (click-through B17, T12): a number welded to an adjective keyed in the
@@ -899,14 +911,14 @@
             const n = Number(x) || 0;
             return _qualTf(n === 1 ? one : many, {n: fmtNum(n, 0)});
           };
-          say(tally(r.qualified, "{n} source qualified", "{n} sources qualified") + " · "
+          say(() => tally(r.qualified, "{n} source qualified", "{n} sources qualified") + " · "
             + tally(r.disqualified, "{n} source disqualified", "{n} sources disqualified") + " · "
             + tally(r.no_evidence, "{n} source with no evidence yet", "{n} sources with no evidence yet")
             + (r.paused_reason
               ? " — " + _framedText(r.paused_reason, r.paused_reason_i18n, r.paused_reason_vars, t) : ""));
         }
       } catch (e) {
-        say(t("Qualification failed — see console"));
+        say(() => t("Qualification failed — see console"));
         console.error("qualifyBulkStart", e);
       } finally {
         if (btn) btn.disabled = false;

@@ -70,6 +70,8 @@
       try { if (typeof fixityRepaint === "function") fixityRepaint(); } catch (_e) {}
       // Row 361: the chronology summary and timeline (Diagnostics) redraw from the reading they hold; never fetch.
       try { if (typeof chronoRepaint === "function") chronoRepaint(); } catch (_e) {}
+      // Row 367: the Climate tab's charts (legend and axis words) redraw from the points they hold; never fetch.
+      try { if (typeof climateChartsRepaint === "function") climateChartsRepaint(); } catch (_e) {}
       // Row 364: every node drawn through ooLive/ooLiveHtml (app-core.js) redraws from the render it keeps; never fetches.
       try { if (typeof ooLiveRepaint === "function") ooLiveRepaint(); } catch (_e) {}
       // The rest of the Home at-a-glance strip -- its counts and their labels, the "as

@@ -109,7 +109,8 @@ app-claim.js repaintClaimFromCache 3
 app-climate.js _climateOwidPickers 2
 app-climate.js climateDrawCharts 1
 app-climate.js climatePlaceShow 2
-app-climate.js renderClimate 1
+app-climate.js renderClimate 2
+app-climate.js renderClimatePlace 1
 app-core.js _gwRenderDots 1
 app-core.js _gwRenderLangs 1
 app-core.js _gwRenderSources 2

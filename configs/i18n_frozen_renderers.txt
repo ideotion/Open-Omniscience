@@ -3,7 +3,6 @@
 # whose docstring states the method and its blind spots. tests/test_i18n_frozen_renderers.py
 # requires the scan to equal this list exactly. THE LIST IS THE RATCHET: a fix deletes its own
 # line in the same PR; a new freeze would have to add one, in plain sight in the diff.
-app-ai-tools.js qualifyBulkStart
 app-backup.js _uxCancelExport
 app-backup.js _uxImKeyRows
 app-backup.js _uxImLeftoverPlaintext
@@ -29,12 +28,6 @@ app-claim.js claimExport
 app-claim.js claimRun
 app-claim.js claimVerify
 app-claim.js claimWeather
-app-climate.js climateDrawCharts
-app-climate.js climateFetch
-app-climate.js climatePlaceShow
-app-climate.js loadClimateUnits
-app-climate.js renderClimate
-app-climate.js renderClimatePlace
 app-core.js _airplanePopup
 app-core.js _gwRenderFinish
 app-core.js _paintCrashScreen
