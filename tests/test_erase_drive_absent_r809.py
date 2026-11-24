@@ -21,6 +21,9 @@ from src.safety import crypto_erase, data_volume
 
 S1 = "The data drive was not present. Nothing on it was checked or erased. The data on that drive still exists."
 S3 = "The data drive disconnected during the erase: it was only partially erased, and what was left on it could not be checked."
+S5 = "The data drive could not be identified. Nothing on it was checked or erased. The data on that drive still exists."
+S6 = ("Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a "
+      "later launch unless it is set up again.")
 
 
 @pytest.fixture
@@ -113,6 +116,8 @@ def test_a_drive_that_goes_away_during_the_erase_is_partial_and_unchecked(marked
     out = _erase(data)
     assert out["drive_lost"] is True and out["removed"] is False and out["unlisted_folders"] == 0, out
     assert out["limit"].startswith(S3) and "permanently unrecoverable" not in out["limit"]
+    # R812 (b): the erase had made the app forget the drive's id before it went away, so that is said (never restored).
+    assert out["drive_forgotten"] is True and out["limit"].startswith(S3 + " " + S6)
     assert crypto_erase.settle_removed(out) is False
 
 
@@ -182,9 +187,10 @@ def test_a_mismatched_drive_through_a_linked_folder_is_untouched(tmp_path, monke
     assert _hashes(real) == before
 
 
-def test_an_unanswerable_drive_question_is_absent(monkeypatch, tmp_path):
+def test_an_unanswerable_drive_question_is_could_not_be_identified(monkeypatch, tmp_path):
+    """R812 (a): a question that cannot be answered is a drive that could not be identified (a failure, like absent)."""
     monkeypatch.setattr(data_volume, "watched", lambda: (_ for _ in ()).throw(RuntimeError("x")))
-    assert crypto_erase._drive_state(tmp_path) == "absent"
+    assert crypto_erase._drive_state(tmp_path) == "unidentified"
 
 
 def test_the_cli_says_failed_and_exits_2_never_a_traceback(monkeypatch, capsys):
@@ -276,3 +282,91 @@ def test_no_free_space_overwrite_where_the_drive_is_not(marked):
     assert _hashes(data) == {str(p.relative_to(data)): b for p, b in files.items()} | {
         data_volume.MARKER_NAME: (data / data_volume.MARKER_NAME).read_bytes()}
     assert "drive_absent" in crypto_erase.SCRUB_NOT_DONE
+
+
+def test_a_marker_that_cannot_be_read_is_could_not_be_identified(marked):
+    """R812 (a): a folder at the drive's path whose marker file is there and cannot be read is not "not present"."""
+    data, _outside = marked
+    files = _app_files(data, marker_id=None)
+    (data / data_volume.MARKER_NAME).write_text("{not json", encoding="utf-8")
+    before = _hashes(data)
+    out = _erase(data)
+    assert out["drive_absent"] is True and out["drive_unidentified"] is True and out["limit"] == S5, out
+    assert _hashes(data) == before and files
+
+
+def test_an_empty_mount_point_stays_not_present(marked):
+    """R812 (a): a folder with no marker file at all (an empty mount point) is the drive not being there: S1."""
+    data, _outside = marked
+    data.mkdir(parents=True)
+    out = _erase(data)
+    assert out["drive_absent"] is True and out["drive_unidentified"] is False and out["limit"] == S1, out
+    assert list(data.iterdir()) == []
+
+
+def test_a_drive_swapped_between_the_probe_and_the_first_write_gets_zero_writes(marked, monkeypatch):
+    """R812 (c): the folder at the drive's path is replaced after the probe (another drive mounted there, carrying even the same
+    marker): the re-check before the first write sees another folder, and nothing on either is written."""
+    from src.safety import data_scope
+
+    data, _outside = marked
+    _app_files(data, marker_id="a1b2c3d4e5f60718")
+    real_scope = data_scope.folder_scope
+    swapped: dict[str, dict] = {}
+
+    def _swap(base):
+        result = real_scope(base)
+        original = data.with_name("original drive")
+        data.rename(original)
+        _app_files(data, marker_id="a1b2c3d4e5f60718")  # the same marker: only the identity tells them apart
+        swapped["new"], swapped["original"] = _hashes(data), _hashes(original)
+        return result
+
+    monkeypatch.setattr(data_scope, "folder_scope", _swap)
+    out = _erase(data)
+    assert swapped, "the swap ran between the probe and the erase"
+    assert out["drive_absent"] is True and out["drive_unidentified"] is True and out["limit"] == S5, out
+    assert _hashes(data) == swapped["new"], "zero writes on the drive now at the path"
+    assert _hashes(data.with_name("original drive")) == swapped["original"]
+    assert out["headers_destroyed"] == [] and out["keys_destroyed"] == []
+
+
+def test_a_drive_that_changes_before_the_key_step_is_stopped_and_keeps_its_id(marked, monkeypatch):
+    """R812 (c): changed after the first write: nothing more on it is touched (its keys stay), the result is S3, and the id was
+    not forgotten yet, so S6 is not said."""
+    data, _outside = marked
+    files = _app_files(data, marker_id="a1b2c3d4e5f60718")
+    real_same = crypto_erase._drive_same
+    calls: list[bool] = []
+
+    def _same(hold, want_id, *, marker):
+        calls.append(marker)
+        return real_same(hold, want_id, marker=marker) if len(calls) == 1 else False
+
+    monkeypatch.setattr(crypto_erase, "_drive_same", _same)
+    out = _erase(data)
+    assert out["drive_lost"] is True and out["drive_forgotten"] is False and out["removed"] is False, out
+    assert out["limit"].startswith(S3) and S6 not in out["limit"] and "permanently unrecoverable" not in out["limit"]
+    key = data / "keys" / "custody_ed25519.pem"
+    assert key.read_bytes() == files[key], "the key material on a changed drive is never touched"
+    assert (data / "wiki_dumps" / "part.xml").read_bytes() == files[data / "wiki_dumps" / "part.xml"]
+
+
+def test_the_real_cli_says_could_not_be_identified(tmp_path):
+    import subprocess
+    import sys
+
+    data = tmp_path / "drive" / "OOS data"
+    _app_files(data, marker_id=None)
+    (data / data_volume.MARKER_NAME).write_text("{not json", encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("OO_", "DATABASE_URL"))}
+    env.update({"OO_DATA_DIR": str(data), data_volume.ENV_ID: "a1b2c3d4e5f60718", "PYTHONPATH": os.getcwd(),
+                "HOME": str(tmp_path / "home")})
+    run = subprocess.run([sys.executable, "-m", "src.api.main", "panic", "--yes"], env=env, capture_output=True, text=True,
+                         timeout=120, cwd=os.getcwd())
+    assert run.returncode == 2 and "ERASE FAILED: " + S5 in run.stdout and "Traceback" not in run.stderr, run.stdout + run.stderr
+
+
+def test_the_page_says_r812():
+    js = Path("src/static/app-backup.js").read_text(encoding="utf-8")
+    assert S5 in js and S6 in js and "r.drive_unidentified === true" in js and "r.drive_forgotten === true" in js

@@ -4371,8 +4371,14 @@
           `<span class="pill warn">${esc(t(driveAbsent ? "erase failed" : clean ? "crypto-erased" : "erase may be incomplete"))}</span> ` +
           // R809: with the drive absent the count is only what was erased ELSEWHERE, said as that, never as the erase's success.
           `${esc(tfw(driveAbsent ? "Files erased outside the data drive: {done} of {total}." : "{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
-          (driveAbsent ? `<div class="card-caveat">${esc(t("The data drive was not present. Nothing on it was checked or erased. The data on that drive still exists."))}</div>` : "") +
-          (driveLost ? `<div class="card-caveat">${esc(t("The data drive disconnected during the erase: it was only partially erased, and what was left on it could not be checked."))}</div>` : "") +
+          // R812 (a): a folder at the drive's path that could not be identified (or that changed before the erase wrote on it).
+          (driveAbsent ? `<div class="card-caveat">${esc(r.drive_unidentified === true
+            ? t("The data drive could not be identified. Nothing on it was checked or erased. The data on that drive still exists.")
+            : t("The data drive was not present. Nothing on it was checked or erased. The data on that drive still exists."))}</div>` : "") +
+          (driveLost ? `<div class="card-caveat">${esc(t("The data drive disconnected during the erase: it was only partially erased, and what was left on it could not be checked."))}` +
+            // R812 (b): only when the erase had already made the app forget the drive's id (it is never restored).
+            (r.drive_forgotten === true ? ` ${esc(t("Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a later launch unless it is set up again."))}` : "") +
+            `</div>` : "") +
           (clean ? `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` : "") +
           `<span class="muted">${esc(r.limit)}</span>` +
           (holder === "none" ? "" : `<div class="card-caveat">${esc(holderNote)}</div>`) +

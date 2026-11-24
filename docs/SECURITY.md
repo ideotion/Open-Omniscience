@@ -866,6 +866,13 @@ imply a protection we cannot deliver.
   (absent) or 1 (lost); with the drive absent it stops before it opens anything (`src/api/_panic_precheck.py`: the app cannot
   open its stores without the drive, so nothing else is erased either, and it says so). The free-space overwrite after it writes
   nothing at the path of an absent drive (`scrub_not_done: "drive_absent"`) and never says the corpus is unrecoverable.
+  R812: a folder whose marker file is there and cannot be read is "The data drive could not be identified", the same failure
+  (an empty mount point stays "not present"); the drive's identity (resolved folder's device and inode, a directory descriptor
+  held on POSIX, and its marker id) is re-checked before the first write on it and before each later drive step, and on any
+  change or unreadable identity nothing more on it is touched ("could not be identified" before the first write, "disconnected
+  ... partially erased" after). THE WINDOW THAT REMAINS: the walks go by path, so a drive swapped between a re-check and the
+  writes after it is reached by its path (row 387 makes the POSIX walk handle-relative). An id the erase forgot is never
+  restored, and a lost drive's result says the app no longer remembers it.
   The lane databases' pools are closed only once their salt pages are gone, so closing them writes no log back first. A
   copy the app made of a database beside it (a repair's salvage and damaged copies, an encryption's pre-encrypt snapshot
   and in-progress copy, a retained pre-restore snapshot) is found by its name wherever that database is, the data dir or
