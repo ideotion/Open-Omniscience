@@ -2766,7 +2766,8 @@
       if (!/^[0-9a-f]{64}$/i.test(k)) return "";
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, n) => (v && v[n] != null) ? String(v[n]) : m));
-      const fp = "\u2068" + k.slice(0, 16) + "\u2069";
+      const FP_HEX = 16;  // a key fingerprint's first hex digits, not a date (the raw-date ratchet counts literal 0,16 slices)
+      const fp = "\u2068" + k.slice(0, FP_HEX) + "\u2069";
       if (signedBy === "this-installation") return tf("Signed by this installation, key {fp}", { fp });
       if (signedBy === "another-installation") return tf("Signed by another installation, key {fp}", { fp });
       return tf("Signed by key {fp}", { fp });
