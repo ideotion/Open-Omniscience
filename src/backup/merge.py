@@ -41,6 +41,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -997,7 +998,10 @@ def _note_unverified_activation(safety_net: Path | None) -> None:
     with file_lock(_unverified_activation_path()):  # the new record depends on the old one
         prior = unverified_activation() or {}
         net = prior.get("safety_net") if prior.get("safety_net") else (str(safety_net) if safety_net is not None else None)
-        _write_unverified_activation({"since": prior.get("since") or datetime.now(UTC).isoformat(), "safety_net": net})
+        # A fresh token per activation: a check that read an older record never clears this one.
+        _write_unverified_activation(
+            {"since": prior.get("since") or datetime.now(UTC).isoformat(), "safety_net": net, "token": secrets.token_hex(8)}
+        )
 
 
 def _net_owed_by_unverified_activation() -> str | None:
@@ -1010,9 +1014,23 @@ def _net_owed_by_unverified_activation() -> str | None:
     return Path(net).name if isinstance(net, str) and net else None
 
 
-def _clear_unverified_activation() -> None:
-    with suppress(FileNotFoundError):
-        _unverified_activation_path().unlink()
+def _clear_unverified_activation(*, owed: dict | None = None) -> bool:
+    """Remove the record. With ``owed`` (the record a check read before it started), only if the record is still that
+    one, under its lock: an activation noted while the check ran wrote a new token, and its check is still owed
+    (security read, 2026-11-24). Returns whether the record is gone. Never raises (a record that stays is the safe
+    side: the check runs again)."""
+    from src.safety.file_lock import file_lock
+
+    path = _unverified_activation_path()
+    try:
+        with file_lock(path):
+            if owed is not None and (unverified_activation() or {}).get("token") != owed.get("token"):
+                return False
+            with suppress(FileNotFoundError):
+                path.unlink()
+    except OSError:
+        return False
+    return True
 
 
 def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None = None) -> dict:
@@ -1020,7 +1038,7 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
     stop rules): ``PRAGMA quick_check`` and ``PRAGMA foreign_key_check`` of the LIVE corpus, read-only.
 
     Returns ``{"state": "none"}`` when nothing is owed; ``{"state": "ok"}`` (the record is removed); ``{"state":
-    "failed", "safety_net": <path or None>}`` (the record stays: the corpus is not called complete, and the run's
+    "failed", "safety_net": <path or None>, "findings": {"quick_check": ..., "foreign_key_violations": n}}`` (the record stays: the corpus is not called complete, and the run's
     safety net is the state to return to); or ``{"state": "unchecked", "reason": ...}`` when the check could not
     run or was stopped (the record stays, so the next start runs it). Never raises."""
     owed = unverified_activation()
@@ -1065,16 +1083,40 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
             stopper.join()
         con.close()
     if qc == "ok" and not fk:
-        _clear_unverified_activation()
+        if not _clear_unverified_activation(owed=owed):
+            # another activation was noted while this ran: what this read may not be the file now live
+            return {"state": "unchecked", "reason": "superseded"}
         return {"state": "ok"}
-    with suppress(OSError):
-        _write_unverified_activation({**owed, "failed_at": datetime.now(UTC).isoformat()})
+    # Named findings with a count, in the record (so the next start, the status and Field data keep them) and in the
+    # answer. Plan 2026-11-24: damage found here is the same fact as any other integrity finding, so it takes the damage
+    # path (writers paused; the repair and restore offers). Rows that only break a foreign key are not damage to the file
+    # and latch nothing, but they are never dropped: they are counted here, and the run's final whole-file check (which
+    # always runs ``foreign_key_check`` over the whole file) counts them again.
+    findings = {"quick_check": "ok" if qc == "ok" else ("damaged" if qc != "latched" else "latched"), "foreign_key_violations": len(fk)}
+    if not _record_findings(owed, findings):
+        # another activation was noted while this ran: the file read is not the one now live, so nothing is latched
+        # against it and the newer record stays owed (security read, 2026-11-24)
+        return {"state": "unchecked", "reason": "superseded"}
     if qc not in ("ok", "latched"):
-        # Plan 2026-11-24: damage found here is the same fact as any other integrity finding, so it takes the damage path
-        # (writers paused; the repair and restore offers). Rows that only break a foreign key are not damage to the file and
-        # latch nothing: the report says the check failed either way.
         _latch_live_damage(live_db_path())
-    return {"state": "failed", "safety_net": net}
+    return {"state": "failed", "safety_net": net, "findings": findings}
+
+
+def _record_findings(owed: dict, findings: dict) -> bool:
+    """Write the failed check's findings into the record, under its lock, only if the record is still the one the check
+    read. False when a newer activation replaced it. A write that fails keeps the record as it was (still owed)."""
+    from src.safety.file_lock import file_lock
+
+    path = _unverified_activation_path()
+    try:
+        with file_lock(path):
+            current = unverified_activation()
+            if current is None or current.get("token") != owed.get("token"):
+                return False
+            _write_unverified_activation({**current, "failed_at": datetime.now(UTC).isoformat(), "findings": findings})
+    except OSError:
+        pass
+    return True
 
 
 def _latch_live_damage(live: Path) -> None:
@@ -7431,7 +7473,10 @@ def _scoped_check_tables(con, written: set[str]) -> tuple[list[str], list[str]] 
         check |= {t for t in ordinary if t.startswith(vt + "_")}
     if "sqlite_master" in written or "sqlite_schema" in written:
         check.add("sqlite_master")
-    fk = {t for t in check if t in ordinary}
+    # SQLite's own bookkeeping tables are written beside a row with no write the authorizer reports (AUTOINCREMENT's
+    # sqlite_sequence, ANALYZE's statistics): always in scope when present, and they are small (security read).
+    check |= {t for t in ordinary if t in ("sqlite_sequence", "sqlite_stat1", "sqlite_stat4")}
+    fk = {t for t in check if t in ordinary and not t.startswith("sqlite_")}
     for t in sorted(ordinary):
         refs = {str(r[2]) for r in con.execute(f"PRAGMA foreign_key_list({_ident(t)})").fetchall()}  # noqa: S608 - a name from sqlite_master
         if refs & check:

@@ -1143,6 +1143,8 @@ WRITE_SET_UNKNOWN = "*"
 _WRITE_WATCH: dict[str, set[str]] = {}
 _WRITE_WATCH_LOCK = threading.Lock()
 _FILE_WIDE_PRAGMAS = frozenset({"writable_schema", "incremental_vacuum", "schema_version"})
+#: Pragmas that write the file even with no argument.
+_ALWAYS_FILE_WIDE_PRAGMAS = frozenset({"incremental_vacuum", "optimize"})
 
 
 def _watch_key(path: Path | str) -> str | None:
@@ -1208,7 +1210,15 @@ def _another_process_holds(path: Path | str) -> bool | None:
         raw = Path("/proc/locks").read_text(encoding="ascii", errors="replace")
     except OSError:
         return None
-    ids: set[tuple[int, int, int]] = set()
+    # Matched by INODE alone (security read, 2026-11-24): on a btrfs subvolume or an overlay, stat()'s device is not the
+    # one /proc/locks prints, so a (device, inode) match would miss a foreign holder. An inode shared by another file on
+    # another device only costs a whole-file check, the safe direction.
+    #
+    # RESIDUAL GAP (accepted by Plan, 2026-11-24): a process that opens the file, writes and exits entirely between two
+    # probes (every instrumented open and every read of the set) holds no lock when looked at, and is not seen; nor is
+    # an idle connection to a file not in WAL mode. The run's final activation always takes the whole-file check, which
+    # covers any such write.
+    ids: set[int] = set()
     for suffix in ("", "-wal", "-shm"):
         try:
             st = os.stat(f"{path}{suffix}")
@@ -1216,19 +1226,20 @@ def _another_process_holds(path: Path | str) -> bool | None:
             continue
         except OSError:
             return None
-        ids.add((os.major(st.st_dev), os.minor(st.st_dev), st.st_ino))
+        ids.add(st.st_ino)
     return _foreign_lock_in(raw, ids, os.getpid())
 
 
-def _foreign_lock_in(raw: str, ids: set[tuple[int, int, int]], me: int) -> bool | None:
-    """``/proc/locks`` lines: ``N: KIND MODE TYPE PID MAJ:MIN:INODE START END`` (a ``->`` blocked waiter adds one field)."""
+def _foreign_lock_in(raw: str, ids: set[int], me: int) -> bool | None:
+    """``/proc/locks`` lines: ``N: KIND MODE TYPE PID MAJ:MIN:INODE START END`` (a ``->`` blocked waiter adds one field).
+    Any pid other than ours counts: an OFD lock (-1) and a holder in another pid namespace (0) included."""
     for line in raw.splitlines():
         parts = line.replace("->", " ").split()
         try:
             at = next(i for i, part in enumerate(parts) if part.count(":") == 2)
             pid = int(parts[at - 1])
-            maj, mnr, ino = parts[at].split(":")
-            key = (int(maj, 16), int(mnr, 16), int(ino))
+            _maj, _mnr, ino = parts[at].split(":")
+            key = int(ino)
         except (StopIteration, ValueError, IndexError):
             continue  # a line not in this shape names no file of ours
         if key in ids and pid != me:
@@ -1252,7 +1263,8 @@ def watched_writes(path: Path | str) -> set[str] | None:
 
     The set is a proof only while every writer of the file was recorded (Plan, row 408 R7a: fail safe by default).
     Writes from this process through :func:`connect` are; an open of the file through the standard driver anywhere
-    else in this process makes the set unknown (:func:`_unrecorded_open`); and another process holding the file open
+    else in this process makes the set unknown (:func:`_unrecorded_open`). ``sqlcipher3`` raises no audit event, so its
+    direct importers are a reviewed, test-pinned list instead (none opens a working copy). Another process holding the file open
     now, or a system where that cannot be told, makes it unknown here. A process that reports its own tables adds them
     to the set :func:`watch_writes` returns (or adds :data:`WRITE_SET_UNKNOWN`)."""
     key = _watch_key(path)
@@ -1302,17 +1314,32 @@ def _watch_this_connection(path: Path | str, conn) -> None:
         _s.SQLITE_ALTER_TABLE, _s.SQLITE_CREATE_VTABLE, _s.SQLITE_DROP_VTABLE, _s.SQLITE_REINDEX,
     }
     pragma = _s.SQLITE_PRAGMA
+    attach = _s.SQLITE_ATTACH
+    analyze = _s.SQLITE_ANALYZE
 
     def _record(action, arg1, arg2, db, _trigger):  # names only: a PRAGMA's value (a key, say) is never kept
         try:
+            if action == attach:
+                # VACUUM attaches a scratch database ('') and rewrites every page through it; an ATTACH of a watched file
+                # writes it under another name. Either way the set cannot say what changed (security reads, 2026-11-24).
+                if not arg1 or _watch_key(arg1) in _WRITE_WATCH:
+                    seen.add(WRITE_SET_UNKNOWN)
+                return ok
+            if isinstance(db, str) and db.startswith("vacuum_"):
+                seen.add(WRITE_SET_UNKNOWN)
+                return ok
             if db not in (None, "main"):
                 return ok
-            if action in writes and arg1:
+            if action == analyze:
+                seen.add(WRITE_SET_UNKNOWN)  # a repeat ANALYZE rewrites sqlite_stat1 with no INSERT the authorizer sees
+            elif action in writes and arg1:
                 seen.add(str(arg1))
             elif action in triggers:
                 seen.add("sqlite_master")  # the schema itself is checked; the tables keep their pages
             elif action in file_wide:
                 seen.add(WRITE_SET_UNKNOWN)
+            elif action == pragma and str(arg1 or "").lower() in _ALWAYS_FILE_WIDE_PRAGMAS:
+                seen.add(WRITE_SET_UNKNOWN)  # these write with no argument (``incremental_vacuum``, ``optimize``)
             elif action == pragma and arg2 is not None and str(arg1 or "").lower() in _FILE_WIDE_PRAGMAS:
                 seen.add(WRITE_SET_UNKNOWN)
         except Exception:  # noqa: BLE001 - recording never refuses a statement; it makes the set unknown instead

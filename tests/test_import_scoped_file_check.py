@@ -204,7 +204,7 @@ def test_a_failing_live_check_keeps_the_record_and_names_the_net(data, monkeypat
     net = data / "pre-restore-20261124T100000Z.db"
     _note_unverified_activation(net)
     got = check_live_after_scoped_activation()
-    assert got == {"state": "failed", "safety_net": str(net)}
+    assert got == {"state": "failed", "safety_net": str(net), "findings": {"quick_check": "ok", "foreign_key_violations": 1}}
     assert unverified_activation()["failed_at"]
 
 
@@ -394,11 +394,15 @@ def test_the_proc_locks_reader_counts_only_other_processes_on_our_files():
         "3: -> POSIX  ADVISORY  WRITE 300 fd:01:7 0 EOF\n"
         "garbage line\n"
     )
-    ours = {(0xFD, 1, 42)}
-    assert _foreign_lock_in(raw, ours, me=100) is False  # our own lock
-    assert _foreign_lock_in(raw, ours, me=555) is True
-    assert _foreign_lock_in(raw, {(0xFD, 1, 7)}, me=555) is True  # a blocked waiter is a holder-to-be
-    assert _foreign_lock_in(raw, {(0xFD, 2, 42)}, me=555) is False
+    assert _foreign_lock_in(raw, {42}, me=100) is False  # our own lock
+    assert _foreign_lock_in(raw, {42}, me=555) is True
+    assert _foreign_lock_in(raw, {7}, me=555) is True  # a blocked waiter is a holder-to-be
+    assert _foreign_lock_in(raw, {43}, me=555) is False
+    # matched by inode alone: a btrfs subvolume or an overlay prints another device than stat() gives
+    assert _foreign_lock_in("4: POSIX  ADVISORY  READ 200 00:2a:42 0 EOF\n", {42}, me=555) is True
+    # a holder in another pid namespace reads as pid 0, an OFD lock as -1: both foreign
+    assert _foreign_lock_in("5: POSIX  ADVISORY  READ 0 fd:01:42 0 EOF\n", {42}, me=555) is True
+    assert _foreign_lock_in("6: OFDLCK ADVISORY  READ -1 fd:01:42 0 EOF\n", {42}, me=555) is True
 
 
 def test_only_reviewed_modules_can_open_a_database_through_sqlcipher3():
@@ -487,3 +491,89 @@ def test_rows_that_only_break_a_foreign_key_latch_nothing(data, monkeypatch):
     merge._note_unverified_activation(None)
     monkeypatch.setattr(merge, "_latch_live_damage", lambda _p: pytest.fail("a foreign-key break is not damage to the file"))
     assert merge.check_live_after_scoped_activation()["state"] == "failed"
+
+
+@pytest.mark.parametrize(
+    "statement",
+    ["VACUUM", "ANALYZE", "PRAGMA optimize", "PRAGMA incremental_vacuum"],
+)
+def test_a_statement_that_rewrites_pages_without_a_row_write_makes_the_set_unknown(tmp_path, monkeypatch, statement):
+    """Security reads 2026-11-24: VACUUM writes through a scratch schema, a repeat ANALYZE rewrites sqlite_stat1 with no
+    INSERT the authorizer sees, and two pragmas write with no argument."""
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.database import connect as c
+
+    db = _schema(tmp_path / "w.db")
+    con = c.connect(db)
+    con.execute("ANALYZE")  # sqlite_stat1 exists, so a second ANALYZE is a silent rewrite
+    con.commit()
+    con.close()
+    seen = c.watch_writes(db)
+    try:
+        con = c.connect(db)
+        con.execute(statement)
+        con.commit()
+        con.close()
+        assert c.WRITE_SET_UNKNOWN in seen
+    finally:
+        c.unwatch_writes(db)
+
+
+def test_an_attach_of_the_watched_file_makes_the_set_unknown(tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.database import connect as c
+
+    db = _schema(tmp_path / "w.db")
+    seen = c.watch_writes(db)
+    try:
+        con = c.connect(db)
+        con.execute("ATTACH DATABASE ? AS w2", (str(db),))
+        con.close()
+        assert c.WRITE_SET_UNKNOWN in seen
+    finally:
+        c.unwatch_writes(db)
+
+
+def test_a_check_that_read_an_older_record_never_clears_a_newer_one(data, monkeypatch):
+    """Security reads 2026-11-24 (the blocker): the boot-time check reads the record, an import started meanwhile notes a
+    new activation, and the old check passes. It must not remove the newer record, whose check is still owed."""
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.backup import merge
+
+    _live(monkeypatch, _schema(data / "live.db"))
+    merge._note_unverified_activation(data / "pre-restore-20261124T100000Z.db")
+    real = merge.unverified_activation
+
+    calls = {"n": 0}
+
+    def _read_then_activate():
+        calls["n"] += 1
+        got = real()
+        if calls["n"] == 1:  # the check's first read; then another activation lands while it runs
+            merge._note_unverified_activation(None)
+        return got
+
+    monkeypatch.setattr(merge, "unverified_activation", _read_then_activate)
+    got = merge.check_live_after_scoped_activation()
+    assert got == {"state": "unchecked", "reason": "superseded"}
+    assert real() is not None
+
+
+def test_the_boot_check_gives_way_to_a_run_started_meanwhile(tmp_path, monkeypatch):
+    from src.backup import import_queue as iq
+    from src.backup import merge
+
+    seen = {}
+
+    def _check(*, should_stop=None):
+        seen["stop"] = should_stop
+        return {"state": "unchecked", "reason": "not-finished"}
+
+    monkeypatch.setattr(merge, "check_live_after_scoped_activation", _check)
+    monkeypatch.setattr(merge, "unverified_activation", lambda: {"since": "x", "token": "t"})
+    mgr = iq.ImportQueueManager(state_path=tmp_path / "q.json")
+    mgr.check_owed_at_start()
+    assert callable(seen["stop"]) and seen["stop"]() is False
+    with mgr._lock:
+        mgr._state = "running"
+    assert seen["stop"]() is True
