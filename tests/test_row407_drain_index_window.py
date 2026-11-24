@@ -102,9 +102,56 @@ def _backlog(session, n: int, start: int = 1000) -> int:
 def test_the_break_even_constant_is_measured_and_cited():
     src = (ROOT / "src/analytics/bulk_build.py").read_text(encoding="utf-8")
     assert 0 < bb.DRAIN_WINDOW_MIN_FRACTION <= 1
+    assert 0 < bb.DRAIN_WINDOW_MIN_FRACTION_OVER_RAM < bb.DRAIN_WINDOW_MIN_FRACTION
     assert bb.RAM_BYTES_PER_MENTION > 0 and bb.DISK_BYTES_PER_MENTION > 0
     assert "scripts/bench_bulk_window.py" in src and (ROOT / "scripts/bench_bulk_window.py").is_file()
     assert "__FRACTION__" not in src and "__RAM__" not in src and "__DISK__" not in src
+
+
+@pytest.mark.parametrize(
+    "ram_mb, basis, share",
+    [
+        (1e-6, "store_larger_than_ram", "over"),  # a store file bigger than physical RAM
+        (64 * 1024.0, "store_fits_in_ram", "default"),
+        (None, "ram_unread", "default"),  # unread RAM never lowers the share: the window is optional
+    ],
+)
+def test_the_share_depends_on_whether_the_store_fits_in_ram(tmp_path, roomy, monkeypatch, caplog, ram_mb, basis, share):
+    """Row 407c: 0.15 only when the main store file is larger than physical RAM, read at the run's start; 1.0 when it
+    fits or when RAM is unread. A 20% backlog opens the window only in the first case. The choice is logged."""
+    import logging
+
+    monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: ram_mb)
+    eng = _file_engine(tmp_path / "r.db")
+    s = sessionmaker(bind=eng, future=True)()
+    try:
+        _stamp(s, 100)
+        with caplog.at_level(logging.INFO, logger=bb._LOG.name):
+            plan = drain_window_plan(s, _backlog(s, 20))
+        expected = bb.DRAIN_WINDOW_MIN_FRACTION_OVER_RAM if share == "over" else bb.DRAIN_WINDOW_MIN_FRACTION
+        assert plan["threshold"]["basis"] == basis and plan["min_fraction"] == expected
+        assert plan["threshold"]["store_bytes"] and plan["threshold"]["store_bytes"] > 0
+        assert abs(plan["fraction"] - 0.2) < 0.01
+        assert plan["open"] is (share == "over"), plan["reason"]
+        assert any(basis in r.getMessage() for r in caplog.records), "the chosen share and its reason are logged"
+    finally:
+        s.close()
+        eng.dispose()
+
+
+def test_an_unreadable_store_size_keeps_the_default_share(monkeypatch):
+    """An in-memory store (no file to stat) keeps 1.0 even when RAM reads tiny."""
+    from sqlalchemy import create_engine
+
+    monkeypatch.setattr("src.config.memory_budget.total_ram_mb", lambda: 1e-6)
+    eng = create_engine("sqlite://")
+    s = sessionmaker(bind=eng, future=True)()
+    try:
+        t = bb.drain_threshold(s)
+        assert t["basis"] == "store_size_unread" and t["min_fraction"] == bb.DRAIN_WINDOW_MIN_FRACTION
+    finally:
+        s.close()
+        eng.dispose()
 
 
 def test_a_backlog_below_the_break_even_keeps_the_live_indexes(tmp_path, roomy):
