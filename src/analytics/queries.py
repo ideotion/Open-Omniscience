@@ -1861,12 +1861,18 @@ def ring_country_article_ids(
     }
 
 
+def _distinct_groups(session, conds: tuple, keys: tuple) -> int:
+    """How many distinct groups a facet query returns before its ``limit`` (row 397)."""
+    sub = session.query(*keys).filter(*conds).group_by(*keys).subquery()
+    return int(session.query(func.count()).select_from(sub).scalar() or 0)
+
+
 def corpus_who(session, *, article_ids: list[int], limit: int = 40) -> dict:
     """WHO (people/orgs) deduced across a GIVEN article set — like who_aggregate
     but scoped to the analysis window's matched articles. Counts only, deduced
     from text, never a confirmed identity."""
     if not article_ids:
-        return {"count": 0, "entities": []}
+        return {"count": 0, "entities": [], "total": 0, "truncated": False}
     arts = func.count(func.distinct(ArticleEntity.article_id))
     men = func.sum(ArticleEntity.mentions)
     rows = (
@@ -1881,7 +1887,14 @@ def corpus_who(session, *, article_ids: list[int], limit: int = 40) -> dict:
         {"name": n, "class": c, "articles": int(a or 0), "mentions": int(m or 0)}
         for n, c, a, m in rows
     ]
+    # Row 397 (anti-capping): ``limit`` keeps the chips readable; ``total`` counts
+    # every distinct (name, class) group in the matched set, so a cut column says so.
+    total = _distinct_groups(
+        session, (ArticleEntity.article_id.in_(article_ids),),
+        (ArticleEntity.name, ArticleEntity.entity_class),
+    )
     return {"count": len(entities), "entities": entities,
+            "total": total, "truncated": total > len(entities),
             "caveat": "Deduced from text, never confirmed."}
 
 
@@ -1890,7 +1903,7 @@ def corpus_where(session, *, article_ids: list[int], limit: int = 40) -> dict:
     but scoped to the matched articles. lat/lon when the gazetteer knows the
     place (null otherwise — no fabricated position). Deduced, never confirmed."""
     if not article_ids:
-        return {"count": 0, "places": []}
+        return {"count": 0, "places": [], "total": 0, "truncated": False}
     arts = func.count(func.distinct(ArticleMentionedPlace.article_id))
     men = func.sum(ArticleMentionedPlace.mentions)
     rows = (
@@ -1910,7 +1923,12 @@ def corpus_where(session, *, article_ids: list[int], limit: int = 40) -> dict:
          "articles": int(a or 0), "mentions": int(m or 0)}
         for n, cc, k, lat, lon, a, m in rows
     ]
+    total = _distinct_groups(
+        session, (ArticleMentionedPlace.article_id.in_(article_ids),),
+        (ArticleMentionedPlace.name, ArticleMentionedPlace.country, ArticleMentionedPlace.kind),
+    )
     return {"count": len(places), "places": places,
+            "total": total, "truncated": total > len(places),
             "caveat": "Deduced from text, never confirmed."}
 
 
@@ -1921,16 +1939,22 @@ def corpus_when(session, *, article_ids: list[int], limit: int = 40) -> dict:
     user-rejected date tags are excluded. Cheap: grouped on the article_id-indexed
     ``article_mentioned_date`` table, never an article join."""
     if not article_ids:
-        return {"count": 0, "years": []}
+        return {"count": 0, "years": [], "total": 0, "truncated": False}
     yr = func.strftime("%Y", ArticleMentionedDate.mentioned_on)
+    # A date the year cannot be read from is left out BEFORE the limit (row 397):
+    # filtered after it, a null bucket took one of the ``limit`` places and the
+    # column came back short while more years existed.
+    where = (
+        ArticleMentionedDate.article_id.in_(article_ids),
+        ArticleMentionedDate.status != "rejected",
+        yr.isnot(None),
+        yr != "",
+    )
     arts = func.count(func.distinct(ArticleMentionedDate.article_id))
     men = func.count(ArticleMentionedDate.id)
     rows = (
         session.query(yr.label("y"), arts.label("a"), men.label("m"))
-        .filter(
-            ArticleMentionedDate.article_id.in_(article_ids),
-            ArticleMentionedDate.status != "rejected",
-        )
+        .filter(*where)
         .group_by(yr)
         .order_by(arts.desc(), yr.desc())
         .limit(limit)
@@ -1939,9 +1963,10 @@ def corpus_when(session, *, article_ids: list[int], limit: int = 40) -> dict:
     years = [
         {"year": y, "articles": int(a or 0), "mentions": int(m or 0)}
         for y, a, m in rows
-        if y
     ]
+    total = _distinct_groups(session, where, (yr,))
     return {"count": len(years), "years": years,
+            "total": total, "truncated": total > len(years),
             "caveat": "Deduced from text, never confirmed."}
 
 
