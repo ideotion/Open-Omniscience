@@ -96,7 +96,7 @@ if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
 
 from src.backup.hf_layout import HF_LAYOUT
 from src.backup.manifest_file import read_manifest_json
-from src.backup.regular_file import create_new, replace_with
+from src.backup.regular_file import _NAME_SURROGATE, create_new, replace_with
 from src.backup.volumes import (
     MANIFEST_MAX_BYTES as VOLUMES_MANIFEST_MAX_BYTES,
 )
@@ -214,8 +214,18 @@ def make_restore_staging(root: Path | str, prefix: str = RESTORE_STAGING_PREFIX)
 
 def private_mkdirs(path: Path) -> None:
     """``path.mkdir(parents=True, exist_ok=True)`` for a folder INSIDE a private staging: each folder it makes is 0700
-    (R829 B). ``mkdir``'s mode is filtered by the umask, which can only remove bits, so 0700 stays 0700 or less."""
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    (R829 B). ``Path.mkdir(parents=True)`` gives the mode to the last folder only, so the missing parents are made one by
+    one, outermost first. ``mkdir``'s mode is filtered by the umask, which can only remove bits, so 0700 stays 0700 or
+    less."""
+    missing: list[Path] = []
+    p = path
+    while not p.exists():
+        missing.append(p)
+        if p.parent == p:
+            break
+        p = p.parent
+    for d in reversed(missing):
+        d.mkdir(mode=0o700, exist_ok=True)
 
 
 def _sweepable_restore_staging(p: Path) -> bool:
@@ -231,8 +241,8 @@ def _sweepable_restore_staging(p: Path) -> bool:
         return False
     if not stat.S_ISDIR(st.st_mode):
         return False
-    if int(getattr(st, "st_reparse_tag", 0) or 0):
-        return False  # a junction or another reparse point: not a real folder of ours
+    if int(getattr(st, "st_reparse_tag", 0) or 0) & _NAME_SURROGATE:
+        return False  # a junction, a mount point or a link (Windows ``lstat`` reports a junction as a folder)
     getuid = getattr(os, "getuid", None)
     if getuid is not None and st.st_uid != getuid():
         _LOG.warning("backup: a restore staging folder owned by another user was left as it is")
@@ -243,10 +253,14 @@ def _sweepable_restore_staging(p: Path) -> bool:
 def _remove_staging_tree(p: Path) -> bool:
     """Remove a staging folder without following any link inside it or at its own name, and say whether it is gone.
 
-    ``shutil.rmtree`` on this platform's Python walks by descriptor and refuses a link at the top
-    (``rmtree.avoids_symlink_attacks``); where it cannot promise that, nothing is removed here: the folder is left for a
-    later sweep, never walked by name. Never raises."""
+    On Linux and macOS ``shutil.rmtree`` walks by descriptor and refuses a link at the top
+    (``rmtree.avoids_symlink_attacks``); a POSIX Python without it removes nothing here, and the folder is left for a
+    later sweep. On Windows the flag is False and the walk is by name: it refuses a link or a junction at the top and
+    removes a link or a junction inside as an entry, never entering it. What it cannot rule out there is the top name
+    being swapped for a junction during the walk, which needs write access to the data folder, so the same user or an
+    administrator: accepted. Never raises."""
     if not getattr(shutil.rmtree, "avoids_symlink_attacks", False) and os.name != "nt":
+        _LOG.warning("backup: a restore staging folder was left for a later start (no link-safe removal on this system)")
         return False
     shutil.rmtree(p, ignore_errors=True)
     return not os.path.lexists(p)

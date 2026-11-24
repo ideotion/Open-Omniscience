@@ -100,6 +100,40 @@ def test_a_volume_set_restore_stages_owner_only(tmp_path, permissive_umask):
     _assert_private_tree(staged.staging_dir)
 
 
+@posix_only
+def test_a_legacy_volume_reassembly_writes_owner_only_temps(tmp_path, permissive_umask, monkeypatch):
+    """oo-volumes-1: the reassembled archive and each decrypted volume temp are 0600, not the umask's 0644."""
+    from src.backup import volumes
+
+    src = tmp_path / "archive.zip"
+    src.write_bytes(os.urandom(9000))
+    out = tmp_path / "vols"
+    volumes.write_volume_set(src, out, "pw", volume_size=2048)
+    staging = sb.make_restore_staging(tmp_path / "st")
+    seen: list[int] = []
+    real = volumes.decrypt_file
+
+    def _spy(s, d, *a, **k):
+        real(s, d, *a, **k)
+        seen.append(_mode(Path(d)))
+
+    monkeypatch.setattr(volumes, "decrypt_file", _spy)
+    dest = staging / "_reassembled.zip"
+    volumes.read_volume_set(out, "pw", dest)
+    assert dest.read_bytes() == src.read_bytes()
+    assert _mode(dest) == 0o600, oct(_mode(dest))
+    assert seen and all(m == 0o600 for m in seen), [oct(m) for m in seen]
+
+
+def test_private_mkdirs_makes_every_missing_folder_owner_only(tmp_path, permissive_umask):
+    base = sb.make_restore_staging(tmp_path)
+    sb.private_mkdirs(base / "a" / "b" / "c")
+    if os.name != "nt":
+        for d in (base / "a", base / "a" / "b", base / "a" / "b" / "c"):
+            assert _mode(d) == 0o700, (d, oct(_mode(d)))
+    sb.private_mkdirs(base / "a" / "b" / "c")  # already there: no error
+
+
 def _sqlcipher_available() -> bool:
     try:
         import sqlcipher3  # noqa: F401
