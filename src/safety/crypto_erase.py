@@ -199,11 +199,14 @@ PLAIN_STORE_REASON = {
 #: R818 (b): after "had its first page overwritten" when the body rewrite did not run.
 PLAIN_STORE_REST = "The rest was not overwritten."
 #: R818 (a): information only, as the body rewrite starts (the CLI prints it; the page shows it before the request).
-PLAIN_STORE_NOTICE = ("Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the "
-                      "file is already deleted.")
-#: R818 (c): for the overwritten and partially overwritten states.
+PLAIN_STORE_NOTICE = ("Overwriting the unencrypted main database may take several minutes. Closing this page does not stop it; "
+                      "quitting the app does, and by then the file is already deleted.")
+#: R818 (c): for the overwritten state.
 PLAIN_STORE_OTHER_NAMES_OVERWRITTEN = ("Other names for it remain on the disk and now lead to the overwritten content, so a copy "
                                        "kept under another name is no longer usable (count: {n}).")
+#: R818 (c), Plan: for the partially overwritten state (parts of the old content may remain under those names).
+PLAIN_STORE_OTHER_NAMES_PARTIAL = ("Other names for it remain on the disk and now lead to partly overwritten content; parts of the old "
+                                   "content may still be readable through them (count: {n}).")
 PLAIN_STORE_DELETED = "It was deleted."
 PLAIN_STORE_NOT_DELETED = "It could not be deleted: remove it by hand."
 PLAIN_STORE_OTHER_NAMES = "Other names for it remain on the disk and lead to the same file (count: {n})."
@@ -222,7 +225,8 @@ def plaintext_store_sentences(report: dict) -> list[str]:
     if st.get("touched"):
         out.append(PLAIN_STORE_DELETED if st.get("deleted") else PLAIN_STORE_NOT_DELETED)
     if st.get("other_names"):
-        line = PLAIN_STORE_OTHER_NAMES_OVERWRITTEN if st["state"] in ("overwritten", "partially_overwritten") else PLAIN_STORE_OTHER_NAMES
+        line = {"overwritten": PLAIN_STORE_OTHER_NAMES_OVERWRITTEN,
+                "partially_overwritten": PLAIN_STORE_OTHER_NAMES_PARTIAL}.get(st["state"], PLAIN_STORE_OTHER_NAMES)
         out.append(line.format(n=int(st["other_names"])))
     return out
 
@@ -512,6 +516,12 @@ def _fast_destroy(fd: int, kind: str) -> tuple[int, bool]:
         return 0, False
 
 
+def plaintext_body_rewrite_supported() -> bool:
+    """Whether this platform takes the R817 path (an open file unlinked through its folder's handle, the body rewritten after the
+    delete) rather than the first-page fallback (R817 (4))."""
+    return os.name == "posix" and os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd
+
+
 def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, generation: int, missed: list[str]) -> dict:
     """R817 (1): a main database KNOWN to be plaintext. Its folder is opened no-follow and checked against ``pin`` (read before the
     erase opened anything); each part is opened no-follow through that folder handle, checked to be a regular file (the main file
@@ -525,7 +535,7 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
     ``touched`` and, private to the erase, ``_held`` as ``[[fd, kind, (dev, ino), written, done]]``."""
     if isinstance(pin, str):
         return _untouched(pin)
-    if os.name != "posix" or os.open not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
+    if not plaintext_body_rewrite_supported():
         return _first_page_fallback(db, pin)
     dev, ino, fdev, fino, folder = pin
     try:
@@ -977,6 +987,8 @@ def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: fl
     # file's first page is reached.
     for fd, kind, cap in sorted(held, key=lambda e: e[1] == "whole"):
         try:
+            if kind == "keep":
+                continue  # a descriptor kept only so that closing it never drops the pool's locks (R789): never written, let go below
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError  # not rewritten this pass; a closing pass still closes it below
             size = min(os.fstat(fd).st_size, cap)
@@ -1591,7 +1603,7 @@ def finish_holder_check(report: dict, generation: int) -> str:
     try:
         shut_out_held(generation)
         state = settle_other_holders(generation)
-    except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping
+    except (Exception, KeyboardInterrupt):  # noqa: BLE001 - an erase result is never lost to its own bookkeeping, nor to a Ctrl-C
         state = HOLDER_UNKNOWN
     if report.get("files_not_kept") and state == HOLDER_NONE:
         state = HOLDER_UNKNOWN  # a file of the store that could not be kept could not be asked either
@@ -1996,6 +2008,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     for p in _files_under(roots, base, _unlisted, skip=paths["keys_dir"], unreached=_unreached):
         if _kind(p, _unreached) != "file":
             continue
+        if p in plain_parts and plain_rec is not None:
+            continue  # a name of the plaintext store the erase left (refused to write, or its unlink failed): step 6 only removes it
         name = p.name
         whole = name.endswith(("-wal", "-journal"))
         if _overwrite(p, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=name.endswith("-shm")):
@@ -2049,9 +2063,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             with contextlib.suppress(OSError):
                 p.unlink()
             continue
-        _s, _overwritten, _w = _track(p)
         if p in plain_parts and plain_rec is not None:
-            continue  # R815 (2): a file of the plaintext store whose unlink failed, removed here, never counted in "Wiped"
+            # R815 (2): a name of the plaintext store still there (its unlink failed, or the erase refused to write it: another
+            # file, another device, other names). Its own file is rewritten through the kept handle; this name is only removed,
+            # never written by path (a hard link here may lead to a file that is not the store's), never counted in "Wiped".
+            with contextlib.suppress(OSError):
+                p.unlink()
+            continue
+        _s, _overwritten, _w = _track(p)
         seen += _s
         wiped += _w
     left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}

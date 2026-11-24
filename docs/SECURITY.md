@@ -914,14 +914,17 @@ imply a protection we cannot deliver.
   first page overwritten. The rest was not overwritten." with the reason), is every byte of each that holds data rewritten
   through the kept handle (`SEEK_DATA`/`SEEK_HOLE`, else the logical size stopping before the 64 MiB reserve, R797), after a
   `fstat` check that it is the same regular file, and fsynced; there is no deadline: the CLI prints, and the page shows before
-  the request, that it may take several minutes and that closing the app stops it, by when the file is already deleted, and a stop
+  the request (only where the body is rewritten, not on Windows), that it may take several minutes, that closing the page
+  does not stop it and quitting the app does, by when the file is already deleted, and a stop
   partway is said as "only partially overwritten" wherever a report is still made. The late pass, armed only after the body rewrite and the
   holder check (both use the kept handles), then rewrites page 1 again and closes the handles (R789); another holder is said under R792. Where
   an open file cannot be unlinked (Windows: no share-delete open here) the order is the old one, the first page then the
-  unlink, said as "had its first page overwritten". It is never counted in "Wiped n/n": the result says it was overwritten in
+  unlink, said as "had its first page overwritten". A stated limit there: the fallback checks the pin and then writes by
+  path, so a file swapped in at that name between the two can get its head written. It is never counted in "Wiped n/n": the result says it was overwritten in
   full, only partially overwritten or not overwritten, with the reason, whether it was deleted, and how many other names (hard
   links) for it remain; once it is overwritten in full or in part the result says those names now lead to the overwritten
-  content, so a copy kept under another name is no longer usable. The crypto-erase guarantee (`_LIMIT_NOTE`, the page's "permanently
+  content, so a copy kept under another name is no longer usable; after a partial overwrite, that parts of the old
+  content may still be readable through them. The crypto-erase guarantee (`_LIMIT_NOTE`, the page's "permanently
   unrecoverable") is said only when the main database is positively known to be encrypted; a plaintext one fails closed to
   "not encrypted, old pages may remain on the disk, full-disk encryption is the remedy", one whose state could not be read to
   "could not be confirmed as encrypted", on the CLI, the HTTP answer, the page and the free-space overwrite after it.

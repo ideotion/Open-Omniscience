@@ -337,7 +337,8 @@ def test_the_page_fails_closed_and_says_the_store_apart():
     words = [*crypto_erase.PLAIN_STORE_STATE.values(), *crypto_erase.PLAIN_STORE_REASON.values(), crypto_erase.PLAIN_STORE_DELETED,
              crypto_erase.PLAIN_STORE_NOT_DELETED, crypto_erase.PLAIN_STORE_OTHER_NAMES, crypto_erase._PLAINTEXT_SENTENCE,
              crypto_erase._UNKNOWN_SENTENCE, crypto_erase.PLAIN_STORE_REST, crypto_erase.PLAIN_STORE_NOTICE,
-             crypto_erase.PLAIN_STORE_OTHER_NAMES_OVERWRITTEN]
+             crypto_erase.PLAIN_STORE_OTHER_NAMES_OVERWRITTEN, crypto_erase.PLAIN_STORE_OTHER_NAMES_PARTIAL]
+    assert "atRest.erase_rewrites_plaintext_body === true" in js, "the notice only where the body is rewritten (not Windows)"
     tables = {lang: json.loads(Path(f"src/static/locales/{lang}.json").read_text(encoding="utf-8"))
               for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh")}
     for w in words:
@@ -472,7 +473,7 @@ def test_the_panic_late_pass_is_armed_only_after_the_last_use_of_the_kept_descri
     src = inspect.getsource(panic.panic_wipe)
     assert "_dispose_after_erase(generation, arm_late=not erased)" in src
     assert src.index("finish_plaintext_rewrite(report, generation, own_open)") < src.index("finish_holder_check(report, generation)") \
-        < src.index("_arm_late_rescrub(generation)")
+        < src.rindex("_arm_late_rescrub(generation)")
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
@@ -514,3 +515,39 @@ def test_a_stop_outside_the_rewrite_is_said_and_the_report_kept(monkeypatch):
     report: dict = {}
     crypto_erase.finish_plaintext_rewrite(report, generation, 0)
     assert report["plaintext_store"]["state"] == "first_page" and report["plaintext_store"]["reason"] == "stopped"
+
+
+def test_other_names_after_a_partial_overwrite_say_the_old_content_may_remain():
+    rec = {"state": "partially_overwritten", "reason": "reserve", "other_names": 2, "deleted": True, "touched": True}
+    words = crypto_erase.plaintext_store_sentences({"plaintext_store": rec})
+    assert crypto_erase.PLAIN_STORE_OTHER_NAMES_PARTIAL.format(n=2) in words
+    assert crypto_erase.PLAIN_STORE_OTHER_NAMES_OVERWRITTEN.format(n=2) not in words
+
+
+def test_the_doctor_says_whether_the_body_is_rewritten_here():
+    from src.api import unlock
+
+    assert "erase_rewrites_plaintext_body" in inspect_source(unlock.doctor)
+    assert crypto_erase.plaintext_body_rewrite_supported() is (os.name == "posix" and os.unlink in os.supports_dir_fd
+                                                                and os.open in os.supports_dir_fd)
+
+
+def inspect_source(fn) -> str:
+    import inspect
+
+    return inspect.getsource(fn)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
+def test_a_sidecar_in_the_data_folder_linked_to_another_file_is_never_written(tmp_path):
+    """Security re-read: a name of the plaintext store the erase refused to write (here a -journal hard-linked to a file outside
+    the data folder) is only removed by the walk of the folder, never shredded by path."""
+    folder = tmp_path / "OOS data"
+    db = folder / "open_omniscience.db"
+    _plain_db(db)
+    victim = tmp_path / "victim.bin"
+    victim.write_bytes(WITNESS)
+    os.link(victim, db.with_name(db.name + "-journal"))
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    assert victim.read_bytes() == WITNESS, "the other file is never written"
+    assert not os.path.lexists(db.with_name(db.name + "-journal"))

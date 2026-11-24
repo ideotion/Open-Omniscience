@@ -101,15 +101,20 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False, off_drive
                 # after the erase's last re-check and before this close is the window left for it (follow-up row 390).
                 # The late pass is armed below, after the body rewrite and the holder check (both use the kept descriptors); here
                 # only when the wipe is stopping on an exception, so that nothing below runs and the descriptors still go.
-                own_open = _dispose_after_erase(generation, arm_late=not erased)
+                try:
+                    own_open = _dispose_after_erase(generation, arm_late=not erased)
+                except BaseException:  # a Ctrl-C inside it: nothing below runs, so the late pass is armed here
+                    if erased:
+                        _arm_late_rescrub(generation)
+                    raise
     # R792: only now, with the app offline and this process's own pool closed (its close would undo the lock this takes), look
     # for ANOTHER process still holding the store and rewrite while it does, within the bound; the report says what was found.
-    from src.paths import erase_owned
-
     # R805 (a): this process's own connections a request thread still held when the pool was closed are a holder the probe cannot
     # see (one process's POSIX locks never conflict), so they are counted; not knowing is "unknown", never "none".
     report["own_connections_open"] = own_open
     try:
+        from src.paths import erase_owned
+
         with erase_owned():  # the wipe's own rewrite through the descriptors it kept
             # R818 (b): a plaintext store's body is rewritten only now, its own pool disposed; not confirmed closed, it is left.
             finish_plaintext_rewrite(report, generation, own_open)

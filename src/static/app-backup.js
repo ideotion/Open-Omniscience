@@ -4321,8 +4321,9 @@
         // as information only (nothing to answer). Read from the at-rest state the page holds, or asked for once here.
         let atRest = _atRestDoc;
         if (!atRest) { try { atRest = await api("/api/system/doctor"); } catch (_e) { atRest = null; } }
-        if (atRest && atRest.corpus && atRest.corpus.state === "plaintext") {
-          toast(t("Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted."), "ok");
+        // Only where the erase rewrites the body after the delete (not the first-page fallback, Windows).
+        if (atRest && atRest.erase_rewrites_plaintext_body === true && atRest.corpus && atRest.corpus.state === "plaintext") {
+          toast(t("Overwriting the unencrypted main database may take several minutes. Closing this page does not stop it; quitting the app does, and by then the file is already deleted."), "ok");
         }
         // Phase 1 — instant crypto-erase (destroys the SQLCipher salt; fast at any size).
         const r = await api("/api/safety/panic", {method: "POST", body: JSON.stringify({confirm: true})});
@@ -4374,15 +4375,16 @@
           stopped: "The overwrite was stopped before it finished.",
           pool: "The app's own connection to it could not be confirmed closed.",
         }[ps.reason] : null;
-        // R818 (c): once overwritten (in full or in part), its other names lead to the overwritten content.
-        const psOverwritten = ps && (ps.state === "overwritten" || ps.state === "partially_overwritten");
+        // R818 (c): once overwritten in full, its other names lead to the overwritten content; in part, to partly overwritten content.
         const psWords = psState ? [t(psState)]
           .concat(ps.state === "first_page" && psReason ? [t("The rest was not overwritten.")] : [])
           .concat(psReason ? [t(psReason)] : [])
           .concat(ps.touched === true ? [t(ps.deleted === true ? "It was deleted." : "It could not be deleted: remove it by hand.")] : [])
-          .concat(Number(ps.other_names) > 0 ? [tfwNow(psOverwritten
+          .concat(Number(ps.other_names) > 0 ? [tfwNow(ps.state === "overwritten"
             ? "Other names for it remain on the disk and now lead to the overwritten content, so a copy kept under another name is no longer usable (count: {n})."
-            : "Other names for it remain on the disk and lead to the same file (count: {n}).", { n: fmtNum(Number(ps.other_names), 0) })] : [])
+            : ps.state === "partially_overwritten"
+              ? "Other names for it remain on the disk and now lead to partly overwritten content; parts of the old content may still be readable through them (count: {n})."
+              : "Other names for it remain on the disk and lead to the same file (count: {n}).", { n: fmtNum(Number(ps.other_names), 0) })] : [])
           .join(" ") : "";
         // R815 (3): said plainly, visible beside the result, whenever there was a main database that is not known to be encrypted.
         const plainNote = plaintext && (driveAbsent ? !!ps : (r.encrypted_corpus === false || Number(r.files_seen) > 0 || !!ps));
