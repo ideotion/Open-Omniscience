@@ -1076,10 +1076,11 @@
       try {
         const d = await api("/api/system/interfaces");
         const rows = (d.interfaces || []).map((i) => `${i.interface}: ${i.addresses.join(", ")}`);
-        box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
+        // Held (row 367): the sentence follows a language switch; the addresses are data.
+        ooLive(box, () => (rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.")));
       } catch (e) {
         // A failed read is UNREAD, never "none were found" (2026-09-27 re-walk M-14).
-        box.textContent = t("This machine's network interfaces could not be read just now.");
+        ooLive(box, () => t("This machine's network interfaces could not be read just now."));
       }
     }
     // S4.7 sources-by-theme step. Real catalog tag taxonomy from the app's OWN loopback
@@ -1398,11 +1399,13 @@
       wrap.innerHTML = `<div class="net-popup-card" role="status" aria-live="polite">`
         + `<div class="net-popup-glyph" aria-hidden="true">✈</div>`
         + `<div class="net-popup-msg">${esc(msg)}</div>`
-        + `<button type="button" class="net-popup-ok">${esc(t("OK"))}</button></div>`;
+        + `<button type="button" class="net-popup-ok" data-i18n-dyn></button></div>`;
       let tm = 0;
       const close = () => { clearTimeout(tm); wrap.remove(); };
       wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });  // click outside = close
-      wrap.querySelector(".net-popup-ok").addEventListener("click", close);
+      const ok = wrap.querySelector(".net-popup-ok");
+      ooLive(ok, () => t("OK"));   // held (row 367)
+      ok.addEventListener("click", close);
       document.body.appendChild(wrap);
       tm = setTimeout(close, 1600);
     }
@@ -1791,36 +1794,38 @@
     function _renderNetLanes(cfg, enabling) {
       const box = document.getElementById("net-consent-lanes");
       if (!box) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const lanes = window.OO_NET_LANES || [];
-      if (!lanes.length) {           // never a silent empty box
-        box.innerHTML = `<div class="muted">${esc(t("The host table could not be read."))}</div>`;
-        return;
-      }
-      const by = {on: [], ask: [], off: [], unknown: []};
-      lanes.forEach((l) => by[_laneState(l, cfg, enabling)].push(l));
-      const kind = _transportKind(cfg);
-      const unreadable = _storeUnreadable(cfg);
-      const line = (l) => _laneLine(l, kind, unreadable);
-      const out = [];
-      if (by.on.length) {
-        out.push(`<div class="muted" style="margin-top:2px">${esc(t("Runs on every collection pass:"))}</div>`);
-        out.push(by.on.map(line).join(""));
-      }
-      if (by.ask.length) {
-        out.push(`<div class="muted" style="margin-top:6px">${esc(t("Only when you ask for it:"))}</div>`);
-        out.push(by.ask.map(line).join(""));
-      }
-      if (by.off.length) {
-        out.push(`<div class="muted" style="margin-top:6px">${esc(t("Switched off right now:"))}</div>`);
-        out.push(by.off.map(line).join(""));
-      }
-      if (by.unknown.length) {
-        out.push(`<div class="muted" style="margin-top:6px">${esc(t("Could not read whether these are on:"))}</div>`);
-        out.push(by.unknown.map(line).join(""));
-      }
-      out.push(`<div class="hint" style="margin-top:6px">` + esc(_transportHint(kind, unreadable)) + `</div>`);
-      box.innerHTML = out.join("");
+      // Held (row 367): the disclosure is drawn again in the new language if it changes while the popup is open,
+      // from the same settings it was drawn from; a late answer (onLate) re-takes it with the newer ones.
+      ooLiveHtml(box, () => {
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+        const lanes = window.OO_NET_LANES || [];
+        // never a silent empty box
+        if (!lanes.length) return `<div class="muted">${esc(t("The host table could not be read."))}</div>`;
+        const by = {on: [], ask: [], off: [], unknown: []};
+        lanes.forEach((l) => by[_laneState(l, cfg, enabling)].push(l));
+        const kind = _transportKind(cfg);
+        const unreadable = _storeUnreadable(cfg);
+        const line = (l) => _laneLine(l, kind, unreadable);
+        const out = [];
+        if (by.on.length) {
+          out.push(`<div class="muted" style="margin-top:2px">${esc(t("Runs on every collection pass:"))}</div>`);
+          out.push(by.on.map(line).join(""));
+        }
+        if (by.ask.length) {
+          out.push(`<div class="muted" style="margin-top:6px">${esc(t("Only when you ask for it:"))}</div>`);
+          out.push(by.ask.map(line).join(""));
+        }
+        if (by.off.length) {
+          out.push(`<div class="muted" style="margin-top:6px">${esc(t("Switched off right now:"))}</div>`);
+          out.push(by.off.map(line).join(""));
+        }
+        if (by.unknown.length) {
+          out.push(`<div class="muted" style="margin-top:6px">${esc(t("Could not read whether these are on:"))}</div>`);
+          out.push(by.unknown.map(line).join(""));
+        }
+        out.push(`<div class="hint" style="margin-top:6px">` + esc(_transportHint(kind, unreadable)) + `</div>`);
+        return out.join("");
+      });
       // No marking call is needed: app-boot.js's MutationObserver adds
       // .oo-tip-target to every [title] that enters the DOM, which is exactly
       // what invariant #17 means by "the convention cannot be forgotten".
@@ -1897,18 +1902,19 @@
       const ifacesRead = api("/api/system/interfaces").then(d => {
         if (gen !== _netConsentGen) return;
         const rows = (d.interfaces || []).map(i => `${i.interface}: ${i.addresses.join(", ")}`);
-        box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
+        // Held (row 367): the sentence follows a language switch while the popup is open; the addresses are data.
+        ooLive(box, () => (rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.")));
         box.style.whiteSpace = "pre-line";
       }).catch(() => {
         // A failed read is UNREAD, never "none were found": that would be a false claim
         // inside the disclosure itself (the batch's "unreadable, never off" rule).
-        if (gen === _netConsentGen) box.textContent = t("This machine's network interfaces could not be read just now.");
+        if (gen === _netConsentGen) ooLive(box, () => t("This machine's network interfaces could not be read just now."));
       });
       // The same bound as the lanes: a read still out by then is SAID to be unread
       // (the answer still replaces the sentence if it lands), never left as "…".
       const ifacesDone = Promise.race([ifacesRead, new Promise((res) => setTimeout(() => {
         if (gen === _netConsentGen && box.textContent === "…") {
-          box.textContent = t("This machine's network interfaces could not be read just now.");
+          ooLive(box, () => t("This machine's network interfaces could not be read just now."));
         }
         res();
       }, _NET_CONSENT_READ_MS))]);
@@ -1974,7 +1980,7 @@
       if (!dlg) return false;         // no dialog -> never silently proceed
       const needsWindow = !online && !windowOpen;
       const slot = dlg.querySelector("#ai-egress-reason b");
-      if (slot) slot.textContent = reason || t("Install the local AI");
+      if (slot) ooLive(slot, () => reason || t("Install the local AI"));   // held (row 367)
       const offlineOnly = dlg.querySelector("#ai-egress-offline");
       if (offlineOnly) offlineOnly.hidden = !needsWindow;
       for (const el of dlg.querySelectorAll(".ai-eg-off")) el.hidden = !needsWindow;
@@ -3206,6 +3212,19 @@
     // OWN next_run timestamp. The next-pass time is NEVER fabricated as a
     // precise countdown — its method (last run + the inter-pass gap) is stated
     // in the #oo-tip hover bubble. Honest empty state when nothing is scheduled.
+    // THE TASK MANAGER'S REPAINT (row 367), from app-boot.js's ONE oo:langchange listener: the Active and Queue
+    // lists, the Schedule and the Coverage are drawn again from what they last read -- never a fetch, and nothing
+    // for a panel never drawn. A Coverage read in flight draws its own result when it lands.
+    function repaintTaskManager() {
+      // Only panels that show a list are redrawn: a failed /api/jobs read empties both and keeps _jobsData, and a
+      // switch must not bring that older list back as if it were current.
+      const ja = $("jobs-body"), jq = $("queue-body");
+      if (_jobsData && ((ja && ja.childNodes.length) || (jq && jq.childNodes.length))) _paintJobs();
+      const sb = $("sched-tm-body");
+      if (sb && sb.childNodes.length) _renderSchedule();
+      const cb = $("cov-tm-body");
+      if (cb && cb.childNodes.length && !_covLoading) _renderCoverage();
+    }
     function _renderSchedule() {
       const el = $("sched-tm-body");
       if (!el) return;
@@ -3412,7 +3431,7 @@
       if (_covLoading) return;
       _covLoading = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      el.innerHTML = `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Loading coverage…"))}</div>`;
+      ooLiveHtml(el, () => `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Loading coverage…"))}</div>`);
       try { _covData = await api("/api/scheduler/coverage"); }
       catch { _covData = null; }
       // The per-language equilibrium lever is OPTIONAL (default off) — best-effort,
@@ -3757,9 +3776,11 @@
     function _paintHealth(ok) {
       const el = $("health"); if (!el) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      el.innerHTML = ok
+      // Held (row 367): the word follows a language switch until the next reading draws it again. The hold marks the
+      // pill, so the walker no longer reaches its hover: the render writes it.
+      ooLiveHtml(el, () => { el.title = t("Backend status"); return (ok
         ? '<span class="dot ok"></span> ' + esc(t("healthy"))
-        : '<span class="dot err"></span> ' + esc(t("not responding"));
+        : '<span class="dot err"></span> ' + esc(t("not responding"))); });
     }
 
     // The honest crash screen (maintainer rulings 17-19, 2026-08-07).
@@ -3802,47 +3823,56 @@
         document.body.appendChild(o);
       }
       const secs = Math.max(0, Math.round((Date.now() - _lastReachableAt) / 1000));
+      // The frame is drawn once; every word in it is held (row 367), so a language switch while the screen is up
+      // redraws the words and keeps the button and its listener. The marker keeps the walker off them.
+      o.setAttribute("data-i18n-dyn", "");
       o.innerHTML =
         '<div class="crash-box">'
-        + '<h2>' + esc(t("The app stopped answering")) + '</h2>'
-        + '<p>' + esc(t(_CRASH_WHAT)) + '</p>'
-        + '<p class="card-caveat">' + esc(t(_CRASH_UNKNOWN)) + '</p>'
+        + '<h2 id="crash-title"></h2>'
+        + '<p id="crash-what"></p>'
+        + '<p class="card-caveat" id="crash-unknown"></p>'
         + '<p class="muted" id="crash-since"></p>'
         + '<div class="crash-actions">'
-        + '<button id="crash-retry">' + esc(t("Check again")) + '</button>'
+        + '<button id="crash-retry"></button>'
         + '<span id="crash-journal"></span>'
         + '</div>'
-        + '<p class="hint">' + esc(t(_CRASH_CORPUS)) + '</p>'
+        + '<p class="hint" id="crash-corpus"></p>'
         + '</div>';
+      ooLive($("crash-title"), () => t("The app stopped answering"));
+      ooLive($("crash-what"), () => t(_CRASH_WHAT));
+      ooLive($("crash-unknown"), () => t(_CRASH_UNKNOWN));
+      ooLive($("crash-corpus"), () => t(_CRASH_CORPUS));
       // tf() so the number is DATA interpolated into a keyable frame, never a
       // sentence built by concatenation (the composite-string i18n rule).
+      // Each held line reads the state below when drawn, so a switch shows the state it is in.
+      let still = false, checking = false;   // the retry found it still down / a retry is in flight
       const since = $("crash-since");
-      if (since) {
-        since.textContent = (window.OOI18N && OOI18N.tf)
-          ? OOI18N.tf("Last answered {seconds}s ago.", {seconds: secs})
-          : "Last answered " + secs + "s ago.";
-      }
+      const sinceText = () => (still ? t("Still not answering.")
+        : (window.OOI18N && OOI18N.tf) ? OOI18N.tf("Last answered {seconds}s ago.", {seconds: secs})
+          : "Last answered " + secs + "s ago.");
+      if (since) ooLive(since, sinceText);
       const btn = $("crash-retry");
       if (btn) {
+        const btnText = () => t(checking ? "Checking…" : "Check again");
+        ooLive(btn, btnText);
         btn.addEventListener("click", async () => {
           btn.disabled = true;
-          btn.textContent = t("Checking…");
+          checking = true; ooLive(btn, btnText);
           try {
             await api("/api/health");   // success clears _serverDown via _noteReachable
           } catch (e) {
             btn.disabled = false;
-            btn.textContent = t("Check again");
-            const s = $("crash-since");
-            if (s) s.textContent = t("Still not answering.");
+            checking = false; ooLive(btn, btnText);
+            still = true; if (since) ooLive(since, sinceText);
           }
         });
       }
       // Only reachable-again offers the journal, because only then can it load.
       const jslot = $("crash-journal");
       if (jslot) {
-        jslot.innerHTML = '<span class="hint">'
+        ooLiveHtml(jslot, () => '<span class="hint">'
           + esc(t("The run journal cannot be downloaded while the server is not answering."))
-          + '</span>';
+          + '</span>');
       }
     }
 

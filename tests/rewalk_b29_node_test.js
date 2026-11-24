@@ -341,6 +341,8 @@ async function run() {
     const src = [HELPERS,
       extract("_ltrIsolate", null, LIBRARY).replace(/_LTR_ISOLATE\[0\]/, "'\\u2068'").replace(/_LTR_ISOLATE\[1\]/, "'\\u2069'"),
       "function ooCountryCell(v) { return esc(v); } function ooLangCell(v) { return esc(v); }",
+      // Row 367: the loading lines and the diff button are held (app-core.js); drawn once here.
+      "function ooLiveHtml(el, r) { el.innerHTML = r(); } function ooLive(el, r) { if (r) el.textContent = r(); }",
       "let _livingSubtabs = null; let _livingView = 'wiki'; let _livingOverview = null; let _livingStreamOffset = 0;",
       "const _LIVING_KINDS = ['wiki', 'law', 'osm']; const _LIVING_STREAM_PAGE = 50;",
       "const _LIVING_CHANGE_KINDS = { edit: 'edit', create: 'create', delete: 'deletion', move: 'move' };",
@@ -348,7 +350,7 @@ async function run() {
         "livingMapRowsHtml", "_livingT", "_livingTf", "_livingFailHtml", "renderLivingOverview", "renderLivingStream",
         "_livingStreamCap", "renderLivingPages", "renderLivingLaw", "renderLivingMaps", "repaintLivingFromCache"]
         .map((n) => extract(n, null, LIVING)),
-      "let _livingStreamLast = null, _livingPagesLast = null, _livingLawLast = null, _livingMapsLast = null;",
+      "let _livingStreamLast = null, _livingPagesLast = null, _livingLawLast = null, _livingMapsLast = null, _livingLawSeq = 0, _livingStreamMoreErr = null, _livingStreamSeq = 0;",
       // repaintLivingFromCache also repaints the cross-edition compare panels (#1256); this harness
       // only drives the stream/law/maps repaint, so the compare repaint is a no-op here.
       "function repaintWikiCompareFromCache() {}",
