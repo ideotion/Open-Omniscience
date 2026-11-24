@@ -777,6 +777,9 @@
     }
 
     // Row 367: the status line is a render over the status this read got (ooLive), so a language switch redraws it.
+    // A run's last line (its tally, its refusal or its failure) belongs to the read that follows the run: that read
+    // takes it and lets it go, so it is shown once instead of being replaced at once by the backlog line.
+    let _qualifyBulkDone = null;
     function _qualifyBulkDeclined(st) {
       // FD03 b (2026-09-29): below the floor a pass judges against a bounded sample of
       // the newest articles, so the floor alone no longer stops anything. Only a
@@ -823,9 +826,11 @@
       const out = $("qualify-bulk-status");
       if (!out) return;
       try {
+        const done = _qualifyBulkDone;
+        _qualifyBulkDone = null;
         const st = await api("/api/sources/qualify-bulk/status");
         const cancelBtn = $("qualify-bulk-cancel-btn");
-        ooLive(out, () => _qualifyBulkLine(st));
+        ooLive(out, () => (!st.running && done ? done() : _qualifyBulkLine(st)));
         if (st.running) {
           if (cancelBtn) cancelBtn.style.display = "";
         } else {
@@ -860,6 +865,8 @@
       const out = $("qualify-bulk-status");
       // a render (row 367), so each line follows a language switch
       const say = (render) => { if (out) ooLive(out, render); };
+      // the run's last line: kept for the status read that follows it (loadQualifyBulk, below)
+      const end = (render) => { _qualifyBulkDone = render; say(render); };
       // THE REFUSAL COMES BEFORE THE CONSENT POPUP (re-walk S-7): a machine whose passes
       // decline (FD03 b: even the cohort sample does not fit) gets the named refusal, read
       // over loopback, never a popup for a job that cannot egress.
@@ -893,14 +900,14 @@
           },
         });
         if (st && st.state === "error") {
-          say(() => t("Qualification failed — see console"));
+          end(() => t("Qualification failed — see console"));
           console.error("qualifyBulkStart", st.error);
         } else if (_jobStillRunning(st)) {
           say(() => t("Still running in the background — see the task manager."));
         } else if (st && st.result && st.result.declined) {
           // A named refusal, never "0 qualified" read as a finished run (QUAL-1).
           const d = st.result.declined;
-          say(() => _qualDeclinedText(d.reason, d.override_env, d.reason_i18n, d.reason_vars));
+          end(() => _qualDeclinedText(d.reason, d.override_env, d.reason_i18n, d.reason_vars));
         } else if (st && st.result) {
           // Each count is ONE keyed frame chosen by the count, the noun inside it
           // (click-through B17, T12): a number welded to an adjective keyed in the
@@ -911,14 +918,14 @@
             const n = Number(x) || 0;
             return _qualTf(n === 1 ? one : many, {n: fmtNum(n, 0)});
           };
-          say(() => tally(r.qualified, "{n} source qualified", "{n} sources qualified") + " · "
+          end(() => tally(r.qualified, "{n} source qualified", "{n} sources qualified") + " · "
             + tally(r.disqualified, "{n} source disqualified", "{n} sources disqualified") + " · "
             + tally(r.no_evidence, "{n} source with no evidence yet", "{n} sources with no evidence yet")
             + (r.paused_reason
               ? " — " + _framedText(r.paused_reason, r.paused_reason_i18n, r.paused_reason_vars, t) : ""));
         }
       } catch (e) {
-        say(() => t("Qualification failed — see console"));
+        end(() => t("Qualification failed — see console"));
         console.error("qualifyBulkStart", e);
       } finally {
         if (btn) btn.disabled = false;

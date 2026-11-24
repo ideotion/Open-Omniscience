@@ -417,6 +417,7 @@ async function run() {
       extract("_jobStillRunning", null, CORE), extract("_jobLabel", null, CORE), extract("_framedText", null, CORE),
       extract("qualifyBulkStart", "async function qualifyBulkStart(", AI),
       "function ooLive(el, render) { if (render) el.textContent = render(); }",   // row 367: the status line is a held render
+      "let _qualifyBulkDone = null;",   // row 367: a run's last line, kept for the read after it
       "return qualifyBulkStart;"].join("\n");
     // eslint-disable-next-line no-new-func
     const fn = new Function("window", "OOI18N", "$", "api", "ensureOnline", "pollJobStatus", "loadQualifyBulk", src)(
