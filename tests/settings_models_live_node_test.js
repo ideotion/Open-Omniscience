@@ -179,7 +179,7 @@ function harness(answers, opts = {}) {
 }
 
 const catalogue = () => ({ families: [
-  { family: "news", label: "News", producers: [
+  { family: "news", label: "Rising now", producers: [
     { name: "spike", label: "Spike", description: "d1", enabled: true,
       tunables: [{ key: "min_n", label: "Minimum", kind: "int", value: 5, default: 5, lo: 2, hi: 50, unit: "", impact: "i" }] },
     { name: "quiet", label: "Quiet", description: "d2", enabled: true, tunables: [] }] },
@@ -197,7 +197,7 @@ const catalogue = () => ({ families: [
     assert.ok(host.innerHTML.includes("— 2/2 on</span>") && host.innerHTML.includes("— 0/1 on</span>"), host.innerHTML);
     assert.ok(host.innerHTML.includes(">safe range ") && host.innerHTML.includes(">Save Lead settings</button>"), host.innerHTML);
     assert.strictEqual(h.form().prods[0].fine.open, false, "at Standard an unchanged fine-tune is folded");
-    // the operator: opens the News family and the Spike fold, types 9, unticks Quiet
+    // the operator: opens the first family and the Spike fold, types 9, unticks Quiet
     const f = h.form();
     f.fams[0].open = true; f.prods[0].fine.open = true; f.rows[0].input.value = "9";
     const quiet = f.boxes.find((b) => b.value === "quiet");
@@ -210,6 +210,8 @@ const catalogue = () => ({ families: [
     h.switchTo("fr");
     const g = h.form();
     assert.ok(host.innerHTML.includes("— 1/2 " + esc(FR["on"]) + "</span>"), host.innerHTML);
+    // a family name is a server label the locales carry; the held render translates it (the page walker skips it)
+    assert.ok(FR["Rising now"] && host.innerHTML.includes('<span class="card-fam-t">' + esc(FR["Rising now"]) + "</span>"), host.innerHTML);
     assert.ok(host.innerHTML.includes(">" + esc(FR["safe range"]) + " ") && host.innerHTML.includes(">" + esc(FR["Save Lead settings"]) + "</button>"), host.innerHTML);
     assert.ok(host.innerHTML.includes(esc(FR["Fine-tune ({n})"].replace("{n}", "1"))), host.innerHTML);
     assert.ok(host.innerHTML.includes(esc(FR["{n} changed"].replace("{n}", "1"))), "the typed value counts as changed: " + host.innerHTML);

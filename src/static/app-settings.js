@@ -1358,7 +1358,7 @@
         const on = fam.producers.filter(p => _cardOn(st, p)).length;
         const open = st && st.fam[fam.family] ? " open" : "";
         return `<details class="card-fam" data-fam="${esc(fam.family)}"${open}>
-          <summary><span class="card-fam-t">${esc(fam.label)}</span>
+          <summary><span class="card-fam-t">${esc(t(fam.label))}</span>
             <span class="muted">— ${on}/${fam.producers.length} ${esc(t("on"))}</span></summary>
           ${fam.producers.map(p => `<div class="card-prod" data-prod="${esc(p.name)}">
             <label class="switch">
