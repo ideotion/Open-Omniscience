@@ -145,10 +145,7 @@
             // Opening the section on a job that never ran says nothing: the line is for a
             // job, and there is none. A refusal is still named, as the button would.
             const idle = !s.state || s.state === "idle" || s.state === "cancelled";
-            if (st && !(me.quietIdle && idle && !s.refusal)) {
-              st.textContent = render(s, report, t);
-              _jobLast[key] = {s, report, render, st, drawn: st.textContent};
-            }
+            if (st && !(me.quietIdle && idle && !s.refusal)) _drawJobLine(key, st, render, s, report, t);
             const running = s.state === "running" && !!s.running;
             // A start came in while this read was in flight: read again before deciding.
             if (gen !== me.gen) continue;
@@ -164,6 +161,18 @@
         }
       })();
       return me;
+    }
+    // Draw a job line and keep the reading it was drawn from, so repaintDiagnosticsJobsFromCache can redraw it in a new
+    // language. Every write of a reading into a job line goes through here: one written past it would freeze in the
+    // language it was drawn in (row 361: foldKeywords drew a refusal that way).
+    function _drawJobLine(key, st, render, s, report, t) {
+      st.textContent = render(s, report, t);
+      _jobLast[key] = {s, report, render, st, drawn: st.textContent};
+    }
+    // A job line that shows an error the server or the browser sent, as it was sent: data, not chrome, so nothing here
+    // is translated and nothing is kept to redraw. As text, never escaped: textContent shows "&amp;" as typed.
+    function _jobLineError(st, e) {
+      if (st) st.textContent = String((e && e.message) || e || "");
     }
     // A live language switch (the one oo:langchange listener in app-boot.js): redraw each
     // job line from the reading it last drew, in the new language. Never a fetch. A line
@@ -317,7 +326,7 @@
         // keywords on completion — survives a tab close, resumes from its cursor.
         await _startReindexJob(true, "keywords");
         await _pollReindexJob(st, t);
-      } catch (e) { if (st) st.textContent = esc(e.message); }
+      } catch (e) { _jobLineError(st, e); }
       finally { if (btn) btn.disabled = false; }
     }
 
@@ -373,7 +382,7 @@
       let s0 = null;
       try { s0 = await api("/api/insights/keyword-fold-job/status"); }
       catch (_e) { /* status is a courtesy here; never block the action on it */ }
-      if (s0 && s0.refusal) { if (st) st.textContent = _foldStatusText(s0, null, t); return; }
+      if (s0 && s0.refusal) { if (st) _drawJobLine("fold", st, _foldStatusText, s0, null, t); return; }
       // A PAUSED RUN IS CONTINUED, AND THE CONFIRM SAYS SO (the re-index job's lesson).
       const paused = s0 && (s0.state === "paused" || s0.state === "error");
       const ask = paused
@@ -1458,9 +1467,9 @@
       if (btn) btn.disabled = true;
       try {
         await api("/api/system/unattended/stop", { method: "POST", body: JSON.stringify({}) });
-        if (el) el.textContent = t("Disarmed. Collection is untouched — use airplane mode to stop it.");
+        ooLive(el, () => t("Disarmed. Collection is untouched — use airplane mode to stop it."));
       } catch (e) {
-        if (el) el.textContent = t("Could not disarm:") + " " + ((e && e.message) || "");
+        ooLive(el, () => t("Could not disarm:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1469,21 +1478,21 @@
     async function runP0Validation(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("p0-status"); const out = $("p0-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const dest = (($("p0-dest") && $("p0-dest").value) || "").trim();
       const pass = ($("p0-pass") && $("p0-pass").value) || "";
-      if (!dest || !pass) { set(t("Enter a destination directory and a backup passphrase first.")); return; }
+      if (!dest || !pass) { set(() => t("Enter a destination directory and a backup passphrase first.")); return; }
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
+      ooLiveHtml(out, () => "");
+      set(() => t("Starting…"));
       try {
         try {
           await api("/api/diagnostics/p0-validation", {
             method: "POST", body: JSON.stringify({ dest_dir: dest, passphrase: pass }),
           });
         } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
+          set(() => t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
           return;
         }
         // Hand-off done: clear the passphrase from the field (never keep a secret in the DOM).
@@ -1500,21 +1509,21 @@
           try { s = await api("/api/diagnostics/p0-validation/status"); miss = 0; }
           catch (e) {
             miss++;
-            set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
+            set(() => t("Connection hiccup — retrying…"));  // the JOB is still running server-side
             await sleep(Math.min(2000 * miss, 10000));
-            if (miss > 30) { settled = true; set(t("Still running — check the task manager.")); break; }
+            if (miss > 30) { settled = true; set(() => t("Still running — check the task manager.")); break; }
             continue;
           }
           const state = s && s.state;
-          if (state === "done" && s.ready) { settled = true; set(t("Done.")); renderP0Result(out, (s.result && s.result.report) || {}); break; }
-          if (state === "error") { settled = true; set(t("Validation failed:") + " " + (s.error || t("unknown error"))); break; }
-          if (state === "cancelled") { settled = true; set(t("Validation cancelled.")); break; }
-          if (state === "done") { settled = true; set(t("Done — check the task manager for the report.")); break; }
+          if (state === "done" && s.ready) { settled = true; set(() => t("Done.")); renderP0Result(out, (s.result && s.result.report) || {}); break; }
+          if (state === "error") { settled = true; set(() => t("Validation failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { settled = true; set(() => t("Validation cancelled.")); break; }
+          if (state === "done") { settled = true; set(() => t("Done — check the task manager for the report.")); break; }
           const member = s.detail ? " · " + s.detail : "";
-          set(t("Running in the background…") + member);
+          set(() => t("Running in the background…") + member);
           await sleep(2000);
         }
-        if (!settled) set(t("Still running — check the task manager."));
+        if (!settled) set(() => t("Still running — check the task manager."));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1522,6 +1531,10 @@
 
     function renderP0Result(out, rep) {
       if (!out) return;
+      // Row 361: drawn through ooLiveHtml, so the verdicts, the server's reasons and the links follow a switch.
+      ooLiveHtml(out, () => _p0ResultHtml(rep));
+    }
+    function _p0ResultHtml(rep) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // Audit finding 2026-07-17 (M7): this used to shadow the real module-level esc()
       // (top of file) with a fallback to a non-existent global `escapeHtml`, which never
@@ -1542,7 +1555,7 @@
           + ']</span> ' + esc(label) + ' — ' + ooSaidHtml(c, "reason") + '</div>';
       });
       const sum = rep.summary || {};
-      out.innerHTML = rows
+      return rows
         + '<div style="margin-top:4px">' + esc(sum.pass || 0) + ' pass · ' + esc(sum.fail || 0)
         + ' fail · ' + esc(sum.not_measurable_here || 0) + ' not-measurable-here</div>'
         + '<div class="hint">' + esc(sum.note || "") + '</div>'
@@ -1554,7 +1567,7 @@
     async function cancelP0Validation() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { await api("/api/diagnostics/p0-validation/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("p0-status"); if (el) el.textContent = t("Cancelling…");
+      ooLive($("p0-status"), () => t("Cancelling…"));
     }
 
     // ---- The 0.4 release run (2026-09-18) --------------------------------------------
@@ -1584,6 +1597,9 @@
 
     function _rrRenderReport(out, rep) {
       if (!out) return;
+      ooLiveHtml(out, () => _rrReportHtml(rep));   // row 361: follows a language switch
+    }
+    function _rrReportHtml(rep) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = (rep && rep.board_rows) || [];
       let html = "";
@@ -1601,7 +1617,7 @@
       const soak = (rep && rep.soak) || {};
       const soakTxt = soak.hours_requested != null
         ? ('<div>' + esc(soak.elapsed_hours) + ' / ' + esc(soak.hours_requested) + ' h · ' + esc(soak.ended_by || "") + '</div>') : "";
-      out.innerHTML = html + soakTxt
+      return html + soakTxt
         + '<div style="margin-top:4px">' + tallyTxt + (rep && rep.interim ? ' · INTERIM' : '') + '</div>'
         + warns
         + '<div class="hint">' + esc(sum.note || "") + '</div>'
@@ -1612,6 +1628,7 @@
 
     // The poll, shared by the start button and "Check now". Returns when the run reaches
     // a terminal state, the poll ceiling passes, or the status says the run is not live.
+    // `set` takes a RENDER (row 361): the status line is drawn through ooLive and follows a language switch.
     async function _rrPoll(set, out, opts) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1626,9 +1643,9 @@
         try { s = await api("/api/diagnostics/release-run/status"); miss = 0; }
         catch (e) {
           miss++;
-          set(t("Connection hiccup — retrying…"));
+          set(() => t("Connection hiccup — retrying…"));
           await sleep(Math.min(2000 * miss, 10000));
-          if (miss > 30) { settled = true; set(t("Still running — check the task manager.")); break; }
+          if (miss > 30) { settled = true; set(() => t("Still running — check the task manager.")); break; }
           continue;
         }
         const state = s && s.state;
@@ -1638,52 +1655,53 @@
           _rrResumePlan = s.resumable ? (s.resume || {}) : null;
           const rb = $("rr-resume-btn");
           if (rb) rb.style.display = s.resumable ? "" : "none";
-          set(t("Interrupted — the app restarted during phase") + " " + (p.phase || "?") + " · "
+          const plan = _rrResumePlan;   // this reading's plan, so a repaint redraws what this reading said
+          set(() => t("Interrupted — the app restarted during phase") + " " + (p.phase || "?") + " · "
             + (s.resumable
-                ? (_rrResumePlan.unlock_needed
+                ? (plan.unlock_needed
                     ? t("press Resume run with the backup passphrase — the backup or the restore is still owed; the measured phases are kept.")
                     : t("press Resume run — the measured phases are kept and the soak starts a new stretch (the bar is continuous)."))
                 : t("the soak window ended there; press the button again for a new window.")));
           break;
         }
-        if (state === "done" && s.ready) { settled = true; set(t("Done.")); _rrRenderReport(out, (s.result && s.result.report) || {}); break; }
-        if (state === "error") { settled = true; set(t("Failed:") + " " + (s.error || t("unknown error"))); break; }
+        if (state === "done" && s.ready) { settled = true; set(() => t("Done.")); _rrRenderReport(out, (s.result && s.result.report) || {}); break; }
+        if (state === "error") { settled = true; set(() => t("Failed:") + " " + (s.error || t("unknown error"))); break; }
         if (state === "cancelled") {
-          settled = true; set(t("Cancelled."));
+          settled = true; set(() => t("Cancelled."));
           if (s.result && s.result.report) _rrRenderReport(out, s.result.report);
           break;
         }
-        if (state === "done") { settled = true; set(t("Done — check the task manager for the report.")); break; }
+        if (state === "done") { settled = true; set(() => t("Done — check the task manager for the report.")); break; }
         if (state !== "running") {
           settled = true;
-          set(p.run_id ? (t("Not running.") + " · " + (p.outcome || "") + " · " + (p.phase || "")) : t("Not running."));
+          set(() => p.run_id ? (t("Not running.") + " · " + (p.outcome || "") + " · " + (p.phase || "")) : t("Not running."));
           break;
         }
         const member = s.detail ? " · " + s.detail : "";
-        set(t("Running in the background…") + member);
+        set(() => t("Running in the background…") + member);
         if (once) { settled = true; break; }
         await sleep(5000);
       } while (Date.now() < deadline);
-      if (!settled) set(t("Still running — check the task manager."));
+      if (!settled) set(() => t("Still running — check the task manager."));
     }
 
     async function releaseRunStart(btn, profile) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("rr-status"); const out = $("rr-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       const params = _rrParams(profile || "release-scale");
-      if (!params.dest_dir || !params.passphrase) { set(t("Enter a destination directory and a backup passphrase first.")); return; }
+      if (!params.dest_dir || !params.passphrase) { set(() => t("Enter a destination directory and a backup passphrase first.")); return; }
       // The consent, at the press: the run goes online for the soak.
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Run the 0.4 release run (goes online for the collection soak, the Wikipedia lane and the probes)"))) return;
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
+      ooLiveHtml(out, () => "");
+      set(() => t("Starting…"));
       try {
         try {
           await api("/api/diagnostics/release-run", { method: "POST", body: JSON.stringify(params) });
         } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
+          set(() => t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
           return;
         }
         // Hand-off done: the passphrase leaves the DOM now.
@@ -1696,7 +1714,7 @@
 
     async function releaseRunStatus(btn) {
       const el = $("rr-status"); const out = $("rr-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       if (btn) btn.disabled = true;
       try {
         await _rrPoll(set, out, { once: true });
@@ -1714,13 +1732,13 @@
     async function releaseRunCollect(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("rr-status");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);
       if (btn) btn.disabled = true;
       try {
         const r = await api("/api/diagnostics/release-run/collect", { method: "POST" });
-        set(r && r.requested ? t("Collect requested — the soak ends now and the report follows.") : t("No run is in progress."));
+        set(() => r && r.requested ? t("Collect requested — the soak ends now and the report follows.") : t("No run is in progress."));
       } catch (e) {
-        set(t("Failed:") + " " + ((e && e.message) || ""));
+        set(() => t("Failed:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -1729,7 +1747,7 @@
     async function releaseRunCancel() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { await api("/api/diagnostics/release-run/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("rr-status"); if (el) el.textContent = t("Cancelling…");
+      ooLive($("rr-status"), () => t("Cancelling…"));
     }
 
     // The resume (2026-09-18): the run the app restarted out of continues under the
@@ -1741,20 +1759,20 @@
     async function releaseRunResume(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("rr-status"); const out = $("rr-result");
-      const set = (m) => { if (el) el.textContent = m; };
+      const set = (render) => ooLive(el, render);   // row 361: the line follows a language switch
       const plan = _rrResumePlan || {};
       const pass = ($("rr-pass") && $("rr-pass").value) || "";
-      if (plan.unlock_needed && !pass) { set(t("Enter the backup passphrase to resume: the backup or the restore is still owed.")); return; }
+      if (plan.unlock_needed && !pass) { set(() => t("Enter the backup passphrase to resume: the backup or the restore is still owed.")); return; }
       // The consent, at the press: a resume goes online again for the soak.
       if (typeof ensureOnline === "function"
           && !await ensureOnline(t("Resume the 0.4 release run (goes online again for the collection soak, the Wikipedia lane and the probes)"))) return;
       if (btn) btn.disabled = true;
-      set(t("Resuming…"));
+      set(() => t("Resuming…"));
       try {
         try {
           await api("/api/diagnostics/release-run/resume", { method: "POST", body: JSON.stringify({ passphrase: pass }) });
         } catch (e) {
-          set(t("Could not resume:") + " " + ((e && e.message) || ""));
+          set(() => t("Could not resume:") + " " + ((e && e.message) || ""));
           return;
         }
         if ($("rr-pass")) $("rr-pass").value = "";
@@ -2011,15 +2029,16 @@
     function _paintAiSweepButton(btnId, running) {
       const btn = $(btnId);
       if (!btn) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      btn.textContent = running ? t("Stop sweep") : t("Start sweep");
+      // The ENGLISH label, for the i18n walker to translate and to translate again on every switch (row 361): the
+      // button carries a translated title, which ooLive's marker would freeze, and the label is a plain key.
+      btn.textContent = running ? "Stop sweep" : "Start sweep";
       btn.dataset.running = running ? "1" : "";
     }
     async function _pollAiSweep(job, btnId, statusEl, resultEl, renderFn) {
       if (_aiSweepPolling[job]) return;
       _aiSweepPolling[job] = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const set = (m) => { if (statusEl) statusEl.textContent = m; };
+      const set = (render) => ooLive(statusEl, render);   // row 361: the line follows a language switch
       let fails = 0;
       try {
         for (;;) {
@@ -2027,8 +2046,8 @@
           // JOB-STATE-AS-TRUTH: a dropped status poll never reads as failure while it runs.
           try { s = await api(`/api/diagnostics/${job}/status`); fails = 0; }
           catch (e) {
-            if (++fails > 30) { set(t("Lost contact with the job — see the task manager.")); break; }
-            set(t("Connection hiccup — retrying…"));
+            if (++fails > 30) { set(() => t("Lost contact with the job — see the task manager.")); break; }
+            set(() => t("Connection hiccup — retrying…"));
             await new Promise((r) => setTimeout(r, Math.min(2000 * fails, 10000)));
             continue;
           }
@@ -2036,21 +2055,21 @@
           if (st === "running") {
             _paintAiSweepButton(btnId, true);
             const detail = s.detail ? " · " + s.detail : "";
-            set(t("Sweeping…") + detail);
+            set(() => t("Sweeping…") + detail);
             await new Promise((r) => setTimeout(r, 2000));
             continue;
           }
           _paintAiSweepButton(btnId, false);
           if (st === "done") {
             const res = s.result || {};
-            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
+            set(() => res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
             renderFn(resultEl, s);
           } else if (st === "error") {
-            set(t("Failed:") + " " + esc(s.error || ""));
+            set(() => t("Failed:") + " " + (s.error || ""));   // text, so never escaped
           } else if (st === "cancelled") {
-            set(t("Cancelled — progress is saved."));
+            set(() => t("Cancelled — progress is saved."));
           } else {
-            set("");
+            set(() => "");
           }
           break;
         }
@@ -2059,22 +2078,22 @@
     async function _toggleAiSweep(job, btnId, statusEl, resultEl, renderFn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const btn = $(btnId);
-      const set = (m) => { if (statusEl) statusEl.textContent = m; };
+      const set = (render) => ooLive(statusEl, render);   // row 361: the line follows a language switch
       if (btn && btn.dataset.running === "1") {
         // Currently running -> this click means STOP (mirrors runLangDetect exactly).
         try { await api(`/api/diagnostics/${job}/cancel`, { method: "POST" }); }
         catch (e) { /* idempotent -- a stale click while it's already stopping is fine */ }
-        set(t("Pausing — progress is saved…"));
+        set(() => t("Pausing — progress is saved…"));
         _pollAiSweep(job, btnId, statusEl, resultEl, renderFn);
         return;
       }
       if (btn) btn.disabled = true; // brief, START-request-only -- never held across the sweep
-      set(t("Starting…"));
+      set(() => t("Starting…"));
       try {
         await api(`/api/diagnostics/${job}/run`, { method: "POST", body: JSON.stringify({}) });
         _paintAiSweepButton(btnId, true);
       } catch (e) {
-        set(t("Could not start:") + " " + ((e && e.message) || ""));
+        set(() => t("Could not start:") + " " + ((e && e.message) || ""));
       }
       if (btn) btn.disabled = false;
       _pollAiSweep(job, btnId, statusEl, resultEl, renderFn);
@@ -2146,9 +2165,7 @@
         const last = await api(`/api/diagnostics/${job}/last`);
         if (!last || !last.available || !resultEl) return;
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
-        renderFn(resultEl, { result: _savedSweepAsResult(last) });
-        resultEl.insertAdjacentHTML(
-          "afterbegin", '<div class="muted">' + esc(_savedSweepStateLine(last, t)) + "</div>");
+        renderFn(resultEl, { result: _savedSweepAsResult(last) }, () => _savedSweepStateLine(last, t));
       } catch (e) { /* a courtesy read; never block the toggle on it */ }
     }
 
@@ -2156,12 +2173,20 @@
       await _toggleAiSweep("keyword-triage", "kt-toggle-btn", $("kt-status"), $("kt-result"), renderKeywordTriageResult);
     }
 
-    function renderKeywordTriageResult(out, status) {
+    // The three sweep result panels draw through ooLiveHtml (row 361), so a language switch redraws them from the
+    // status they were given. `lead`, when given, renders the saved-run line drawn above the result.
+    function _sweepResultDraw(out, lead, html) {
       if (!out) return;
+      ooLiveHtml(out, () => (lead ? '<div class="muted">' + esc(lead()) + "</div>" : "") + html());
+    }
+    function renderKeywordTriageResult(out, status, lead) {
+      _sweepResultDraw(out, lead, () => _keywordTriageHtml(status));
+    }
+    function _keywordTriageHtml(status) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
       const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
-      out.innerHTML = (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
+      return (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
         + esc((res.totals && res.totals.verdicts_out) || 0)
         + " verdicts, canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
         + '<div style="margin-top:4px"><a href="/api/diagnostics/keyword-triage/download" target="_blank">'
@@ -2183,8 +2208,10 @@
       await _toggleAiSweep("source-tags", "st-toggle-btn", $("st-status"), $("st-result"), renderSourceTagsResult);
     }
 
-    function renderSourceTagsResult(out, status) {
-      if (!out) return;
+    function renderSourceTagsResult(out, status, lead) {
+      _sweepResultDraw(out, lead, () => _sourceTagsHtml(status));
+    }
+    function _sourceTagsHtml(status) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
       const totals = res.totals || {};
@@ -2192,7 +2219,7 @@
       // 2026-07-26 field-remarks item 6: totals.missing (closed-vocabulary rejections)
       // and totals.parse_failures were computed but never rendered -- real work was
       // silently happening while the panel looked like it was doing nothing.
-      out.innerHTML = (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
+      return (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
         + esc(totals.assigned_count || 0) + " tagged, "
         + esc(totals.none_count || 0) + " none, " + esc(res.skipped_evidence_floor || 0)
         + " skipped (evidence floor), " + esc(totals.missing || 0) + " rejected (not in your tag vocabulary), "
@@ -2220,14 +2247,14 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("pel-status"); const out = $("pel-result");
       if (btn) btn.disabled = true;
-      if (el) el.textContent = t("Running…");
+      ooLive(el, () => t("Running…"));
       try {
         const res = await api("/api/diagnostics/perception-eval-live", { method: "POST", body: JSON.stringify({}) });
-        if (el) el.textContent = "";
+        ooLive(el, () => "");
         renderPerceptionEvalResult(out, res);
         loadPerceptionGate();
       } catch (e) {
-        if (el) el.textContent = t("Could not run:") + " " + ((e && e.message) || "");
+        ooLive(el, () => t("Could not run:") + " " + ((e && e.message) || ""));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -2237,12 +2264,12 @@
       if (!out) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!res || res.status !== "ok") {
-        out.textContent = t("unavailable") + (res && res.detail ? " — " + res.detail : "");
+        ooLive(out, () => t("unavailable") + (res && res.detail ? " — " + res.detail : ""));
         return;
       }
       const r = res.report || {};
-      out.textContent = t("model") + " " + (res.model || "?") + " " + t("on") + " " + (res.backend || "?")
-        + " — " + (r.n_cases || 0) + " " + t("gold cases scored.");
+      ooLive(out, () => t("model") + " " + (res.model || "?") + " " + t("on") + " " + (res.backend || "?")
+        + " — " + (r.n_cases || 0) + " " + t("gold cases scored."));
     }
 
     // The language gate (B6): which languages cleared the last live perception-eval
@@ -2254,47 +2281,51 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const g = await api("/api/diagnostics/perception-extract/gate");
-        // TRI-STATE (2026-07-29): true = evaluated + cleared, false = evaluated + FAILED,
-        // null = NO harness evidence. "unmeasured" is never folded into either of the
-        // other two — an absence of measurement is not a verdict.
-        const keys = Object.keys(g).filter((l) => g[l]);
-        const active = keys.filter((l) => g[l].active === true).sort();
-        const disabled = keys.filter((l) => g[l].active === false).sort();
-        const unmeasured = keys.filter((l) => g[l].active == null).sort();
-        // PER-FIELD (E-S3, 2026-08-01): a language cleared for `where` alone is
-        // ACTIVE, but storing `who` there is still refused — so the field states are
-        // shown beside the language, or "active" over-reads as "active for everything".
-        const fieldBits = (l) => {
-          const f = g[l].fields; if (!f) return "";
-          const on = Object.keys(f).filter((k) => f[k] && f[k].active === true);
-          const off = Object.keys(f).filter((k) => f[k] && f[k].active === false);
-          const un = Object.keys(f).filter((k) => f[k] && f[k].active == null);
-          return " [" + [
-            on.length ? t("stores") + " " + on.join("/") : "",
-            off.length ? t("gated") + " " + off.join("/") : "",
-            un.length ? t("unmeasured") + " " + un.join("/") : "",
-          ].filter(Boolean).map(esc).join(" · ") + "]";
-        };
-        const detail = (l) => esc(l) + fieldBits(l) + " (" + esc(g[l].reason || "") + ")";
-        // Active languages show their reason too — that is what makes "cleared on 1
-        // synthetic case — low statistical power" visible rather than implied.
-        // R704: the rates below belong to ONE model; name it beside them.
-        const first = keys.length ? g[keys[0]] : null;
-        let html = (first && first.measured_model)
-          ? "<b>" + esc(t("Measured on model:")) + "</b> " + esc(first.measured_model) + "<br>"
-          : "";
-        html += "<b>" + t("Active languages:") + "</b> "
-          + (active.length ? active.map(detail).join("; ") : t("none yet — run the harness above"));
-        if (disabled.length) {
-          html += "<br><b>" + t("Disabled:") + "</b> " + disabled.map(detail).join("; ");
-        }
-        if (unmeasured.length) {
-          html += "<br><b>" + t("Unmeasured (no harness evidence):") + "</b> "
-            + unmeasured.map(detail).join("; ");
-        }
-        out.innerHTML = html;
+        // Row 361: drawn through ooLiveHtml, so a language switch redraws it from this reading.
+        ooLiveHtml(out, () => _perceptionGateHtml(g, t));
         _paintPerceptionLangToggles(g);
-      } catch (e) { out.textContent = ""; }
+      } catch (e) { ooLiveHtml(out, () => ""); }
+    }
+    function _perceptionGateHtml(g, t) {
+      // TRI-STATE (2026-07-29): true = evaluated + cleared, false = evaluated + FAILED,
+      // null = NO harness evidence. "unmeasured" is never folded into either of the
+      // other two — an absence of measurement is not a verdict.
+      const keys = Object.keys(g).filter((l) => g[l]);
+      const active = keys.filter((l) => g[l].active === true).sort();
+      const disabled = keys.filter((l) => g[l].active === false).sort();
+      const unmeasured = keys.filter((l) => g[l].active == null).sort();
+      // PER-FIELD (E-S3, 2026-08-01): a language cleared for `where` alone is
+      // ACTIVE, but storing `who` there is still refused — so the field states are
+      // shown beside the language, or "active" over-reads as "active for everything".
+      const fieldBits = (l) => {
+        const f = g[l].fields; if (!f) return "";
+        const on = Object.keys(f).filter((k) => f[k] && f[k].active === true);
+        const off = Object.keys(f).filter((k) => f[k] && f[k].active === false);
+        const un = Object.keys(f).filter((k) => f[k] && f[k].active == null);
+        return " [" + [
+          on.length ? t("stores") + " " + on.join("/") : "",
+          off.length ? t("gated") + " " + off.join("/") : "",
+          un.length ? t("unmeasured") + " " + un.join("/") : "",
+        ].filter(Boolean).map(esc).join(" · ") + "]";
+      };
+      const detail = (l) => esc(l) + fieldBits(l) + " (" + esc(g[l].reason || "") + ")";
+      // Active languages show their reason too — that is what makes "cleared on 1
+      // synthetic case — low statistical power" visible rather than implied.
+      // R704: the rates below belong to ONE model; name it beside them.
+      const first = keys.length ? g[keys[0]] : null;
+      let html = (first && first.measured_model)
+        ? "<b>" + esc(t("Measured on model:")) + "</b> " + esc(first.measured_model) + "<br>"
+        : "";
+      html += "<b>" + t("Active languages:") + "</b> "
+        + (active.length ? active.map(detail).join("; ") : t("none yet — run the harness above"));
+      if (disabled.length) {
+        html += "<br><b>" + t("Disabled:") + "</b> " + disabled.map(detail).join("; ");
+      }
+      if (unmeasured.length) {
+        html += "<br><b>" + t("Unmeasured (no harness evidence):") + "</b> "
+          + unmeasured.map(detail).join("; ");
+      }
+      return html;
     }
 
     // ONE SWITCH PER LANGUAGE (Q1144 = a, S05-08 S6). A cleared language can be
@@ -2306,8 +2337,19 @@
     function _paintPerceptionLangToggles(g) {
       const box = $("pe-lang-toggles"); if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // ONE delegated listener, bound once: a language switch redraws the switches (row 361), and listeners bound to
+      // the old inputs would go with them.
+      if (!box.dataset.peBound) {
+        box.dataset.peBound = "1";
+        box.addEventListener("change", (ev) => {
+          if (ev.target && ev.target.matches && ev.target.matches("input[data-pe-lang]")) _savePerceptionLangs(box);
+        });
+      }
+      ooLiveHtml(box, () => _perceptionLangTogglesHtml(g, t));
+    }
+    function _perceptionLangTogglesHtml(g, t) {
       const langs = Object.keys(g || {}).filter((l) => g[l]).sort();
-      if (!langs.length) { box.innerHTML = ""; return; }
+      if (!langs.length) return "";
       const name = (l) => (typeof ooLangName === "function" ? ooLangName(l) : l);
       const rows = langs.map((l) => {
         const e = g[l];
@@ -2329,10 +2371,7 @@
           + (cleared ? "" : " disabled") + "> <span>" + esc(name(l)) + " <span class=\"muted\">("
           + esc(numbers) + ")</span>" + esc(why) + "</span></label>";
       });
-      box.innerHTML = "<b>" + esc(t("Extract in these languages:")) + "</b>" + rows.join("");
-      box.querySelectorAll("input[data-pe-lang]").forEach((cb) => {
-        cb.addEventListener("change", () => _savePerceptionLangs(box));
-      });
+      return "<b>" + esc(t("Extract in these languages:")) + "</b>" + rows.join("");
     }
 
     async function _savePerceptionLangs(box) {
@@ -2358,32 +2397,34 @@
       if (!btn) return;
       const running = (st && st.state) === "running";
       btn.dataset.running = running ? "1" : "0";
-      btn.textContent = running ? t("Pause background AI") : t("Start background AI");
-      if (out) {
-        const held = st && st.user_batch && st.user_batch.held;
-        const parts = [];
-        // The job's state is one of a closed list (src/jobs/background.py: idle | running | done | cancelled | error), printed
-        // through t() word by word so a literal t("...") reaches the string scan; a word outside the list prints as sent.
-        const stateWord = { done: t("done"), cancelled: t("cancelled"), error: t("error") };
-        // While a user's batch holds the model the worker's own line reads "paused — <who> is running" in English only, and the
-        // pill below says the same in the page's language, so the line is left out then rather than printed twice.
-        // Any other line is the worker's: its keyed frame (detail_i18n / detail_vars) is how it reaches the page's language.
-        if (running) {
-          if (!held) parts.push(esc(st.detail ? _framedText(st.detail, st.detail_i18n, st.detail_vars, t) : t("running")));
-        } else if (st && st.state && st.state !== "idle") {
-          parts.push(esc(Object.prototype.hasOwnProperty.call(stateWord, st.state) ? stateWord[st.state] : st.state));
-        }
-        // The pause is stated, never left looking like a stall (ruling 13).
-        if (held) parts.push('<span class="pill warn">' + esc(t("paused — your batch is running")) + "</span>");
-        out.innerHTML = parts.join(" · ");
-      }
+      // Row 361: the button, the status line and the hardware note draw through ooLive, so a switch redraws them.
+      ooLive(btn, () => running ? t("Pause background AI") : t("Start background AI"));
+      ooLiveHtml(out, () => _aiCoordinatorStatusHtml(st, running, t));
       // The hardware verdict is a DEFAULT, never a block: it explains why the master
       // starts where it does, and the operator's override still turns it on.
       if (hw && st && st.hardware_default) {
-        hw.textContent = st.hardware_default.default_on
+        ooLive(hw, () => st.hardware_default.default_on
           ? "" : t("This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.")
-                   .replace("{r}", String(st.hardware_default.reason || ""));
+                   .replace("{r}", String(st.hardware_default.reason || "")));
       }
+    }
+    function _aiCoordinatorStatusHtml(st, running, t) {
+      const held = st && st.user_batch && st.user_batch.held;
+      const parts = [];
+      // The job's state is one of a closed list (src/jobs/background.py: idle | running | done | cancelled | error), printed
+      // through t() word by word so a literal t("...") reaches the string scan; a word outside the list prints as sent.
+      const stateWord = { done: t("done"), cancelled: t("cancelled"), error: t("error") };
+      // While a user's batch holds the model the worker's own line reads "paused — <who> is running" in English only, and the
+      // pill below says the same in the page's language, so the line is left out then rather than printed twice.
+      // Any other line is the worker's: its keyed frame (detail_i18n / detail_vars) is how it reaches the page's language.
+      if (running) {
+        if (!held) parts.push(esc(st.detail ? _framedText(st.detail, st.detail_i18n, st.detail_vars, t) : t("running")));
+      } else if (st && st.state && st.state !== "idle") {
+        parts.push(esc(Object.prototype.hasOwnProperty.call(stateWord, st.state) ? stateWord[st.state] : st.state));
+      }
+      // The pause is stated, never left looking like a stall (ruling 13).
+      if (held) parts.push('<span class="pill warn">' + esc(t("paused — your batch is running")) + "</span>");
+      return parts.join(" · ");
     }
     async function _pollAiCoordinator() {
       if (_aicPolling) return;
@@ -2451,13 +2492,15 @@
       await _toggleAiSweep("perception-extract", "pe-toggle-btn", $("pe-status"), $("pe-result"), renderPerceptionExtractResult);
     }
 
-    function renderPerceptionExtractResult(out, status) {
-      if (!out) return;
+    function renderPerceptionExtractResult(out, status, lead) {
+      _sweepResultDraw(out, lead, () => _perceptionExtractHtml(status));
+    }
+    function _perceptionExtractHtml(status) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
       const totals = res.totals || {};
       const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
-      out.innerHTML = (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
+      return (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
         + esc(totals.stored || 0) + " articles extracted (" + esc(totals.who || 0) + " who, "
         + esc(totals.where || 0) + " where, " + esc(totals.when || 0) + " when), "
         + esc(totals.gated || 0) + " gated, " + esc(totals.skipped_existing || 0) + " already done"
@@ -2600,16 +2643,21 @@
 
     async function loadAiActivity() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
-        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const host = $("ai-activity-body");
       if (!host) return;
       let r;
       try { r = await api("/api/diagnostics/ai-activity"); }
       catch (e) {
-        host.innerHTML = `<p class="muted">${esc(t("Could not read the AI activity feed."))}</p>`;
+        ooLiveHtml(host, () => `<p class="muted">${esc(t("Could not read the AI activity feed."))}</p>`);
         return;
       }
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the feed from this reading.
+      ooLiveHtml(host, () => _aiActivityHtml(r));
+    }
+    function _aiActivityHtml(r) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((s, v) => String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const sweeps = (r.sweeps || []).map((s) => {
         const rows = [`<div style="font-weight:600;margin-top:8px">${esc(s.label ? t(s.label) : (s.key || ""))}</div>`];
         if (s.note) rows.push(`<div class="muted">${esc(_aiSweepNote(s, t, tf))}</div>`);
@@ -2664,7 +2712,7 @@
 
       const coord = (r.coordinator || {}).note
         ? `<div class="muted" style="margin-top:8px">${esc(_aiCoordinatorNote(r.coordinator, t))}</div>` : "";
-      host.innerHTML = sweeps + stored + coord +
+      return sweeps + stored + coord +
         `<div class="card-caveat" style="margin-top:8px">${ooSaidHtml(r, "caveat")}</div>`;
     }
 
@@ -3057,12 +3105,13 @@
     }
 
     function _renderAiCheck(res) {
+      // Row 361: drawn through ooLiveHtml, so a language switch redraws the reading it was given.
+      ooLiveHtml($("aicheck-result"), () => (res ? _aiCheckHtml(res) : ""));
+    }
+    function _aiCheckHtml(res) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
         : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
-      const out = $("aicheck-result");
-      if (!out) return;
-      if (!res) { out.innerHTML = ""; return; }
       const r = res.reading || {};
       const rows = [];
       const b = r.backend || {};
@@ -3181,7 +3230,7 @@
       const sep = (res.not_run_here || []).map((n) => _aiNotRunHereLine(n, t)).join("<br>");
       if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${ooLabelHtml(esc(t("Not part of this check")), sep)}</div>`);
       if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${ooSaidHtml(res, "caveat")}</div>`);
-      out.innerHTML = rows.join("");
+      return rows.join("");
     }
 
     function _paintAiCheck(st) {
@@ -3190,14 +3239,14 @@
       const running = st && st.state === "running";
       if (btn) {
         btn.dataset.running = running ? "1" : "0";
-        btn.textContent = running ? t("Stop the AI checks") : t("Run all AI checks");
+        // The ENGLISH label, for the walker to translate and to translate again on a switch (row 361): the button
+        // carries a translated title, which ooLive's marker would freeze.
+        btn.textContent = running ? "Stop the AI checks" : "Run all AI checks";
       }
       const p = (st && st.progress) || {};
-      if (el) {
-        el.textContent = running
-          ? `${p.done || 0}/${p.total || "?"} · ${p.detail || ""}`
-          : (st && st.state === "error" ? `${t("failed:")} ${st.error || ""}` : "");
-      }
+      ooLive(el, () => running
+        ? `${p.done || 0}/${p.total || "?"} · ${p.detail || ""}`
+        : (st && st.state === "error" ? `${t("failed:")} ${st.error || ""}` : ""));
       if (!running && st && st.result) _renderAiCheck(st.result);
     }
 
