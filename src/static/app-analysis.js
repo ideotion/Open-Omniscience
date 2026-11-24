@@ -2531,8 +2531,8 @@
       // concept while looking like one view.
       p = _anApplyLens(new URLSearchParams(p));
       const kw = $("an-keywords"), arts = $("an-art-list") || $("an-articles");
-      kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
-      arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(kw, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
+      ooLiveHtml(arts, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       _anProvenance = ""; _anKwSort = false; _anKwForCount = "";   // fresh corpus -> reset the Articles-list lenses
       _anArtFacetSel = { source: "", language: "" };   // fresh corpus -> reset the staged facet selection too
       _anLastParams = p; _anTrend.key = null; _anRelated.key = null; _anCompetitive.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
@@ -2559,13 +2559,13 @@
       // renderer — never touches the Insights mind-map state. Window params pass
       // through (the /graph endpoint accepts start/end/days, like _mmWindowQS).
       const mm = $("an-mindmap");
-      mm.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      ooLiveHtml(mm, () => `<div class="muted">${esc(t("Loading…"))}</div>`);
       try {
         const dk = await api("/api/insights/corpus-keywords?" + p.toString());
         if (stale()) return;
         const top = (dk.terms && dk.terms.length) ? dk.terms[0].term : null;
         if (!top) {
-          mm.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
+          ooLiveHtml(mm, () => `<div class="muted">${esc(t("No strong associations yet."))}</div>`);
         } else {
           // an-mindmap-wrong-corpus-scope (P1): clone the analysis window's OWN scope
           // (article_ids, or query/source/language/date-range) instead of a fresh,
@@ -2864,7 +2864,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("an-competitive"); if (!host) return;
       p = p || _anLastParams;
-      if (!p) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search first."))}</div>`; return; }
+      if (!p) { ooLiveHtml(host, () => `<div class="muted">${esc(t("Open the analysis from a keyword or a search first."))}</div>`); return; }
       const key = p.toString();
       if (_anCompetitive.key === key) return;   // already rendered for this corpus
       ooLiveHtml(host, () => `<div class="muted">${esc(t("Loading…"))}</div>`);   // row 361: follows a language switch until the result is drawn over it
@@ -4043,7 +4043,7 @@
       fill("adv-regions", d.regions || [], (r) => r.region, (r) => r.region + " · " + n(r.sources || 0));
       const cav = d.caveats || {};
       for (const k of ["words", "sentiment", "mentions", "quarantine"]) {
-        const el = $("adv-cav-" + k); if (el) el.textContent = cav[k] ? t(cav[k]) : "";
+        const el = $("adv-cav-" + k); if (el) ooLive(el, () => cav[k] ? t(cav[k]) : "");
       }
       const nd = $("adv-near-default");
       if (nd && d.near) { nd.min = d.near.min; nd.max = d.near.max; if (nd.value === "") nd.value = d.near.default; }
@@ -4151,20 +4151,20 @@
       // would re-run wider than the search it claims to be.
       if (adv.source) {
         const ids = ((_advFacets && _advFacets.sources) || []).filter((s) => s.name === adv.source).map((s) => s.id);
-        if (!ids.length) { if (note) note.textContent = t("Pick the source from the Sources list first: a saved search keeps sources by their identity, not by name."); return; }
+        if (!ids.length) { if (note) ooLive(note, () => t("Pick the source from the Sources list first: a saved search keeps sources by their identity, not by name.")); return; }
         adv.sources = ids.join(","); delete adv.source;
       }
       const filters = _advToWatchFilters(adv);
-      if (!q && !Object.keys(filters).length) { if (note) note.textContent = t("Type a search or pick a filter first."); return; }
+      if (!q && !Object.keys(filters).length) { if (note) ooLive(note, () => t("Type a search or pick a filter first.")); return; }
       const name = prompt(t("Name this saved search:"), q || t("Filtered search"));
       if (name == null) return;
       try {
         await api("/api/watches", {method: "POST", body: JSON.stringify({
           name: name.trim() || q || t("Filtered search"), query: q, threshold: 0, window_days: 7, filters})});
-        if (note) note.textContent = t("Saved. Find it in Insights → Watches; it never fires a Lead.");
+        if (note) ooLive(note, () => t("Saved. Find it in Insights → Watches; it never fires a Lead."));
         if (typeof loadWatches === "function" && $("wt-list")) loadWatches();
       } catch (e) {
-        if (note) note.textContent = tf("Could not save: {error}", {error: e.message});
+        if (note) ooLive(note, () => tf("Could not save: {error}", {error: e.message}));
       }
     }
     async function _advCopyLink() {
@@ -4174,7 +4174,7 @@
       const url = location.origin + "/?" + _advPermalink(q, _advRead(),
         {sort_by: sb && sb.value, sort_dir: dr && dr.value, view: _anArtView});
       const note = $("an-adv-note");
-      try { await navigator.clipboard.writeText(url); if (note) note.textContent = t("Link copied. It opens this search on this machine."); }
+      try { await navigator.clipboard.writeText(url); if (note) ooLive(note, () => t("Link copied. It opens this search on this machine.")); }
       catch (_e) { prompt(t("Copy this link:"), url); }
     }
     async function _advSaveNearDefault() {
@@ -4185,8 +4185,8 @@
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({search_near_default: v})});
         if (_advFacets && _advFacets.near) _advFacets.near.default = v;
-        if (note) note.textContent = tf("Saved: a NEAR without its own number now means {n} words.", {n: v});
-      } catch (e) { if (note) note.textContent = tf("Could not save: {error}", {error: e.message}); }
+        if (note) ooLive(note, () => tf("Saved: a NEAR without its own number now means {n} words.", {n: v}));
+      } catch (e) { if (note) ooLive(note, () => tf("Could not save: {error}", {error: e.message})); }
     }
 
     // -- the local history (Q614 = a + its note) ---------------------------------- //
@@ -4230,11 +4230,11 @@
       try {
         await api("/api/settings", {method: "PUT", body: JSON.stringify({search_history_enabled: !!on})});
       } catch (e) {
-        const n = $("an-adv-note"); if (n) n.textContent = tf("Could not save: {error}", {error: e.message});
+        const n = $("an-adv-note"); if (n) ooLive(n, () => tf("Could not save: {error}", {error: e.message}));
       }
       await _advHistLoad();
       const n = $("an-adv-note");
-      if (n) n.textContent = on ? t("Search history is on. It stays on this machine.") : t("Search history is off. Nothing new is kept.");
+      if (n) ooLive(n, () => on ? t("Search history is on. It stays on this machine.") : t("Search history is off. Nothing new is kept."));
     }
     async function _advHistClear() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
