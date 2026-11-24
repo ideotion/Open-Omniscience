@@ -28,17 +28,6 @@ app-claim.js claimExport
 app-claim.js claimRun
 app-claim.js claimVerify
 app-claim.js claimWeather
-app-core.js _airplanePopup
-app-core.js _gwRenderFinish
-app-core.js _paintCrashScreen
-app-core.js _paintHealth
-app-core.js _paintJobs
-app-core.js _renderCoverage
-app-core.js _renderNetLanes
-app-core.js _renderSchedule
-app-core.js ensureAiEgress
-app-core.js ensureOnline
-app-core.js loadTagCoverage
 app-corpus.js anRenderKwChips
 app-corpus.js conjCombine
 app-corpus.js conjContrast
