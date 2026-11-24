@@ -322,6 +322,8 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
       "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
       "function humanBytes(n){return String(n)+' B';}\n" +
       "function ooServerText(s){return String(s);}\n" +
+      // row 366: the panel's lines are kept renders; here a render is drawn once, as ooLive draws it first
+      "function ooLiveHtml(el, r){ if (el) el.innerHTML = r(); }\nfunction ooLive(el, r){ if (el) el.textContent = r(); }\n" +
       "var window = {}; var _uxExportDir = null, _uxPhase = null, _uxExportFacts = null, _uxExportIncluded = null;\n" +
       extract("fmtNum") + "\n" +
       "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
@@ -402,6 +404,7 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
         "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
         "function humanBytes(n){return String(n)+' B';}\n" +
         "function ooServerText(s){return String(s);}\n" +
+        "function ooLiveHtml(el, r){ if (el) el.innerHTML = r(); }\nfunction ooLive(el, r){ if (el) el.textContent = r(); }\n" +
         "function toast(){}\n" +
         "var window = {}; var _uxExportDir = DIR, _uxPhase = 'folder', _uxExportFacts = null;\n" +
         "let _uxWatchGen = 0; let _uxFinishedKey = null;\n" +
@@ -492,6 +495,7 @@ const render = (over) => { host.innerHTML = ""; _uxRenderExportPanel({ ...base, 
       "var _uxExportDir = null, _uxPhase = null, _uxExportIncluded = null;\n" +
       "let _uxWatchGen = 0; let _uxFinishedKey = null;\n" +
       "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
+      "function ooLiveHtml(el, r){ if (el) el.innerHTML = r(); }\nfunction ooLive(el, r){ if (el) el.textContent = r(); }\n" +
       "function _uxProgressView(){ return { pct: null, indeterminate: true, text: '' }; }\n" +
       "function _uxPaintBar(){}\nfunction _uxRuleOfThree(){ return null; }\nfunction _uxEta(){ return ''; }\n" +
       "async function _uxFinishExport(prog, dest){ FINISHED.push(dest); }\n" +

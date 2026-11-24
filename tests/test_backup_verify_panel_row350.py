@@ -71,4 +71,4 @@ def test_a_verify_forgets_the_import_summary_it_replaces():
     # it holds one; a verify that took the host over must drop it, or a switch paints the old import
     # summary over the verify result.
     body = function_body(read_static("app-backup.js"), "_uxImVerify")
-    assert 'summary.innerHTML = ""; _uxImSummaryArgs = null;' in body
+    assert 'summary.replaceChildren(); _uxImSummaryArgs = null;' in body
