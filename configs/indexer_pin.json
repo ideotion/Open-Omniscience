@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "4064e69a680165cd9f0049465055a5541adf5699ea0dc56e0d3f4d822ae776b5",
+  "digest": "a776ecc22d1bf48cb4e0468cfabb36b8fb14f9b231879cdc77e479c4dbe73e23",
   "log": [
     {
       "version": 1,
@@ -109,6 +109,12 @@
       "digest": "4064e69a680165cd9f0049465055a5541adf5699ea0dc56e0d3f4d822ae776b5",
       "kind": "same",
       "note": "row 239: safe_yaml maps libyaml 0.2.6's own nesting error (PyYAML 6.0.4) to the same YAMLDepthError; a document that parsed before parses to the same value, and a refused one is refused as before, so the rows an article gets are identical"
+    },
+    {
+      "version": 3,
+      "digest": "a776ecc22d1bf48cb4e0468cfabb36b8fb14f9b231879cdc77e479c4dbe73e23",
+      "kind": "same",
+      "note": "src/timemap/datestore.py changed only in its agenda READ path (upcoming_deduced gains a default limit, truncated and ids_complete; a new read-only deduced_date_article_ids); extract_dates and every function index_article calls to write date rows are untouched, so the rows an article gets are identical (row 399)"
     }
   ]
 }
