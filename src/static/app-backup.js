@@ -3017,10 +3017,11 @@
         } else {
           _altRep = await _altFetch(0);
         }
-        host.innerHTML = _altHtml(_altRep, t, tf);
+        const rep = _altRep;  // row 366: drawn again from what was read, in the language the operator switches to
+        ooLiveHtml(host, () => _altHtml(rep, t, tf));
       } catch (e) {
         // A failed read is not "no differences": that would be a claim about the data.
-        host.innerHTML = `<span style="color:var(--err)">${esc(t("The differences could not be read."))}</span>`;
+        ooLiveHtml(host, () => `<span style="color:var(--err)">${esc(t("The differences could not be read."))}</span>`);
       }
     }
 
@@ -3900,10 +3901,11 @@
         const s = await api("/api/backup/v2/volumes/status");
         const p = s.progress || {};
         const phase = p.phase || s.state;
-        const vols = p.volumes_written ? (" · " + p.volumes_written + " " + t("volumes")) : "";
+        // Row 366: each line is a render kept by ooLive, drawn again in the language the operator switches to.
+        const vols = () => (p.volumes_written ? (" · " + p.volumes_written + " " + t("volumes")) : "");
         const cancel = cancelId ? $(cancelId) : null;
         if (s.state === "running") {
-          if (prog) prog.textContent = (s.mode === "restore" ? t("Restoring") : t("Backing up")) + "… " + phase + vols;
+          ooLive(prog, () => (s.mode === "restore" ? t("Restoring") : t("Backing up")) + "… " + phase + vols());
           if (cancel) cancel.style.display = "";
         } else {
           if (_volPollTimer) { clearInterval(_volPollTimer); _volPollTimer = null; }
@@ -3911,26 +3913,26 @@
           if (btn) btn.disabled = false;
           const sum = s.summary || {};
           if (s.state === "done" && s.mode === "restore") {
-            if (prog) prog.textContent = t("Restore complete.");
+            ooLive(prog, () => t("Restore complete."));
           } else if (s.state === "done") {
-            const par = sum.parity_available === false ? (" " + t("(volumes only — parity needs the analysis features)")) : "";
+            const par = () => (sum.parity_available === false ? (" " + t("(volumes only — parity needs the analysis features)")) : "");
             // "How long did this take?" — the export side's own real, measured
             // wall/gate-held numbers (stream_backup.py), same "instrument first"
             // ask as the restore side; gate_held_s is the corpus writes-paused
             // window, always <= wall_s.
-            const timing = (typeof sum.wall_s === "number")
+            const timing = () => ((typeof sum.wall_s === "number")
               ? " (" + tf("took {wall}, {gate} with writes paused", {
                   wall: _uxFmtS(sum.wall_s), gate: _uxFmtS(sum.gate_held_s || 0),
                 }) + ")"
-              : "";
-            if (prog) prog.textContent = t("Backup complete:") + " " + (sum.volumes || "?") + " " + t("volumes") + par + timing;
+              : "");
+            ooLive(prog, () => t("Backup complete:") + " " + (sum.volumes || "?") + " " + t("volumes") + par() + timing());
           } else if (s.state === "cancelled") {
-            if (prog) prog.textContent = t("Cancelled.");
+            ooLive(prog, () => t("Cancelled."));
           } else if (s.state === "error") {
-            if (prog) prog.textContent = t("Failed:") + " " + (s.error ? ooServerText(s.error) : t("unknown error"));
+            ooLive(prog, () => t("Failed:") + " " + (s.error ? ooServerText(s.error) : t("unknown error")));
           }
         }
-      } catch (e) { if (prog) prog.textContent = t("Status check failed."); if (btn) btn.disabled = false; }
+      } catch (e) { ooLive(prog, () => t("Status check failed.")); if (btn) btn.disabled = false; }
     }
     function _volStartPoll(progId, btn, cancelId) {
       if (_volPollTimer) clearInterval(_volPollTimer);
@@ -3944,12 +3946,12 @@
       if (!dest) { toast(t("Choose a destination folder."), "warn"); return; }
       if (!pass) { toast(t("Enter a passphrase."), "warn"); return; }
       btn.disabled = true;
-      const prog = $("vb-progress"); if (prog) prog.textContent = t("Starting…");
+      const prog = $("vb-progress"); ooLive(prog, () => t("Starting…"));
       try {
         await api("/api/backup/v2/volumes/start",
           { method: "POST", body: JSON.stringify({ dest, passphrase: pass, include_newsletters: true, parity_fraction: 0.1 }) });
         _volStartPoll("vb-progress", btn, "vb-cancel");
-      } catch (e) { if (prog) prog.textContent = (e.message || e); btn.disabled = false; }
+      } catch (e) { ooLive(prog, () => ooServerText(e.message || e)); btn.disabled = false; }
     }
     async function volBackupCancel(_btn) {
       try { await api("/api/backup/v2/volumes/cancel", { method: "POST" }); } catch (e) { /* best effort */ }
@@ -3962,12 +3964,12 @@
       if (!pass) { toast(t("Enter the passphrase."), "warn"); return; }
       if (!confirm(t("Restore merges this backup into your corpus (additive — nothing is replaced). Continue?"))) return;
       btn.disabled = true;
-      const prog = $("vb-rprogress"); if (prog) prog.textContent = t("Starting…");
+      const prog = $("vb-rprogress"); ooLive(prog, () => t("Starting…"));
       try {
         await api("/api/backup/v2/volumes/restore",
           { method: "POST", body: JSON.stringify({ src, passphrase: pass }) });
         _volStartPoll("vb-rprogress", btn, null);
-      } catch (e) { if (prog) prog.textContent = (e.message || e); btn.disabled = false; }
+      } catch (e) { ooLive(prog, () => ooServerText(e.message || e)); btn.disabled = false; }
     }
     // What a folder RESTORE turned away, and what it could not check. The restore
     // hashes every file as it streams and discards a member whose bytes do not match
