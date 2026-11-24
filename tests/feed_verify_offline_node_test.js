@@ -31,7 +31,7 @@ function extract(name) {
 
 const S1 = "Airplane mode is on: nothing was fetched. Click the plane in the top bar to go online, then try again.";
 
-function sandbox(reply) {
+function sandbox(reply, gate) {
   const log = { toasts: [], calls: [], reloads: 0 };
   const api = async (path) => {
     log.calls.push(path);
@@ -39,8 +39,9 @@ function sandbox(reply) {
     return reply;
   };
   const src = ["function _bulT(s){return s;}", extract("feedAction"), "return { feedAction };"].join("\n");
-  const f = new Function("api", "toast", "loadFeedDir", src);
-  return { h: f(api, (m, k) => log.toasts.push([m, k || "ok"]), () => { log.reloads++; }), log };
+  // R822: the gate is real here -- with it missing the action starts nothing (case at the end).
+  const f = new Function("api", "toast", "loadFeedDir", "ensureOnline", src);
+  return { h: f(api, (m, k) => log.toasts.push([m, k || "ok"]), () => { log.reloads++; }, gate === undefined ? async () => true : gate), log };
 }
 
 (async () => {
@@ -70,6 +71,14 @@ function sandbox(reply) {
     const { h, log } = sandbox(new Error("network kill switch is active -- collection stopped by operator"));
     await h.feedAction("wph-hol-ad", "import");
     assert.deepStrictEqual(log.toasts, [["network kill switch is active -- collection stopped by operator", "err"]], "an import refusal is already named (502)");
+  }
+  {
+    // R822: with the consent gate missing (null) or refusing, the feed is never asked.
+    for (const gate of [null, async () => false]) {
+      const { h, log } = sandbox({ feed: "x", verdict: { status: "ok" } }, gate);
+      await h.feedAction("wph-hol-ad", "verify");
+      assert.deepStrictEqual(log.calls, [], "no consent, no request");
+    }
   }
   console.log("feed_verify_offline_node_test.js: OK");
 })().catch((e) => { console.error(e); process.exit(1); });

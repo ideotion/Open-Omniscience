@@ -2230,7 +2230,7 @@
       // it follows a language switch without a second request (row 367).
       if (!host || !user) { ooLive(out, () => t("Enter at least a host and user.")); return; }
       // A network action -> the ONE consent popup (invariant #14).
-      if (typeof ensureOnline === "function" && !await ensureOnline(t("Pull newsletters from your mailbox"))) return;
+      if (typeof ensureOnline !== "function" || !await ensureOnline(t("Pull newsletters from your mailbox"))) return;
       const body = {
         protocol: $("mbox-proto").value, host, user, password,
         port: parseInt($("mbox-port").value || "0", 10) || 0,
