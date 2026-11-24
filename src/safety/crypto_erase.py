@@ -880,9 +880,7 @@ def _kept_in_keys(keys_dir: Path) -> int:
                 n += 1
             else:
                 n += sum(1 for f in _listing(Path(e.path)) if not (re.fullmatch(KEYS_PENDING_RE, f.name) and _kind(Path(f.path)) == "file"))
-        elif e.name not in APP_KEY_NAMES:
-            n += 1
-        elif _kind(Path(e.path)) != "file":
+        elif e.name not in APP_KEY_NAMES or _kind(Path(e.path)) != "file":
             n += 1
     return n
 
