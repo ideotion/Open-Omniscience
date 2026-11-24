@@ -199,8 +199,8 @@ PLAIN_STORE_REASON = {
 #: R818 (b): after "had its first page overwritten" when the body rewrite did not run.
 PLAIN_STORE_REST = "The rest was not overwritten."
 #: R818 (a): information only, as the body rewrite starts (the CLI prints it; the page shows it before the request).
-PLAIN_STORE_NOTICE = ("Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is "
-                      "already deleted.")
+PLAIN_STORE_NOTICE = ("Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the "
+                      "file is already deleted.")
 #: R818 (c): for the overwritten and partially overwritten states.
 PLAIN_STORE_OTHER_NAMES_OVERWRITTEN = ("Other names for it remain on the disk and now lead to the overwritten content, so a copy "
                                        "kept under another name is no longer usable (count: {n}).")

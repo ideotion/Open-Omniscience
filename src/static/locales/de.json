@@ -4185,7 +4185,7 @@
   "Overview": "Übersicht",
   "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.": "Den gesamten freien Speicherplatz auf diesem Rechner überschreiben? Das lässt sich nicht rückgängig machen und kann bei einer großen Festplatte mehrere Minuten dauern.",
   "Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.": "Überschreiben garantiert auf SSD-/Flash-/Copy-on-Write-Datenträgern keine Löschung — der echte Schutz ist, dass Ihr Korpus verschlüsselt wurde und der Schlüssel zerstört ist.",
-  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted.": "Das Überschreiben der unverschlüsselten Hauptdatenbank kann mehrere Minuten dauern. Das Schließen der App stoppt es; die Datei ist bereits gelöscht.",
+  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted.": "Das Überschreiben der unverschlüsselten Hauptdatenbank kann mehrere Minuten dauern. Das Schließen der App stoppt es; die Datei ist dann bereits gelöscht.",
   "Ownership change": "Eigentümerwechsel",
   "P0 data-safety validation": "P0-Validierung der Datensicherheit",
   "P0 data-safety validation (v0.2.0 acceptance)": "P0-Datensicherheitsvalidierung (v0.2.0-Abnahme)",

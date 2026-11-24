@@ -4185,7 +4185,7 @@
   "Overview": "نظرة عامة",
   "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.": "الكتابة فوق كل مساحة القرص الحرة في هذا الجهاز؟ لا يمكن التراجع عن ذلك وقد يستغرق عدة دقائق على قرص كبير.",
   "Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.": "الكتابة فوق البيانات لا تضمن المحو على أقراص SSD/flash/النسخ-عند-الكتابة — الحماية الحقيقية أن مجموعتك كانت مشفَّرة وأن المفتاح أُتلِف.",
-  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted.": "قد تستغرق الكتابة فوق قاعدة البيانات الرئيسية غير المشفّرة عدة دقائق. إغلاق التطبيق يوقفها؛ الملف محذوف بالفعل.",
+  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted.": "قد تستغرق الكتابة فوق قاعدة البيانات الرئيسية غير المشفّرة عدة دقائق. إغلاق التطبيق يوقفها؛ وعندها يكون الملف محذوفًا بالفعل.",
   "Ownership change": "تغيّر الملكية",
   "P0 data-safety validation": "التحقق P0 من سلامة البيانات",
   "P0 data-safety validation (v0.2.0 acceptance)": "التحقق من سلامة البيانات P0 (قبول ⁨v0.2.0⁩)",

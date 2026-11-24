@@ -4185,7 +4185,7 @@
   "Overview": "Vue d'ensemble",
   "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.": "Écraser tout l'espace disque libre de cette machine ? C'est irréversible et cela peut prendre plusieurs minutes sur un gros disque.",
   "Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.": "L'écrasement ne garantit pas l'effacement sur les disques SSD/flash/copy-on-write — la véritable protection, c'est que votre corpus était chiffré et que la clé est détruite.",
-  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted.": "L’écrasement de la base de données principale non chiffrée peut prendre plusieurs minutes. Fermer l’application l’arrête ; le fichier est déjà supprimé.",
+  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted.": "L’écrasement de la base de données principale non chiffrée peut prendre plusieurs minutes. Fermer l’application l’arrête ; à ce moment-là, le fichier est déjà supprimé.",
   "Ownership change": "Changement de propriétaire",
   "P0 data-safety validation": "Validation P0 de la sûreté des données",
   "P0 data-safety validation (v0.2.0 acceptance)": "Validation P0 de sûreté des données (acceptation v0.2.0)",

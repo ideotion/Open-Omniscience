@@ -4185,7 +4185,7 @@
   "Overview": "Ikhtisar",
   "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.": "Timpa seluruh ruang disk kosong di mesin ini? Ini tidak dapat dibatalkan dan bisa memakan waktu beberapa menit pada disk besar.",
   "Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.": "Penimpaan tidak dapat menjamin penghapusan pada disk SSD/flash/copy-on-write — perlindungan sebenarnya adalah bahwa korpus Anda dienkripsi dan kuncinya dimusnahkan.",
-  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted.": "Menimpa basis data utama yang tidak terenkripsi bisa memakan waktu beberapa menit. Menutup aplikasi menghentikannya; berkas itu sudah dihapus.",
+  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted.": "Menimpa basis data utama yang tidak terenkripsi bisa memakan waktu beberapa menit. Menutup aplikasi menghentikannya; pada saat itu berkas sudah dihapus.",
   "Ownership change": "Perubahan kepemilikan",
   "P0 data-safety validation": "Validasi keamanan data P0",
   "P0 data-safety validation (v0.2.0 acceptance)": "Validasi keamanan data P0 (penerimaan v0.2.0)",

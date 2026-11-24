@@ -4185,7 +4185,7 @@
   "Overview": "Visão geral",
   "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.": "Sobrescrever todo o espaço livre do disco desta máquina? Isso não pode ser desfeito e pode levar vários minutos em um disco grande.",
   "Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.": "A sobrescrita não garante o apagamento em discos SSD/flash/copy-on-write — a proteção real é que o seu corpus foi criptografado e a chave foi destruída.",
-  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted.": "Sobrescrever o banco de dados principal não criptografado pode levar vários minutos. Fechar o aplicativo a interrompe; o arquivo já foi excluído.",
+  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted.": "Sobrescrever o banco de dados principal não criptografado pode levar vários minutos. Fechar o aplicativo a interrompe; nesse momento o arquivo já foi excluído.",
   "Ownership change": "Mudança de controle",
   "P0 data-safety validation": "Validação P0 da segurança dos dados",
   "P0 data-safety validation (v0.2.0 acceptance)": "Validação de segurança de dados P0 (aceitação da v0.2.0)",

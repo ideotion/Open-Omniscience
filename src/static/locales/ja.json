@@ -4185,7 +4185,7 @@
   "Overview": "概要",
   "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.": "このマシンの空きディスク領域をすべて上書きしますか？ 元に戻せません。大きなディスクでは数分かかることがあります。",
   "Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.": "上書きは SSD／フラッシュ／コピーオンライトのディスク上での消去を保証できません — 本当の保護は、コーパスが暗号化されており、鍵が破棄されていることです。",
-  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted.": "暗号化されていないメインデータベースの上書きには数分かかることがあります。アプリを閉じると停止します。ファイルはすでに削除されています。",
+  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted.": "暗号化されていないメインデータベースの上書きには数分かかることがあります。アプリを閉じると停止します。その時点でファイルはすでに削除されています。",
   "Ownership change": "所有権の変更",
   "P0 data-safety validation": "P0 データ安全性の検証",
   "P0 data-safety validation (v0.2.0 acceptance)": "P0 データ安全性検証（v0.2.0 受け入れ）",

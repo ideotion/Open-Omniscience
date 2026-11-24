@@ -4322,7 +4322,7 @@
         let atRest = _atRestDoc;
         if (!atRest) { try { atRest = await api("/api/system/doctor"); } catch (_e) { atRest = null; } }
         if (atRest && atRest.corpus && atRest.corpus.state === "plaintext") {
-          toast(t("Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted."), "ok");
+          toast(t("Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted."), "ok");
         }
         // Phase 1 — instant crypto-erase (destroys the SQLCipher salt; fast at any size).
         const r = await api("/api/safety/panic", {method: "POST", body: JSON.stringify({confirm: true})});

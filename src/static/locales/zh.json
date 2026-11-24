@@ -4185,7 +4185,7 @@
   "Overview": "概览",
   "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.": "覆盖此机器上所有的可用磁盘空间？此操作无法撤销，在大容量磁盘上可能需要几分钟。",
   "Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.": "覆写无法保证在 SSD/闪存/写时复制磁盘上完成擦除——真正的保护在于你的语料库已被加密，且密钥已被销毁。",
-  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted.": "覆写未加密的主数据库可能需要几分钟。关闭应用会使其停止；该文件已被删除。",
+  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted.": "覆写未加密的主数据库可能需要几分钟。关闭应用会使其停止；届时该文件已被删除。",
   "Ownership change": "所有权变更",
   "P0 data-safety validation": "P0 数据安全验证",
   "P0 data-safety validation (v0.2.0 acceptance)": "P0 数据安全验证（v0.2.0 验收）",

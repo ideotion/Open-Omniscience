@@ -4185,7 +4185,7 @@
   "Overview": "সংক্ষিপ্ত বিবরণ",
   "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.": "এই মেশিনের সব ফাঁকা ডিস্ক স্থান ওভাররাইট করবেন? এটি ফেরানো যায় না এবং বড় ডিস্কে কয়েক মিনিট লাগতে পারে।",
   "Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.": "ওভাররাইট SSD/ফ্ল্যাশ/copy-on-write ডিস্কে মুছে যাওয়ার নিশ্চয়তা দিতে পারে না — প্রকৃত সুরক্ষা হলো যে আপনার কর্পাস এনক্রিপ্ট করা হয়েছিল এবং কী ধ্বংস করা হয়েছে।",
-  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted.": "এনক্রিপ্ট না করা প্রধান ডেটাবেস ওভাররাইট করতে কয়েক মিনিট লাগতে পারে। অ্যাপ বন্ধ করলে এটি থেমে যায়; ফাইলটি ইতিমধ্যে মুছে ফেলা হয়েছে।",
+  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted.": "এনক্রিপ্ট না-করা মূল ডেটাবেস ওভাররাইট করতে কয়েক মিনিট লাগতে পারে। অ্যাপ বন্ধ করলে এটি থেমে যায়; ততক্ষণে ফাইলটি ইতিমধ্যে মুছে ফেলা হয়েছে।",
   "Ownership change": "মালিকানা পরিবর্তন",
   "P0 data-safety validation": "P0 ডেটা-নিরাপত্তা যাচাই",
   "P0 data-safety validation (v0.2.0 acceptance)": "P0 ডেটা-নিরাপত্তা যাচাই (v0.2.0 গ্রহণযোগ্যতা)",

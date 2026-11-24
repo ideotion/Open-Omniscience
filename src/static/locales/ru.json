@@ -4185,7 +4185,7 @@
   "Overview": "Обзор",
   "Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk.": "Перезаписать всё свободное место на диске этой машины? Это нельзя отменить, и на большом диске может занять несколько минут.",
   "Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.": "Перезапись не может гарантировать стирание на SSD/flash-дисках и дисках с copy-on-write — настоящая защита в том, что ваш корпус был зашифрован, а ключ уничтожен.",
-  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; the file is already deleted.": "Перезапись незашифрованной основной базы данных может занять несколько минут. Закрытие приложения останавливает её; файл уже удалён.",
+  "Overwriting the unencrypted main database may take several minutes. Closing the app stops it; by then the file is already deleted.": "Перезапись незашифрованной основной базы данных может занять несколько минут. Закрытие приложения останавливает её; к тому времени файл уже удалён.",
   "Ownership change": "Смена владельца",
   "P0 data-safety validation": "Проверка P0 сохранности данных",
   "P0 data-safety validation (v0.2.0 acceptance)": "Проверка безопасности данных P0 (приёмка v0.2.0)",

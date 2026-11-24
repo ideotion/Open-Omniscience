@@ -914,7 +914,7 @@ imply a protection we cannot deliver.
   first page overwritten. The rest was not overwritten." with the reason), is every byte of each that holds data rewritten
   through the kept handle (`SEEK_DATA`/`SEEK_HOLE`, else the logical size stopping before the 64 MiB reserve, R797), after a
   `fstat` check that it is the same regular file, and fsynced; there is no deadline: the CLI prints, and the page shows before
-  the request, that it may take several minutes and that closing the app stops it, the file being already deleted, and a stop
+  the request, that it may take several minutes and that closing the app stops it, by when the file is already deleted, and a stop
   partway is said as "only partially overwritten" wherever a report is still made. The late pass then rewrites page 1 again
   and closes the handles (R789); another holder is said under R792. Where
   an open file cannot be unlinked (Windows: no share-delete open here) the order is the old one, the first page then the
