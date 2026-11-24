@@ -178,7 +178,20 @@ def test_a_key_that_lands_on_the_evidence_name_by_any_route_keeps_the_marker(tmp
         return real(local, data)
 
     monkeypatch.setattr(merge, "_place_key_file", aliasing)
-    _restore(tmp_path, {"keys/annotations_ed25519.pem": _pem(Ed25519PrivateKey.generate())})
+    # R811: the annotations key is a pair, placed whole or not at all, so the backup carries both halves
+    from src.custody import signing
+    from tests.test_restore_key_rewrap import _FakeMldsa
+
+    monkeypatch.setattr(signing, "_mldsa", _FakeMldsa)
+    monkeypatch.setattr(signing, "PQC_AVAILABLE", True)
+    pk, sk = _FakeMldsa.generate_keypair()
+    _restore(
+        tmp_path,
+        {
+            "keys/annotations_ed25519.pem": _pem(Ed25519PrivateKey.generate()),
+            "keys/annotations_ml_dsa_65.key": signing.seal_mldsa_key(pk, sk, None),
+        },
+    )
     assert (tmp_path / "live" / MARKER).exists()
     assert ev.is_this_installations_key(ev.public_key_hex(key)) is False
 
