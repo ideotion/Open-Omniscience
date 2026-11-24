@@ -983,35 +983,21 @@ def unverified_activation() -> dict | None:
 
 
 def _write_unverified_activation(record: dict) -> None:
-    target = _unverified_activation_path()
-    # A name of its own per write (never a fixed ".tmp"), created exclusively: two writers never share one.
-    from src.safety.file_lock import temp_name
+    # The shared writer: a temp name of its own per write, flushed, moved over the record, the folder flushed.
+    from src.safety.file_lock import atomic_replace
 
-    tmp = temp_name(target)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-    fd = os.open(tmp, flags, 0o600)
-    try:
-        try:
-            os.write(fd, json.dumps(record).encode("utf-8"))
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.replace(tmp, target)
-    except BaseException:
-        with suppress(OSError):
-            tmp.unlink()
-        raise
-    from src.database.connect import _fsync_dir
-
-    _fsync_dir(target.parent)
+    atomic_replace(_unverified_activation_path(), json.dumps(record))
 
 
 def _note_unverified_activation(safety_net: Path | None) -> None:
     """Write the record before the live corpus changes. The run's safety net (its start state) is kept from an
     earlier record of the same run, so the state to return to is the one before the run's FIRST activation."""
-    prior = unverified_activation() or {}
-    net = prior.get("safety_net") if prior.get("safety_net") else (str(safety_net) if safety_net is not None else None)
-    _write_unverified_activation({"since": prior.get("since") or datetime.now(UTC).isoformat(), "safety_net": net})
+    from src.safety.file_lock import file_lock
+
+    with file_lock(_unverified_activation_path()):  # the new record depends on the old one
+        prior = unverified_activation() or {}
+        net = prior.get("safety_net") if prior.get("safety_net") else (str(safety_net) if safety_net is not None else None)
+        _write_unverified_activation({"since": prior.get("since") or datetime.now(UTC).isoformat(), "safety_net": net})
 
 
 def _net_owed_by_unverified_activation() -> str | None:
@@ -1049,7 +1035,7 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
     try:
         con = db_connect(live_db_path(), check_same_thread=False, read_only=True)
     except Exception:  # noqa: BLE001 - not a verdict: the record stays and the next start tries again
-        return {"state": "unchecked", "reason": "the corpus could not be opened for the check"}
+        return {"state": "unchecked", "reason": "not-opened"}
     try:
         if should_stop is not None:
 
@@ -1068,7 +1054,7 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
         from src.database.damage import is_corruption
 
         if not is_corruption(exc):
-            return {"state": "unchecked", "reason": "the check of the corpus did not finish"}
+            return {"state": "unchecked", "reason": "not-finished"}
         from src.database import damage
 
         damage.registry.note(damage.FILE_CORPUS, exc, statement="PRAGMA quick_check", path=live_db_path())

@@ -169,7 +169,9 @@ def test_the_record_keeps_the_runs_first_safety_net(data):
     _note_unverified_activation(data / "pre-restore-20261124T110000Z.db")
     got = unverified_activation()
     assert Path(got["safety_net"]).name == "pre-restore-20261124T100000Z.db"
-    assert oct((data / "import-unverified-activation.json").stat().st_mode & 0o777) == "0o600"
+    # written through the shared atomic writer under its lock: no temp is left beside it
+    assert sorted(p.name for p in data.iterdir() if p.name.startswith("import-unverified-activation") and ".tmp" in p.name) == []
+    assert (data / "import-unverified-activation.json").is_file()
 
 
 def _live(monkeypatch, path: Path):
@@ -252,7 +254,7 @@ def test_the_queue_end_check_turns_a_stopped_run_into_an_error(tmp_path, monkeyp
 
 
 def test_a_start_with_a_record_runs_the_check_once_and_never_says_done(tmp_path, monkeypatch):
-    mgr = _queue(tmp_path, monkeypatch, {"state": "unchecked", "reason": "the check of the corpus did not finish"})
+    mgr = _queue(tmp_path, monkeypatch, {"state": "unchecked", "reason": "not-finished"})
     mgr._state = "done"
     mgr.check_owed_at_start()
     st = mgr.status()

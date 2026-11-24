@@ -1073,7 +1073,7 @@ class ImportQueueManager:
             got = check_live_after_scoped_activation()
         except Exception as exc:  # noqa: BLE001 - documented never to raise; an unread result is not a pass
             log_failure(_LOG, "the whole-file check of the corpus after the import failed to run", exc, *self._secrets())
-            got = {"state": "unchecked", "reason": "the check of the corpus did not finish"}
+            got = {"state": "unchecked", "reason": "not-finished"}
         finally:
             with self._lock:
                 self._live = None

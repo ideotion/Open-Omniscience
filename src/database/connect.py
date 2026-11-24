@@ -1161,7 +1161,8 @@ def _unrecorded_open(event: str, args: tuple) -> None:
     :func:`connect` has no recorder, so whatever it writes is unseen and the set becomes unknown. Read-only opens
     (``mode=ro``) cannot write and are left alone. Returns at once when nothing is watched; never raises (an audit
     hook that raises would fail the caller's open)."""
-    if event != "sqlite3.connect" or not _WRITE_WATCH or getattr(_IN_FACTORY, "depth", 0):
+    depth: int = getattr(_IN_FACTORY, "depth", 0)
+    if event != "sqlite3.connect" or not _WRITE_WATCH or depth > 0:
         return
     try:
         name = args[0] if args else None
