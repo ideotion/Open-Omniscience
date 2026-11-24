@@ -8990,5 +8990,6 @@
   "＋ zoom": "＋ Zoom",
   "－ zoom": "－ Zoom",
   "📍 places": "📍 Orte",
-  "🛒 Draft (": "🛒 Entwurf ("
+  "🛒 Draft (": "🛒 Entwurf (",
+  "The network consent step did not complete, so nothing was started.": "Der Schritt zur Netzwerkfreigabe wurde nicht abgeschlossen, daher wurde nichts gestartet."
 }

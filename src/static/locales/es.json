@@ -8990,5 +8990,6 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lugares",
-  "🛒 Draft (": "🛒 Borrador ("
+  "🛒 Draft (": "🛒 Borrador (",
+  "The network consent step did not complete, so nothing was started.": "El paso de consentimiento de red no se completó, así que no se inició nada."
 }

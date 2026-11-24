@@ -8990,5 +8990,6 @@
   "＋ zoom": "＋ zoom",
   "－ zoom": "－ zoom",
   "📍 places": "📍 lieux",
-  "🛒 Draft (": "🛒 Brouillon ("
+  "🛒 Draft (": "🛒 Brouillon (",
+  "The network consent step did not complete, so nothing was started.": "L’étape de consentement réseau ne s’est pas terminée : rien n’a été lancé."
 }

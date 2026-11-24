@@ -8990,5 +8990,6 @@
   "＋ zoom": "＋ 放大",
   "－ zoom": "－ 缩小",
   "📍 places": "📍 地点",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "The network consent step did not complete, so nothing was started.": "网络授权步骤未完成，因此没有启动任何操作。"
 }

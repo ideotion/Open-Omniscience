@@ -8990,5 +8990,6 @@
   "＋ zoom": "＋ تكبير",
   "－ zoom": "－ تصغير",
   "📍 places": "📍 أماكن",
-  "🛒 Draft (": "🛒 المسودة ("
+  "🛒 Draft (": "🛒 المسودة (",
+  "The network consent step did not complete, so nothing was started.": "لم تكتمل خطوة الموافقة على الشبكة، لذلك لم يبدأ أي شيء."
 }

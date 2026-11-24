@@ -8990,5 +8990,6 @@
   "＋ zoom": "＋ 拡大",
   "－ zoom": "－ 縮小",
   "📍 places": "📍 場所",
-  "🛒 Draft (": "🛒 草稿 ("
+  "🛒 Draft (": "🛒 草稿 (",
+  "The network consent step did not complete, so nothing was started.": "ネットワーク接続の同意手順が完了しなかったため、何も開始されませんでした。"
 }

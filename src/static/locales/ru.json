@@ -8990,5 +8990,6 @@
   "＋ zoom": "＋ увеличить",
   "－ zoom": "－ уменьшить",
   "📍 places": "📍 места",
-  "🛒 Draft (": "🛒 Черновик ("
+  "🛒 Draft (": "🛒 Черновик (",
+  "The network consent step did not complete, so nothing was started.": "Шаг согласия на сетевой доступ не завершился, поэтому ничего не запущено."
 }
