@@ -7922,8 +7922,14 @@ def _take_back_pair(
     no Ed25519 key is left at ``ed25519``: a half that stays (another caller rewrapped it meanwhile, or its removal failed)
     keeps its marker, so it never reads as this installation's own. The marker outlives the key, as it precedes it."""
     _take_back_key_files(made)
-    if marker is not None and not os.path.lexists(ed25519):
+    if marker is None:
+        return
+    try:
+        os.lstat(ed25519)
+    except FileNotFoundError:
         _take_back_key_files([marker])
+    except OSError:
+        pass  # not known to be gone: the key may still be there, so its marker stays (fail closed)
 
 
 def _take_back_key_files(made: list[tuple[Path, tuple[int, int, int, int]]]) -> None:
