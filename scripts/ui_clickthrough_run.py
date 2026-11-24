@@ -714,10 +714,13 @@ def _check_breakpoint_overflow(driver: PlaywrightUiWalkDriver, report: Report,
 # -> main_header_state -> state_for_header), so ``/api/system/lock-state`` is a header read
 # reported in lock vocabulary -- not a second, weaker source. That matters because the fuller
 # attestation is unreachable at exactly the moment an encrypted run needs it (below).
+# R821: the lock word says whether a key is HELD, never that it opened the file, so neither "locked" nor "unlocked-encrypted"
+# maps to "encrypted": a header that is not SQLite's only LOOKS encrypted. The server's own ``at_rest_claim`` (evidence-aware)
+# is read first when it is there; "encrypted" for --require-encrypted needs the doctor's keyed reading (below).
 _LOCK_STATE_TO_AT_REST = {
     "unlocked-plaintext": "plaintext",
-    "unlocked-encrypted": "encrypted",
-    "locked": "encrypted",
+    "unlocked-encrypted": "looks_encrypted",
+    "locked": "looks_encrypted",
     "fresh": "absent",
 }
 
@@ -782,6 +785,8 @@ def _probe_at_rest(label: str, url: str, when: str) -> dict:
         store = doc["corpus"]
         row["detected"] = store["state"]
         row["via"] = "doctor"
+        if store.get("evidence"):
+            row["evidence"] = store["evidence"]  # R821: "key" (opened with the key here), "record", or "header"
         if store.get("cipher"):
             # Present only when this server HOLDS the passphrase, so its absence beside
             # detected=encrypted means "the header says encrypted and the app is still
@@ -804,6 +809,9 @@ def _probe_at_rest(label: str, url: str, when: str) -> dict:
         return row
 
     mapped = _LOCK_STATE_TO_AT_REST.get(str(lock.get("state")))
+    if mapped is not None and lock.get("at_rest_claim") in ("encrypted", "looks_encrypted", "plaintext", "absent"):
+        mapped = lock["at_rest_claim"]
+        row["evidence"] = "record" if mapped == "encrypted" else "header"
     if mapped is None:
         # The vocabulary moved. Say so rather than inferring a verdict from a word we do not
         # know -- a wrong "plaintext" here would be a fabricated finding about the app.
@@ -2529,7 +2537,9 @@ def main() -> None:
         # create flow), so counting it would let an otherwise-plaintext walk satisfy
         # the flag on a state that proves nothing about the seeded path.
         walked = [r for r in report.at_rest if r["state"] in ("B", "C", "D")]
-        enc = sorted({r["state"] for r in walked if r.get("detected") == "encrypted"})
+        # R821 (4): before the walk the states are locked, so the most they can show is "looks encrypted" (a header) or this
+        # installation's record; the keyed reading is checked after the walk. Here only a store measured NOT encrypted refuses.
+        enc = sorted({r["state"] for r in walked if r.get("detected") in ("encrypted", "looks_encrypted")})
         if not enc:
             _log(
                 "REFUSING: --require-encrypted was passed and no seeded, walked state "
@@ -2552,6 +2562,21 @@ def main() -> None:
     # the browsers close, so nothing is still writing to the stores being attested.
     for label, url in states:
         _record_at_rest(report, label, url, "after-walk")
+
+    if args.require_encrypted:
+        # R821 (4): "encrypted" for this flag needs a KEYED open: the doctor's reading once the walk has unlocked the state, with
+        # the server's own evidence "key". A header or a record is not enough; without the key the run fails as not verified.
+        verified = sorted({r["state"] for r in report.at_rest if r["state"] in ("B", "C", "D") and r.get("when") == "after-walk"
+                           and r.get("detected") == "encrypted" and r.get("evidence") == "key"})
+        if not verified:
+            (out_dir / "report.json").write_text(json.dumps(asdict(report), indent=2), encoding="utf-8")
+            _log(
+                "REFUSING: --require-encrypted was passed and encryption was NOT VERIFIED: no seeded, walked state was "
+                "opened with the key after the walk (the doctor's reading with evidence 'key'). A header or this "
+                "installation's record alone is not a verification. Pass the passphrase as OO_UIWALK_ENCRYPTED_PASS."
+            )
+            raise SystemExit(2)
+        _log(f"encrypted variant verified with the key in state(s): {verified}")
 
     (out_dir / "report.json").write_text(json.dumps(asdict(report), indent=2), encoding="utf-8")
 

@@ -199,7 +199,8 @@ def doctor() -> dict:
             return {"state": "absent"}
         if not enc:
             return {"state": "plaintext"}
-        out: dict = {"state": "encrypted"}
+        # R821 (1)/(2): a header that is not SQLite's only LOOKS encrypted; "encrypted" once the held key opened it here
+        out: dict = {"state": "looks_encrypted", "evidence": "header"}
         if get_passphrase():
             try:
                 from src.database.connect import connect
@@ -207,7 +208,8 @@ def doctor() -> dict:
                 c = connect(p, check_same_thread=False)
                 try:
                     ver = c.execute("PRAGMA cipher_version").fetchone()
-                    out["cipher"] = ver[0] if ver else None
+                    c.execute("SELECT count(*) FROM sqlite_master").fetchone()
+                    out = {"state": "encrypted", "evidence": "key", "cipher": ver[0] if ver else None}
                 finally:
                     c.close()
             except Exception:  # noqa: BLE001 - attestation must not raise
@@ -239,7 +241,7 @@ def doctor() -> dict:
         row = by_store.get(name)
         if row is None:
             return _store(rows.get(name, fallback))
-        return {k: v for k, v in row.items() if k in ("state", "reason", "key_checked", "cipher")}
+        return {k: v for k, v in row.items() if k in ("state", "reason", "key_checked", "cipher", "evidence")}
 
     def _corpus_line() -> dict:
         main = main_db_path()
@@ -267,6 +269,7 @@ def doctor() -> dict:
             "unchecked": at_rest["unchecked"],
             "busy": at_rest["busy"],
             "key_held": at_rest["key_held"],
+            "looks_encrypted": at_rest["looks_encrypted"],  # R821: header only, never counted as encrypted
             "plaintext_snapshots": at_rest["plaintext_snapshots"],
         },
         "corpus": _corpus_line(),
@@ -560,11 +563,15 @@ def data_volume_close_now() -> dict:
 
 @router.get("/lock-state")
 def lock_state() -> dict:
+    from src.database import at_rest_state
     from src.database.connect import have_driver, plaintext_mode
 
     state = app_lock_state()
     return {
         "state": state,
+        # R821: what may be SAID about the store at rest ("encrypted" only with evidence, else "looks_encrypted"); ``state`` is the
+        # lock gate's word, which says whether a key is held, never that it opened the file.
+        "at_rest_claim": at_rest_state.claim_for(main_db_path()) if main_db_path() is not None else "unknown",
         "locked": state in ("locked", "fresh"),
         "plaintext_mode": plaintext_mode(),
         "driver": have_driver(),

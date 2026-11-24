@@ -435,6 +435,34 @@ def _evidence(name: str, path: Path, record: dict[str, Any]) -> str | None:
     return "record"
 
 
+def claim_for(main: Path | None = None) -> str:
+    """R821 (1)/(2)/(5): what may be SAID about the corpus at rest, for every line shown to a person or written to a report (the lock
+    screen, the lock-state answer, the benchmark and performance reports): ``"encrypted"`` only with evidence (:func:`_evidence`: a
+    keyed read held in this process, or this installation's record naming the very file), ``"looks_encrypted"`` for a header that is
+    not SQLite's and nothing more, ``"plaintext"`` for SQLite's own header, ``"absent"``, or ``"unknown"`` (not read). Never the lock
+    gate's control word: "unlocked-encrypted" says a key is held, not that it opened the file. A header read through the kept
+    descriptor (R789), a ``stat`` and the record: no store is opened. Never raises."""
+    try:
+        rows = stores(main)
+        if not rows:
+            return "unknown"
+        name, path = rows[0]
+        state, _reason = _read_header(path)
+        if state != "encrypted":
+            return state if state in ("plaintext", "absent") else "unknown"
+        return "encrypted" if _evidence(name, path, read_record(path)) is not None else "looks_encrypted"
+    except Exception:  # noqa: BLE001 - a claim that cannot be made is "unknown", never a guess
+        return "unknown"
+
+
+def lock_state_claim(lock_state: str, main: Path | None = None) -> str:
+    """The lock gate's word for a REPORT (R821 (5)): ``unlocked-encrypted`` only with evidence (:func:`claim_for`), else
+    ``unlocked-looks-encrypted``; every other word as it is ("locked" says only that the app holds no key)."""
+    if lock_state != "unlocked-encrypted":
+        return lock_state
+    return lock_state if claim_for(main) == "encrypted" else "unlocked-looks-encrypted"
+
+
 def _with_evidence(row: dict[str, Any], name: str, path: Path, record: dict[str, Any]) -> dict[str, Any]:
     """R821 (1): a row whose header is not SQLite's and that no key opened here is "encrypted" only with :func:`_evidence`, and says
     which; otherwise it is ``looks_encrypted`` ("looks encrypted; not yet checked with your key"), never "encrypted"."""

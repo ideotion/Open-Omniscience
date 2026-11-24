@@ -4224,9 +4224,11 @@
       const why = { permission: "permission refused",
                     short_header: "the file is too short to be a database", io: "a read error" };
       const word = (s) => !s ? t("not created yet")
-        : s.state === "encrypted" ? (s.key_checked === false ? t("Encrypted (SQLCipher 4), not yet checked against this passphrase") : t("Encrypted (SQLCipher 4)"))
+        // R821: "encrypted" only with evidence (a key opened it, or this installation's record names it); a header alone only looks so
+        : s.state === "encrypted" ? (s.evidence === "record" ? t("Encrypted, per this installation's record (not yet checked with your key)") : t("Encrypted (SQLCipher 4)"))
+        : s.state === "looks_encrypted" ? t("Looks encrypted; not yet checked with your key")
         : s.state === "plaintext" ? t("NOT encrypted")
-        : s.state === "not_this_key" ? t("Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)")
+        : s.state === "not_this_key" ? t("This passphrase does not open it (it may be encrypted with another passphrase, or damaged)")
         : s.state === "unreadable" ? tfw("Cannot be read: {why}", { why: t(why[s.reason] || why.io) })
         : s.state === "busy" ? t("In use right now, try again in a moment")
         : t("not created yet");

@@ -358,10 +358,11 @@ def dispose_lane_engines() -> None:
 
 #: A store already encrypted that the key does not open: it is not the operator's passphrase's store, and nothing here may treat it
 #: as done (R742: a store is recorded only once it reads back with the key).
-NOT_THIS_KEY = "a store is already encrypted, but not with this passphrase, so it was left as it is"
+#: R821: the header alone never says "encrypted": a store this key does not open may be under another passphrase, or not a database.
+NOT_THIS_KEY = "a store does not open with this passphrase (it may be encrypted with another one, or damaged), so it was left as it is"
 #: Row 154: the same check met a store another program holds: its key was never checked, so it is not called "not this passphrase".
 ALREADY_ENCRYPTED_IN_USE = (
-    "a store is already encrypted, but another program is using it right now, so the passphrase could not be checked; "
+    "a store looks encrypted, but another program is using it right now, so it could not be checked with the passphrase; "
     "it was left as it is, try again in a moment"
 )
 

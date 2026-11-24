@@ -439,8 +439,10 @@ def test_every_new_sentence_is_keyed_in_every_locale_and_the_page_uses_the_state
     root = Path(__file__).resolve().parents[1] / "src" / "static"
     keys = [
         file_identity.REPLACED_WORDS,
-        "Encrypted (SQLCipher 4), not yet checked against this passphrase",
-        "Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)",
+        # R821: "encrypted" only on evidence; a header alone, or a key that does not open it, never says "encrypted"
+        "Encrypted, per this installation's record (not yet checked with your key)",
+        "Looks encrypted; not yet checked with your key",
+        "This passphrase does not open it (it may be encrypted with another passphrase, or damaged)",
         "Cannot be read: {why}",
         "These stores do not open with this passphrase (another passphrase, or a damaged file) and are left as they are: {names}.",
         "In use right now, try again in a moment",

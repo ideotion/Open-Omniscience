@@ -87,6 +87,7 @@ def performance_report(
     import time as _time
 
     from src.api import system as _system
+    from src.database import at_rest_state
     from src.database.connect import locked_state
     from src.database.session import engine
     from src.paths import data_dir as _data_dir
@@ -108,7 +109,8 @@ def performance_report(
         "cpu_count": _os.cpu_count(),
         "total_ram_bytes": total_ram,
         "process_rss_bytes": vitals.get("rss_bytes"),
-        "at_rest_state": locked_state(db_file),
+        # R821 (5): "unlocked-encrypted" only with evidence, never the lock gate's word alone
+        "at_rest_state": at_rest_state.lock_state_claim(locked_state(db_file)),
         "uptime_s": round(_time.time() - _system._BOOT_TS, 1),
     }
 
