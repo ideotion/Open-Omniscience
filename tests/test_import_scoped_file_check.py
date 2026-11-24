@@ -507,7 +507,7 @@ def test_rows_that_only_break_a_foreign_key_latch_nothing(data, monkeypatch):
     con.close()
     _live(monkeypatch, live)
     merge._note_unverified_activation(None)
-    monkeypatch.setattr(merge, "_latch_live_damage", lambda _p: pytest.fail("a foreign-key break is not damage to the file"))
+    monkeypatch.setattr(merge, "_latch_live_damage", lambda *_a: pytest.fail("a foreign-key break is not damage to the file"))
     assert merge.check_live_after_scoped_activation()["state"] == "failed"
 
 
@@ -606,7 +606,7 @@ def test_a_failing_check_that_read_an_older_record_writes_and_latches_nothing(da
     _live(monkeypatch, live)
     merge._note_unverified_activation(None)
     real = _activate_after_first_read(monkeypatch, merge)
-    monkeypatch.setattr(merge, "_latch_live_damage", lambda _p: pytest.fail("nothing is latched for a superseded check"))
+    monkeypatch.setattr(merge, "_latch_live_damage", lambda *_a: pytest.fail("nothing is latched for a superseded check"))
     got = merge.check_live_after_scoped_activation()
     assert got == {"state": "unchecked", "reason": "superseded"}
     after = real()
@@ -638,6 +638,49 @@ def test_a_corrupt_read_against_an_older_record_latches_nothing(data, monkeypatc
 
     monkeypatch.setattr(c, "connect", lambda *a, **k: _Con())
     assert merge.check_live_after_scoped_activation() == {"state": "unchecked", "reason": "superseded"}
+
+
+def test_a_whole_file_activation_supersedes_a_check_still_reading_the_old_file(data, monkeypatch):
+    """Final-head re-read 2026-11-24: a full activation swaps in a file that passed the whole-file walk; a check still
+    reading the file it replaced must not write findings, latch or clear against it."""
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.backup import merge
+
+    live = _schema(data / "live.db")
+    con = sqlite3.connect(live)
+    con.execute("DELETE FROM sources WHERE id = 2")
+    con.commit()
+    con.close()
+    _live(monkeypatch, live)
+    merge._note_unverified_activation(data / "pre-restore-20261124T100000Z.db")
+    real = merge.unverified_activation
+    before = real()
+    calls = {"n": 0}
+
+    def _read_then_swap():
+        calls["n"] += 1
+        got = real()
+        if calls["n"] == 1:
+            merge._supersede_unverified_activation()
+        return got
+
+    monkeypatch.setattr(merge, "unverified_activation", _read_then_swap)
+    monkeypatch.setattr(merge, "_latch_live_damage", lambda *_a: pytest.fail("nothing is latched against the new file"))
+    assert merge.check_live_after_scoped_activation() == {"state": "unchecked", "reason": "superseded"}
+    after = real()
+    assert after["token"] != before["token"] and "findings" not in after
+    assert after["safety_net"] == before["safety_net"] and after["since"] == before["since"]
+
+
+def test_a_whole_file_activation_supersedes_the_record_before_its_swap():
+    import inspect
+
+    from src.backup import merge
+
+    src = inspect.getsource(merge)
+    head = src.index("_note_unverified_activation(_run_scoped_snapshot()")
+    swap = src.index("_carry_and_swap(working, target, report)", head)
+    assert "_supersede_unverified_activation()" in src[head:swap]
 
 
 def test_a_record_already_removed_by_a_passing_twin_reads_as_ok(data, monkeypatch):

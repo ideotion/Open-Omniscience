@@ -1004,6 +1004,21 @@ def _note_unverified_activation(safety_net: Path | None) -> None:
         )
 
 
+def _supersede_unverified_activation() -> None:
+    """Give an existing record a new token, keeping what it says, so a check that read it stops short of every write
+    (final-head re-read, 2026-11-24). Nothing when there is no record. Never raises: a record left as it was keeps its
+    check owed, and the activation's own clear after the swap removes it."""
+    from src.safety.file_lock import file_lock
+
+    try:
+        with file_lock(_unverified_activation_path()):
+            prior = unverified_activation()
+            if prior is not None:
+                _write_unverified_activation({**prior, "token": secrets.token_hex(8)})
+    except OSError:
+        return
+
+
 def _net_owed_by_unverified_activation() -> str | None:
     """The file NAME of the safety net an unverified-activation record points at, so the snapshot pruners keep
     it: it is the state the report tells the operator to return to if the owed check fails. Never raises."""
@@ -1106,12 +1121,16 @@ def check_live_after_scoped_activation(*, should_stop: Callable[[], bool] | None
     # always runs ``foreign_key_check`` over the whole file) counts them again.
     findings = {"quick_check": "ok" if qc == "ok" else ("damaged" if qc != "latched" else "latched"), "foreign_key_violations": len(fk)}
     latch = qc not in ("ok", "latched")
+    # The per-table read that names the damage is slow, so it runs before the record's lock is taken; only the
+    # token comparison, the record write and the latch itself run under it (final-head re-read, 2026-11-24).
+    live = live_db_path()
+    damaged = _name_live_damage(live) if latch else []
 
     def _record_and_latch() -> None:
         with suppress(OSError):  # a write that fails keeps the record as it was: still owed
             _write_unverified_activation({**owed, "failed_at": datetime.now(UTC).isoformat(), "findings": findings})
         if latch:
-            _latch_live_damage(live_db_path())
+            _latch_live_damage(live, damaged)
 
     # Both under the record's lock and only while it is still the one this check read: a newer activation means the file
     # read is not the one now live, so nothing is written or latched against it and the newer record stays owed.
@@ -1144,16 +1163,21 @@ def _under_owed_record(owed: dict, action: Callable[[], None]) -> bool:
     return still
 
 
-def _latch_live_damage(live: Path) -> None:
-    """Name the damaged tables by a per-table read of the live corpus (read-only), then latch the corpus file through the
-    damage registry. ``(pages)`` when no one table reads damaged. Never raises."""
+def _name_live_damage(live: Path) -> list[str]:
+    """Name the damaged tables by a per-table read of the live corpus (read-only); empty when none can be named.
+    Never raises."""
+    try:
+        return _damaged_tables(live)
+    except Exception:  # noqa: BLE001 - the tables could not be named: the whole file is latched as pages
+        return []
+
+
+def _latch_live_damage(live: Path, tables: list[str]) -> None:
+    """Latch the corpus file through the damage registry, naming ``tables`` (from ``_name_live_damage``); ``(pages)``
+    when no one table reads damaged."""
     from src.database import damage
     from src.database.verify import PAGES_ENTRY
 
-    try:
-        tables = _damaged_tables(live)
-    except Exception:  # noqa: BLE001 - the tables could not be named: the whole file is latched as pages
-        tables = []
     damage.registry.note_import_check_damage(damage.FILE_CORPUS, tables or [PAGES_ENTRY], path=live)
 
 
@@ -11260,6 +11284,10 @@ def run_restore(
             _scoped = verification.get("file_check") == "scoped"
             if _scoped:
                 _note_unverified_activation(_run_scoped_snapshot() or _reuse or snapshot)
+            else:
+                # A whole-file-checked activation also gives the record a new token before the swap, so an owed check
+                # still reading the file this replaces never writes, latches or clears against the new one.
+                _supersede_unverified_activation()
             # The carry and the replace under one hold of settings writes, so a settings save in between waits for the new file.
             _carry_and_swap(working, target, report)
             init_db()
