@@ -6889,7 +6889,11 @@ def _release_pending_net(net: Path) -> None:
     exception): nothing was done to the live corpus with it. A net this run recorded as its own (read back whole, an
     import run that will reuse it) is kept and only its staging registration released, so the ordinary snapshot
     pruning sees it; any other (not read back, or a lone restore that will not reuse it) is removed."""
-    if _run_scoped_snapshot() == net:
+    try:
+        kept = _run_scoped_snapshot() == net
+    except Exception:  # noqa: BLE001 - in a finally: never replace the restore's own outcome; unknown means remove
+        kept = False
+    if kept:
         from src.backup.stream_backup import unregister_active_staging
 
         with suppress(Exception):
@@ -10515,6 +10519,12 @@ def run_restore(
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = data_dir() / f"pre-restore-{ts}.db"
+    for _ in range(3):  # never overwrite a snapshot of the same second (the pruner reads only this exact name shape)
+        if not (snapshot.exists() or snapshot.is_symlink()):
+            break
+        time.sleep(1.0)
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        snapshot = data_dir() / f"pre-restore-{ts}.db"
     # W5 (2026-07-26 hardware diagnostics) + skeptic fix (2026-07-27): register
     # this snapshot as an ACTIVE staging path BEFORE writing it starts, not
     # after -- a data-loss-lens LIVE repro (real snapshot_preserving() against
