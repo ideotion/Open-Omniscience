@@ -577,3 +577,55 @@ def test_the_boot_check_gives_way_to_a_run_started_meanwhile(tmp_path, monkeypat
     with mgr._lock:
         mgr._state = "running"
     assert seen["stop"]() is True
+
+
+def test_a_run_started_while_the_boot_check_runs_keeps_its_record(data, monkeypatch):
+    """Plan 2026-11-24, condition (1): the boot-time check is in progress, an import starts and notes a new activation;
+    the boot check finishes (here: passes on the file it opened). The newer record survives, the running run's status
+    is not overwritten, and the run's own end still owes the check."""
+    monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
+    from src.backup import import_queue as iq
+    from src.backup import merge
+
+    _live(monkeypatch, _schema(data / "live.db"))
+    merge._note_unverified_activation(data / "pre-restore-20261124T100000Z.db")
+    mgr = iq.ImportQueueManager(state_path=data / "q.json")
+    real = merge.unverified_activation
+    calls = {"n": 0}
+
+    def _boot_reads_then_a_run_starts():
+        calls["n"] += 1
+        got = real()
+        if calls["n"] == 2:  # the boot check's own read inside check_live_after_scoped_activation
+            with mgr._lock:
+                mgr._state = "running"
+                mgr._corpus_check = {"state": "theirs"}
+            merge._note_unverified_activation(None)  # the run's first, scoped activation
+        return got
+
+    monkeypatch.setattr(merge, "unverified_activation", _boot_reads_then_a_run_starts)
+    mgr.check_owed_at_start()
+    after = real()
+    assert after is not None and after.get("token")  # the run's record, still owed
+    assert Path(after["safety_net"]).name == "pre-restore-20261124T100000Z.db"  # the run's start state is kept
+    with mgr._lock:
+        assert mgr._state == "running" and mgr._corpus_check == {"state": "theirs"}
+
+
+def test_the_field_data_member_stays_small_whatever_the_record_holds(data, monkeypatch):
+    """Plan 2026-11-24, condition (2): Field data files stay under 200 KB. The member is bounded field by field."""
+    import json
+
+    from src.backup import import_queue as iq
+    from src.backup import merge
+
+    huge = "x" * 1_000_000
+    monkeypatch.setattr(
+        merge,
+        "unverified_activation",
+        lambda: {"since": huge, "failed_at": huge, "safety_net": "/d/" + huge, "token": huge, "junk": [huge] * 50,
+                 "findings": {"quick_check": huge, "foreign_key_violations": huge}},
+    )
+    got = iq.corpus_check_for_field_data()
+    assert len(json.dumps(got)) < 2_000  # far under 200 KB
+    assert got["owed"]["findings"]["foreign_key_violations"] == -1  # not a count: unknown, never zero

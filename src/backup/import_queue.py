@@ -2034,10 +2034,11 @@ def _corpus_check_for_status(got: dict) -> dict:
     findings = got.get("findings")
     if isinstance(findings, dict):
         # named findings with a count (Plan 2026-11-24): a foreign-key-only finding latches nothing, so it is kept here
-        out["findings"] = {
-            "quick_check": str(findings.get("quick_check") or ""),
-            "foreign_key_violations": int(findings.get("foreign_key_violations") or 0),
-        }
+        try:
+            fk_count = int(findings.get("foreign_key_violations") or 0)
+        except (TypeError, ValueError):
+            fk_count = -1  # a record that does not say a count: shown as unknown, never as zero
+        out["findings"] = {"quick_check": str(findings.get("quick_check") or "")[:16], "foreign_key_violations": fk_count}
     return out
 
 
@@ -2056,11 +2057,15 @@ def corpus_check_for_field_data() -> dict:
     record = unverified_activation()
     owed = None
     if isinstance(record, dict):
-        owed = {k: record.get(k) for k in ("since", "failed_at") if isinstance(record.get(k), str)}
+        # Bounded field by field (Field data files stay under 200 KB): a timestamp is 40 characters at most and a file
+        # name 255, whatever a damaged or hand-edited record holds; the findings are a fixed pair of counts.
+        owed = {k: record[k][:40] for k in ("since", "failed_at") if isinstance(record.get(k), str)}
         net = record.get("safety_net")
-        owed["safety_net"] = Path(net).name if isinstance(net, str) and net else None
+        owed["safety_net"] = Path(net).name[:255] if isinstance(net, str) and net else None
         if isinstance(record.get("findings"), dict):
             owed["findings"] = _corpus_check_for_status({"findings": record["findings"]}).get("findings")
+    if isinstance(last, dict):
+        last = {k: (v[:255] if isinstance(v, str) else v) for k, v in last.items() if k in ("state", "safety_net", "reason", "findings")}
     return {"last_run": last, "owed": owed}
 
 
