@@ -33,6 +33,20 @@ def test_the_lock_page_sets_its_language_only_in_the_first_launch_step():
         "unlock.js may set the language in one place only"
     )
     assert "setLang" in _body("pickLanguage"), "and that place is the first-launch language step"
+    # ... reached only from the language step's own buttons, and that step only from the first-launch branch, before the
+    # six lines can draw (they draw after the passphrase).
+    assert len(re.findall(r"\bpickLanguage\(", _JS)) == 2, (
+        "pickLanguage is declared and called once"
+    )
+    assert "pickLanguage(" in _body("showLanguageStep"), "its one caller is the language step"
+    calls = [
+        line
+        for line in _JS.splitlines()
+        if re.search(r"\bshowLanguageStep\(\)", line) and "function " not in line
+    ]
+    assert len(calls) == 1 and '"fresh"' in calls[0], (
+        "the language step opens only on a first launch"
+    )
     assert "oo:langchange" not in _JS, (
         "a lock page that listens for a switch must hold its lines through ooLive"
     )

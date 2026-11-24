@@ -75,20 +75,21 @@ class El {
       if (cl) this._kids.push(new El(m[1].toUpperCase(), cl[1].split(/\s+/)));
     }
   }
+  insertAdjacentHTML(where, html) { this.innerHTML = this.innerHTML + String(html); }
   _drop() { for (const k of this._kids) k._connected = false; this._kids = []; }
   querySelector(sel) { const c = sel.replace(/^\./, ""); return this._kids.find((k) => k.isConnected && k.cls.includes(c)) || null; }
 }
 
 const CORE = ["_ooLiveWatch", "_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml",
   "ooLiveRepaint"];
-const FNS = ["_livingT", "_livingTf", "_livingFailHtml", "renderLivingOverview", "loadLivingOverview", "loadLivingStream", "livingShowDiff", "loadLivingLaw",
+const FNS = ["_livingT", "_livingTf", "_livingFailHtml", "renderLivingOverview", "loadLivingOverview", "loadLivingStream", "_livingStreamCap", "livingShowDiff", "loadLivingLaw",
   "loadLivingPages", "lawPitSearch", "lawTopicCompare", "renderWikiDivergence", "loadWikiDivergence", "renderWikiAttention",
   "loadWikiAttention", "repaintWikiCompareFromCache", "loadLawWeek", "loadLivingLawDocs", "loadLawFloor", "loadLawThesauri",
   "loadLawVelocity", "loadLawAmendMap", "loadLivingMaps"];
 const PANELS = [["loadLawWeek", "living-law-week"], ["loadLivingLawDocs", "living-law-docs"], ["loadLawFloor", "living-law-floor"],
   ["loadLawThesauri", "law-thesauri"], ["loadLawVelocity", "law-velocity"], ["loadLawAmendMap", "law-amend-map"],
   ["loadLivingMaps", "living-osm-regions"]];
-const IDS = ["living-status", "living-stream", "living-diff-42", "living-law-changes", "living-pages", "law-pit-results", "law-pit-q",
+const IDS = ["living-status", "living-stream", "living-stream-more", "living-stream-cap", "living-diff-42", "living-law-changes", "living-pages", "law-pit-results", "law-pit-q",
   "law-pit-on", "law-topic-results", "law-topic-q", "wiki-div-cands", "wiki-div-result", "wiki-att-tools", "wiki-att-result",
   ...PANELS.map((x) => x[1])];
 
@@ -117,6 +118,7 @@ function harness(answers0) {
     "let _lawPitLast = null, _lawTopicLast = null, _wikiDivLast = null, _wikiDivCands = null, _wikiAttLast = null;",
     "let _lawWeekLast = null, _lawDocsLast = null, _lawFloorLast = null, _lawThesauriLast = null, _lawVelocityLast = null;",
     "let _lawMapLast = null, _livingMapsLast = null, _livingOverviewFailed = false, _wikiAttPending = false;",
+    "let _livingStreamMoreErr = null, _livingLawSeq = 0, _lawPitSeq = 0, _lawTopicSeq = 0, _wikiAttSeq = 0, _wikiAttWant = '';",
     "const _LIVING_STREAM_PAGE = 50; const _livingDiffs = new Map(); const _WIKI_LANE_STATES = {};",
     ...CORE.map(extract), ...FNS.map(extract),
     "return { fns: {" + FNS.join(",") + ", ooLiveRepaint}, state: () => ({ _lawPitLast, _lawTopicLast, _livingLawLast,"
@@ -125,7 +127,7 @@ function harness(answers0) {
   const env = {
     window, OOI18N, document, MutationObserver: undefined, console, esc, $: (id) => nodes[id] || null, api,
     ooLabelText: (a, b) => a + ": " + b, livingGroupsHtml: () => "", livingGroupsFor: () => [], livingWhen: () => "now",
-    renderLivingStream() {}, _livingStreamCap() {},
+    renderLivingStream() {},
     livingStreamRowsHtml: () => "<div>ROWS</div>", livingDiffBoxHtml: () => "<div>DIFF</div>", renderLivingLaw() {},
     renderLivingPages() {}, renderLawPit() {}, renderLawTopic() {}, _wikiCompareWire() {},
     wikiDivCandidatesHtml: () => "", wikiDivergenceHtml: () => "<div>DIV</div>", wikiAttentionHtml: () => "<div>ATT</div>",
@@ -247,7 +249,7 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     h.$("law-pit-q").value = "water"; h.$("law-topic-q").value = "water";
     await h.fns.lawPitSearch(); await h.fns.lawTopicCompare(); await h.fns.loadLivingLaw(); await h.fns.loadLivingStream(false);
     const btn = button("Show diff");
-    await h.fns.livingShowDiff(42, btn); await h.fns.livingShowDiff(42, btn);   // opened, then closed
+    await h.fns.livingShowDiff(42, btn);   // opened
     await h.fns.loadWikiAttention("", true);
     const s0 = h.state();
     assert.ok(s0._lawPitLast && s0._lawTopicLast && s0._livingLawLast && s0._livingStreamLast && s0._livingDiffs.has(42), "every view holds a read");
@@ -261,13 +263,13 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     await h.fns.lawPitSearch(); await h.fns.lawTopicCompare();
     const law = h.fns.loadLivingLaw();
     await h.fns.loadLivingStream(true);
-    await h.fns.livingShowDiff(42, btn);
+    await h.fns.livingShowDiff(42, btn); await h.fns.livingShowDiff(42, btn);   // closed, then reopened and failed
     const att = h.fns.loadWikiAttention("", true);
     const s1 = h.state();
     assert.strictEqual(s1._lawPitLast, null, "the point-in-time search forgets its last results before its prompt");
     assert.strictEqual(s1._lawTopicLast, null, "the topic search forgets its last results before its prompt");
     assert.strictEqual(s1._livingLawLast, null, "the Law changes forget their last list before the Loading line");
-    assert.strictEqual(s1._livingStreamLast, null, "a failed older page leaves no list to redraw over its failure");
+    assert.ok(s1._livingStreamLast, "a failed older page keeps the list loaded so far (case 7)");
     assert.ok(!s1._livingDiffs.has(42), "a failed diff leaves no older payload to redraw over its failure");
     assert.strictEqual(s1._livingOverviewFailed, true);
     h.switchTo("fr");
@@ -277,6 +279,66 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     h.switchTo("de");
     assert.strictEqual(h.$("wiki-att-result").innerHTML, "<div>ATT</div>", "the new answer is drawn");
     h.held[0].reject(new Error("x")); await law;
+  }
+
+  // 7. Overlapping and older reads: a failed older page keeps the list and says why in the cap line; a read still in
+  //    flight never draws over a newer prompt or search; only the newest attention read draws; a closed diff forgets its
+  //    payload, so reopening it holds its Loading line.
+  {
+    const rows = (n) => Array.from({ length: n }, (_, i) => ({ i }));
+    const h = harness({ "GET /api/wiki/lane/changes?limit=50&offset=0": { measured: true, changes: rows(50), total: 200, count: 50 },
+      "GET /api/wiki/lane/changes?limit=50&offset=50": new Error("gone") });
+    await h.fns.loadLivingStream(false);
+    await h.fns.loadLivingStream(true);
+    assert.strictEqual(h.state()._livingStreamLast.changes.length, 50, "the rows loaded so far are kept");
+    assert.strictEqual(h.$("living-stream-more").hidden, false, "the button stays to try again");
+    h.switchTo("fr");
+    assert.ok(has(h.$("living-stream-cap"), fail(FR, "gone")), "the older page's failure follows a switch");
+    h.setAnswers({ "GET /api/wiki/lane/changes?limit=50&offset=50": { measured: true, changes: rows(50), total: 200, count: 50 } });
+    await h.fns.loadLivingStream(true);
+    assert.strictEqual(h.state()._livingStreamLast.changes.length, 100, "a retry appends to the list");
+    assert.ok(h.$("living-stream-cap").textContent.includes("100") && !has(h.$("living-stream-cap"), esc(FR["Could not load"])), "the cap counts again");
+  }
+  {
+    const h = harness({ "GET /api/law/versions/search?q=a": "hold", "GET /api/law/topics?q=a": "hold", "GET /api/law/changes?limit=50": "hold",
+      "GET /api/wiki/lane/attention?edition=fr": "hold", "GET /api/wiki/lane/attention?edition=de": "hold" });
+    h.$("law-pit-q").value = "a"; h.$("law-topic-q").value = "a";
+    const pit = h.fns.lawPitSearch(), topic = h.fns.lawTopicCompare();
+    const law1 = h.fns.loadLivingLaw(), law2 = h.fns.loadLivingLaw();
+    const attFr = h.fns.loadWikiAttention("fr", true), attDe = h.fns.loadWikiAttention("de", true);
+    h.$("law-pit-q").value = ""; h.$("law-topic-q").value = "";
+    await h.fns.lawPitSearch(); await h.fns.lawTopicCompare();
+    // held: 0 pit, 1 topic, 2 law1, 3 law2, 4 att fr, 5 att de
+    h.held[0].resolve({ hits: [] }); h.held[1].resolve({ rows: [] }); await pit; await topic;
+    h.held[3].resolve({ changes: [], n: 2 }); await law2;
+    h.held[2].resolve({ changes: [], n: 1 }); await law1;
+    h.held[4].resolve({ edition: "fr", with_list: ["fr", "de"] }); await attFr;
+    const s = h.state();
+    assert.strictEqual(s._lawPitLast, null, "a search still in flight never comes back over the prompt");
+    assert.strictEqual(s._lawTopicLast, null, "nor the topic search's");
+    assert.strictEqual(s._livingLawLast.n, 2, "the older Law read never replaces the newer one");
+    h.switchTo("fr");
+    assert.ok(has(h.$("law-pit-results"), esc(FR["Type the words to find."])), "the prompt stays, and follows a switch");
+    assert.ok(has(h.$("law-topic-results"), esc(FR["Type the words to find."])), "the topic prompt stays, and follows a switch");
+    assert.ok(has(h.$("wiki-att-result"), esc(FR["Loading…"])), "an older attention answer never draws over the newer read's Loading line");
+    h.held[5].resolve({ edition: "de", with_list: ["fr", "de"] }); await attDe;
+    h.switchTo("de");
+    assert.strictEqual(h.$("wiki-att-result").innerHTML, "<div>ATT</div>", "the newest answer is drawn");
+    assert.ok(/value="de" selected/.test(h.$("wiki-att-tools").innerHTML), "and its edition is the one selected");
+  }
+  {
+    const h = harness({ "GET /api/wiki/lane/revisions/42": { a: 1 } });
+    const btn = button("Show diff");
+    await h.fns.livingShowDiff(42, btn); await h.fns.livingShowDiff(42, btn);   // opened, then closed
+    assert.ok(!h.state()._livingDiffs.has(42), "a closed diff forgets its payload");
+  }
+  {
+    const h = harness({ "GET /api/wiki/lane/attention?edition=de": "hold", "GET /api/wiki/lane/attention": { edition: "fr", with_list: ["fr", "de"] } });
+    await h.fns.loadWikiAttention("", true);
+    const p = h.fns.loadWikiAttention("de", true);
+    h.switchTo("fr");
+    assert.ok(/value="de" selected/.test(h.$("wiki-att-tools").innerHTML), "while a read is in flight the select keeps the edition asked for");
+    h.held[0].resolve({ edition: "de", with_list: ["fr", "de"] }); await p;
   }
 
   const own = (loc, name, keys) => keys.forEach((k) => assert.ok(loc[k] && loc[k] !== k, name + " has its own words for " + k));

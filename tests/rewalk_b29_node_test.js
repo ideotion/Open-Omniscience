@@ -350,7 +350,7 @@ async function run() {
         "livingMapRowsHtml", "_livingT", "_livingTf", "_livingFailHtml", "renderLivingOverview", "renderLivingStream",
         "_livingStreamCap", "renderLivingPages", "renderLivingLaw", "renderLivingMaps", "repaintLivingFromCache"]
         .map((n) => extract(n, null, LIVING)),
-      "let _livingStreamLast = null, _livingPagesLast = null, _livingLawLast = null, _livingMapsLast = null;",
+      "let _livingStreamLast = null, _livingPagesLast = null, _livingLawLast = null, _livingMapsLast = null, _livingLawSeq = 0, _livingStreamMoreErr = null;",
       // repaintLivingFromCache also repaints the cross-edition compare panels (#1256); this harness
       // only drives the stream/law/maps repaint, so the compare repaint is a no-op here.
       "function repaintWikiCompareFromCache() {}",
