@@ -1635,8 +1635,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
                     with corpus_lease("reindex-resume"), session_scope() as _s:
                         ix_window.update(_bb.finish_window(_s, on_progress=_rebuilding))
                     if ix_window.get("waiting"):
-                        vals = _bb._waiting_values(ix_window["waiting"])
-                        ctx.set_progress(detail=Framed(_bb.FRAME_WAITING.format(**vals), _bb.FRAME_WAITING, **vals))
+                        ctx.set_progress(detail=_bb.waiting_line(ix_window["waiting"]))
                 except Exception as exc:  # noqa: BLE001 - the marker stays; the heal finishes it
                     log_failure(_LOG, "re-index drain: index rebuild failed; the marker stays for the heal", exc, level=logging.WARNING)
             out["index_window"] = {k: v for k, v in ix_window.items() if k != "waiting"}

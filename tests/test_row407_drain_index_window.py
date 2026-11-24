@@ -396,7 +396,7 @@ def test_short_memory_keeps_the_marker_and_the_task_manager_says_why(tmp_path, m
     out = bb._heal_worker(ctx)
     assert out["complete"] is False and out["waiting"]["short_on"] == ["memory"]
     last = ctx.progress[-1]["detail"]
-    assert getattr(last, "i18n", None) == bb.FRAME_WAITING
+    assert getattr(last, "i18n", None) == bb.FRAME_WAITING_MEMORY, "memory was short, and only memory is named"
     s = sessionmaker(bind=eng, future=True)()
     assert read_state(s) is not None and not set(planned) & _indexes(s), "never claimed rebuilt"
     s.close()
@@ -408,10 +408,12 @@ def test_the_two_lines_are_keyed_in_every_language():
 
     for loc in sorted((ROOT / "src/static/locales").glob("*.json")):
         d = json.loads(loc.read_text(encoding="utf-8"))
-        for key in (bb.FRAME_REBUILDING, bb.FRAME_WAITING, bb.HEAL_LABEL):
+        for key in (bb.FRAME_REBUILDING, bb.HEAL_LABEL, *bb.FRAMES_WAITING):
             assert key in d and d[key].strip(), f"{loc.name}: {key[:40]}"
         assert "{index}" in d[bb.FRAME_REBUILDING] and "{total}" in d[bb.FRAME_REBUILDING]
-        assert "{free}" in d[bb.FRAME_WAITING] and "{needed}" in d[bb.FRAME_WAITING]
+        for key in (bb.FRAME_WAITING_MEMORY, bb.FRAME_WAITING_DISK):
+            assert "{free}" in d[key] and "{needed}" in d[key]
+        assert all(v in d[bb.FRAME_WAITING_BOTH] for v in ("{ram_free}", "{ram_needed}", "{disk_free}", "{disk_needed}"))
     js = (ROOT / "src/static/app-core.js").read_text(encoding="utf-8")
     assert 'j.kind === "keyword-indexes"' in js and 'j.kind === "reindex-resume"' in js
 
@@ -619,3 +621,17 @@ def test_an_operator_stop_still_rebuilds(real_store):
     present, marker = _store_state(eng)
     assert marker is None and set(droppable_indexes(keep=DRAIN_KEEP)) <= present
     assert out.get("index_window", {}).get("complete", True) is True
+
+
+def test_the_waiting_line_names_only_what_was_short():
+    """Plan's string read: "memory or disk space" only when both were short; otherwise the one that was."""
+    base = {"ram_available_bytes": 50_000_000, "ram_needed_bytes": 70_000_000, "ram_floor_bytes": 10_000_000,
+            "disk_free_bytes": 3_000_000, "disk_needed_bytes": 4_500_001}
+    mem = bb.waiting_line({**base, "short_on": ["memory"]})
+    disk = bb.waiting_line({**base, "short_on": ["database"]})
+    both = bb.waiting_line({**base, "short_on": ["database", "memory"]})
+    assert mem.i18n == bb.FRAME_WAITING_MEMORY and mem.vars == {"free": 50, "needed": 80}
+    assert "disk" not in str(mem)
+    assert disk.i18n == bb.FRAME_WAITING_DISK and disk.vars == {"free": 3, "needed": 5}, "the need rounds up"
+    assert "memory" not in str(disk)
+    assert both.i18n == bb.FRAME_WAITING_BOTH and "memory" in str(both) and "disk" in str(both)

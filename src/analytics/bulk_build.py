@@ -435,11 +435,21 @@ HEAL_JOB_KIND = "keyword-indexes"
 HEAL_LABEL = "Rebuilding the keyword indexes"
 #: The task-manager line while the indexes are rebuilt (keyed x12).
 FRAME_REBUILDING = "rebuilding the keyword indexes: {index} of {total}"
-#: The line when the rebuild waits for memory or disk space (keyed x12; whole MB).
-FRAME_WAITING = (
-    "The keyword indexes were not rebuilt yet: there is not enough free memory or disk space "
-    "({free} MB free, about {needed} MB needed). Search stays correct but slower; the app tries again at its next start."
+#: The line when the rebuild waits, naming only what was short (keyed x12; whole MB).
+_WAIT_TAIL = " Search stays correct but slower; the app tries again at its next start."
+FRAME_WAITING_MEMORY = (
+    "The keyword indexes were not rebuilt yet: there is not enough free memory ({free} MB free, about {needed} MB needed)."
+    + _WAIT_TAIL
 )
+FRAME_WAITING_DISK = (
+    "The keyword indexes were not rebuilt yet: there is not enough free disk space ({free} MB free, about {needed} MB needed)."
+    + _WAIT_TAIL
+)
+FRAME_WAITING_BOTH = (
+    "The keyword indexes were not rebuilt yet: there is not enough free memory ({ram_free} MB free, about {ram_needed} MB "
+    "needed) and not enough free disk space ({disk_free} MB free, about {disk_needed} MB needed)." + _WAIT_TAIL
+)
+FRAMES_WAITING = (FRAME_WAITING_MEMORY, FRAME_WAITING_DISK, FRAME_WAITING_BOTH)
 
 
 def mention_rows_bound(session: Session) -> int:
@@ -481,14 +491,30 @@ def rebuild_preflight(session: Session, rows: int) -> dict:
     return out
 
 
-def _waiting_values(room: dict) -> dict[str, int]:
-    """The numbers of the first reading that fell short, in whole MB (the need rounded up)."""
-    if "database" in room.get("short_on", []):
-        return {"free": int(room["disk_free_bytes"] // 1_000_000), "needed": -(-int(room["disk_needed_bytes"]) // 1_000_000)}
-    return {
-        "free": int((room.get("ram_available_bytes") or 0) // 1_000_000),
-        "needed": -(-(int(room["ram_needed_bytes"]) + int(room["ram_floor_bytes"])) // 1_000_000),
-    }
+def waiting_line(room: dict):
+    """The task-manager line for a rebuild that waits: a ``Framed`` naming only the reading(s) that fell short,
+    in whole MB (the need rounded up)."""
+    from src.jobs.background import Framed
+
+    short = set(room.get("short_on", []))
+
+    def mb(b) -> int:
+        return int(b or 0) // 1_000_000
+
+    def up(b) -> int:
+        return -(-int(b or 0) // 1_000_000)
+
+    ram = {"free": mb(room.get("ram_available_bytes")), "needed": up(int(room.get("ram_needed_bytes") or 0) + int(room.get("ram_floor_bytes") or 0))}
+    disk = {"free": mb(room.get("disk_free_bytes")), "needed": up(room.get("disk_needed_bytes"))}
+    if short >= {"memory", "database"}:
+        frame, values = FRAME_WAITING_BOTH, {
+            "ram_free": ram["free"], "ram_needed": ram["needed"], "disk_free": disk["free"], "disk_needed": disk["needed"],
+        }
+    elif "database" in short:
+        frame, values = FRAME_WAITING_DISK, disk
+    else:
+        frame, values = FRAME_WAITING_MEMORY, ram
+    return Framed(frame.format(**values), frame, **values)
 
 
 def drain_window_plan(session: Session, backlog_articles: int) -> dict:
@@ -592,8 +618,7 @@ def _heal_worker(ctx, **_kw) -> dict:
         _progress(sum(1 for n in planned if n in present), len(planned))
         out = finish_window(session, on_progress=_progress)
     if out.get("waiting"):
-        values = _waiting_values(out["waiting"])
-        ctx.set_progress(detail=Framed(FRAME_WAITING.format(**values), FRAME_WAITING, **values))
+        ctx.set_progress(detail=waiting_line(out["waiting"]))
     return out
 
 
