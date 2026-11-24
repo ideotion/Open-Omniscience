@@ -7733,6 +7733,7 @@
   "not a file": "ফাইল নয়",
   "not a key this app creates; it is not written and stays in the backup": "এটি এমন কোনো কী নয় যা এই অ্যাপ তৈরি করে; এটি লেখা হয় না এবং ব্যাকআপে থেকে যায়",
   "not a recognised country code": "অপরিচিত দেশের কোড",
+  "not a regular file, or larger than any key file, so it was not read; it is not written and stays in the backup": "এটি সাধারণ ফাইল নয়, অথবা যেকোনো কী ফাইলের চেয়ে বড়, তাই এটি পড়া হয়নি; এটি লেখা হয় না এবং ব্যাকআপে থেকে যায়",
   "not a usable edition code": "ব্যবহারযোগ্য সংস্করণ কোড নয়",
   "not an ISO code": "এটি আইএসও কোড নয়",
   "not an article (menu, index or notice page)": "নিবন্ধ নয় (মেনু, সূচি বা বিজ্ঞপ্তি পাতা)",

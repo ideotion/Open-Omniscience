@@ -42,7 +42,7 @@ class _Staged:
     def __init__(self, pairs):
         self._pairs = pairs
 
-    def member_paths(self, role):
+    def member_paths(self, role, **_kw):
         return list(self._pairs) if role == "rings" else []
 
 

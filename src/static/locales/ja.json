@@ -7733,6 +7733,7 @@
   "not a file": "ファイルではありません",
   "not a key this app creates; it is not written and stays in the backup": "このアプリが作成する鍵ではありません。書き込まれず、バックアップに残ります",
   "not a recognised country code": "認識できない国コード",
+  "not a regular file, or larger than any key file, so it was not read; it is not written and stays in the backup": "通常のファイルではないか、どの鍵ファイルよりも大きいため、読み込まれませんでした。書き込まれず、バックアップに残ります",
   "not a usable edition code": "使用できない版コードです",
   "not an ISO code": "ISO コードではありません",
   "not an article (menu, index or notice page)": "記事ではない（メニュー、一覧ページ、またはお知らせページ）",

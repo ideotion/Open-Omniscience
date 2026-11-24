@@ -194,14 +194,16 @@ class StagedArtifact:
     # passphrase given as both). Names, never a secret: the import report says which one a still-encrypted key needs.
     key_passphrase_roles: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
-    def member_paths(self, role: str) -> list[tuple[str, Path]]:
+    def member_paths(self, role: str, *, keep_links: bool = False) -> list[tuple[str, Path]]:
         """``(name, staged path)`` of each member of ``role``, its name spelled with "/" whatever build wrote it (:func:`member_name`).
-        A name that would leave the staging folder is skipped, never joined."""
+        A name that would leave the staging folder is skipped, never joined. A member that is not there is skipped;
+        ``keep_links`` keeps one that is a link, even a broken one, so a reader that refuses links can list it as
+        not read (row 384) rather than drop it unseen."""
         out = []
         for m in self.members:
             if m.get("role") == role:
                 p = member_path(self.staging_dir, m["name"])
-                if p is not None and p.exists():
+                if p is not None and (os.path.lexists(p) if keep_links else p.exists()):
                     out.append((member_name(m["name"]), p))
         return out
 
