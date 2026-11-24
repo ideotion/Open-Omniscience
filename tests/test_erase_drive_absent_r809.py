@@ -507,14 +507,15 @@ def test_another_drive_at_the_path_keeps_its_log_files_after_panic_and_exit(tmp_
 def test_a_pinned_connection_is_never_closed(tmp_path):
     """Without a mount (CI): a pool connection on the drive survives every close the pool makes once the drive is pinned, and one
     elsewhere is closed as before."""
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
 
     from src.database import drive_pin
+    from tests._app_engine import app_sqlite_engine
 
     on, off = tmp_path / "drive" / "OOS data", tmp_path / "internal"
     on.mkdir(parents=True)
     off.mkdir()
-    engines = [create_engine(f"sqlite:///{d / 'x.db'}") for d in (on, off)]
+    engines = [app_sqlite_engine(d / "x.db") for d in (on, off)]
     raws = []
     for eng in engines:
         with eng.connect() as c:
@@ -631,7 +632,9 @@ def test_a_folder_on_another_file_system_at_the_same_device_and_inode_is_a_chang
             def __getattr__(self, name):
                 return getattr(self._st, name) if name != "f_fsid" else self._st.f_fsid + 1
 
-        monkeypatch.setattr(os, "statvfs", lambda p: _Other(real_statvfs(p)))
+        from tests.os_scope import scope_os
+
+        scope_os(monkeypatch, crypto_erase, statvfs=lambda p: _Other(real_statvfs(p)))
         assert crypto_erase._drive_same(hold, "a1b2c3d4e5f60718", marker=False) is False
     finally:
         for fd in fds:
@@ -662,17 +665,18 @@ def test_an_in_memory_pool_connection_is_on_no_drive_and_tracking_keeps_nothing_
     still closes its connections as before."""
     import gc
 
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
 
     from src.database import drive_pin
+    from tests._app_engine import app_sqlite_engine
 
-    eng = create_engine("sqlite://")
+    eng = app_sqlite_engine(":memory:")
     with eng.connect() as c:
         c.execute(text("select 1"))
     base = tmp_path / "drive" / "OOS data"
     base.mkdir(parents=True)
     assert drive_pin.pin_drive(base) == 0
-    eng2 = create_engine(f"sqlite:///{tmp_path / 'x.db'}")
+    eng2 = app_sqlite_engine(tmp_path / "x.db")
     with eng2.connect() as c:
         c.execute(text("select 1"))
     n = len(drive_pin._LIVE)

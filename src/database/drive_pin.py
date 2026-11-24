@@ -87,8 +87,9 @@ def _track(dbapi_connection, record) -> None:
     path = _main_file(dbapi_connection)
     with _LOCK:
         for key, (old_ref, _p) in list(_LIVE.items()):  # forget the records already freed (their engines were let go of)
-            if key not in _PINNED_IDS and old_ref() is None:
-                del _LIVE[key]
+            if key in _PINNED_IDS or old_ref() is not None:
+                continue
+            del _LIVE[key]
         _LIVE[id(dbapi_connection)] = (ref, path)
 
 
