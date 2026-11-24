@@ -2814,9 +2814,13 @@
     // predates the count.
     function _anSourcesCutHtml(d) {
       if (!d || !d.truncated || d.sources_total == null) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const shown = (d.sources || []).length;
+      // The total counts feeds (rows of the sources list), never outlets; the server's own
+      // sentence says so beside it (R146 (b)), keyed x12.
       return `<div class="hint muted" style="margin-top:6px">`
-        + `${esc(_tfn("{shown} of {total} shown.", { shown: fmtNum(shown, 0), total: fmtNum(d.sources_total, 0) }))}</div>`;
+        + `${esc(_tfn("{shown} of {total} shown.", { shown: fmtNum(shown, 0), total: fmtNum(d.sources_total, 0) }))}`
+        + `${d.sources_note ? " " + esc(t(d.sources_note)) : ""}</div>`;
     }
     function _anSourcesHtml(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

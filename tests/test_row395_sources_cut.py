@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.analytics import queries as q
 from src.database.models import Article, Base, Source
+from src.database.outlet import FEEDS_NOT_OUTLETS
 from tests._app_engine import app_sqlite_engine
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -66,6 +67,8 @@ def test_a_cut_table_reports_every_source_and_the_whole_span(db):
     assert r["corpus_first"].startswith("2026-03-01")
     assert r["corpus_last"].startswith("2026-03-05")
     assert max(s["last"] for s in r["sources"]).startswith("2026-03-02")
+    # the total counts feeds, and says so where it is shown (R146 (b))
+    assert r["sources_note"] == FEEDS_NOT_OUTLETS
 
 
 def test_a_whole_table_is_not_marked_cut(db):
@@ -91,6 +94,7 @@ def test_an_empty_set_carries_the_same_keys(db):
         "truncated": False,
         "corpus_first": None,
         "corpus_last": None,
+        "sources_note": FEEDS_NOT_OUTLETS,
     }
 
 

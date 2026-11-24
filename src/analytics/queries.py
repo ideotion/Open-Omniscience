@@ -35,6 +35,7 @@ from src.database.models import (
     KeywordFamilyOverride,
     Source,
 )
+from src.database.outlet import FEEDS_NOT_OUTLETS
 from src.database.stand_in import not_a_stand_in_article_id
 from src.shared_text import said
 
@@ -2117,7 +2118,7 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
     here is catalog/source-ASSERTED, never text-deduced."""
     if not article_ids:
         return {"count": 0, "sources": [], "sources_total": 0, "truncated": False,
-                "corpus_first": None, "corpus_last": None}
+                "corpus_first": None, "corpus_last": None, "sources_note": FEEDS_NOT_OUTLETS}
     rows = (
         session.query(
             Source.name, Source.domain,
@@ -2176,6 +2177,9 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
         "truncated": sources_total > len(sources),
         "corpus_first": corpus_first.isoformat() if corpus_first else None,
         "corpus_last": corpus_last.isoformat() if corpus_last else None,
+        # The total counts FEEDS (rows of the sources list, the unit the table lists), never
+        # outlets: the sentence travels with it so the line that shows it can say so (R146 (b)).
+        "sources_note": FEEDS_NOT_OUTLETS,
         "method": "Matched articles grouped by source: exact volume + publication span; mean tone is VADER.",
         "caveat": (
             "Volume and timing are exact counts; mean tone is VADER (English-lexicon, "

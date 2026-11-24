@@ -40,11 +40,13 @@ const M = (() => { const m = { exports: {} }; new Function("module", "exports", 
 const row = (name, n, first, last) => ({ name, domain: name + ".test", articles: n, mean_tone: null, first, last, tags: [] });
 const rows = [row("A", 9, "2026-03-02T00:00:00", "2026-03-03T00:00:00"), row("B", 5, "2026-03-02T00:00:00", "2026-03-04T00:00:00")];
 const CUT = "2 of 7 shown.";
+const NOTE = "Sources here are feeds (the rows of your sources list), not outlets: one outlet can hold several.";
 
 // 1. Sources: a cut table says how many sources the set holds.
 {
-  const html = M._anSourcesHtml({ sources: rows, count: 2, sources_total: 7, truncated: true });
+  const html = M._anSourcesHtml({ sources: rows, count: 2, sources_total: 7, truncated: true, sources_note: NOTE });
   assert.ok(html.includes(CUT), "a cut Sources table did not say so: " + html);
+  assert.ok(html.includes(CUT + " " + NOTE), "the total did not say it counts feeds");
 }
 // 2. NEGATIVE SPACE: a whole table, and a payload with no count, say nothing.
 {
