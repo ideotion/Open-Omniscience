@@ -17,9 +17,12 @@ Merkle root reuses the audited src/crypto/merkle_tree implementation.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
+import threading
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -217,9 +220,10 @@ def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
         sealed = _seal(key, passphrase)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            # R801: the key is made and the marker dropped under the key-file lock, the one a restore looks for a key
-            # and writes its marker under, so a marker never lands on a key this installation just made
-            with keyfile.KEY_FILES_LOCK:
+            # R801: the key is made and the marker dropped under the marker lock (row 370: across processes too), the one
+            # a restore looks for a key and writes its marker under, so a marker never lands on a key this installation
+            # just made, whichever process on this data folder made it
+            with restored_marker_lock(path):
                 keyfile.create_new(path, sealed)
                 _drop_restored_marker(path)  # this installation made its own key, so no restore placed this one
         except FileExistsError:
@@ -265,6 +269,43 @@ def restored_key_marker(path: Path | None = None) -> Path:
     return path.with_name(path.name + RESTORED_KEY_MARKER_SUFFIX)
 
 
+_MARKER_LOCKS_HELD = threading.local()
+
+
+@contextlib.contextmanager
+def restored_marker_lock(path: Path | None = None) -> Iterator[None]:
+    """Hold the R801 marker lock for the evidence key at ``path`` (row 370): in this process (``KEY_FILES_LOCK``) AND
+    across processes on the same data folder (:func:`src.safety.file_lock.file_lock` on ``keys.lock`` beside the
+    ``keys`` folder, never inside it, so the folder keeps holding only key files).
+
+    A restore's look for a key and its marker write, and a new key's creation with its marker drop, run under it, so a
+    second server on the same data folder (R176 allows one) can no longer make its own key between a restore's look and
+    its marker: a marker never lands on a key this installation made, whichever process made it. It changes nothing
+    about what the marker means. Re-entrant in a thread (the key's creation drops the marker under the lock it already
+    holds). The cross-process lock is taken FIRST and ``KEY_FILES_LOCK`` only once it is held: nothing in this process
+    waits on another process while holding the in-process lock, so a second server stopped inside its section never
+    holds up this process's key changes or its emergency erase, which take ``KEY_FILES_LOCK`` alone (the security reads
+    of row 370). The order is always the same, and no caller enters here holding ``KEY_FILES_LOCK``. Where the
+    filesystem cannot lock, ``file_lock`` runs the section unlocked and names the file once, as everywhere."""
+    from src.safety.file_lock import file_lock
+
+    keys_dir = (path or _default_key_path()).parent
+    held: set[str] = getattr(_MARKER_LOCKS_HELD, "paths", None) or set()
+    _MARKER_LOCKS_HELD.paths = held
+    key = os.path.realpath(keys_dir)
+    if key in held:
+        with keyfile.KEY_FILES_LOCK:
+            yield
+        return
+    with file_lock(keys_dir):
+        held.add(key)
+        try:
+            with keyfile.KEY_FILES_LOCK:
+                yield
+        finally:
+            held.discard(key)
+
+
 def _marker_present(marker: Path) -> bool:
     """True unless the marker is plainly absent: a link, a folder, an unreadable or odd file all count as present, and
     so does a check that fails (R801 (3)). Only its presence is read, never its content."""
@@ -298,7 +339,7 @@ def _drop_restored_marker(path: Path) -> None:
     moment a marker is known to describe a key that is gone. Whatever is at that name goes (a link is removed, never
     followed); a marker that cannot be removed stays and keeps counting, which only costs a click."""
     marker = restored_key_marker(path)
-    with keyfile.KEY_FILES_LOCK:
+    with restored_marker_lock(path):
         try:
             if os.path.isdir(marker) and not os.path.islink(marker):
                 os.rmdir(marker)
