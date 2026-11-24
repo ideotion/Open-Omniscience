@@ -83,7 +83,7 @@ class El {
 const CORE = ["_ooLiveWatch", "_ooLiveMark", "_ooLiveForeign", "_ooLiveDrop", "_ooLiveDraw", "_ooLiveTake", "ooLive", "ooLiveHtml",
   "ooLiveRepaint"];
 const FNS = ["updateMselSummary", "qualifyAssist", "toggleSourceTrail", "importSources", "tally", "tallyHover",
-  "_srcAirplaneNothing", "ingestSource", "renderBatchPicker", "batchIngestStatusWords", "ingestBatch", "renderRetiredMode"];
+  "_srcAirplaneNothing", "_srcFeedResultLine", "_srcBatchResultLine", "_srcTrailToggleClass", "ingestSource", "renderBatchPicker", "batchIngestStatusWords", "ingestBatch", "renderRetiredMode"];
 const IDS = ["imp-result", "ingest-result", "ing-source", "bi-list", "bi-count", "bi-capped", "bi-status", "bi-results",
   "sch-retired", "sch-retired-text"];
 
@@ -114,7 +114,8 @@ function harness(answers, extra) {
   ].join("\n");
   const env = Object.assign({
     window, OOI18N, document, MutationObserver: undefined, console, esc, $: (id) => nodes[id] || null, api,
-    toast: (m, k) => toasts.push([m, k || "ok"]), fmtNum: (x) => String(x), tf: (s, v) => OOI18N.tf(s, v),
+    // No global tf here, as on the page: importSources must bring its own.
+    toast: (m, k) => toasts.push([m, k || "ok"]), fmtNum: (x) => String(x),
     mselValues: () => [], ooCountryCode: (c) => c.toUpperCase(), ooLangCode: (c) => c,
     _srcTrailHtml: () => `<div class="trail">${esc(OOI18N.t("Discovery"))}</div>`, srcIpsHtml: () => "",
     _apiErrorMessage: (e) => String(e), _failMsg: (s) => s, doSearch() {}, loadManagedSources() {}, loadSources() {},
@@ -173,7 +174,8 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
 
   // 3. The source trail: the loading line and the panel follow a switch; a drill list opened inside lets it go.
   {
-    const h = harness({ "GET /api/sources/9/provenance": "hold", "GET /api/sources/9/citation-tally": {},
+    const h = harness({ "GET /api/sources/9/provenance": "hold",
+      "GET /api/sources/9/citation-tally": { qualified: [{ domain: "x.org", sample_article_ids: [1] }] },
       "GET /api/sources/9/observed-ips": null });
     const row = new El("TR"); row.style.display = "none"; const cell = new El("TD");
     row.querySelector = () => cell;
@@ -184,9 +186,14 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     h.held[0].resolve({}); await p;
     h.switchTo("de");
     assert.ok(has(cell, esc(DE["Discovery"])), "the trail panel follows a switch");
-    cell.innerHTML = "<div>DRILL</div>";   // a drill list opened inside the panel
+    cell.innerHTML = "<div>DRILL</div>";   // a drill list opened inside the panel changes its text
     h.switchTo("fr");
     assert.strictEqual(cell.innerHTML, "<div>DRILL</div>", "what the reader opened is not closed by a switch");
+    // The drill list itself sits where the walker does not go: it is held, and its hover is keyed.
+    const drill = new El("SPAN"); drill.style = {}; h.nodes["src-trail-cls-9"] = drill;
+    h.fns._srcTrailToggleClass(9, "qualified");
+    h.switchTo("de");
+    assert.ok(has(drill, `title="${esc(DE["Open the articles that cite this domain"])}"`), "the drill's hover follows a switch: " + drill.innerHTML);
   }
 
   // 4. Import: the unreadable-country sentence follows a switch.
@@ -219,6 +226,7 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
       "the result line follows a switch: " + res.textContent);
     assert.ok(DE[Object.keys(DE).find((k) => k.startsWith("Stop was pressed while this feed"))] === res.title,
       "the hover follows a switch");
+    assert.ok(res.hasAttribute("data-i18n-dyn"), "the line is marked, so the walker leaves its hover to the render");
   }
 
   // 6. The batch picker: the empty and failed lines, and the capped line, follow a switch; the cap is let go when gone.
@@ -262,6 +270,7 @@ const button = (label) => { const b = new El("BUTTON"); b.textContent = label; r
     const tbl = h.$("bi-results");
     assert.ok(has(tbl, esc(DE["Source"])) && has(tbl, esc(DE["Result"])) && has(tbl, esc(DE["No feed to fetch"])),
       "the table follows a switch: " + tbl.innerHTML);
+    assert.ok(st.hasAttribute("data-i18n-dyn"), "the line is marked, so the walker leaves its hover to the render");
     assert.strictEqual(btn.disabled, false);
   }
 

@@ -636,8 +636,9 @@
           pending: tally.pending || [], never_registered: tally.never_registered || [],
         };
         const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => String(x).replace(/\{(\w+)\}/g, (m, k) => (v && k in v ? v[k] : m)));
-        // Held from what was read: a language switch redraws the panel without a request. A drill list opened
-        // inside it changes its text, which lets the hold go, so a switch never closes what the reader opened.
+        // Held from what was read: a language switch redraws the panel without a request. A drill list opened inside it
+        // changes its text, so the switch lets the panel go rather than redraw it, and the drill list follows on its own.
+        // (Today the same switch also redraws the managed-sources table, which closes the panel: app-boot.js.)
         ooLiveHtml(cell, () => _srcTrailHtml(id, prov, tally) + (ips ? srcIpsHtml(ips, t, tf) : ""));
       } catch (e) { cell.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
@@ -721,18 +722,20 @@
       const host = $("src-trail-cls-" + id); if (!host) return;
       const arr = (_srcTrailData[id] && _srcTrailData[id][cls]) || [];
       host.style.display = "";
-      host.innerHTML = arr.length
+      // Held (row 367): it sits inside the held trail panel, where the walker does not go, so its hover is keyed here.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      ooLiveHtml(host, () => arr.length
         ? arr.map(d => {
             const jump = `<a href="#" data-on-click="srcJumpToDomain(${esc(JSON.stringify(d.domain))});return false">${esc(d.domain)}</a>`;
             // "the sources' sources" grammar: also link to THIS source's own
             // citing articles for that domain, not just the domain's own row.
             const ids = d.sample_article_ids || [];
             const artsLink = ids.length
-              ? ` <a href="#" data-on-click="openAnalysisForIds(${esc(JSON.stringify(ids))}, ${esc(JSON.stringify(d.domain))});return false" title="Open the articles that cite this domain">↗</a>`
+              ? ` <a href="#" data-on-click="openAnalysisForIds(${esc(JSON.stringify(ids))}, ${esc(JSON.stringify(d.domain))});return false" title="${esc(t("Open the articles that cite this domain"))}">↗</a>`
               : "";
             return jump + artsLink;
           }).join(", ")
-        : `<span class="muted">—</span>`;
+        : `<span class="muted">—</span>`);
     }
     // Jump to a cited domain's OWN management row (the drill's "linking to that
     // source's own management row" -- the pending/qualified/disqualified classes'
@@ -784,6 +787,9 @@
     }
 
     async function importSources() {
+      // Its own tf: there is no global one, and a bare call threw after the rows were stored, so a good import read as failed.
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) =>
+        String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
       const f = $("imp-file").files[0];
       if (!f) { toast("Choose a CSV file first.", "err"); return; }
       $("imp-result").textContent = "Importing…";
@@ -851,6 +857,20 @@
         : "";
     }
 
+    // One feed's result line, in the words of the moment; it also writes the line's hover (the line is held and marked).
+    function _srcFeedResultLine(el, tl) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      el.title = tallyHover(tl);
+      return t("Feed result —") + " " + tally(tl);
+    }
+    // The batch's result line, the same way.
+    function _srcBatchResultLine(el, r, allOff, off) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
+        String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      el.title = allOff ? "" : tallyHover(r.aggregate);
+      return allOff ? _srcAirplaneNothing()
+        : tf("Done: {fetched} of {requested} fetched", {fetched: r.ingested - off, requested: r.requested}) + (off ? ` · ${tf("{n} not fetched (airplane mode)", {n: off})}` : "") + ` · ${tally(r.aggregate)}`;
+    }
     // A refusal by airplane mode, in the words of the moment (a held line calls it again at each draw).
     function _srcAirplaneNothing() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -867,9 +887,10 @@
         if (r.tally && r.tally.skipped_offline) {   // refused by airplane mode: a clean zero would read as "the feed is quiet"
           ooLive($("ingest-result"), _srcAirplaneNothing); toast(_srcAirplaneNothing(), "warn"); return;
         }
-        // Held (row 367), its hover with it: both follow a language switch.
+        // Held (row 367) as HTML, so the line is marked: the walker then leaves its hover to the render, and both follow
+        // a language switch (an unmarked line's title is the walker's, which puts back the first one it saw).
         const res = $("ingest-result");
-        ooLive(res, () => { res.title = tallyHover(r.tally); return t("Feed result —") + " " + tally(r.tally); });
+        ooLiveHtml(res, () => esc(_srcFeedResultLine(res, r.tally)));
         toast("Ingest complete."); doSearch({refresh: true});
       } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
@@ -1048,12 +1069,9 @@
         // tally; `skipped_offline` is what says it was not fetched (invariant #14e's corollary).
         const off = (r.aggregate && r.aggregate.skipped_offline) || 0;
         const allOff = off > 0 && off >= r.ingested;
-        // Held (row 367), the line, its hover and the table: all follow a language switch, drawn from this answer.
-        ooLive(st, () => {
-          st.title = allOff ? "" : tallyHover(r.aggregate);
-          return allOff ? _srcAirplaneNothing()
-            : tf("Done: {fetched} of {requested} fetched", {fetched: r.ingested - off, requested: r.requested}) + (off ? ` · ${tf("{n} not fetched (airplane mode)", {n: off})}` : "") + ` · ${tally(r.aggregate)}`;
-        });
+        // Held (row 367), the line, its hover and the table: all follow a language switch, drawn from this answer. The
+        // line is held as HTML so it is marked and its hover is the render's, not the walker's.
+        ooLiveHtml(st, () => esc(_srcBatchResultLine(st, r, allOff, off)));
         ooLiveHtml($("bi-results"), () => `<table class="bi-res"><tr><th>${esc(t("Source"))}</th><th>${esc(t("Result"))}</th></tr>` +
           r.results.map(x => { const hov = (x.status === "ok" && x.tally && !x.tally.skipped_offline) ? tallyHover(x.tally) : "";
             return `<tr><td>${esc(x.source || ("#" + x.source_id))}</td>` +
