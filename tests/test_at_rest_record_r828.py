@@ -412,3 +412,63 @@ def test_the_erase_takes_the_record_in_the_data_folder_with_no_main_database(tmp
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert report["at_rest_record"] == "destroyed"
     assert not rec.exists() and kept.read() != before
+
+
+# ---------------------------------------------------------------- the coordinator's order: page 1, the record, then the logs
+
+
+@sqlcipher_only
+def test_the_record_goes_after_page_one_and_before_any_log_is_rewritten(tmp_path, monkeypatch):
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    main = data / crypto_erase._MAIN_DB
+    _encrypted_db(main)
+    connect(main, key=_PW).close()  # in-process evidence: the encrypted path, head-only
+    rec = _record(main)
+    real_resolve = crypto_erase._resolve
+    monkeypatch.setattr(crypto_erase, "_resolve", lambda d: {**real_resolve(d), "main_db": main})
+    wal = main.with_name(main.name + "-wal")
+    wal.write_bytes(os.urandom(64 * 1024))
+    order: list[str] = []
+    real_overwrite, real_shred = crypto_erase._overwrite, crypto_erase._shred
+
+    def overwrite(p, *a, **k):
+        if Path(p) == main:
+            order.append("page1" if rec.exists() else "page1-after-record")
+        return real_overwrite(p, *a, **k)
+
+    def shred(p, *a, **k):
+        if Path(p) == wal:
+            order.append("log-with-record" if rec.exists() else "log")
+        return real_shred(p, *a, **k)
+
+    monkeypatch.setattr(crypto_erase, "_overwrite", overwrite)
+    monkeypatch.setattr(crypto_erase, "_shred", shred)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["at_rest_record"] == "destroyed" and report["corpus_encryption"] == "encrypted"
+    assert order[0] == "page1" and "log" in order and "log-with-record" not in order
+
+
+@posix_only
+def test_the_plaintext_path_takes_the_record_before_its_logs(tmp_path, monkeypatch):
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    main = data / crypto_erase._MAIN_DB
+    main.write_bytes(os.urandom(8192))
+    main.with_name(main.name + "-wal").write_bytes(os.urandom(64 * 1024))
+    rec = main.parent / at_rest_state.RECORD_NAME
+    rec.write_text(json.dumps({"version": 1, "stores": {}}), encoding="utf-8")
+    real_resolve = crypto_erase._resolve
+    monkeypatch.setattr(crypto_erase, "_resolve", lambda d: {**real_resolve(d), "main_db": main})
+    order: list[tuple[str, bool]] = []
+    real_fast = crypto_erase._fast_destroy
+
+    def fast(fd, kind):
+        order.append((kind, rec.exists()))
+        return real_fast(fd, kind)
+
+    monkeypatch.setattr(crypto_erase, "_fast_destroy", fast)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["at_rest_record"] == "destroyed"
+    assert order[0] == ("head", True), "the first page first, the record still there"
+    assert ("whole", False) in order and ("whole", True) not in order, "the record is gone before the log is rewritten"

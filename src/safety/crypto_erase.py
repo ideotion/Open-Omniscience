@@ -723,7 +723,12 @@ def _open_and_unlink_plain_at(db: Path, pin: tuple[int, int, int, int, str] | st
         head16: bytes | None = None
         # The main file first (its identity decides everything), then the log index (its head zeroed, so no connection trusts it
         # again), then the logs, as step 1's passes order them.
+        raw_rec: bytes | None = None
         for suffix in ("", "-shm", "-wal", "-journal"):
+            if suffix != "" and "state" not in taken:
+                # R828 (2) as the coordinator ordered it: the main file's first page, THEN the record (microseconds, and on an
+                # install a build between R820 and R828 wrote, real key material), THEN the logs, which can be long and stopped.
+                raw_rec, taken["state"] = _take_record(Path(folder), dfd)
             name = db.name + suffix
             kind = "head" if suffix == "" else ("shm" if suffix == "-shm" else "whole")
             try:
@@ -793,11 +798,12 @@ def _open_and_unlink_plain_at(db: Path, pin: tuple[int, int, int, int, str] | st
                 _note_left(rec, st, name, dfd)  # rewritten through its handle; the walks of the folder only remove the name
                 _LOG.warning("crypto-erase: could not delete a file of an unencrypted store")
         rec["deleted"] = deleted
-        # R820 (3): the app's record beside the store, read only now (the main file's first page is destroyed: the key is gone),
-        # through the pinned folder's handle, no-follow, a regular file only, size-bounded; then overwritten and unlinked, still in
-        # the key-material pass, before any bulk work (R828 (2)).
-        raw, taken["state"] = _take_record(Path(folder), dfd)
-        rec["record_ok"] = rec["touched"] and _record_names_main(raw, (dev, ino), head16)
+        # R820 (3): the app's record beside the store, read once the main file's first page is destroyed (the key is gone), before
+        # its logs (above), through the pinned folder's handle, no-follow, a regular file only, size-bounded; overwritten and
+        # unlinked in the key-material pass, before any bulk work (R828 (2)).
+        if "state" not in taken:
+            raw_rec, taken["state"] = _take_record(Path(folder), dfd)
+        rec["record_ok"] = rec["touched"] and _record_names_main(raw_rec, (dev, ino), head16)
         return rec
     finally:
         if folder_ok and "state" not in taken:
@@ -875,7 +881,10 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
         rec["header"] = None
     rec["form"] = "plain" if rec["header"] == "sqlite" else "unknown"
     deleted, head_ok = True, False
+    raw: bytes | None = None
     for suffix in _STORE_PARTS:
+        if suffix != "" and "record_state" not in rec:
+            raw, rec["record_state"] = _take_record(db.parent)  # R828 (2): after the first page, before the logs
         p = db.with_name(db.name + suffix)
         if not os.path.lexists(p):
             continue
@@ -894,7 +903,8 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
     rec["state"] = "first_page" if head_ok else "not_overwritten"
     rec["reason"] = None if head_ok and rec["reason"] is None else (rec["reason"] or "write_failed")
     rec["deleted"] = deleted
-    raw, rec["record_state"] = _take_record(db.parent)  # R820 (3) / R828 (2): overwritten and unlinked here, before any bulk work
+    if "record_state" not in rec:
+        raw, rec["record_state"] = _take_record(db.parent)  # R820 (3) / R828 (2): overwritten and unlinked, before any bulk work
     rec["record_ok"] = head_ok and _record_names_main(raw, pin[:2], fallback_head)
     return rec
 
@@ -2173,20 +2183,32 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         for p in (db.with_name(db.name + "-shm"), db):
             if p not in plain_parts and _present(p, _unreached):
                 head_ok[p] = _overwrite(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
-    for db in dbs:
-        for suffix in ("-wal", "-journal"):
-            p = db.with_name(db.name + suffix)
-            if p in plain_parts:
-                continue
-            if _hold(p, whole=True, generation=generation) is False:
-                missed.append(p.name)
-            s, overwritten, w = _shred(p, unreached=_unreached)
-            seen += s
-            wiped += w
-            if s and not overwritten:
-                overwrite_failures.append(str(p))
     main_unreached = plain_main is not None and plain_pin is not None and _under(plain_main, base) and _off_drive()
-    if plain_main is not None and plain_pin is not None and not main_unreached:  # R812: else untouched
+    plain_takes = plain_main is not None and plain_pin is not None and not main_unreached
+    # R828 (2): the app's at-rest record is in the key-material pass on every path (CLI, HTTP, the locked app: all come here), and
+    # is overwritten and unlinked right after the first pages and before the logs (the coordinator's order: microseconds, where a log
+    # rewrite can be long and stopped), before any bulk work. Beside the store as configured
+    # and beside where it really is. In the data folder it is the app's own file (step 6 would remove it anyway); outside it, only
+    # beside an encrypted store or in the plaintext store's pinned folder (R820 (3): any other folder holds another store's record).
+    # The data folder itself is always looked in (security reads, R828): with no main database configured, or its file gone, the
+    # record there would otherwise go only with step 6's unlink, never overwritten.
+    record_dirs: dict[Path, Path] = {}
+    if main_db is not None and not main_unreached:
+        for m in dict.fromkeys((main_db, _real(main_db))):
+            if not _under(m.parent, base) and not (encrypted is True
+                                                   or plain_main is not None and _folder_is_pinned(m, plain_pin)):
+                continue
+            record_dirs.setdefault(m.parent, m)
+    taken_dirs = {plain_main.parent} if plain_takes else set()  # the plaintext path takes it there, through the pinned handle
+    if not main_unreached:
+        record_dirs.setdefault(base, base / "oo.db")
+    for folder, m in record_dirs.items():
+        if folder in taken_dirs:
+            continue
+        if _under(folder, base) and (drive_absent or _off_drive()):
+            continue  # R809 / R812: nothing on a drive that is not there, or that changed
+        record_state = _worse_record(record_state, _drop_record_beside(m))
+    if plain_takes:  # R812: else untouched
         plain_rec = _open_and_unlink_plain(plain_main, plain_pin, generation, missed)
         # R819 (4) / R820 (1): settled now, after the store's first page and log were destroyed through the kept handles. SQLite's
         # own header is "not encrypted", whatever any record says; "encrypted" needs another header AND the app's record naming this
@@ -2207,7 +2229,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                 elif not ok:
                     overwrite_failures.append(str(plain_main))
         plain_rec["form"] = "plain" if encrypted is False else "unknown"
-        record_state = plain_rec.get("record_state")  # R828 (2): taken with the store's first page, through the pinned folder
+        # R828 (2): taken right after the store's first page, through the pinned folder
+        record_state = _worse_record(record_state, plain_rec.get("record_state"))
         if not plain_rec["touched"]:
             # Not this store's file at that place: its own sidecars still get step 1's old treatment (a log whole, a log index's
             # head zeroed), counted as before, and the file at the path is never written.
@@ -2221,6 +2244,20 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                     overwrite_failures.append(str(p))
             if _under(plain_main, base):
                 plain_rec = None  # in the data folder, whatever is at the path is erased by step 6 like any other file
+    # The logs, whole, only now: after every first page and the record (the coordinator's order for R828 (2)), since a log rewrite
+    # can be long and can be stopped.
+    for db in dbs:
+        for suffix in ("-wal", "-journal"):
+            p = db.with_name(db.name + suffix)
+            if p in plain_parts:
+                continue
+            if _hold(p, whole=True, generation=generation) is False:
+                missed.append(p.name)
+            s, overwritten, w = _shred(p, unreached=_unreached)
+            seen += s
+            wiped += w
+            if s and not overwritten:
+                overwrite_failures.append(str(p))
     for db in dbs:
         for p in (db, db.with_name(db.name + "-shm")):
             if p in plain_parts:
@@ -2237,30 +2274,6 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                 headers.append(db.name)
                 head_reals.add(str(db))
 
-    # R828 (2): the app's at-rest record is in the key-material pass on every path (CLI, HTTP, the locked app: all come here), and
-    # is overwritten and unlinked now, before any bulk work, wherever step 1 did not already take it. Beside the store as configured
-    # and beside where it really is. In the data folder it is the app's own file (step 6 would remove it anyway); outside it, only
-    # beside an encrypted store or in the plaintext store's pinned folder (R820 (3): any other folder holds another store's record).
-    # The data folder itself is always looked in (security reads, R828): with no main database configured, or its file gone, the
-    # record there would otherwise go only with step 6's unlink, never overwritten.
-    record_dirs: dict[Path, Path] = {}
-    if main_db is not None and not main_unreached:
-        for m in dict.fromkeys((main_db, _real(main_db))):
-            if plain_main is not None and m == plain_main and record_state is not None:
-                continue  # taken already, through the pinned folder's handle
-            if not _under(m.parent, base) and not (encrypted is True
-                                                   or plain_main is not None and _folder_is_pinned(m, plain_pin)):
-                continue
-            record_dirs.setdefault(m.parent, m)
-    taken_dirs = {plain_main.parent} if plain_main is not None and record_state is not None else set()
-    if not main_unreached:
-        record_dirs.setdefault(base, base / "oo.db")
-    for folder, m in record_dirs.items():
-        if folder in taken_dirs:
-            continue  # taken already, through the pinned folder's handle
-        if _under(folder, base) and (drive_absent or _off_drive()):
-            continue  # R809 / R812: nothing on a drive that is not there, or that changed
-        record_state = _worse_record(record_state, _drop_record_beside(m))
     # Only for a store known to be encrypted: a plaintext body has no salt to lose, and is rewritten whole by step 6.
     salt_gone = {os.path.realpath(db) for db in dbs if head_ok.get(db)} if encrypted is True else set()
 
