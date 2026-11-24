@@ -277,3 +277,14 @@ def test_an_old_schema_store_gains_the_columns_and_indexes(backup, tmp_path):
         engine.dispose()
     assert _scalar(path, "SELECT stage_version FROM article_index_stamps WHERE article_id = ?", aid) == INDEXER_VERSION
     assert _scalar(path, "SELECT COUNT(*) FROM article_index_stamps WHERE stage_version IS NULL") == _N - 1, "no backfill"
+
+
+def test_a_hostile_stamp_engine_never_fails_the_merge_nor_reaches_the_plan(backup, tmp_path, monkeypatch):
+    """A stamp engine that is not UTF-8, or is long, once stopped the restore in the engine mix (row 405's delta read): now counted."""
+    for name, value in (("badengine.db", "CAST(X'FFFE41' AS TEXT)"), ("longengine.db", "'e1-' || hex(zeroblob(5000))")):
+        variant = _variant(backup, tmp_path, name, f"UPDATE article_index_stamps SET engine = {value}")
+        counts, _b, _w = _merge_into(variant, tmp_path, name, monkeypatch)
+        plan = counts["_derived_carry"]
+        assert plan["incoming_engines"] == [] and plan["incoming_engines_unreadable"] == _N, (name, plan)
+        assert plan["differences"]["could_not_be_read"] == _N, (name, plan["differences"])
+        assert "zeroblob" not in json.dumps(plan) and "0000000000" not in json.dumps(plan)

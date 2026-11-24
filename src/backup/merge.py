@@ -4620,6 +4620,21 @@ def _stamped_candidates(
 
 #: How many distinct incoming engine stamps the carry report lists by name (the rest are summed).
 _ENGINE_MIX_TOP = 10
+#: The longest incoming stamp engine the carry plan reads as an id (R824): a real one is 35 characters and the column is String(40).
+_ENGINE_ID_MAX_BYTES = 64
+_ENGINE_ID_SHAPE = re.compile(r"[A-Za-z0-9._:-]{1,64}")
+
+
+def _plain_engine_id(raw) -> str | None:
+    """An incoming stamp's engine as a plain id, or None when it is not one (NULL, too long, not UTF-8, any other character)."""
+    if raw is None:
+        return None
+    try:
+        text = bytes(raw).decode("utf-8")
+    except (TypeError, UnicodeDecodeError):
+        return None
+    return text if _ENGINE_ID_SHAPE.fullmatch(text) else None
+
 
 
 def _engine_mix(con, plan: dict, key: str, table: str) -> None:
@@ -4629,12 +4644,29 @@ def _engine_mix(con, plan: dict, key: str, table: str) -> None:
     cols = {r[1] for r in _q(con, f"PRAGMA inc.table_info({table})")}  # nosec B608 # two module-local literal table names
     if "engine" not in cols:
         return  # a stamps table without its engine column: nothing to name
-    # No try: an error here (the operator's Stop included) is the merge's own, as for any other statement it runs.
-    rows = _q(con, f"SELECT engine, COUNT(*) FROM inc.{table} GROUP BY engine ORDER BY 2 DESC")  # noqa: S608  # nosec B608 # two module-local literal table names
-    plan[key] = [[str(e), int(n)] for e, n in rows[:_ENGINE_MIX_TOP]]
-    other = sum(int(n) for _, n in rows[_ENGINE_MIX_TOP:])
+    # No try: an error here (the operator's Stop included) is the merge's own, as for any other statement it runs. The engine is the
+    # BACKUP's text, so it is read as bytes and only when it is short (a real id is 35 characters): text that is not UTF-8 once stopped
+    # the restore here (row 405's delta read), and a long one was copied whole into the plan. Anything that is not a plain id is
+    # counted as unreadable and never named.
+    rows = _q(
+        con,
+        f"SELECT CASE WHEN length(CAST(engine AS BLOB)) <= {_ENGINE_ID_MAX_BYTES} THEN CAST(engine AS BLOB) END AS e,"  # noqa: S608  # nosec B608 # two module-local literal table names and an int constant
+        f" COUNT(*) FROM inc.{table} GROUP BY e ORDER BY 2 DESC",
+    )
+    named: list[list] = []
+    unreadable = 0
+    for raw, n in rows:
+        engine = _plain_engine_id(raw)
+        if engine is None:
+            unreadable += int(n)
+        else:
+            named.append([engine, int(n)])
+    plan[key] = named[:_ENGINE_MIX_TOP]
+    other = sum(n for _e, n in named[_ENGINE_MIX_TOP:])
     if other:
         plan[key + "_other"] = other
+    if unreadable:
+        plan[key + "_unreadable"] = unreadable
 
 
 #: The largest ``index_engines.components`` text the carry plan reads (R824): a real record is under 1 KB. A longer one is not read
@@ -4685,13 +4717,16 @@ def _engine_differences_read(con, plan: dict, key: str, table: str, accepted: tu
     prefix = STAMP_PREFIX if stage == "kw" else WWW_STAMP_PREFIX
     mine = set(accepted or (own_id,))
     # The engine read as bytes: a stamp's engine is the backup's text, and one that is not UTF-8 must not stop the read.
-    rows = _q(con, f"SELECT CAST(engine AS BLOB), COUNT(*) FROM inc.{table} GROUP BY engine")  # noqa: S608  # nosec B608 # two module-local literal table names
+    # Only a short value is fetched at all (the rest group as one NULL, counted as could not be read), so a backup of a million distinct
+    # megabyte-long engines costs one row here, not its size in memory.
+    rows = _q(
+        con,
+        f"SELECT CASE WHEN length(CAST(engine AS BLOB)) <= {_ENGINE_ID_MAX_BYTES} THEN CAST(engine AS BLOB) END AS e,"  # noqa: S608  # nosec B608 # two module-local literal table names and an int constant
+        f" COUNT(*) FROM inc.{table} GROUP BY e",
+    )
     others: list[tuple[str | None, int]] = []
     for raw, n in rows:
-        try:
-            engine = bytes(raw).decode("utf-8") if raw is not None else None
-        except (TypeError, UnicodeDecodeError):
-            engine = None
+        engine = _plain_engine_id(raw)
         if engine not in mine:
             others.append((engine, int(n)))
     out: dict = {"available": True, "articles": sum(n for _e, n in others), "components": {}, "could_not_be_read": 0}
@@ -5140,7 +5175,12 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
 
     kw_prov_cols, kw_prov_vals, kw_prov = _provenance("article_index_stamps", "kw")
     www_prov_cols, www_prov_vals, www_prov = _provenance("article_www_stamps", "www")
-    _record_local_engines(con, engine, www_engine)
+    try:
+        _record_local_engines(con, engine, www_engine)
+    except sqlite3.Error as exc:  # a record for a later diagnostic never decides whether the carry runs
+        if "interrupt" in str(exc).lower():  # the operator's Stop (_step_watch) stays a Stop
+            raise
+        log_failure(_LOG, "could not record this machine's engines; carry unaffected", exc, level=logging.WARNING)
     # Every temp table below is declared with its key, never built with CREATE TABLE AS:
     # a CTAS table has NO index, and each is probed per row -- carry_win by range once per
     # window, carry_delta once per touched keyword by the counter UPDATE. Unindexed, the

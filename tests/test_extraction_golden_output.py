@@ -45,9 +45,26 @@ def _recorded() -> dict:
     return json.loads(DIGESTS.read_text(encoding="utf-8"))
 
 
+_GOLDEN_IN_A_FRESH_PROCESS = (
+    "import json, sys; from src.analytics import golden_output as g; "
+    "sys.stdout.write(json.dumps({s: g.golden_output(s) for s in g.STAGES}))"
+)
+
+
+def _golden_in_a_fresh_process() -> dict:
+    """The pass runs in a FRESH interpreter, never in the test process: a cache another test filled (a gazetteer, a dictionary, a
+    switch) changed the www rows under xdist, and the guard must judge the code and the environment, not the tests that ran before it."""
+    out = subprocess.run(
+        [sys.executable, "-c", _GOLDEN_IN_A_FRESH_PROCESS],
+        capture_output=True, text=True, cwd=ROOT, env={**os.environ, "OO_DB_PLAINTEXT": "1", "OO_NO_SCHEDULER": "1"}, check=False,
+    )
+    assert out.returncode == 0, out.stderr[-4000:]
+    return json.loads(out.stdout)
+
+
 @pytest.fixture(scope="module")
 def golden():
-    return {stage: go.golden_output(stage, fresh=(stage == "kw")) for stage in go.STAGES}
+    return _golden_in_a_fresh_process()
 
 
 @pytest.mark.parametrize("stage", go.STAGES)
@@ -110,9 +127,9 @@ def test_the_fixture_exercises_the_stage_cases():
 
 
 def test_the_computation_is_deterministic(golden):
-    again = go.run_pass()
+    again = _golden_in_a_fresh_process()
     for stage in go.STAGES:
-        assert go.digest_of(again[stage]) == golden[stage]["output_digest"]
+        assert again[stage]["output_digest"] == golden[stage]["output_digest"]
 
 
 def _subset():
@@ -148,6 +165,19 @@ def test_a_changed_row_changes_the_digest(monkeypatch):
     monkeypatch.setattr(sentiment, "score_article", _sent)
     moved2 = go.run_pass(fx)
     assert go.digest_of(moved2["kw"]) != go.digest_of(base["kw"])
+
+
+def test_the_pass_writes_alpha2_whatever_the_live_store_holds():
+    """The digest moved with the live store's country form (alpha-3 in a migrated corpus, or a parallel test's data directory):
+    the pass pins its own form, so a machine with a migrated corpus judges --same against the same rows CI does."""
+    from src.database.country_form import writing_in
+
+    fx = _subset()
+    plain = go.run_pass(fx)
+    with writing_in("alpha3"):
+        under_alpha3 = go.run_pass(fx)
+    assert go.digest_of(under_alpha3["www"]) == go.digest_of(plain["www"])
+    assert go.digest_of(under_alpha3["kw"]) == go.digest_of(plain["kw"])
 
 
 def test_the_police_module_is_not_part_of_the_engine():

@@ -221,10 +221,14 @@ def run_pass(fixture: dict | None = None) -> dict[str, dict[str, list]]:
 
     from src.analytics.extract import get_extractor
     from src.analytics.store import index_article
+    from src.database.country_form import writing_in
     from src.database.models import Article, Base, Source
 
     fx = fixture or load_fixture()
-    with tempfile.TemporaryDirectory(prefix="oo-golden-") as tmp:
+    # The pass writes a side file, so it says which country form it writes in: without this it took the LIVE store's form, and the
+    # digest moved with whatever corpus the machine (or a parallel test's data directory) held -- alpha-3 there, alpha-2 here. The
+    # golden form is alpha-2, the form of a fresh install's store (the marker's absence).
+    with writing_in("alpha2"), tempfile.TemporaryDirectory(prefix="oo-golden-") as tmp:
         eng = create_engine(f"sqlite:///{Path(tmp) / 'golden.db'}", future=True, hide_parameters=True)  # as the corpus engine
 
         def _fk(dbapi_connection, _record):
