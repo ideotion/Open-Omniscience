@@ -7368,6 +7368,13 @@ _KEY_PAIR_RACED = (
     "another caller made the other half of its key pair while the restore ran, and a pair is placed whole or not "
     "at all; it is not written and stays in the backup"
 )
+
+
+def _raced_half(name: str) -> dict:
+    """The not-placed entry for a half of a pair another caller raced (both places a restore can find that say it the same way)."""
+    return {"name": name, "reason": _KEY_PAIR_RACED}
+
+
 _KEY_NOT_SAME = "the copy wrapped for this install did not read back as the same key; it is not written"
 _KEY_HELD_UNUSABLE = (
     f"{UNENCODABLE_PASSPHRASE}, so no key can be wrapped under this install's passphrase; it is not written and "
@@ -7799,7 +7806,7 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
                     for name in names:
                         if name in here:
                             continue  # the guard-clause form (src/utils/interrupts.py): the loop's back-edge stays inside the lock
-                        out["not_placed"].append({"name": name, "reason": _KEY_PAIR_RACED})
+                        out["not_placed"].append(_raced_half(name))
                     continue
                 try:
                     pair_marker = mark_key_as_restored(keys_dir / f"{who}_ed25519.pem", backup_key=staged.origin_fingerprint)
@@ -7842,7 +7849,7 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
             out["kept_local"].append(raced)
             for name in names:
                 if name != raced:
-                    out["not_placed"].append({"name": name, "reason": _KEY_PAIR_RACED})
+                    out["not_placed"].append(_raced_half(name))
             continue
         for name, how, public, opener in done:
             placed_names.append(name)
