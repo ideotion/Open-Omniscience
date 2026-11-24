@@ -228,7 +228,7 @@ def test_the_panic_page_says_failed_and_offers_no_overwrite():
     assert 'driveAbsent ? "erase failed"' in js
     assert '"Files erased outside the data drive: {done} of {total}."' in js
     assert S1 in js and S3 in js
-    assert '(driveAbsent ? "" : `<div class="hint" style="margin-top:8px">${esc(rec)}`' in js
+    assert '(driveAbsent || driveLost ? "" : `<div class="hint" style="margin-top:8px">${esc(rec)}`' in js
 
 
 @pytest.mark.parametrize("layout", ["absent", "mismatch"])
@@ -278,7 +278,7 @@ def test_no_free_space_overwrite_where_the_drive_is_not(marked):
     assert out["drive_absent"] is True
     scrub = crypto_erase.full_secure_erase(1, _cap_bytes=4096)
     assert scrub["scrub_not_done"] == "drive_absent" and scrub["bytes_written"] == 0 and scrub["scrub_location"] == "none"
-    assert scrub["limit"] == S1 and "unrecoverable" not in scrub["limit"]
+    assert "unrecoverable" not in scrub["limit"] and "defence-in-depth only" in scrub["limit"]
     assert _hashes(data) == {str(p.relative_to(data)): b for p, b in files.items()} | {
         data_volume.MARKER_NAME: (data / data_volume.MARKER_NAME).read_bytes()}
     assert "drive_absent" in crypto_erase.SCRUB_NOT_DONE
@@ -326,6 +326,7 @@ def test_a_drive_swapped_between_the_probe_and_the_first_write_gets_zero_writes(
     out = _erase(data)
     assert swapped, "the swap ran between the probe and the erase"
     assert out["drive_absent"] is True and out["drive_unidentified"] is True and out["limit"] == S5, out
+    assert out["drive_lost"] is False, "never written on: not also called partially erased (security read C (3))"
     assert _hashes(data) == swapped["new"], "zero writes on the drive now at the path"
     assert _hashes(data.with_name("original drive")) == swapped["original"]
     assert out["headers_destroyed"] == [] and out["keys_destroyed"] == []

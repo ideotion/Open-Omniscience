@@ -4359,12 +4359,13 @@
         // R792: only "none" is a clean erase. Another program that still had the database open may have written the key material
         // back into the files it holds ("held"), and on Windows, or when the check failed, the erase cannot tell ("unknown"): the
         // result then never says the store is unrecoverable, and the notice stays visible beside it.
-        // R809: with the drive absent no free-space overwrite is offered below, so the note never points at one.
+        // R809: with the drive absent or lost no free-space overwrite is offered below, so the note never points at one.
+        const noOverwrite = driveAbsent || driveLost;
         const holderNote = holder === "held"
-          ? (driveAbsent
+          ? (noOverwrite
             ? t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer.")
             : t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer, then run a full overwrite of free disk space below."))
-          : (driveAbsent
+          : (noOverwrite
             ? t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer.")
             : t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer, then run a full overwrite of free disk space below."));
         $("panic-result").innerHTML =
@@ -4400,8 +4401,9 @@
                 ? `<div class="card-caveat">${esc(tfw("Also left, because the name is common and may be yours: {names}. Check them and remove what is the app’s.", { names: r.left_common_names.join(", ") }))}</div>`
                 : "")
             : "") +
-          // R809: no free-space overwrite is offered for a drive that is not there: it would write to whatever disk is at its place.
-          (driveAbsent ? "" : `<div class="hint" style="margin-top:8px">${esc(rec)}` +
+          // R809 / R812: no free-space overwrite is offered for a drive that is not there, or that went away during the erase: it
+          // would write to whatever disk is at its place.
+          (driveAbsent || driveLost ? "" : `<div class="hint" style="margin-top:8px">${esc(rec)}` +
           `<div class="row" style="gap:6px;margin-top:6px">` +
           `<button class="danger" data-on-click="secureErase(1)">${esc(t("Single pass"))}</button>` +
           `<button class="danger" data-on-click="secureErase(3)">${esc(t("Triple pass"))}</button>` +
