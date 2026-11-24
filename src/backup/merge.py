@@ -45,7 +45,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import ExitStack, contextmanager, suppress
+from contextlib import ExitStack, contextmanager, nullcontext, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from itertools import groupby, islice
@@ -7368,6 +7368,13 @@ _KEY_PAIR_RACED = (
     "another caller made the other half of its key pair while the restore ran, and a pair is placed whole or not "
     "at all; it is not written and stays in the backup"
 )
+
+
+def _raced_half(name: str) -> dict:
+    """The not-placed entry for a half of a pair another caller raced (both places a restore can find that say it the same way)."""
+    return {"name": name, "reason": _KEY_PAIR_RACED}
+
+
 _KEY_NOT_SAME = "the copy wrapped for this install did not read back as the same key; it is not written"
 _KEY_HELD_UNUSABLE = (
     f"{UNENCODABLE_PASSPHRASE}, so no key can be wrapped under this install's passphrase; it is not written and "
@@ -7386,7 +7393,7 @@ _EVIDENCE_KEY_FILE = "evidence_ed25519.pem"
 #: The key files this app writes: another spelling of one of them (case, a trailing dot or space) is refused, since on a
 #: filesystem that ignores those it IS that file (R801).
 #: R808 (row 379): ONE list with the erase, ``src.safety.data_scope.APP_KEY_NAMES`` (R806/R807), less the restored-key
-#: marker beside the evidence key, which only this installation writes (R801).
+#: markers beside the signers' Ed25519 keys, which only this installation writes (R801, R816).
 _APP_KEY_FILES = frozenset(n for n in _data_scope.APP_KEY_NAMES if n.endswith(tuple(suffix for suffix, _kind in _KEY_FORMS)))
 #: R808 (row 379): a restore places ONLY these names in keys/, the same exact names an erase treats as the app's own
 #: (``src.safety.data_scope.APP_KEY_NAMES``, R806/R807: a keys folder holding anything else is kept as not the app's);
@@ -7421,6 +7428,11 @@ _KEY_RESTORE_LOCK = threading.Lock()
 _KEY_MARKER_CARRIED = (
     "this installation writes this marker itself when a restore places a key here; a marker carried in a backup is never "
     "written"
+)
+#: R816 (2): the restored-key marker beside a signer's key could not be written, so its pair is not placed (fail closed)
+_KEY_MARKER_UNWRITTEN = (
+    "the note that marks this key as restored from a backup could not be written beside it, and a restored key without "
+    "that note would be counted as this installation's own; it is not written and stays in the backup"
 )
 #: How a carried key that is placed was written (:func:`_reseal_key`).
 _KEY_PLACED_HOW = ("as_carried", "resealed", "still_encrypted")
@@ -7780,35 +7792,64 @@ def _restore_key_members_now(staged: StagedArtifact, base: Path) -> dict:
         made: list[tuple[Path, tuple[int, int, int, int]]] = []  # the halves THIS call created, and which file each is
         done: list[tuple[str, str, str | None, int]] = []
         raced: str | None = None
-        for name, data, how, public, opener in placeable:
-            local = base / name
-            try:
-                placed = _place_key_file(local, data)
-            except BaseException:
-                # a full disk, an I/O error, an interrupt: no half identity is left behind for the next signer
-                _take_back_key_files(made)
-                raise
-            if not placed:
-                raced = name
-                break
-            try:
-                made.append((local, keyfile.identity(os.lstat(local))))
-            except FileNotFoundError:
-                pass  # gone already (or placed under another spelling of the name): nothing at this name to take back
-            except OSError:
-                # the file just made is there but cannot be looked at, so it could not be taken back later: stop here,
-                # as for a write error (a security read of row 386)
-                _take_back_key_files(made)
-                raise
-            done.append((name, how, public, opener))
+        marker_made: tuple[Path, tuple[int, int, int, int]] | None = None  # the marker THIS call wrote beside the pair
+        # R816 (R801 for every signing key a restore places): the custody and annotation pairs get the marker beside their
+        # Ed25519 key, written BEFORE the pair is placed and under the lock the signer makes its own key under, so the
+        # look for a key here, the marker and the pair are one step. A marker that cannot be written places no pair (a key
+        # here without its marker would read as this installation's own); the evidence key's marker is written above.
+        with restored_marker_lock(keys_dir / f"{who}_ed25519.pem") if who != "evidence" else nullcontext():
+            if who != "evidence":
+                here = kept(names, lambda name: os.path.lexists(base / name))
+                if here:
+                    # a signer made a key of its own since the look above: theirs wins, and no half of this pair goes beside it
+                    out["kept_local"].extend(here)
+                    for name in names:
+                        if name in here:
+                            continue  # the guard-clause form (src/utils/interrupts.py): the loop's back-edge stays inside the lock
+                        out["not_placed"].append(_raced_half(name))
+                    continue
+                try:
+                    pair_marker = mark_key_as_restored(keys_dir / f"{who}_ed25519.pem", backup_key=staged.origin_fingerprint)
+                except OSError:
+                    for name in names:
+                        out["not_placed"].append({"name": name, **said("reason", _KEY_MARKER_UNWRITTEN)})
+                    _say_no_key_here(out, who, keys_dir)
+                    continue
+                if pair_marker is not None:
+                    # one that cannot be looked at stays: a marker left over costs a click, never a trust decision
+                    with suppress(OSError):
+                        marker_made = (pair_marker, keyfile.identity(os.lstat(pair_marker)))
+
+            for name, data, how, public, opener in placeable:
+                local = base / name
+                try:
+                    placed = _place_key_file(local, data)
+                except BaseException:
+                    # a full disk, an I/O error, an interrupt: no half identity is left behind for the next signer
+                    _take_back_pair(made, marker_made, keys_dir / f"{who}_ed25519.pem")
+                    raise
+                if not placed:
+                    raced = name
+                    break
+                try:
+                    made.append((local, keyfile.identity(os.lstat(local))))
+                except FileNotFoundError:
+                    pass  # gone already (or placed under another spelling of the name): nothing at this name to take back
+                except OSError:
+                    # the file just made is there but cannot be looked at, so it could not be taken back later: stop here,
+                    # as for a write error (a security read of row 386)
+                    _take_back_pair(made, marker_made, keys_dir / f"{who}_ed25519.pem")
+                    raise
+                done.append((name, how, public, opener))
+            if raced is not None:
+                _take_back_pair(made, marker_made, keys_dir / f"{who}_ed25519.pem")  # still under the lock
         if raced is not None:
             # another caller made this key while the restore ran: theirs wins, and the halves this call had already
-            # placed are taken back (only while each is still the file this call made), so no pair is left half ours
-            _take_back_key_files(made)
+            # placed are taken back above (only while each is still the file this call made), so no pair is left half ours
             out["kept_local"].append(raced)
             for name in names:
                 if name != raced:
-                    out["not_placed"].append({"name": name, "reason": _KEY_PAIR_RACED})
+                    out["not_placed"].append(_raced_half(name))
             continue
         for name, how, public, opener in done:
             placed_names.append(name)
@@ -7878,6 +7919,25 @@ def _settle_restore_marker(
     with restored_marker_lock(evidence):  # row 370: the look at the key and the take-back as one step, across processes
         if not placed_any or not os.path.lexists(evidence):
             _take_back_key_files([made_marker])
+
+
+def _take_back_pair(
+    made: list[tuple[Path, tuple[int, int, int, int]]],
+    marker: tuple[Path, tuple[int, int, int, int]] | None,
+    ed25519: Path,
+) -> None:
+    """R816: take back the key halves this restore placed, then the restored-key marker it wrote, and the marker only once
+    no Ed25519 key is left at ``ed25519``: a half that stays (another caller rewrapped it meanwhile, or its removal failed)
+    keeps its marker, so it never reads as this installation's own. The marker outlives the key, as it precedes it."""
+    _take_back_key_files(made)
+    if marker is None:
+        return
+    try:
+        os.lstat(ed25519)
+    except FileNotFoundError:
+        _take_back_key_files([marker])
+    except OSError:
+        pass  # not known to be gone: the key may still be there, so its marker stays (fail closed)
 
 
 def _take_back_key_files(made: list[tuple[Path, tuple[int, int, int, int]]]) -> None:

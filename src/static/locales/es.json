@@ -8248,6 +8248,7 @@
   "the name of the signature scheme, ed25519": "el nombre del esquema de firma, ed25519",
   "the newest held version": "la versión conservada más reciente",
   "the next one rejoins the line on {when}": "la siguiente vuelve a la cola el {when}",
+  "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup": "no se pudo escribir junto a esta clave la nota que la marca como restaurada desde una copia de seguridad, y una clave restaurada sin esa nota se contaría como propia de esta instalación; no se escribe y permanece en la copia de seguridad",
   "the operator's population table ({name})": "la tabla de población del operador ({name})",
   "the pass journal could not be read ({error})": "no se pudo leer el diario de pasadas ({error})",
   "the passphrase has a character that cannot be written as UTF-8": "la frase secreta tiene un carácter que no se puede escribir en UTF-8",

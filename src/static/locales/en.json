@@ -8248,6 +8248,7 @@
   "the name of the signature scheme, ed25519": "the name of the signature scheme, ed25519",
   "the newest held version": "the newest held version",
   "the next one rejoins the line on {when}": "the next one rejoins the line on {when}",
+  "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup": "the note that marks this key as restored from a backup could not be written beside it, and a restored key without that note would be counted as this installation's own; it is not written and stays in the backup",
   "the operator's population table ({name})": "the operator's population table ({name})",
   "the pass journal could not be read ({error})": "the pass journal could not be read ({error})",
   "the passphrase has a character that cannot be written as UTF-8": "the passphrase has a character that cannot be written as UTF-8",
