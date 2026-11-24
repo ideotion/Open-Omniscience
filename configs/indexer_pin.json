@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "133bf730d6571df65e0d24d8ebc9c9ea6f01856e038c39dcbaf6a639bec5d050",
+  "digest": "68435602dd5228c82972aeccf201b8d5b5e0891c3f36e2251e76f8691ac5ec60",
   "log": [
     {
       "version": 1,
@@ -121,6 +121,12 @@
       "digest": "133bf730d6571df65e0d24d8ebc9c9ea6f01856e038c39dcbaf6a639bec5d050",
       "kind": "same",
       "note": "R824 row 405: index_article's stamp writes also record the stage version, clear carried_from_batch and add one index_engines row per engine id; no keyword, sentiment, top-keyword or date row changes (golden output digest unchanged)"
+    },
+    {
+      "version": 3,
+      "digest": "68435602dd5228c82972aeccf201b8d5b5e0891c3f36e2251e76f8691ac5ec60",
+      "kind": "same",
+      "note": "Row 416 changes only reindex_parallel.py's pool lifetime and worker count (one kept pool per drain, recycled, memory-bounded); every task is computed by the same _worker_compute in a worker built by the same _worker_init, and index_article is untouched"
     }
   ]
 }

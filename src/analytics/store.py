@@ -1829,7 +1829,8 @@ def _reindex_articles_impl(
         tasks: list[Task], stats_out: dict, *, serial_fallback: bool = True
     ) -> tuple[dict[int, ArticleDerivatives], float]:
         _t = time.monotonic()
-        out = precompute_batch(tasks, extractor=extractor, workers=workers, stats=stats_out, serial_fallback=serial_fallback)
+        out = precompute_batch(tasks, extractor=extractor, workers=workers, stats=stats_out, serial_fallback=serial_fallback,
+                               drain_pool=_drain_pool)
         return out, time.monotonic() - _t
 
     def _fold_pre_stats(extra: dict) -> None:
@@ -1859,7 +1860,7 @@ def _reindex_articles_impl(
     import os as _os
     from concurrent.futures import Future, ThreadPoolExecutor
 
-    from src.analytics.reindex_parallel import PoolUnavailable, _serial, uses_pool
+    from src.analytics.reindex_parallel import DrainPool, PoolUnavailable, _serial, uses_pool
 
     _pipeline_on = _os.getenv("OO_REINDEX_PIPELINE", "1").strip() != "0"
     _windows = [article_ids[w : w + _PRECOMPUTE_WINDOW] for w in range(0, len(article_ids), _PRECOMPUTE_WINDOW)]
@@ -1867,6 +1868,10 @@ def _reindex_articles_impl(
     _ahead: tuple[list[Task], dict[int, str], Future, dict, float] | None = None
     _ahead_pool: ThreadPoolExecutor | None = None
     _pipelined_windows = 0
+    # ROW 416: ONE worker pool for the whole drain rather than one per window -- a fresh worker reloads every dictionary
+    # it meets (about 4.4 s of CPU per worker on a mixed-language window), and a long drain paid that once per window.
+    # Recycled after a measured number of articles to bound worker memory; see DrainPool. Closed in the finally below.
+    _drain_pool = DrainPool()
     try:
         for _wi, window_ids in enumerate(_windows):
             # Cooperative stop (field ruling 2026-07-29 item 15): a POST-SWAP import
@@ -1927,14 +1932,14 @@ def _reindex_articles_impl(
             # Start the NEXT window before applying this one, when its precompute will run in the pool. A failure to read it here
             # is left for its own turn, so this window is applied (and its progress kept) first.
             nxt = _windows[_wi + 1] if _wi + 1 < len(_windows) else None
-            if _pipeline_on and nxt is not None and uses_pool(len(nxt), extractor=extractor, workers=workers):
+            if _pipeline_on and nxt is not None and uses_pool(len(nxt), extractor=extractor, workers=workers, drain_pool=_drain_pool):
                 try:
                     _n_art, n_tasks, n_content, n_secs = _load_window(nxt)
                 except Exception as exc:  # noqa: BLE001 - read again, and raised, when the window's own turn comes
                     log_failure(_LOG, "reading the next re-index window ahead failed; it is read in its own turn", exc,
                                 level=logging.WARNING)
                 else:
-                    if n_tasks and uses_pool(len(n_tasks), extractor=extractor, workers=workers):
+                    if n_tasks and uses_pool(len(n_tasks), extractor=extractor, workers=workers, drain_pool=_drain_pool):
                         if _ahead_pool is None:
                             _ahead_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="oo-reindex-ahead")
                         n_stats: dict = {}
@@ -1953,6 +1958,13 @@ def _reindex_articles_impl(
             # Nothing left ahead: the helper is idle and this returns at once. A window still ahead (a stop, or an exception in the
             # apply) is not waited for: a Stop is answered now, and the pool it runs in ends at the pool timeout at the latest.
             _ahead_pool.shutdown(wait=_ahead is None, cancel_futures=True)
+        # A window still ahead (a stop, or an exception in the apply) is running in the kept pool: its workers are killed
+        # rather than waited for, which also ends that window's helper thread at once instead of at the pool timeout.
+        _drain_pool.close(abandon=_ahead is not None)
+        _pre_stats["pools_started"] = _drain_pool.started
+        _pre_stats["pools_recycled"] = _drain_pool.recycled
+        _pre_stats["pools_broken"] = _drain_pool.broken
+        _pre_stats["pools_shrunk"] = _drain_pool.shrunk
 
     # The END of the exclusive drain, which is where R22 says the reconcile belongs. The
     # marker closes ONLY on a sweep that reports `complete` -- a budgeted pass that
