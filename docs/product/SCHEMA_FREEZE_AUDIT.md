@@ -145,6 +145,8 @@ main article_title_translations: id, article_id, source_lang, target_lang, title
 main article_www_stamps: article_id, engine, inputs, stamped_at
 main articles: id, url, canonical_url, source_id, title, content, compressed_content, published_at, language, detected_language, hash, content_multihash, canon_version, server_ip, ip_observed_at, server_ip_reason, fetched_host, created_at, updated_at, region, country, author, word_count, reading_time, sentiment_score, sentiment_label, quarantined, quarantine_reason, quarantine_criteria_version, quarantined_at, top_keyword_id, top_keyword_count, top_keyword_tied_n, keyword_indexed_at, source_revision, newsletter_list_id, newsletter_attached_via
 main commodity_prices: id, symbol, market, observed_on, price, currency, unit, source, created_at
+main corpus_id_counter: id, next_id
+main corpus_segments: seg_no, file_name, state, id_lo, id_hi, created_at, state_at
 main derived_meta: key, value, updated_at
 main event_imports: id, family_key, fingerprint, family_name, family_user, imported_at, title, date, sources, uids, updated_at
 main external_sources: id, domain, name, url, source_type, credibility_score, political_bias, country, language, description, founded_year, alexa_rank, social_media_followers, is_verified, discovered_via, last_verified_at, created_at, updated_at
