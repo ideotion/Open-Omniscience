@@ -65,14 +65,18 @@ def test_no_optional_gate_shape_is_left_in_the_ui():
                 rf"window\.{gate}\s*&&",
                 rf"\b{gate}\s*&&",
                 rf"\b{gate}\([^;]*?\)\s*\.catch\(",
+                rf"\b{gate}\s*\|\|",  # (gate || (async () => true))(x)
+                rf"\b{gate}\s*\?(?!\.)",  # gate ? await gate(x) : true
+                rf"(?m)(?:^|[;{{}}])\s*await\s+{gate}\(",  # the answer is discarded
             ):
                 hits += [f"{rel}: {m.group(0)}" for m in re.finditer(pattern, code)]
-            for m in re.finditer(rf"typeof\s+(?:window\.)?{gate}\b[^\n]*", code):
-                if not re.match(
-                    rf'typeof\s+{gate}\s*!==\s*"function"\s*(\|\||\)\s*return\s+false\b|$)',
-                    m.group(0),
-                ):
-                    hits.append(f"{rel}: {m.group(0)[:80]}")
+            # \s spans line breaks, so a condition split after "function" is read whole: the
+            # next token must still be || (or the check returns false), never &&.
+            for m in re.finditer(rf"typeof\s+(?:window\.)?{gate}\b", code):
+                if not re.compile(
+                    rf'typeof\s+{gate}\s*!==\s*"function"\s*(\|\||\)\s*return\s+false\b)'
+                ).match(code, m.start()):
+                    hits.append(f"{rel}: {code[m.start() : m.start() + 80]}")
     assert not hits, (
         "an optional consent gate starts the action when the gate is missing:\n" + "\n".join(hits)
     )

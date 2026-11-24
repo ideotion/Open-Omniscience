@@ -1581,7 +1581,7 @@
         if (!r.online) {
           toast(t("Still offline — the request was accepted but airplane mode is still on. Try again."), "err");
         }
-        return r.online;
+        return r.online === true;   // only a real true counts as online (R822)
       } catch (e) { toast(e.message, "err"); return false; }
     }
     // ---- the consent popup's per-lane host disclosure (Q1001 + Q1002) ------
@@ -2008,7 +2008,7 @@
       // One dialog for a whole chain: its later steps do not ask again while what it allowed is still in place.
       if (opts && opts.alreadyAsked && (online || windowOpen)) return true;
       const dlg = document.getElementById("ai-egress-consent");
-      if (!dlg) return false;         // no dialog -> never silently proceed
+      if (!dlg) return undefined;     // no dialog -> never silently proceed; the gate says why (R822)
       const needsWindow = !online && !windowOpen;
       const slot = dlg.querySelector("#ai-egress-reason b");
       if (slot) ooLive(slot, () => reason || t("Install the local AI"));   // held (row 367)
