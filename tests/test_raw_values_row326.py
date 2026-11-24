@@ -83,7 +83,7 @@ def test_the_walker_leaves_translate_no_alone_for_text_and_attributes():
 
 def test_the_feed_marks_its_keywords_and_the_grading_terms_as_data():
     js = (STATIC / "app-diagnostics.js").read_text(encoding="utf-8")
-    feed = function_body(js, "loadAiActivity")
+    feed = function_body(js, "_aiActivityHtml")  # row 361: loadAiActivity draws it through ooLiveHtml
     assert '<span translate="no">${esc(x.term || x.domain || "")}</span>' in feed
     assert '<span class="pill" translate="no">${esc(x.term || "")}</span>' in feed
     assert '<span style="min-width:170px" translate="no">${esc(a.term)}</span>' in function_body(

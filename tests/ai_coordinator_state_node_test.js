@@ -47,16 +47,29 @@ const FR = {
   "all enabled sweeps are up to date": "tous les balayages activés sont à jour",
 };
 
-function paint(st, lang) {
+// ooLive / ooLiveHtml (row 364) reduced to what this suite needs: draw now, keep the render for a switch.
+function painter(lang0) {
   const els = { "aic-toggle-btn": { dataset: {}, textContent: "" }, "aic-status": { innerHTML: "" }, "aic-hw": null };
-  const t = (s) => (lang === "fr" && FR[s]) || s;
+  const I = { lang: lang0 };
+  const t = (s) => (I.lang === "fr" && FR[s]) || s;
+  const kept = new Map();
+  const ooLive = (el, r) => { if (!el) return; kept.set(el, ["textContent", r]); el.textContent = r(); };
+  const ooLiveHtml = (el, r) => { if (!el) return; kept.set(el, ["innerHTML", r]); el.innerHTML = r(); };
   const src = "const esc = (x) => String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;');\n"
     + "const _jobLabel = (j, t) => (j.label_i18n ? t(j.label_i18n).replace(/\\{(\\w+)\\}/g, (m, k) => (j.label_vars && k in j.label_vars ? j.label_vars[k] : m)) : j.label);\n"
-    + extract("_framedText", CORE) + "\n" + extract("_paintAiCoordinator", DIAG) + "\nreturn _paintAiCoordinator;";
+    + extract("_framedText", CORE) + "\n" + extract("_paintAiCoordinator", DIAG) + "\n"
+    + extract("_aiCoordinatorStatusHtml", DIAG) + "\nreturn _paintAiCoordinator;";
   // eslint-disable-next-line no-new-func
-  const fn = new Function("$", "window", "OOI18N", src)((id) => els[id], { OOI18N: { t } }, { t });
-  fn(st);
-  return els["aic-status"].innerHTML;
+  const fn = new Function("$", "window", "OOI18N", "ooLive", "ooLiveHtml", src)((id) => els[id], { OOI18N: { t } }, { t }, ooLive, ooLiveHtml);
+  return {
+    els, paint: fn,
+    switchTo(l) { I.lang = l; kept.forEach(([prop, r], el) => { el[prop] = r(); }); },
+  };
+}
+function paint(st, lang) {
+  const p = painter(lang);
+  p.paint(st);
+  return p.els["aic-status"].innerHTML;
 }
 
 test("a finished, stopped or failed lane prints its state word in the page's language", () => {
@@ -85,6 +98,16 @@ test("while a user's batch holds the model the English line is not printed besid
   assert(out === '<span class="pill warn">en pause — votre lot est en cours</span>', out);
   const joined = paint({ state: "cancelled", user_batch: { held: true } }, "fr");
   assert(joined === 'annulé · <span class="pill warn">en pause — votre lot est en cours</span>', joined);
+});
+
+test("row 361: the button and the status line follow a language switch, from the reading they were drawn from", () => {
+  const p = painter("en");
+  p.paint({ state: "done" });
+  assert(p.els["aic-status"].innerHTML === "done", "drawn in en");
+  assert(p.els["aic-toggle-btn"].textContent === "Start background AI", "button in en");
+  p.switchTo("fr");
+  assert(p.els["aic-status"].innerHTML === "terminé", "the status line kept the old language: " + p.els["aic-status"].innerHTML);
+  assert(p.els["aic-toggle-btn"].textContent === "Démarrer l'IA en arrière-plan", "the button kept the old language");
 });
 
 console.log("all checks passed (" + passed + ")");
