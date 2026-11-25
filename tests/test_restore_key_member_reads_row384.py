@@ -93,7 +93,15 @@ def test_an_unreadable_half_refuses_its_pair(tmp_path, monkeypatch):
 _CHILD = textwrap.dedent(
     """
     import resource, sys
-    resource.setrlimit(resource.RLIMIT_AS, (1 << 30, 1 << 30))
+    def _cap_memory(limit=1 << 30):  # a safety net only: never raises where the platform refuses it (macOS runners)
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        for want in ((limit, limit), (limit, hard)):
+            try:
+                resource.setrlimit(resource.RLIMIT_AS, want)
+                return
+            except (ValueError, OSError):
+                continue
+    _cap_memory()
     from src.backup import merge
     print(merge._read_key_member(__import__("pathlib").Path(sys.argv[1])))
     """
