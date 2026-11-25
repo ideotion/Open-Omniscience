@@ -45,6 +45,11 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "base = _depth() only READS this thread's depth (a getattr on a thread-local); the take is inside the try and the finally "
         "sets the depth back to that value, so it is idempotent (R767)"
     ),
+    ("database/segment_write.py", "transaction"): (
+        "the only statement before the lock's with-block READS which thread is inside a transaction and raises before anything "
+        "is taken (R826 stage 3a: a nested call refuses instead of hanging); the lock is a with-block and the owner mark is set "
+        "and cleared inside its try/finally"
+    ),
     ("safety/file_lock.py", "file_lock"): (
         "refuse_if_erased(path) only READS the erase latch (R802) and raises before anything is taken; there is nothing to give back"
     ),

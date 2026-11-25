@@ -295,6 +295,10 @@ def open_segment(seg: Segment, *, key: str | None = None):
     path, before, shared_encrypted = _prechecked(seg)
     absent_before = _absent_sidecars(path)
     if _journal_left(path):
+        if not SEGMENT_WRITES_ENABLED:
+            # Rolling a journal back writes the file, and this build writes no segment (the switch stays off): such a
+            # segment is unreadable here, and its file and journal are left exactly as they are.
+            raise SegmentUnavailable(seg.seg_no, "unreadable")
         _roll_back_journal(seg, path, before, key, bool(shared_encrypted))
     try:
         con = _checked_connect(seg, path, key, bool(shared_encrypted), read_only=True)
@@ -355,12 +359,32 @@ def _journal_left(path: Path) -> bool:
     return stat.S_ISREG(st.st_mode) and st.st_nlink == 1 and st.st_size > 0
 
 
+def _no_log_beside(path: Path) -> bool:
+    """No ``-wal`` and no ``-shm`` beside the file. A read-write open of a file with a write-ahead log beside it would fold
+    that log into the file when it closes, the loss the read-only open exists to prevent; a segment never has one."""
+    for suffix in ("-wal", "-shm"):
+        try:
+            os.lstat(f"{path}{suffix}")
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return False
+        return False
+    return True
+
+
 def _roll_back_journal(seg: Segment, path: Path, before: tuple[int, int], key: str | None, shared_encrypted: bool) -> None:
     """Roll a hot journal back with one read-write open of the checked file through the app's factory (SQLite rolls back on
     the first read), so the read-only open that follows sees the last committed state. The journal is SQLite's own record
     of the pages it was changing; writing them back restores exactly the committed file. Nothing else is read or written."""
     from src.database.connect import _is_sqlcipher_conn
 
+    if not _no_log_beside(path):
+        raise SegmentUnavailable(seg.seg_no, "not_a_segment_file")
+    absent_before = _absent_sidecars(path)
+    # The factory's open reads page 1 before the identity below is checked again, so a rollback may already have run by
+    # then: the name was checked a moment before (a regular file with one name in the app's 0700 corpus folder), and
+    # swapping it in that moment needs write access to that folder, which already grants more than this.
     con = _checked_connect(seg, path, key, shared_encrypted, read_only=False)
     try:
         if _identity_of_name(path) != before:
@@ -375,6 +399,7 @@ def _roll_back_journal(seg: Segment, path: Path, before: tuple[int, int], key: s
         raise SegmentUnavailable(seg.seg_no, _held_or_unreadable(exc)) from None
     finally:
         con.close()
+        _remove_sidecars_made(path, absent_before)
 
 
 def _checked_connect(seg: Segment, path: Path, key: str | None, shared_encrypted: bool, *, read_only: bool):
@@ -498,7 +523,12 @@ def create_segment(r: Reservation, *, key: str | None = None) -> Path:
             finally:
                 back.close()
     except BaseException:
-        if not _remove_failed_create(folder, r.file_name, ident):
+        if _remove_failed_create(folder, r.file_name, ident):
+            # The file is gone: an at-rest entry naming it (written just before a later step failed) goes too (R828 (4)).
+            from src.database.at_rest_state import forget_segment
+
+            forget_segment(path)
+        else:
             raise SegmentError(
                 "the segment could not be made, and the file at its name is not the one this call made; it was left in place"
             ) from None

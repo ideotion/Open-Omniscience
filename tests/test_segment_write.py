@@ -90,10 +90,13 @@ def test_the_writer_refuses_while_the_switch_is_off(data, shared, monkeypatch):
     [segment_write.open_writer, segment_write.rollover, segment_write.SegmentWriter.open, segment_write.SegmentWriter.transaction],
 )
 def test_every_writing_entry_asks_the_switch_first(fn):
-    node = ast.parse(textwrap.dedent(inspect.getsource(fn)))
-    body = node.body[0].body
-    first = body[1] if isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) else body[0]
-    assert isinstance(first, ast.Expr) and ast.unparse(first) == "require_writes()"
+    """The first call each entry makes, in source order, is ``require_writes()`` (a thread-id read and the refusal of a
+    nested call come before it in ``transaction``; neither touches a file)."""
+    node = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+    calls = sorted((c for c in ast.walk(node) if isinstance(c, ast.Call)), key=lambda c: (c.lineno, c.col_offset))
+    names = [ast.unparse(c.func) for c in calls]
+    names = [n for n in names if n not in ("threading.get_ident", "WriterBusy")]
+    assert names[0] == "require_writes"
 
 
 def test_nothing_in_src_imports_the_writer():
@@ -228,9 +231,9 @@ def test_a_crash_between_the_file_and_the_registry_is_recovered_never_refused(da
         raise OSError("the process died here")
 
     monkeypatch.setattr(segment_write, "record_generation", crash)
-    with pytest.raises(OSError), w.transaction() as t:
+    with w.transaction() as t:  # committed: the registry's failure is kept owed, never raised (a caller would write again)
         t.allocate(1)
-    w.close()
+    w.close()  # the owed raise fails again here: the process "died" with the registry behind
     monkeypatch.setattr(segment_write, "record_generation", real)
     file_gen, reg_gen = _file_counters(data, 1)[0], _row(shared, 1).generation
     assert reg_gen is not None and file_gen == reg_gen + 1
@@ -377,3 +380,123 @@ def test_a_registry_made_before_the_generation_column_reads_and_heals(tmp_path):
     sg.record_generation(con, 0, 2)  # never lowered
     assert sg.registry(con)[0].generation == 3
     con.close()
+
+
+# --- the two security reads of stage 3a (2026-11-25) --------------------------------------------------------------------
+
+
+@posix_only
+def test_with_the_switch_off_a_hot_journal_is_never_rolled_back(data, shared, tmp_path, monkeypatch):
+    segment_write.open_writer(shared).close()
+    p = data / "corpus" / "seg-1.db"
+    _crash_mid_write(p, tmp_path)
+    before = (p.read_bytes(), Path(f"{p}-journal").read_bytes())
+    monkeypatch.setattr(segment_open, "SEGMENT_WRITES_ENABLED", False)
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_open.open_segment(_row(shared, 1))
+    assert e.value.reason == "unreadable"
+    assert (p.read_bytes(), Path(f"{p}-journal").read_bytes()) == before, "this build writes no segment"
+
+
+@posix_only
+@pytest.mark.parametrize("suffix", ["-wal", "-shm"])
+def test_no_read_write_open_beside_a_write_ahead_log(data, shared, tmp_path, suffix):
+    segment_write.open_writer(shared).close()
+    p = data / "corpus" / "seg-1.db"
+    Path(f"{p}{suffix}").write_bytes(b"")
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_write.SegmentWriter.open(shared, _row(shared, 1))
+    assert e.value.reason == "not_a_segment_file"
+    Path(f"{p}{suffix}").unlink()
+    _crash_mid_write(p, tmp_path)
+    Path(f"{p}{suffix}").write_bytes(b"")
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_open.open_segment(_row(shared, 1))
+    assert e.value.reason == "not_a_segment_file"
+    assert Path(f"{p}-journal").exists(), "the journal was not rolled into the file"
+
+
+@posix_only
+def test_a_registry_that_cannot_be_raised_after_a_commit_is_owed_never_raised(data, shared, monkeypatch):
+    w = segment_write.open_writer(shared)
+    try:
+        real = segment_write.record_generation
+        monkeypatch.setattr(segment_write, "record_generation", lambda *a, **k: (_ for _ in ()).throw(sqlite3.OperationalError("busy")))
+        with w.transaction() as t:
+            ids = t.allocate(1)
+        assert ids[0] == w.seg.id_lo, "the commit stood and the caller saw no error"
+        assert _file_counters(data, 1)[0] == _row(shared, 1).generation + 1
+        monkeypatch.setattr(segment_write, "record_generation", real)
+        with w.transaction() as t:
+            t.allocate(1)
+        assert _file_counters(data, 1)[0] == _row(shared, 1).generation, "paid at the next commit"
+    finally:
+        w.close()
+
+
+@posix_only
+def test_a_transaction_sqlite_ended_early_commits_nothing_more(data, shared):
+    w = segment_write.open_writer(shared)
+    try:
+        before = _file_counters(data, 1)
+        with pytest.raises(SegmentError), w.transaction() as t:
+            t.con.execute("ROLLBACK")  # what SQLite does by itself on SQLITE_FULL or an I/O error
+            t.allocate(5)
+        assert _file_counters(data, 1) == before, "no statement ran in autocommit"
+        with pytest.raises(SegmentError), w.transaction() as t:
+            t.con.execute("ROLLBACK")
+        assert _file_counters(data, 1) == before
+    finally:
+        w.close()
+
+
+@posix_only
+def test_a_nested_call_refuses_instead_of_hanging(data, shared):
+    w = segment_write.open_writer(shared)
+    try:
+        with w.transaction():
+            with pytest.raises(segment_write.WriterBusy), w.transaction():
+                pass
+            with pytest.raises(segment_write.WriterBusy):
+                segment_write.rollover(w)
+            with pytest.raises(segment_write.WriterBusy):
+                w.close()
+    finally:
+        w.close()
+
+
+@posix_only
+def test_a_second_writer_never_settles_the_registry_under_a_live_one(data, shared):
+    w = segment_write.open_writer(shared)
+    try:
+        before = sg.registry(shared)
+        with pytest.raises(segment_write.WriterBusy):
+            segment_write.open_writer(shared)
+        assert sg.registry(shared) == before
+    finally:
+        w.close()
+
+
+@posix_only
+def test_a_create_that_fails_after_the_record_named_it_forgets_it(data, shared, monkeypatch):
+    """The record names the file, then the read-back's close fails: the file goes, and so does its record entry."""
+    forgot: list[str] = []
+    monkeypatch.setattr(at_rest_state, "forget_segment", lambda path, *a, **k: forgot.append(Path(path).name) or True)
+    monkeypatch.setattr(at_rest_state, "record_segment", lambda *a, **k: True)
+    real_open = segment_open.open_segment
+
+    class _Back:
+        def __init__(self, con):
+            self._con = con
+
+        def close(self):
+            self._con.close()
+            raise OSError("the read-back did not close cleanly")
+
+    monkeypatch.setattr(segment_open, "_shared_is_encrypted", lambda: True)
+    if not have_driver():
+        pytest.skip("sqlcipher3 not installed")
+    monkeypatch.setattr(segment_open, "open_segment", lambda seg, key=None: _Back(real_open(seg, key=key)))
+    with pytest.raises(OSError):
+        segment_open.create_segment(sg.Reservation(1, "seg-1.db", 10, 19), key=_PW)
+    assert forgot == ["seg-1.db"] and list((data / "corpus").iterdir()) == []
