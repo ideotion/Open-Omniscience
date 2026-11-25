@@ -23,6 +23,16 @@ from src.analytics.reindex_parallel import _MIN_PARALLEL_BATCH, precompute_batch
 from tests._app_engine import app_sqlite_engine
 
 
+@pytest.fixture(autouse=True)
+def _memory_figure_held(monkeypatch):
+    """The pool is memory-aware (row 416): on a runner short of free memory at that moment it computes serially, which
+    is right for the app and wrong for a test of the pool. Every test here therefore sees one steady, ample figure; a
+    test that is about the memory sets its own (its monkeypatch runs after this one)."""
+    import src.config.cgroup_memory as cgroup_memory
+
+    monkeypatch.setattr(cgroup_memory, "effective_memory", lambda *a, **k: {"available_mb": 64_000.0})
+
+
 def _tasks(n: int):
     return [
         (i, f"Climate policy number {i} shaped the talks and the energy debate.", "T", "en", "en")
