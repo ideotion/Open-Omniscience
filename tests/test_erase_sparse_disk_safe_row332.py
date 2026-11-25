@@ -443,21 +443,23 @@ def test_a_later_full_rewrite_clears_an_earlier_partial(tmp_path):
     blob.write_bytes(b"W" * 8192)
     token = crypto_erase._PARTIALS.set([])
     try:
-        crypto_erase._note_partial(blob, 4096, 8192, "write_failed")
+        st = os.stat(blob)
+        crypto_erase._note_partial(blob, 4096, 8192, "write_failed", (st.st_dev, st.st_ino))
+        crypto_erase._note_partial(blob, 4096, 8192, "write_failed", (st.st_dev, st.st_ino + 1))  # another file once at the name
         assert crypto_erase._overwrite(blob, keyed=False, capped=False) is True
-        assert crypto_erase._PARTIALS.get() == []
+        assert [e[3] for e in crypto_erase._PARTIALS.get()] == [(st.st_dev, st.st_ino + 1)]
     finally:
         crypto_erase._PARTIALS.reset(token)
 
 
-def test_the_watcher_holds_a_foreign_log_named_file_to_the_reserve(tmp_path):
-    """Security read B (row 332): only the app's own logs are never held to the reserve; another file whose name ends in -wal is
-    held to it like any other file (on a copy-on-write drive, an uncapped rewrite of it could fill the disk)."""
+
+def test_the_watcher_writes_a_copy_s_log_whole_on_a_full_disk(tmp_path):
+    """Delta read B (row 332): a database copy's log in a subfolder can hold the copy's salt page; the watcher writes it whole on a
+    full disk, as the panic erase's step 5b does (R797 (a) parity)."""
     data = tmp_path / "home" / "jane.doe" / "oo-data"
-    data.mkdir(parents=True)
-    (data / "notes-wal").write_bytes(b"N" * (2 * MiB))
+    (data / "backups").mkdir(parents=True)
+    (data / "backups" / "x.db-wal").write_bytes(b"L" * (2 * MiB))
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)
-    (data / "open_omniscience.db-wal").write_bytes(b"L" * (2 * MiB))
     text = _watch(tmp_path, {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log")}, _FULL_DISK)
-    assert "partially overwritten <data>/.../notes-wal (4096 of" in text, text
-    assert "partially overwritten <data>/.../open_omniscience.db-wal" not in text, text
+    assert "partially overwritten <data>/.../x.db-wal" not in text, text
+    assert not (data / "backups" / "x.db-wal").exists()

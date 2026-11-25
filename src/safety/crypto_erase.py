@@ -450,25 +450,26 @@ def _note_link(st: os.stat_result | None, *, keyed: bool = False, refused: bool 
 
 #: Row 332 (R797 (c)): each whole rewrite of this erase that stopped short (the disk reserve, an error), as (path, bytes written,
 #: bytes it was to write); set by :func:`_quick_crypto_erase` for the length of one erase, None elsewhere.
-_PARTIALS: contextvars.ContextVar[list[tuple[str, int, int]] | None] = contextvars.ContextVar("_PARTIALS", default=None)
+_PARTIALS: contextvars.ContextVar[list[tuple[str, int, int, tuple[int, int] | None]] | None] = contextvars.ContextVar("_PARTIALS", default=None)
 
 
-def _note_partial(path: Path | None, written: int, total: int, stop: str) -> None:
+def _note_partial(path: Path | None, written: int, total: int, stop: str, ident: tuple[int, int] | None = None) -> None:
     """R797 (c): a whole rewrite that stopped short is "partially overwritten" (bytes done of bytes known), logged with the path as
     its role (R734/R736), never "destroyed"; noted for the report when an erase is collecting."""
     _LOG.warning("crypto-erase: partially overwritten %s (%d of %d bytes; stopped: %s)",
                  _masked([str(path)])[0] if path is not None else "a held file", written, total, stop)
     partials = _PARTIALS.get()
     if partials is not None and path is not None:
-        partials.append((str(path), written, total))
+        partials.append((str(path), written, total, ident))
 
 
-def _clear_partial(path: Path) -> None:
-    """A file an earlier pass rewrote only in part and a later pass rewrote in full is no longer "partially overwritten"."""
+def _clear_partial(path: Path, ident: tuple[int, int] | None) -> None:
+    """A file an earlier pass rewrote only in part and a later pass rewrote in full is no longer "partially overwritten": the
+    same file by identity, never another one put at its name since (delta security read A, row 332)."""
     partials = _PARTIALS.get()
-    if partials:
+    if partials and ident is not None:
         key = str(path)
-        partials[:] = [e for e in partials if e[0] != key]
+        partials[:] = [e for e in partials if not (e[0] == key and e[3] == ident)]
 
 
 def _link_counts(notes: dict[str, set]) -> dict[str, int]:
@@ -580,17 +581,21 @@ def _overwrite_whole(path: Path, fd: int, *, linked: os.stat_result | None, refu
     """:func:`_overwrite`'s whole rewrite (R797, row 332): the data regions of ``fd`` only, the disk reserve kept unless
     ``capped`` is False, then fsync. Closes ``fd``. A file with another name is noted as written only once every byte of it is
     (Opus read, row 438); a stop is "partially overwritten" and False."""
+    ident: tuple[int, int] | None = None
     try:
+        with contextlib.suppress(OSError):
+            st = os.fstat(fd)
+            ident = (st.st_dev, st.st_ino)
         written, total, stop = _rewrite_fd(fd, zeros=zeros, capped=capped, where=str(path.parent))
     finally:
         os.close(fd)
     if stop:
         _note_link(linked, refused=refused)  # never said as overwritten, so its other name may still hold it
         if written > 0:  # nothing written is "not overwritten" (Revision 3), never "partially" (security read A)
-            _note_partial(path, written, total, stop)
+            _note_partial(path, written, total, stop, ident)
         return False
     _note_link(linked, keyed=True)  # None (one name): nothing to note
-    _clear_partial(path)  # rewritten in full by this later pass: never said as partial (Opus read of row 332)
+    _clear_partial(path, ident)  # rewritten in full by this later pass: never said as partial (Opus read of row 332)
     return True
 
 
@@ -3682,7 +3687,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     _LINK_NOTES.set(links)  # R839/R840: put back by quick_crypto_erase when the erase ends
     # R797 (c), row 332: every whole rewrite that stopped short (disk reserve, error), as (path, bytes written, bytes known); never
     # "destroyed", and any one makes the result "may be incomplete". Put back by quick_crypto_erase when the erase ends.
-    partials: list[tuple[str, int, int]] = []
+    partials: list[tuple[str, int, int, tuple[int, int] | None]] = []
     _PARTIALS.set(partials)
     _ERASE_ROOT.set(base)  # every log line of this erase is masked against its own data folder, never src.paths.data_dir
     # R711. Is the data folder the app's own? One the app did not choose that also holds other files (the operator's home folder, a
@@ -4425,7 +4430,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     link_counts = _link_counts(links)
     # R797 (c) / Revision 3 (row 332): each file said once, under its own reason: a partial rewrite, a file it could not look at
     # (an unlisted folder's), or one it could not overwrite at all.
-    partial_paths = {p for p, _w, _t in partials}
+    partial_paths = {e[0] for e in partials}
     failed_only = [f for f in dict.fromkeys(failed_writes) if f not in partial_paths and f not in unreached_files]
     shorts = {"partially_overwritten": len(partial_paths), "not_overwritten": len(failed_only)}
     return {
@@ -4499,8 +4504,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         # R797 (c), row 332: the files a whole rewrite stopped short on (disk reserve, error), as bytes done of bytes known; each
         # is in overwrite_failures too, and any one makes the result "may be incomplete".
         "partially_overwritten": shorts["partially_overwritten"],
-        "partial_bytes_done": sum(w for w, _t in {p: (w, t) for p, w, t in partials}.values()),  # each file once (its last pass)
-        "partial_bytes_known": sum(t for _w, t in {p: (w, t) for p, w, t in partials}.values()),
+        "partial_bytes_done": sum(w for w, _t in {e[0]: (e[1], e[2]) for e in partials}.values()),  # each file once (its last pass)
+        "partial_bytes_known": sum(t for _w, t in {e[0]: (e[1], e[2]) for e in partials}.values()),
         # Revision 3: the files it could not overwrite, other than a partial rewrite or a file it could not look at; any one makes
         # the result "may be incomplete".
         "not_overwritten": shorts["not_overwritten"],
