@@ -143,7 +143,7 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # link at the name" (never followed); nothing else of the exception is read, stored or logged.
     "src/safety/crypto_erase.py": {
         ("_data_regions", "if exc.errno == errno.ENXIO:"): 1,
-        ("_open_and_unlink_plain", "if exc.errno == errno.ELOOP:  # a link at the name: never followed"): 1,
+        ("_open_and_unlink_plain_at", "if exc.errno == errno.ELOOP:  # a link at the name: never followed"): 1,
     },
     # R397 (b): only the errno is read, to tell damage in the file (EIO) from a passing error that must not mark a healthy store
     "src/events/feeds.py": {("_load_json", "damaged = not isinstance(exc, OSError) or exc.errno == errno.EIO"): 1},

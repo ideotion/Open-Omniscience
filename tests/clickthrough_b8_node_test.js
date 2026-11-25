@@ -119,6 +119,7 @@ function makeHomeSandbox(i18n) {
     ${extract("_homeGlanceWhenReady", null, HOME)}
     const _STALE_NOTE_S = 90;
     ${extract("homeStatsAgeNote", null, HOME)}
+    ${extract("renderHomeNotScreened", null, HOME)}
     ${extract("renderHomeStats", null, HOME)}
     ${extract("renderHomeStatus", null, HOME)}
     this.homeStatEntries = homeStatEntries;

@@ -641,6 +641,32 @@ def _resolve_known_language(article: Article, content: str) -> str | None:
     )
 
 
+#: Row 418: the article's derived columns go out through this Core table statement (``session.execute``, so the write
+#: gate and the R827 recorder see it), keyed by a bound id; the SET list is the parameters' columns.
+_ARTICLE_DERIVED_UPDATE = update(cast(Table, Article.__table__)).where(
+    cast(Table, Article.__table__).c.id == bindparam("_article_id")
+)
+
+
+def _write_article_derived(session: Session, article: Article, values: dict[str, Any]) -> None:
+    """Write ``values`` (column name to value) onto the article's row now, plus ``updated_at`` (its onupdate), and record
+    them on ``article`` as its committed state (row 418).
+
+    What the attribute assignments and the flush's UPDATE did, minus the unit of work: the row ends identical, the
+    object reads the same values without a query, and the article is not left dirty for a later flush to write again.
+
+    One difference, on a failure only: when a caller-owned savepoint around ``index_article`` (``ArticleBatch._index_one``)
+    rolls back after this write, the row goes back but the object keeps these values until the next commit or rollback
+    expires it, where the flushed ORM write would have been expired at once. The database is never wrong (the keys are not
+    dirty, so nothing writes them back), and no caller reads them on that path."""
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    values = {**values, "updated_at": datetime.now(UTC)}
+    session.execute(_ARTICLE_DERIVED_UPDATE, {"_article_id": article.id, **values})
+    for key, value in values.items():
+        set_committed_value(article, key, value)
+
+
 def _stamp_index_engine(
     session: Session, article: Article, extractor, *, certified: bool, inputs: str
 ) -> None:
@@ -662,7 +688,6 @@ def _stamp_index_engine(
     -- the stamp only ever makes a restore cheaper, so its absence costs a re-extraction
     and never a keyword."""
     from sqlalchemy import and_, delete, not_
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
     from src.database.models import ArticleIndexStamp
 
@@ -680,21 +705,12 @@ def _stamp_index_engine(
     if certified:
         # R824 (row 405): the stage version beside the id, and no carry provenance -- these rows were extracted HERE, whatever an
         # earlier stamp said; the engine's readable components ride their own table, once per id.
-        stmt = sqlite_insert(ArticleIndexStamp).values(
-            article_id=article.id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
-            stage_version=INDEXER_VERSION, carried_from_batch=None,
-        )
         session.execute(
-            stmt.on_conflict_do_update(
-                index_elements=[ArticleIndexStamp.article_id],
-                set_={
-                    "engine": stmt.excluded.engine,
-                    "inputs": stmt.excluded.inputs,
-                    "stamped_at": stmt.excluded.stamped_at,
-                    "stage_version": stmt.excluded.stage_version,
-                    "carried_from_batch": None,
-                },
-            )
+            _stamp_upsert(ArticleIndexStamp),
+            {
+                "article_id": article.id, "engine": current, "inputs": inputs, "stamped_at": datetime.now(UTC),
+                "stage_version": INDEXER_VERSION, "carried_from_batch": None,
+            },
         )
         _record_engine(session, current, "kw", record)
     else:
@@ -716,7 +732,6 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
     the stamp only ever makes a restore cheaper, so its absence costs a re-extraction
     and never a wrong row."""
     from sqlalchemy import delete
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
     from src.database.models import ArticleWwwStamp
 
@@ -733,21 +748,12 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
         log_failure(_LOG, "could not compute the www identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleWwwStamp).where(ArticleWwwStamp.article_id == article_id))
         return
-    stmt = sqlite_insert(ArticleWwwStamp).values(
-        article_id=article_id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
-        stage_version=WWW_INDEXER_VERSION, carried_from_batch=None,
-    )
     session.execute(
-        stmt.on_conflict_do_update(
-            index_elements=[ArticleWwwStamp.article_id],
-            set_={
-                "engine": stmt.excluded.engine,
-                "inputs": stmt.excluded.inputs,
-                "stamped_at": stmt.excluded.stamped_at,
-                "stage_version": stmt.excluded.stage_version,
-                "carried_from_batch": None,
-            },
-        )
+        _stamp_upsert(ArticleWwwStamp),
+        {
+            "article_id": article_id, "engine": current, "inputs": inputs, "stamped_at": datetime.now(UTC),
+            "stage_version": WWW_INDEXER_VERSION, "carried_from_batch": None,
+        },
     )
     _record_engine(session, current, "www", record)
 
@@ -756,15 +762,50 @@ def _record_engine(session: Session, engine: str, stage: str, components: str) -
     """One ``index_engines`` row per engine id (R824, row 405): what the id is a hash of, so a later restore of this store can name the
     component that differs from its own engine. An insert that keeps an existing row, one primary-key probe per stamp; it writes inside
     the stamp's own transaction, so the row exists exactly when a stamp naming it does."""
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    session.execute(
+        _record_engine_insert(),
+        {"engine": engine, "stage": stage, "components": components, "recorded_at": datetime.now(UTC)},
+    )
 
+
+_STAMP_COLUMNS = ("article_id", "engine", "inputs", "stamped_at", "stage_version", "carried_from_batch")
+
+#: Row 418: the stamp upsert and the engine record as SQL text, written once. SQLAlchemy cannot cache a SQLite ``ON CONFLICT``
+#: insert (it reports "no key"), so the construct these replace was compiled again for every article: about 0.5 ms per statement,
+#: three per article. The text is exactly what that construct rendered with the SQLite dialect (``carried_from_batch`` bound None
+#: there, NULL here); tests/test_apply_core_row418.py compares the two renderings and the rows each one stores.
+_STAMP_UPSERT_SQL = (
+    "INSERT INTO {table} (article_id, engine, inputs, stamped_at, stage_version, carried_from_batch) "
+    "VALUES (:article_id, :engine, :inputs, :stamped_at, :stage_version, :carried_from_batch) "
+    "ON CONFLICT (article_id) DO UPDATE SET engine = excluded.engine, inputs = excluded.inputs, "
+    "stamped_at = excluded.stamped_at, stage_version = excluded.stage_version, carried_from_batch = NULL"
+)
+_ENGINE_RECORD_SQL = (
+    "INSERT INTO index_engines (engine, stage, components, recorded_at) "
+    "VALUES (:engine, :stage, :components, :recorded_at) ON CONFLICT (engine) DO NOTHING"
+)
+
+
+def _typed_text(sql: str, table: Table, names: Iterable[str]):
+    """``sql`` as a text statement whose parameters keep their columns' types, so a datetime is stored exactly as the construct
+    stored it. It runs through ``session.execute``, so the write gate and the R827 recorder see it."""
+    return text(sql).bindparams(*(bindparam(name, type_=table.c[name].type) for name in names))
+
+
+@functools.cache
+def _stamp_upsert(model):
+    """The stamp upsert for ``model`` (``ArticleIndexStamp`` or ``ArticleWwwStamp``), built once (row 418, the reason above
+    :data:`_STAMP_UPSERT_SQL`)."""
+    table = cast(Table, model.__table__)
+    return _typed_text(_STAMP_UPSERT_SQL.format(table=table.name), table, _STAMP_COLUMNS)
+
+
+@functools.cache
+def _record_engine_insert():
+    """``_record_engine``'s insert-or-keep, built once (row 418)."""
     from src.database.models import IndexEngine
 
-    session.execute(
-        sqlite_insert(IndexEngine)
-        .values(engine=engine, stage=stage, components=components, recorded_at=datetime.now(UTC))
-        .on_conflict_do_nothing(index_elements=[IndexEngine.engine])
-    )
+    return _typed_text(_ENGINE_RECORD_SQL, cast(Table, IndexEngine.__table__), ("engine", "stage", "components", "recorded_at"))
 
 
 def _index_article_www(
@@ -1089,12 +1130,13 @@ def index_article(
     # extractor generation. Set unconditionally (never `or`-guarded): an article whose
     # keywords were all suppressed this pass must go BACK to NULL rather than keep a
     # stale top keyword that no mention row supports any more.
+    derived: dict[str, Any] = {}
     if sentiment_result is not None:
-        article.sentiment_score, article.sentiment_label = sentiment_result
+        derived["sentiment_score"], derived["sentiment_label"] = sentiment_result
     (
-        article.top_keyword_id,
-        article.top_keyword_count,
-        article.top_keyword_tied_n,
+        derived["top_keyword_id"],
+        derived["top_keyword_count"],
+        derived["top_keyword_tied_n"],
     ) = top_keyword_of(new_contrib)
 
     # THE ATTEMPT RECORD (PRH-01). Stamped on EVERY scope, including the keyword-only
@@ -1110,7 +1152,13 @@ def index_article(
     # record of a keyword pass that did in fact complete. Verified, not assumed --
     # tests/test_backfill_cursor.py drives a failing WWW store and asserts the stamp
     # survives.
-    article.keyword_indexed_at = datetime.now(UTC)
+    #
+    # Row 418: written by ONE statement here rather than by the unit of work at the next flush -- the same columns, the
+    # same transaction, and still outside the savepoint (it runs before it). ``updated_at`` is the column's own
+    # onupdate, stated so the object can be told; the object then holds the stored values as committed state, exactly
+    # as after the flush, so nothing is pending and nothing is read back.
+    derived["keyword_indexed_at"] = datetime.now(UTC)
+    _write_article_derived(session, article, derived)
 
     # Keep the denormalised counters exact for THIS article's net change.
     #
@@ -1907,6 +1955,10 @@ def _reindex_articles_impl(
     # The next window's tasks and text, its precompute in flight, that precompute's own stats, and the seconds its read took.
     _ahead: tuple[list[Task], dict[int, str], Future, dict, float] | None = None
     _ahead_pool: ThreadPoolExecutor | None = None
+    # ROW 425: the window computed ahead whose result has not been taken yet. ``_ahead`` is emptied when its turn
+    # STARTS, before the article read and the wait for its result; this stays set until that result is taken, so a
+    # stop or an exception in between (Ctrl-C during the read or the wait) still kills that window rather than waits.
+    _pending_fut: Future | None = None
     _pipelined_windows = 0
     # ROW 416: ONE worker pool for the whole drain rather than one per window -- a fresh worker reloads every dictionary
     # it meets (about 4.4 s of CPU per worker on a mixed-language window), and a long drain paid that once per window.
@@ -1942,6 +1994,7 @@ def _reindex_articles_impl(
                     # full-width pools never run together. Its result is not used and its figures are not counted.
                     with contextlib.suppress(Exception):
                         _fut.result()
+                    _pending_fut = None
                 continue
 
             # Precompute (parallel when it's worth it; falls back to serial in-process on any pool trouble -- see
@@ -1952,8 +2005,10 @@ def _reindex_articles_impl(
             if _fut is not None:
                 try:
                     derivs, _secs = _fut.result()
+                    _pending_fut = None
                     _pipelined_windows += 1
                 except PoolUnavailable:
+                    _pending_fut = None
                     # Straight to serial, here: asking the pool again would wait out a second pool timeout on a wedged pool
                     # before the same serial redo. Counted once, as the fallback it is.
                     _ts = time.monotonic()
@@ -1983,11 +2038,8 @@ def _reindex_articles_impl(
                         if _ahead_pool is None:
                             _ahead_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="oo-reindex-ahead")
                         n_stats: dict = {}
-                        _ahead = (
-                            n_tasks, n_content,
-                            _ahead_pool.submit(_precompute, n_tasks, n_stats, serial_fallback=False),
-                            n_stats, n_secs,
-                        )
+                        _pending_fut = _ahead_pool.submit(_precompute, n_tasks, n_stats, serial_fallback=False)
+                        _ahead = (n_tasks, n_content, _pending_fut, n_stats, n_secs)
                     del _n_art  # applied from a fresh read in its own turn
 
             _t0 = time.monotonic()
@@ -1995,12 +2047,12 @@ def _reindex_articles_impl(
             _apply_s += time.monotonic() - _t0
     finally:
         if _ahead_pool is not None:
-            # Nothing left ahead: the helper is idle and this returns at once. A window still ahead (a stop, or an exception in the
+            # Nothing left ahead: the helper is idle and this returns at once. A window still ahead (a stop, or an exception or Ctrl-C in the
             # apply) is not waited for: a Stop is answered now, and the pool it runs in ends at the pool timeout at the latest.
-            _ahead_pool.shutdown(wait=_ahead is None, cancel_futures=True)
+            _ahead_pool.shutdown(wait=_pending_fut is None, cancel_futures=True)
         # A window still ahead (a stop, or an exception in the apply) is running in the kept pool: its workers are killed
         # rather than waited for, which also ends that window's helper thread at once instead of at the pool timeout.
-        _drain_pool.close(abandon=_ahead is not None)
+        _drain_pool.close(abandon=_pending_fut is not None)
         _pre_stats["pools_started"] = _drain_pool.started
         _pre_stats["pools_recycled"] = _drain_pool.recycled
         _pre_stats["pools_broken"] = _drain_pool.broken

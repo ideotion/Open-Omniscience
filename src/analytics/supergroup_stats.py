@@ -164,7 +164,7 @@ def _per_id_mentions(
     left out (R101), as the rollup serve this stands in for leaves them out."""
     from sqlalchemy import func
 
-    from src.analytics.quarantine_scope import not_quarantined
+    from src.analytics.quarantine_scope import not_counted
     from src.database.derived_views import KeywordMentionRead
 
     out: dict[int, int] = {}
@@ -174,7 +174,7 @@ def _per_id_mentions(
     for chunk in _chunks(ids):
         q = db.query(
             KeywordMentionRead.keyword_id, func.coalesce(func.sum(KeywordMentionRead.count), 0)
-        ).filter(KeywordMentionRead.keyword_id.in_(chunk), not_quarantined(KeywordMentionRead.article_id))  # R101
+        ).filter(KeywordMentionRead.keyword_id.in_(chunk), not_counted(KeywordMentionRead.article_id))  # R101
         if lo is not None:
             q = q.filter(KeywordMentionRead.observed_on >= lo)
         if hi is not None:
@@ -187,7 +187,7 @@ def _per_id_mentions(
 def _distinct_source_count(db, keyword_ids) -> int:
     from src.database.derived_views import KeywordMentionRead
     from src.database.outlet import OutletMap
-    from src.analytics.quarantine_scope import not_quarantined
+    from src.analytics.quarantine_scope import not_counted
     from src.database.stand_in import not_a_stand_in_article_id
 
     ids = sorted(keyword_ids)
@@ -205,7 +205,7 @@ def _distinct_source_count(db, keyword_ids) -> int:
                 KeywordMentionRead.keyword_id.in_(chunk),
                 KeywordMentionRead.source_id.isnot(None),
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
-                not_quarantined(KeywordMentionRead.article_id),  # R101: a page judged not an article is no outlet's voice
+                not_counted(KeywordMentionRead.article_id),  # R101: a page judged not an article is no outlet's voice
             )
             .distinct()
         ):
@@ -258,7 +258,7 @@ def daily_series(db, keyword_ids, *, days: int, today: date | None = None) -> li
     scan only, bounded by ``days`` and the group's own (typically small) id set."""
     from sqlalchemy import func
 
-    from src.analytics.quarantine_scope import not_quarantined
+    from src.analytics.quarantine_scope import not_counted
     from src.database.derived_views import KeywordMentionRead
 
     ids = sorted(keyword_ids)
@@ -273,7 +273,7 @@ def daily_series(db, keyword_ids, *, days: int, today: date | None = None) -> li
                 KeywordMentionRead.observed_on, func.coalesce(func.sum(KeywordMentionRead.count), 0)
             )
             .filter(KeywordMentionRead.keyword_id.in_(chunk), KeywordMentionRead.observed_on >= lo)
-            .filter(not_quarantined(KeywordMentionRead.article_id))  # R101: the series sums what the headline sums
+            .filter(not_counted(KeywordMentionRead.article_id))  # R101: the series sums what the headline sums
             .group_by(KeywordMentionRead.observed_on)
             .all()
         )

@@ -167,7 +167,8 @@
 
   <div id="view-unlock" class="hidden">
     <h1>Unlock your corpus</h1>
-    <p>This database is encrypted at rest (SQLCipher 4). Enter THE passphrase to open it.</p>
+    <p id="unlock-claim">This database looks encrypted at rest; it has not been checked with your key yet. Enter THE passphrase to open it.</p>
+    <p id="unlock-claim-encrypted" class="hidden">This database is encrypted at rest (SQLCipher 4), per this installation's record. Enter THE passphrase to open it.</p>
     <label for="pw">Passphrase</label>
     <input type="password" id="pw" autocomplete="current-password" autofocus>
     <button id="btn-unlock">Unlock</button>

@@ -857,6 +857,9 @@ def _switch_lane_held(kind: str, target: Path, finished: Path, kept: Path, watch
     finally:
         note_replaced()  # a connection still on the old file is refused at its next statement (``file_identity``, row 148)
         invalidate_header_cache()
+        from src.database import at_rest_state
+
+        at_rest_state.forget(f"lane:{kind}", target)  # R828 (4): the record's entry named the file switched out
 
 
 def _forget_damage_verdict(kind: str) -> None:

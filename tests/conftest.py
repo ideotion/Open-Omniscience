@@ -67,6 +67,9 @@ _SUITE_DATA_DIR = os.environ["OO_DATA_DIR"]
 os.environ["OO_ALLOWED_HOSTS"] = ",".join(x for x in (os.environ.get("OO_ALLOWED_HOSTS", ""), "testserver") if x)
 # Never autostart the background scraper thread during tests.
 os.environ.setdefault("OO_NO_SCHEDULER", "1")
+# R830 (row 408 PR 3): a restore queues its new articles for a background screening worker; a test that drives a restore must not
+# acquire that thread writing behind its back. Tests of the worker call it directly.
+os.environ.setdefault("OO_SCREENING_AUTOSTART", "0")
 # Never start the offline-maintenance timer either: the boot-upkeep tests that unset
 # OO_NO_SCHEDULER would otherwise leave a daemon that runs real maintenance against
 # whatever test database is current 180 s later, in the middle of the suite.
