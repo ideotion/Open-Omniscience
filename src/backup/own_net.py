@@ -56,8 +56,8 @@ ACTIVATED = "activated"
 REMOVED = "safety copy removed: the import was refused before any change"
 
 #: Why a copy was kept (the report says which).
-KEPT_NOT_OURS = "kept: this run did not make it"
-KEPT_ACTIVATED = "kept: the import may have reached the change (its record says so, or could not be read)"
+KEPT_NOT_OURS = "kept: this run did not create it"
+KEPT_ACTIVATED = "kept: the import may already have changed your corpus (its record says so, or could not be read)"
 KEPT_UNCONFIRMED = "kept: the corpus could not be confirmed unchanged since the copy was made"
 KEPT_CHANGED = "kept: your corpus changed after the copy was made"
 KEPT_NOT_THE_FILE = "kept: the file at that name is not the copy this run made"
