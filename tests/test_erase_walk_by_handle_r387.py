@@ -21,6 +21,7 @@ from pathlib import Path
 import pytest
 
 from src.safety import crypto_erase
+from tests.os_scope import scope_os
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32" or not hasattr(os, "O_DIRECTORY"), reason="POSIX folder handles")
 
@@ -138,3 +139,59 @@ def test_a_folder_the_walk_cannot_open_is_named_by_its_path(tmp_path, monkeypatc
 def test_without_a_folder_handle_the_walk_goes_by_path():
     assert crypto_erase._walk_fd(None) is None
     assert crypto_erase._walk_fd((Path("x"), (1, 2), None)) is None
+
+
+def test_a_folder_moved_away_mid_erase_is_erased_by_its_handle_and_never_said_removed(tmp_path, monkeypatch):
+    """Security read: the folder the erase started on is walked from its handle wherever it went, and "removed" is said only when
+    that very folder was removed."""
+    data = _folder(tmp_path)
+    aside = tmp_path / "moved aside"
+    real = crypto_erase._erase_roots
+    moved: list[bool] = []
+
+    def roots(base, **kw):
+        if not moved:
+            moved.append(True)
+            os.rename(data, aside)  # nothing takes its path
+        return real(base, **kw)
+
+    monkeypatch.setattr(crypto_erase, "_erase_roots", roots)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert not (aside / "sub" / "notes.json").exists()
+    assert not (aside / "app_settings.json").exists()
+    assert report.get("removed") is False and report.get("removed_at_rmtree") is False and report.get("folder_moved") is True
+
+
+def test_a_drive_mounted_below_is_never_entered(tmp_path, monkeypatch):
+    """Security read: a folder below whose device is not the data folder's is refused like a link, named as not checked."""
+    data = _folder(tmp_path)
+    real_fstat = os.fstat
+    fd = os.open(data, os.O_RDONLY | os.O_DIRECTORY)
+    base_dev = real_fstat(fd).st_dev
+    sub_ino = os.stat(data / "sub").st_ino
+
+    class _Other:
+        def __init__(self, st):
+            self.st_dev, self.st_ino, self.st_nlink = base_dev + 1, st.st_ino, st.st_nlink
+
+    scope_os(monkeypatch, crypto_erase, fstat=lambda f: _Other(real_fstat(f)) if real_fstat(f).st_ino == sub_ino else real_fstat(f))
+    try:
+        got, err = crypto_erase._open_below(fd, ("sub",))
+    finally:
+        os.close(fd)
+    assert got is None and isinstance(err, OSError)
+
+
+def test_a_handle_that_cannot_be_taken_never_stops_the_walk(tmp_path, monkeypatch):
+    data = _folder(tmp_path)
+    fd = os.open(data, os.O_RDONLY | os.O_DIRECTORY)
+
+    def no_more(_fd):
+        raise OSError(24, "too many")
+
+    scope_os(monkeypatch, crypto_erase, dup=no_more)
+    try:
+        got, err = crypto_erase._open_below(fd, ())
+    finally:
+        os.close(fd)
+    assert got is None and err is not None and err.errno == 24

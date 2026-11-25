@@ -328,7 +328,7 @@ def settle_removed(report: dict) -> bool:
             report["removed"] = False
             return False
         removed_before = bool(report.get("removed")) or bool(report.get("removed_at_rmtree"))
-        removed = not _present(Path(report["data_dir"]))
+        removed = not _present(Path(report["data_dir"])) and not report.get("folder_moved")
         report["removed"] = removed
         if not removed and not removed_before:
             # The erase never removed it (a link as the data folder, an entry it could not delete): said as that, never "came back".
@@ -2314,8 +2314,8 @@ def _copy_mode(p: Path) -> str:
 def _erase_roots(base: Path, *, app_only: bool, unlisted=None, unreached=None, dfd: int | None = None) -> list[Path]:
     """What steps 5b and 6 reach: the data folder whole, or, in a folder the app does not own (R711), each top-level entry the app
     owns there, by name."""
-    if not _present(base, unreached):
-        return []
+    if not (_present(base, unreached) if dfd is None else _held_present(dfd)):
+        return []  # row 387: with the handle, the folder the erase started on, wherever it is now (security read)
     if not app_only:
         return [base]
     from src.safety.data_scope import is_app_owned, owned_spec
@@ -2373,17 +2373,26 @@ def _open_below(base_fd: int, parts: tuple[str, ...]) -> tuple[int | None, OSErr
     O_DIRECTORY`` (a link or a junction is never entered, a folder swapped for one is refused). ``(handle, None)``, the caller closes
     it, or ``(None, the error)``. Each folder is reopened from the data folder's handle, so the walk holds at most two handles."""
     cur = base_fd
-    for part in parts:
-        try:
+    try:
+        dev = os.fstat(base_fd).st_dev
+        for part in parts:
             nxt = os.open(part, _DIR_FLAGS, dir_fd=cur)
-        except OSError as exc:
             if cur != base_fd:
-                os.close(cur)
-            return None, exc
+                _close_quietly(cur)
+            cur = nxt
+            if os.fstat(cur).st_dev != dev:
+                # security read (row 387): a drive mounted on a folder below is never entered, the folder is named as not checked
+                raise OSError(errno.EXDEV, "")
+        return (os.dup(cur) if cur == base_fd else cur), None
+    except OSError as exc:  # EMFILE included: the folder is named as not checked, the erase goes on (security read, row 387)
         if cur != base_fd:
-            os.close(cur)
-        cur = nxt
-    return (os.dup(cur) if cur == base_fd else cur), None
+            _close_quietly(cur)
+        return None, exc
+
+
+def _close_quietly(fd: int) -> None:
+    with contextlib.suppress(OSError):
+        os.close(fd)
 
 
 def _fd_folder(fd: int, top: Path, parts: tuple[str, ...], stack: list, skips: set[Path], unreached):
@@ -2417,7 +2426,7 @@ def _fd_files(base_fd: int, base: Path, start: tuple[str, ...], skips: set[Path]
         except OSError as exc:
             onerror(OSError(exc.errno, "", str(top)))
         finally:
-            os.close(fd)
+            _close_quietly(fd)
 
 
 def _files_under(roots: list[Path], base: Path, onerror, skip: Path | set[Path] | None = None, unreached=None,
@@ -2487,21 +2496,35 @@ def _remove_app_folders(roots: list[Path], dfd: int | None = None, *, files: boo
                 shutil.rmtree(at.name, ignore_errors=True, dir_fd=at.dfd)
 
 
-def _remove_base(base: Path, dfd: int | None) -> None:
+def _held_present(dfd: int) -> bool:
+    """Row 387 (security read): whether the folder held by ``dfd`` still exists, wherever it is now (a removed folder has no link)."""
+    try:
+        return os.fstat(dfd).st_nlink > 0
+    except OSError:
+        return False
+
+
+def _remove_base(base: Path, dfd: int | None) -> bool:
     """Step 6's removal of a data folder the app owns. With ``dfd`` (row 387), every entry goes by name through the folder's handle
     held from the probe, then the folder itself only while the path still leads to that very folder (a drive swapped since keeps
-    its folder; :func:`os.rmdir` removes only an empty one). A data folder that is a link is left, as ``shutil.rmtree`` leaves one."""
+    its folder; :func:`os.rmdir` removes only an empty one). A data folder that is a link is left, as ``shutil.rmtree`` leaves one.
+    Whether the folder the erase started on is gone: with ``dfd``, only when this removal removed that very folder (one moved away
+    mid-erase is emptied through its handle and never said to be removed; security read, row 387)."""
     if dfd is None:
         with contextlib.suppress(OSError):
             shutil.rmtree(base, ignore_errors=True)
-        return
-    if _kind(base) != "dir":
-        return  # a link (rmtree refuses one) or gone
+        return not _present(base)
+    if _kind(base) == "link":
+        return False  # rmtree refuses one: left as before
     _remove_app_folders([base / e.name for e in _listing(base, None, dfd)], dfd, files=True)
-    with contextlib.suppress(OSError):
+    try:
         held, now = os.fstat(dfd), os.lstat(base)
-        if (held.st_dev, held.st_ino) == (now.st_dev, now.st_ino):
-            os.rmdir(base)
+        if (held.st_dev, held.st_ino) != (now.st_dev, now.st_ino):
+            return False  # the path leads elsewhere now: that folder is never removed, the held one is not at its path
+        os.rmdir(base)
+    except OSError:
+        return False
+    return True
 
 
 def _left_entries(base: Path, dfd: int | None = None) -> dict[str, list[str]]:
@@ -2702,6 +2725,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # followed); one on a drive that is not there gets none (nothing on it is touched).
     walk_hold = hold if drive == "ok" else _drive_hold(base, drive_fds if drive_fds is not None else []) if drive == "unwatched" else None
     walk_fd = _walk_fd(walk_hold)
+    if walk_fd is None and drive in ("ok", "unwatched") and os.name == "posix":
+        # security read (row 387): said, never silent; the walks then go by path, the drive re-checked before each step
+        _LOG.warning("CRYPTO-ERASE: no handle on the data folder could be held; its walks go by path")
     want_id: str | None = None
     if drive == "ok":
         with contextlib.suppress(Exception):
@@ -2999,7 +3025,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                 head_reals.add(str(db))
 
     # Only for a store known to be encrypted: a plaintext body has no salt to lose, and is rewritten whole by step 6.
-    salt_gone = {os.path.realpath(db) for db in dbs if head_ok.get(db)} if encrypted is True else set()
+    # By identity (security read, row 387): the walk by handle names a file by a path whose real path may lead elsewhere after a swap.
+    salt_gone: set[tuple[int, int]] = set()
+    for db in dbs if encrypted is True else []:
+        if not head_ok.get(db):
+            continue
+        with contextlib.suppress(OSError):
+            st = os.lstat(db)
+            salt_gone.add((st.st_dev, st.st_ino))
 
     # Close every lane pool now that its salt is gone, and before step 5 drops the passphrase. A pooled SQLCipher connection holds
     # a derived key in memory and an open handle on its file: measured without the close, a connection this process already had
@@ -3146,6 +3179,10 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                     # by its NAME only: its other name may be the app's own (the rebuild's kept link to a live lane file), which the
                     # later steps still reach under that name (security read, row 402)
                     copies_kept_paths.add(os.path.realpath(p))
+                    if took.get("ident"):
+                        # and by its identity: a walk by handle after a swap reaches it under a path its real path no longer
+                        # matches (security read, row 387)
+                        copies_left["_left"].add(took["ident"])
                     continue
                 if not took["head_ok"]:
                     overwrite_failures.append(str(p.parent))
@@ -3232,6 +3269,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             copies_left["_left"].add(ident)  # rewritten through its handle; step 6 only removes the name
         elif not gone:
             copies_kept_paths.add(os.path.realpath(p))  # short of a full rewrite: its name kept
+            copies_left["_left"].add(ident)  # and by identity (security read, row 387)
         if side and copy_state == "overwritten":
             continue  # a copy's log: part of its copy, counted only when it falls short
         into = {"overwritten": copies_overwritten, "partially_overwritten": copies_partially_overwritten}.get(
@@ -3273,7 +3311,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             # A FIFO, socket or device is removed too: opening one to write would block or reach hardware.
             _unlink_at(p, at)
             continue
-        if os.path.realpath(p) in salt_gone:
+        if salt_gone and _left_by_erase({"_left": salt_gone}, p, at):
             # A database of an encrypted store whose salt page step 1 destroyed but could not unlink (on Windows a pool still
             # open holds it, and Windows keeps no descriptor for the late pass): its head is overwritten once more, for a
             # commit that put page 1 back since, and its body, noise already, is not rewritten whole (hours at corpus size).
@@ -3308,6 +3346,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         wiped += _w
     left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}
     removed_at_rmtree = False
+    folder_moved = False
     kept_items = 0
     if _off_drive():
         pass  # R809 / R812: nothing on the absent drive is removed, nor on one that changed during the erase
@@ -3324,8 +3363,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         # Kept ON PURPOSE for those only: anything else still there is a removal that failed, said as that (never hidden by "kept").
         left["not_removed"] = sorted(e.name for e in _listing(base, None, walk_fd) if Path(e.path) not in keep)
     else:
-        _remove_base(base, walk_fd)
-        removed_at_rmtree = not _present(base)  # before any log line: one that makes it again then reads "came back", never "not removed"
+        removed_at_rmtree = _remove_base(base, walk_fd)
+        # security read (row 387): the folder the erase started on is still there, at no path it had: never "removed"
+        folder_moved = not removed_at_rmtree and walk_fd is not None and _held_present(walk_fd) and not _present(base)  # before any log line: one that makes it again then reads "came back", never "not removed"
     # Kept ON PURPOSE: in shared scope for the entries that are not the app's (R711), else for a keys folder that is not (R806).
     # R809: the drive went away while this erase ran: partially erased, the rest could not be checked (R797 / R798), never "removed".
     # A drive reclassified as not identified before the first write was never written on: that alone is said, never "lost" too.
@@ -3424,7 +3464,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "left_untouched": left["others"],
         "left_common_names": left["common"],
         "not_removed": left["not_removed"],
-        "removed": not drive_absent and not drive_lost and not _present(base),
+        "removed": not drive_absent and not drive_lost and not _present(base) and not folder_moved,
         # R809: the marked drive was not there (nothing on it touched; the counts above are what was erased elsewhere), or it went
         # away during the erase. Either is a failure state: never "removed", never clean.
         "drive_absent": drive_absent,
@@ -3436,6 +3476,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "drive_connections_kept": pinned if (drive_absent or drive_lost) else 0,
         "drive_key_in_memory": (drive_absent or drive_lost) and pinned != 0,
         "removed_at_rmtree": removed_at_rmtree,
+        **({"folder_moved": True} if folder_moved else {}),
         # R806 (4): the folder was kept ON PURPOSE because it holds items the app did not create (a count, never their names), so
         # the report says "folder kept because it holds items the app did not create", never "could not be removed" or "destroyed".
         "keys_folder": keys_state,
