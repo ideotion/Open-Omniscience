@@ -246,7 +246,7 @@ def test_reindex_job_keyword_only_scope(env):
 # --------------------------------------------------------------------------- #
 #  the standalone re-index uses every core, like an import already did
 # --------------------------------------------------------------------------- #
-def test_the_standalone_reindex_precomputes_in_the_pool_not_on_one_core(tmp_path):
+def test_the_standalone_reindex_precomputes_in_the_pool_not_on_one_core(tmp_path, monkeypatch):
     """Field report 2026-08-12: "re-index + prune keywords ... 1 cpu thread is too slow".
 
     It was single-core BY CONSTRUCTION. reindex_articles (the IMPORT path) got the
@@ -262,7 +262,12 @@ def test_the_standalone_reindex_precomputes_in_the_pool_not_on_one_core(tmp_path
 
     from src.analytics.extract import get_extractor
     from src.analytics.store import reindex_all_batch
+    from src.config import cgroup_memory
     from src.database.models import Article, Base, Source
+
+    # The pool is memory-aware (row 416): on a runner with little free memory at that moment it rightly computes serially,
+    # which is not what this test is about. Hold the memory figure steady so the path is the code's, not the runner's.
+    monkeypatch.setattr(cgroup_memory, "effective_memory", lambda *a, **k: {"available_mb": 64_000.0})
 
     engine = app_sqlite_engine(
         ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
