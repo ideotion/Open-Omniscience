@@ -345,7 +345,7 @@ def _shred_retired(retired: Path | None) -> bool:
         return False
     from src.safety.crypto_erase import _shred
 
-    _seen, overwritten, unlinked = _shred(retired)
+    _seen, overwritten, unlinked = _shred(retired, keyed=False)  # R839/R840: a second name is never written through (said as not overwritten)
     if not unlinked:
         _LOG.warning("encrypt: the replaced plaintext file could not be removed after its overwrite")
     return bool(overwritten)
