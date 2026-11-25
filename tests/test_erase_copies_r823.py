@@ -201,7 +201,7 @@ def test_segments_with_evidence_are_destroyed_and_without_are_rewritten_whole(tm
     assert seg["corpus"] == "overwritten" and seg["foreign"] == 0
     assert a1[4096:] == k1.before[4096:] and a1[:4096] != k1.before[:4096], "with evidence: page 1 only"
     assert a2[4096:] != k2.before[4096:], "without: every byte"
-    assert "Parts of the split corpus that could not be shown to be encrypted were overwritten in full" in report["limit"]
+    assert "Corpus files that could not be shown to be encrypted were overwritten in full" in report["limit"]
     assert not data.exists()
 
 
@@ -257,7 +257,7 @@ def test_a_link_at_a_segment_s_name_is_never_followed(tmp_path):
     report = _erase(data)
     assert target.read_bytes() == b"x" * 8192
     assert report["corpus_segments"]["left"] == 1 and report["corpus_segments"]["corpus"] == "not_overwritten"
-    assert "Parts of the split corpus could not be overwritten, or only partially" in report["limit"]
+    assert "Some corpus files could not be overwritten, or only partially" in report["limit"]
 
 
 @posix_only

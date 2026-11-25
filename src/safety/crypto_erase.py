@@ -163,8 +163,8 @@ _COPIES_OVERWRITTEN_SENTENCE = "Copies of a database that could not be shown to 
 _COPIES_SHORT_SENTENCE = "Copies of a database that could not be shown to be encrypted were only partially overwritten, or not at all, so the erase may be incomplete (count: {n})."
 #: R826: the split corpus's segments without evidence, rewritten in full; and those left short of that (a stop, a failure, a segment
 #: name with another name or a link at it, a folder that could not be read).
-_SEGMENTS_OVERWRITTEN_SENTENCE = "Parts of the split corpus that could not be shown to be encrypted were overwritten in full rather than crypto-erased (count: {n})."
-_SEGMENTS_SHORT_SENTENCE = "Parts of the split corpus could not be overwritten, or only partially, so the erase may be incomplete (count: {n})."
+_SEGMENTS_OVERWRITTEN_SENTENCE = "Corpus files that could not be shown to be encrypted were overwritten in full instead of being crypto-erased (count: {n})."
+_SEGMENTS_SHORT_SENTENCE = "Some corpus files could not be overwritten, or only partially, so the erase may be incomplete (count: {n})."
 _DEFENCE_TAIL = (
     " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
     "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
