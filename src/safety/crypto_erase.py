@@ -1388,7 +1388,8 @@ def _rewrite_plain(rec: dict, *, may_write: bool) -> None:
             stop = stop or "write_failed"
         else:
             try:
-                written, _total, why = _rewrite_fd(fd, zeros=kind == "shm")
+                # R797 (a): its log is never held to the reserve; its body is (final-head security read, row 332)
+                written, _total, why = _rewrite_fd(fd, zeros=kind == "shm", capped=kind != "whole")
             except KeyboardInterrupt:  # R818 (a): a stop partway is said, wherever a report is still made
                 stop = stop or "stopped"
                 written_any = True
@@ -4317,7 +4318,11 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             # removed with the folder, never written by path, never counted in "Wiped" (R823).
             _unlink_at(p, at)
             continue
-        _s, _overwritten, _w = _track(p, keyed=False) if at is None else _track(p, keyed=False, at=at)
+        # R797 (a): a log (a holder may have written it again since 5b) is never held to the reserve, as in 5b and the watcher
+        # (final-head security read, row 332)
+        log = p.name.endswith(("-wal", "-journal"))
+        _s, _overwritten, _w = (_track(p, keyed=False, capped=not log) if at is None
+                                else _track(p, keyed=False, at=at, capped=not log))
         if p in plain_parts and plain_rec is not None:
             continue  # R815 (2): never counted in "Wiped"
         seen += _s

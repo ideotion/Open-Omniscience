@@ -481,3 +481,33 @@ def test_the_watcher_writes_a_sign_in_token_file_whole_on_a_full_disk(tmp_path):
     text = _watch(tmp_path, plan, _FULL_DISK)
     assert not (hf / name).exists(), text
     assert "partially overwritten" not in text, text
+
+
+def test_a_plaintext_store_s_log_is_written_whole_in_the_late_rewrite_on_a_full_disk(tmp_path, monkeypatch):
+    """Final-head security read (row 332): the late rewrite of a plaintext store writes its log whole on a full disk (R797 (a));
+    its body stays held to the reserve."""
+    monkeypatch.setattr(crypto_erase, "_data_regions", lambda fd, limit: None)
+    monkeypatch.setattr(crypto_erase, "_fd_free_bytes", lambda fd: 0)
+    main, wal = tmp_path / "s.db", tmp_path / "s.db-wal"
+    main.write_bytes(b"M" * (2 * MiB))
+    wal.write_bytes(b"W" * (2 * MiB))
+    fds = [os.open(main, os.O_RDWR), os.open(wal, os.O_RDWR)]
+    held = []
+    for fd, kind in zip(fds, ("head", "whole"), strict=True):
+        st = os.fstat(fd)
+        held.append([fd, kind, (st.st_dev, st.st_ino), 4096, False])
+    rec = {"state": None, "reason": None, "_held": held}
+    try:
+        crypto_erase._rewrite_plain(rec, may_write=True)
+        body, log = os.pread(fds[0], 2 * MiB, 0), os.pread(fds[1], 2 * MiB, 0)
+    finally:
+        for fd in fds:
+            os.close(fd)
+    assert b"W" * 4096 not in log  # the log, whole
+    assert body[4096:] == b"M" * (2 * MiB - 4096)  # the body kept the reserve (its first page only)
+    assert rec["state"] == "partially_overwritten", rec
+
+
+def test_step_6_writes_a_log_whole():
+    src = Path(crypto_erase.__file__).read_text(encoding="utf-8")
+    assert 'log = p.name.endswith(("-wal", "-journal"))' in src and "_track(p, keyed=False, capped=not log)" in src
