@@ -156,9 +156,9 @@ def test_the_analysis_keywords_caveat_is_a_frame_the_client_renders() -> None:
     m = re.search(r'res\["caveat_i18n"\] = \(\s*"([^"]+)"\s*\)', src)
     assert m, "corpus-keywords sends no caveat frame"
     frame = m.group(1)
-    assert "{n}" in frame and 'res["caveat_vars"] = {"n": len(ids)}' in src
+    assert "{n}" in frame and 'res["caveat_vars"] = {"n": resolved}' in src
     # The frame IS the English caveat with the count as a slot, so the two cannot drift.
-    assert frame.replace("{n}", "{len(ids)}") in src.replace('"\n            "', "")
+    assert frame.replace("{n}", "{resolved}") in src.replace('"\n            "', "")
     _keyed(frame)
     chips = strip_comments(function_body(app_js(), "anRenderKwChips"))
     assert "tfK(d.caveat_i18n, d.caveat_vars || {})" in chips
