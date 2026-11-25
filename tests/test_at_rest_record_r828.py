@@ -14,6 +14,7 @@ from src.database import at_rest_state
 from src.database import connect as connect_module
 from src.database.connect import connect, have_driver
 from src.safety import crypto_erase
+from tests.os_scope import scope_os
 
 _PW = "row-400-r828-test-passphrase"
 
@@ -125,7 +126,7 @@ def test_a_record_that_cannot_be_overwritten_is_left_never_destroyed(tmp_path, m
             raise PermissionError("read-only")
         return real_open(path, flags, *a, **k)
 
-    monkeypatch.setattr(os, "open", refuse)
+    scope_os(monkeypatch, crypto_erase, open=refuse)
     assert crypto_erase._take_record(folder)[1] == "left"
     assert not rec.exists(), "still unlinked when its name holds the same file (Opus read, row 400), and said as left"
 
@@ -142,7 +143,7 @@ def test_a_record_that_cannot_be_unlinked_is_left_never_destroyed(tmp_path, monk
             raise PermissionError("busy")
         return real_unlink(path, *a, **k)
 
-    monkeypatch.setattr(os, "unlink", refuse)
+    scope_os(monkeypatch, crypto_erase, unlink=refuse)
     raw, outcome = crypto_erase._take_record(folder)
     assert outcome == "left" and raw == b'{"stores": {}}'
     assert rec.read_bytes() != b'{"stores": {}}', "overwritten all the same"
@@ -602,7 +603,7 @@ def test_the_write_copies_are_overwritten_without_pwrite(tmp_path, monkeypatch):
     folder.mkdir()
     tmp = folder / (at_rest_state.RECORD_NAME + ".tmp.1.2")
     tmp.write_bytes(b'{"binding_key": "' + os.urandom(32).hex().encode() + b'"}')
-    monkeypatch.delattr(os, "pwrite", raising=False)
+    scope_os(monkeypatch, crypto_erase)._hidden.add("pwrite")
     assert crypto_erase._take_record(folder) == (None, "destroyed")
     assert not tmp.exists()
 
@@ -620,7 +621,7 @@ def test_a_write_copy_that_cannot_be_overwritten_makes_the_record_left(tmp_path,
             raise PermissionError("read-only")
         return real_open(path, flags, *a, **k)
 
-    monkeypatch.setattr(os, "open", refuse)
+    scope_os(monkeypatch, crypto_erase, open=refuse)
     assert crypto_erase._take_record(folder)[1] == "left", "key material possibly remaining: never destroyed"
     assert crypto_erase._drop_record_temps(folder) == "left"
 
@@ -700,7 +701,69 @@ def test_a_fresh_encryption_binds_the_file_marked_before_its_read_back(tmp_path,
         return real_counts(path, key)
 
     monkeypatch.setattr(encrypt_tool, "_table_counts_safe", counts)
-    report = encrypt_tool.encrypt_database(p, _PW, marks=marks)
-    assert report.get("ok", True) is not False
+    encrypt_tool.encrypt_database(p, _PW, marks=marks)
+    assert p.read_bytes()[:16] != b"SQLite format 3\x00", "the file was encrypted"
     mark = marks["before_read"]
     assert mark is not None and (mark[0], mark[1]) == _ident(p)
+
+
+def test_a_folder_that_cannot_be_listed_says_its_write_copies_are_left(tmp_path, monkeypatch):
+    folder = tmp_path / "f"
+    folder.mkdir()
+    real_listdir = os.listdir
+
+    def refuse(path):
+        if str(path) == str(folder):
+            raise PermissionError("no read")
+        return real_listdir(path)
+
+    scope_os(monkeypatch, crypto_erase, listdir=refuse)
+    assert crypto_erase._drop_record_temps(folder) == "left"
+
+
+def test_a_vanished_write_copy_is_absent_never_destroyed(tmp_path, monkeypatch):
+    folder = tmp_path / "f"
+    folder.mkdir()
+    scope_os(monkeypatch, crypto_erase, listdir=lambda d: [at_rest_state.RECORD_NAME + ".tmp.9.9"])
+    assert crypto_erase._drop_record_temps(folder) == "absent"
+    assert crypto_erase._take_record(folder) == (None, "absent")
+
+
+@sqlcipher_only
+def test_encrypt_store_passes_the_mark_taken_before_the_read_back(tmp_path, monkeypatch):
+    import sqlite3
+
+    from src.database import encrypt_tool
+
+    p = tmp_path / "custody_log.db"
+    con = sqlite3.connect(p)
+    con.execute("CREATE TABLE t(x)")
+    con.commit()
+    con.close()
+    seen: dict = {}
+    real_record = at_rest_state.record_encrypted
+
+    def record(name, main=None, expect=at_rest_state._UNSET):
+        seen["expect"] = expect
+        return real_record(name, main, expect=("swapped", 0, b"x" * 16))  # as if another file took the name after the mark
+
+    monkeypatch.setattr(at_rest_state, "stores", lambda m=None: [("custody", p)])
+    monkeypatch.setattr(at_rest_state, "record_encrypted", record)
+    encrypt_tool.encrypt_store("custody", p, _PW)
+    assert seen.get("expect") is not None and (seen["expect"][0], seen["expect"][1]) == _ident(p), \
+        "encrypt_store hands record_encrypted the mark taken before the keyed read-back"
+
+
+def test_a_write_copy_whose_name_could_not_be_removed_is_left(tmp_path, monkeypatch):
+    folder = tmp_path / "f"
+    folder.mkdir()
+    (folder / (at_rest_state.RECORD_NAME + ".tmp.1.2")).write_bytes(b"{}")
+    real_unlink = os.unlink
+
+    def refuse(path, *a, **k):
+        if ".tmp." in str(path):
+            raise PermissionError("busy")
+        return real_unlink(path, *a, **k)
+
+    scope_os(monkeypatch, crypto_erase, unlink=refuse)
+    assert crypto_erase._drop_record_temps(folder) == "left", "overwritten, but its name remains: never destroyed"

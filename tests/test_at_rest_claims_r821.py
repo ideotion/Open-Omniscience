@@ -24,6 +24,7 @@ import src.api.unlock as unlock_mod
 from src.database import at_rest_state, encrypt_tool
 from src.database import connect as connect_module
 from src.database.connect import set_passphrase
+from tests.js_source_helper import python_function_source
 
 ROOT = Path(__file__).resolve().parents[1]
 _KEY = "row-400-test-passphrase"
@@ -128,7 +129,7 @@ def test_the_doctor_says_looks_encrypted_and_lists_it(data):
 
 def test_the_doctor_s_fallback_line_says_encrypted_only_once_the_key_opened_it(data):
     src = (ROOT / "src" / "api" / "unlock.py").read_text(encoding="utf-8")
-    fallback = src.split("def _store(p: Path | None) -> dict:")[1].split("keys_dir = ")[0]
+    fallback = python_function_source(src, "_store")
     assert '"state": "looks_encrypted", "evidence": "header"' in fallback
     assert '"state": "encrypted", "evidence": "key"' in fallback
     assert fallback.index('"looks_encrypted"') < fallback.index('"state": "encrypted"'), "header first, key evidence only after"
@@ -162,7 +163,8 @@ def test_the_lock_screen_says_looks_encrypted_unless_the_record_names_the_file()
     js = (ROOT / "src" / "static" / "unlock.js").read_text(encoding="utf-8")
     assert "This database looks encrypted at rest; it has not been checked with your key yet." in html
     assert "This database is encrypted at rest (SQLCipher 4). Enter" not in html
-    assert 's.at_rest_claim === "encrypted"' in js and "per this installation's record" in js
+    assert 's.at_rest_claim === "encrypted"' in js and 'id="unlock-claim-encrypted" class="hidden"' in html
+    assert "per this installation's record. Enter THE passphrase" in html
 
 
 def test_the_settings_panel_has_words_for_each_claim():

@@ -284,8 +284,10 @@
         if (s.state === "fresh") { showLanguageStep(); return; }  // first launch: language first
         const view = s.state === "locked" ? "view-unlock" : "view-open";
         // R821: "encrypted" only on this installation's record naming this very file; a header alone only looks encrypted
-        if (view === "view-unlock" && s.at_rest_claim === "encrypted" && $("unlock-claim")) {
-          $("unlock-claim").textContent = t("This database is encrypted at rest (SQLCipher 4), per this installation's record. Enter THE passphrase to open it.");
+        // both sentences are static text the page's own translation pass covers; boot only picks which one shows
+        if (view === "view-unlock" && s.at_rest_claim === "encrypted" && $("unlock-claim") && $("unlock-claim-encrypted")) {
+          $("unlock-claim").classList.add("hidden");
+          $("unlock-claim-encrypted").classList.remove("hidden");
         }
         $(view).classList.remove("hidden");
         if (view === "view-unlock") $("pw").focus();
