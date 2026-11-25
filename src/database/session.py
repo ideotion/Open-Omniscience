@@ -472,6 +472,7 @@ def init_db() -> None:
         ensure_article_quarantine_columns,
         ensure_article_source_revision_column,
         ensure_article_top_keyword_columns,
+        ensure_corpus_segment_generation_column,
         ensure_external_source_discovery_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
@@ -611,6 +612,8 @@ def init_db() -> None:
     ensure_keyword_extractor_column(engine)
     _init_step("ensure_watch_filters_column")
     ensure_watch_filters_column(engine)
+    _init_step("ensure_corpus_segment_generation_column")
+    ensure_corpus_segment_generation_column(engine)
     _init_step("ensure_wiki_text_columns")
     ensure_wiki_text_columns(engine)
     _init_step("ensure_supergroup_ring_column")
