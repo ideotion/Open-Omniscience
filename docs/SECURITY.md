@@ -789,8 +789,17 @@ imply a protection we cannot deliver.
   on a staged file runs with `trusted_schema` off and `cell_size_check` on (the merge's connection, which attaches it,
   keeps `trusted_schema` as its own search-index triggers need it), and a schema holding a trigger, view or virtual
   table the app does not make, judged against a fixed list and never by the user's own store, is refused before any
-  row is read, sealed or filtered. Public members (lanes, wiki dumps, maps, models) stay
-  plaintext inside the private folder. The erase treats every staging file as a file with no evidence of its identity:
+  row is read, sealed or filtered. A name is no evidence of a body, so every trigger and view the staged copy carries
+  is then dropped from the staged corpus and custody log before anything writes to them (row 432), on every path that
+  writes to one (the merge, and the restore's newsletter filter, which never runs on an artifact whose hashes failed): no
+  SQL a backup brings in a trigger or a view of those two files runs, and a backup made by an older build still imports.
+  A trigger or view whose stored name and declared name differ is refused, as is a generated column (the app makes
+  none). What the corpus's schema can still run on the merge's connection is a CHECK, a DEFAULT or an index expression,
+  which can call only the pure functions that connection
+  registers (the search index's text normalisers and the incoming sources' key lookup) and can load no extension. Public members (lanes, wiki dumps, maps, models) stay
+  plaintext inside the private folder. A lane database's triggers are not dropped, and never fire: the lane merge only
+  reads the member (every write it makes names the live lane or its temp tables, pinned by a source guard), and SQLite
+  lets a trigger stored in the member fire only on a write to the member; a member holding any view is refused. The erase treats every staging file as a file with no evidence of its identity:
   its head goes in the pass above and it is rewritten in full, after the key-material pass. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
   junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a
   data, keys or cache folder that is itself a link; a key file, `anchors.db`, a cache file or a
@@ -891,8 +900,16 @@ imply a protection we cannot deliver.
   (an empty mount point stays "not present"); the drive's identity (resolved folder's device and inode, a directory descriptor
   held on POSIX, and its marker id) is re-checked before the first write on it and before each later drive step, and on any
   change or unreadable identity nothing more on it is touched ("could not be identified" before the first write, "disconnected
-  ... partially erased" after). THE WINDOW THAT REMAINS: the walks go by path, so a drive swapped between a re-check and the
-  writes after it is reached by its path (row 387 makes the POSIX walk handle-relative). An id the erase forgot is never
+  ... partially erased" after). Row 387: on POSIX the walks of 5b and step 6, the top-level listings and the removal go from
+  the folder's handle held from the probe (every folder opened by name from it with `O_NOFOLLOW | O_DIRECTORY`, every file looked
+  at, written and unlinked by name through its folder's handle; the folder itself is removed only while its path still leads to
+  that very folder), so a drive or folder swapped mid-walk is never reached by its path; a folder on no marked drive gets the same
+  handle. A folder below on another device (a drive mounted there mid-walk) is never entered or emptied and is named as not checked
+  (the removal is the app's own walk by handle, never `shutil.rmtree`); a data folder moved away (or swapped for a link) mid-erase is emptied through its handle and never said to be removed; a refused database copy is kept by its name as the walk spells
+  it, so a swap never gets it written (another name of it is still rewritten under that name); when no handle can be held the log says the walks go by path.
+  THE WINDOW THAT REMAINS: on Windows (no folder handle here) the walks go by path, so a drive swapped between a re-check
+  and the writes after it is reached by its path; on every platform the keys step still looks up its named files by path, and a folder of
+  database copies is opened by its path (then used through that handle), each right after a re-check. An id the erase forgot is never
   restored, and a lost drive's result says the app no longer remembers it. When the drive is absent, unidentified, changed or
   lost, the database connections on it are NEVER closed in this process (`src/database/drive_pin.py`): SQLite deletes
   `<db>-wal` and `<db>-shm` BY PATH when the last connection closes, which with another drive at the path are that drive's

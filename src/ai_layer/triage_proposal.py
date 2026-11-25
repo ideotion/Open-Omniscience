@@ -215,6 +215,13 @@ def resolve_languages(
     return {"items": items, "ambiguous": ambiguous, "unknown": sorted(unknown)}
 
 
+def _counter_basis(session) -> dict | None:
+    """The maintained counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
+    from src.analytics.store import counter_basis_or_none
+
+    return counter_basis_or_none(session)
+
+
 def build_triage_proposal(session, *, path: pathlib.Path | None = None) -> dict:
     """The reviewable artifact: scoped stoplist additions + kind overrides, with the
     evidence a human needs to judge each one and an honest account of what was held back.
@@ -267,6 +274,8 @@ def build_triage_proposal(session, *, path: pathlib.Path | None = None) -> dict:
     return {
         "schema": PROPOSAL_SCHEMA,
         "available": True,
+        # Row 422 P6: each term's articles/mentions are the maintained counters, so their basis travels with them.
+        "counts": _counter_basis(session),
         "log": {
             "path": str(log),
             "batches_with_verdicts": read["batches"],

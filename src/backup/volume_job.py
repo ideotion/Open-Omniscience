@@ -126,7 +126,15 @@ def hand_off_reindex(report: dict) -> None:
     }
 
     pending = report["reindex_deferred"]["articles_pending"]
-    if not pending:
+    # Row 422 P6: a commit that left its counter sweep to the drain needs the drain even with no article pending,
+    # because only its closing sweep reconciles the counters and closes the R22 marker.
+    counters_owed = bool((report.get("keyword_counters") or {}).get("left_to_drain"))
+    if counters_owed and pending is None:
+        # The drain reads the backlog first and stops on an unreadable one, before its closing sweep: the sweep it was
+        # owed runs here instead, as it did before row 422 P6, so the counters are not left estimated until a restart.
+        _sweep_counters_here(report)
+        counters_owed = False
+    if not pending and not counters_owed:
         # Nothing to drain, or nothing we could READ. Starting a job in either case is
         # pointless work whose only visible effect is a failure in the log -- and on the
         # unreadable branch it would also imply we knew there was work, which we do not.
@@ -161,6 +169,23 @@ def hand_off_reindex(report: dict) -> None:
     report["reindex_deferred"]["started"] = started
     if detail:
         report["reindex_deferred"]["start_detail"] = detail
+
+
+def _sweep_counters_here(report: dict) -> None:
+    """Run the closing counter sweep in the import itself (``finish_deferral``: whole, closing the R22 marker only when
+    complete). Never raises: an incomplete sweep leaves the marker open and the counters estimated."""
+    kc = report.setdefault("keyword_counters", {})
+    try:
+        from src.analytics.store import finish_deferral
+        from src.database.session import session_scope
+
+        with session_scope() as s:
+            out = finish_deferral(s)
+        kc["reconciled"] = bool(out.get("complete") and out.get("closed"))
+        kc["swept_in_import"] = True
+    except Exception as exc:  # noqa: BLE001 - a committed import must never fail on its own epilogue
+        log_failure(_LOG, "the counter sweep owed by this import did not run; they stay estimated", exc,
+                    level=logging.WARNING)
 
 
 def start_reindex_drain() -> tuple[bool, str | None]:
@@ -1012,6 +1037,9 @@ class VolumeBackupManager:
                         working_copy=working_copy,
                         hold_after_merge=hold_after_merge,
                         final_activation=final_activation,
+                        # Row 422 P6: the drain this deferral starts (hand_off_reindex, or the queue's end) closes the
+                        # counter sweep, so the commit leaves it there behind the durable R22 marker.
+                        counters_left_to_drain=defer_reindex(),
                     )
                     # S6.2: an artifact that CARRIES the large public files puts them
                     # back once the corpus merge has committed -- after, because a
@@ -1128,7 +1156,8 @@ class VolumeBackupManager:
                     # checkpoint that commits the group hands off for all of them.
                     # Scoped to `held` deliberately: every other outcome reaches this
                     # line exactly as it did before.
-                    if defer_reindex() and not report.get("held"):
+                    # A sweep left to the drain is handed off whatever the switch reads now (row 422 P6).
+                    if (defer_reindex() or (report.get("keyword_counters") or {}).get("left_to_drain")) and not report.get("held"):
                         hand_off_reindex(report)
                     # R787 reads: the large files' outcome in counts, so the journal never records a clean
                     # success the screen calls incomplete.

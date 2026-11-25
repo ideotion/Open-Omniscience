@@ -716,7 +716,8 @@ _UNAUDITED_OPENERS = {
         "copy_at_current_settings"),
     ("wrapped", "src/database/read_only_uri.py"): (1, "open_plain_read_only"),
     ("wrapped", "src/backup/lane_merge.py"): (2, "the two ATTACHes"),
-    ("wrapped", "src/backup/staged_key.py"): (6, "every open and ATTACH of an import's staged copy (R789)"),
+    ("wrapped", "src/backup/staged_key.py"): (7, "every open and ATTACH of an import's staged copy, and the lock probe "
+        "of a failed seal (R789)"),
 }
 
 

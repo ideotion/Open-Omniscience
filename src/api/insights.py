@@ -2150,12 +2150,32 @@ def insights_top(
                 n=out.get("count", 0),
             ).to_dict()
         else:
-            from src.analytics.store import counter_envelope
-
-            out["counts"] = counter_envelope(db).to_dict()
+            _with_counter_basis(db, out)
         return out
 
     return _deadlined(db, key, _compute)
+
+
+def _with_counter_basis(db: Session, out: dict) -> dict:
+    """Attach the maintained counters' envelope as ``counts``: the corpus-wide /top reads them, so the reader is told
+    whether they are exact or estimated. The warm-up uses it too (row 422 P6): a warmed /top is the same answer, and
+    without it the first read after a warm carried no basis at all."""
+    from src.analytics.store import counter_envelope
+
+    out["counts"] = counter_envelope(db).to_dict()
+    return out
+
+
+def _warm_top_with_counter_basis(db: Session) -> dict:
+    """The warm-up's /top: the same answer the endpoint computes, envelope included. An envelope that cannot be read
+    leaves the warmed value without one, as every warmed /top was before row 422 P6 (the endpoint's own miss path still
+    attaches it)."""
+    out = rm.top_terms(db, days=None, country=None, kind=None, limit=20, group=True)
+    try:
+        return _with_counter_basis(db, out)
+    except Exception as exc:  # noqa: BLE001 - a warm never fails on its disclosure
+        log_failure(_LOG, "warm /top: counter envelope not read", exc, level=logging.INFO)
+        return out
 
 
 @router.get("/trending")
@@ -3160,7 +3180,7 @@ def warm_cache(db: Session) -> dict:
         (_bind_key(db, top_key(
             days=None, country=None, kind=None, limit=20, group=True, tl=None,
         )),
-         lambda: rm.top_terms(db, days=None, country=None, kind=None, limit=20, group=True))
+         lambda: _warm_top_with_counter_basis(db))
     )
     if _CACHE_TTL_S <= 0:
         return {"warmed": warmed, "disabled": True}
@@ -4642,7 +4662,14 @@ def ring_gaps(languages: str = Query("", max_length=200)) -> dict:
 
     want = [x for x in (languages or "").replace(",", " ").split() if x] or None
     with session_scope() as db:
-        return gap_summary(db, languages=want)
+        out = gap_summary(db, languages=want)
+        # Row 422 P6: candidates are chosen by the maintained article counters, so their basis travels. A basis that
+        # cannot be read leaves the preview as it was rather than failing it.
+        try:
+            return _with_counter_basis(db, out)
+        except Exception as exc:  # noqa: BLE001 - the preview never fails on its disclosure
+            log_failure(_LOG, "ring gaps: counter envelope not read", exc, level=logging.INFO)
+            return out
 
 
 @router.post("/ring-load")

@@ -1012,10 +1012,10 @@ def test_an_encrypted_database_step_one_could_not_unlink_loses_its_head_again_an
     heads = []
     real_overwrite = crypto_erase._overwrite
 
-    def overwrite(path, *, head_bytes=None, zeros=False):
+    def overwrite(path, *, head_bytes=None, zeros=False, **kw):
         if path.name == "open_omniscience.db":
             heads.append(head_bytes)
-        return real_overwrite(path, head_bytes=head_bytes, zeros=zeros)
+        return real_overwrite(path, head_bytes=head_bytes, zeros=zeros, **kw)
 
     monkeypatch.setattr(crypto_erase, "_overwrite", overwrite)
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
