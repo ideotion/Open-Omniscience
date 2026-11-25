@@ -13,6 +13,7 @@ extractors' own scan caps. Dates persist via the sibling datestore module.
 
 from __future__ import annotations
 
+from sqlalchemy import delete, insert
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, ArticleEntity, ArticleMentionedPlace
@@ -30,27 +31,40 @@ def store_places_for_article(
     "not precomputed" -- extract inline -- and is deliberately NOT the same fact as
     "no places found"."""
     text = (article.content or "")
-    db.query(ArticleMentionedPlace).filter_by(article_id=article.id).delete()
+    article_id = article.id
+    db.execute(delete(ArticleMentionedPlace).where(ArticleMentionedPlace.article_id == article_id))
     places = (
         precomputed if precomputed is not None
         else extract_locations(text, source_country=article.country)
     )
-    for pl in places:
-        db.add(
-            ArticleMentionedPlace(
-                article_id=article.id,
-                name=pl["name"][:160],
-                country=(pl.get("country") or None),
-                kind=pl.get("kind"),
-                mentions=int(pl.get("mentions") or 1),
-                snippet=(pl.get("snippet") or "")[:400] or None,
-                lat=pl.get("lat"),
-                lon=pl.get("lon"),
-                note=(pl.get("note") or "")[:300] or None,
-                extractor=_EXTRACTOR,
-            )
-        )
+    rows = [
+        {
+            "article_id": article_id,
+            "name": pl["name"][:160],
+            "country": (pl.get("country") or None),
+            "kind": pl.get("kind"),
+            "mentions": int(pl.get("mentions") or 1),
+            "snippet": (pl.get("snippet") or "")[:400] or None,
+            "lat": pl.get("lat"),
+            "lon": pl.get("lon"),
+            "note": (pl.get("note") or "")[:300] or None,
+            "extractor": _EXTRACTOR,
+        }
+        for pl in places
+    ]
+    _insert_rows(db, ArticleMentionedPlace, rows)
     return len(places)
+
+
+def _insert_rows(db: Session, model, rows: list[dict]) -> None:
+    """Insert ``rows`` now, in list order, as ONE executemany (row 418).
+
+    It replaces one ``db.add`` per row and the unit-of-work flush that wrote them: the same rows, the same ids (SQLite
+    hands them out in statement order, as the flush did in add order), the same Python-side ``created_at`` default per
+    row, through ``db.execute`` so the write gate and the R827 recorder see it as before. Nothing enters the identity
+    map -- nothing here reads the rows back."""
+    if rows:
+        db.execute(insert(model.__table__), rows)
 
 
 def places_for_article(db: Session, article_id: int, limit: int = 5) -> list[dict]:
@@ -118,21 +132,21 @@ def store_entities_for_article(
     """``precomputed`` is the same dict ``extract_entities`` returns, optionally
     computed in a worker process. ``None`` means "not precomputed", never "none found"."""
     text = (article.content or "")
-    db.query(ArticleEntity).filter_by(article_id=article.id).delete()
+    article_id = article.id
+    db.execute(delete(ArticleEntity).where(ArticleEntity.article_id == article_id))
     ents = precomputed if precomputed is not None else extract_entities(text)
-    n = 0
-    for cls, key in (("person", "people"), ("organization", "organizations")):
-        for e in ents.get(key, []):
-            db.add(
-                ArticleEntity(
-                    article_id=article.id,
-                    name=e["name"][:200],
-                    entity_class=cls,
-                    mentions=int(e.get("mentions") or 1),
-                    snippet=(e.get("snippet") or "")[:400] or None,
-                    note=(e.get("note") or "")[:300] or None,
-                    extractor=_EXTRACTOR,
-                )
-            )
-            n += 1
-    return n
+    rows = [
+        {
+            "article_id": article_id,
+            "name": e["name"][:200],
+            "entity_class": cls,
+            "mentions": int(e.get("mentions") or 1),
+            "snippet": (e.get("snippet") or "")[:400] or None,
+            "note": (e.get("note") or "")[:300] or None,
+            "extractor": _EXTRACTOR,
+        }
+        for cls, key in (("person", "people"), ("organization", "organizations"))
+        for e in ents.get(key, [])
+    ]
+    _insert_rows(db, ArticleEntity, rows)
+    return len(rows)

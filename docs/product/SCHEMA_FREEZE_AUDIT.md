@@ -177,6 +177,7 @@ main places: id, qid, kind, name, names_json, country, country_alpha3, admin_pat
 main source_admission_events: id, source_id, occurred_at, verdict, criteria_version, prior_enabled, prior_status, undone_at
 main source_articles: id, source_id, url, title, published_at, author, summary, content_hash, word_count, sentiment_score, is_accessible, last_accessed_at, created_at, updated_at
 main source_candidates: id, domain, suggested_name, channel, evidence, status, first_seen, last_seen
+main screening_pending: article_id, queued_at
 main source_credibility_rules: id, rule_name, factor, weight, min_value, max_value, is_inverse, is_active, created_at, updated_at
 main source_group_association: source_id, group_id, added_at
 main source_groups: id, name, description, color, is_tag_based, tag_pattern, priority, rate_limit_ms, enabled, created_at, updated_at
