@@ -509,7 +509,7 @@ def rail_has_rows(rail: dict) -> bool:
 def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
     """The dossier of ``qid``, or None when ``qid`` is not a QID. Local reads only."""
     from src.analytics.passport import corpus_passport
-    from src.analytics.quarantine_scope import not_counted, pending_ids_select
+    from src.analytics.quarantine_scope import not_counted, not_quarantined, pending_ids_select
     from src.catalog.provenance import LAW, WIKIPEDIA, provenance_of
     from src.database.models import Article, Source
     from src.entities.places import mention_count, wiki_pages_for_qid
@@ -534,12 +534,22 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
         passport = corpus_passport(session, select(u.c[0]).where(not_counted(u.c[0])))
         articles_all = _count(session, ids_sub)
         not_yet = int(session.execute(
-            select(func.count()).select_from(select(u.c[0]).where(u.c[0].in_(pending_ids_select())).distinct().subquery())
+            select(func.count()).select_from(
+                select(u.c[0]).where(u.c[0].in_(pending_ids_select()), not_quarantined(u.c[0])).distinct().subquery()
+            )
         ).scalar() or 0)
         by_source = session.execute(
             select(Source.id, Source.domain, Source.source_type, func.count(Article.id))
             .join(Article, Article.source_id == Source.id)
             .where(Article.id.in_(ids_sub.scalar_subquery()), not_counted(Article.id))
+            .group_by(Source.id)
+        ).all()
+        # The rails LIST from every source an article joined through, held ones included (lists keep every article);
+        # only their counts take the slice, so a source whose articles are all still queued keeps its items.
+        list_sources = session.execute(
+            select(Source.id, Source.domain, Source.source_type)
+            .join(Article, Article.source_id == Source.id)
+            .where(Article.id.in_(ids_sub.scalar_subquery()))
             .group_by(Source.id)
         ).all()
         ids = [int(i) for i in session.execute(
@@ -551,13 +561,16 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
         articles_all = 0
         not_yet = 0
         by_source = []
+        list_sources = []
         ids = []
 
     channels: dict[str, int] = {}
     rail_sources: dict[str, list[int]] = {"news": [], "wikipedia": [], "law": []}
-    for sid, dom, st, k in by_source:
+    for _sid, dom, st, k in by_source:
         cls = provenance_of(dom, st)
         channels[cls] = channels.get(cls, 0) + int(k)
+    for sid, dom, st in list_sources:
+        cls = provenance_of(dom, st)
         rail_sources["wikipedia" if cls == WIKIPEDIA else "law" if cls == LAW else "news"].append(int(sid))
     news_channels = {c: k for c, k in sorted(channels.items()) if c not in (WIKIPEDIA, LAW)}
     items = {key: _rail_items(session, ids_sub, rail_sources[key], routes) if routes else []
