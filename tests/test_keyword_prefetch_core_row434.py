@@ -98,6 +98,7 @@ def _run(path, *, old_read: bool, counters: bool, monkeypatch) -> dict:
             store.index_article(s, a, extractor=_Ex(), scope="keywords", commit=False, precomputed_terms=terms,
                                 precomputed_sentiment=(0.1, "positive"), precomputed_www={}, maintain_counters=counters)
         s.commit()
+        assert held.is_entity is False  # loaded again, in memory, before the upgrade of its row
         for i, terms in PASS_2.items():
             store.index_article(s, arts[i], extractor=_Ex(), scope="keywords", commit=False, precomputed_terms=terms,
                                 precomputed_sentiment=(0.1, "positive"), precomputed_www={}, maintain_counters=counters)
@@ -153,4 +154,25 @@ def test_the_column_read_keeps_the_lowest_id_and_language_rules(tmp_path):
         new = {k: v.id for k, v in store._prefetch_keyword_rows(s, terms, language=lang).items()}
         old = {k: v.id for k, v in store._prefetch_keywords(s, terms, language=lang).items()}
         assert new == old, lang
+    s.close()
+
+
+def test_a_rolled_back_upgrade_leaves_a_held_keyword_as_stored(tmp_path):
+    """Row 434 read: an upgrade written by the UPDATE and rolled back with the article's savepoint (the ingest batch's
+    begin_nested) must not leave a Keyword this session holds saying is_entity=True."""
+    s = _session(tmp_path / "rb.db")
+    arts = _seed(s)
+    for a, terms in zip(arts, PASS_1, strict=True):
+        store.index_article(s, a, extractor=_Ex(), scope="keywords", commit=False, precomputed_terms=terms,
+                            precomputed_sentiment=(0.1, "positive"), precomputed_www={}, maintain_counters=False)
+    s.commit()
+    held = s.query(Keyword).filter_by(normalized_term="zeta").one()
+    assert held.is_entity is False
+    i, terms = next((i, t) for i, t in PASS_2.items() if any(x.normalized == "zeta" for x in t))
+    sp = s.begin_nested()
+    store.index_article(s, arts[i], extractor=_Ex(), scope="keywords", commit=False, precomputed_terms=terms,
+                        precomputed_sentiment=(0.1, "positive"), precomputed_www={}, maintain_counters=False)
+    assert held.is_entity is True and held.entity_type == "org", "the held object sees the upgrade while it stands"
+    sp.rollback()
+    assert held.is_entity is False and held.entity_type is None, "and the stored value after the savepoint rolls back"
     s.close()
