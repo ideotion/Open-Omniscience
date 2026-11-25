@@ -77,11 +77,18 @@ SEGMENT_WRITES_ENABLED = False
 #: check compares against exactly what these statements make, so the two can never drift apart.
 SEGMENT_DDL: tuple[str, ...] = (_SEGMENT_META_DDL,)
 
-#: SQLite's own statistics tables (``ANALYZE``, ``PRAGMA optimize``), allowed with exactly SQLite's own SQL.
-_SQLITE_OWN = {
-    ("table", "sqlite_stat1", "sqlite_stat1", "CREATE TABLE sqlite_stat1(tbl,idx,stat)"),
-    ("table", "sqlite_stat4", "sqlite_stat4", "CREATE TABLE sqlite_stat4(tbl,idx,neq,nlt,ndlt,sample)"),
-}
+#: SQLite's own statistics tables (``ANALYZE``, ``PRAGMA optimize``), allowed with exactly the SQL this SQLite writes for them:
+#: read from an in-memory database ``ANALYZE`` just ran in, on the driver that opened the segment, never typed here.
+def _sqlite_own(con: Any = None) -> frozenset[tuple[str, str, str, str]]:
+    import importlib
+
+    driver = importlib.import_module(type(con).__module__) if con is not None else sqlite3
+    mem = driver.connect(":memory:")
+    try:
+        mem.executescript("CREATE TABLE t(x); CREATE INDEX i ON t(x); INSERT INTO t VALUES (1), (2); ANALYZE;")
+        return frozenset(row for row in _schema_of(mem) if row[1].startswith("sqlite_stat"))
+    finally:
+        mem.close()
 
 #: A closed segment is only read: its page cache is capped so 64 of them stay near 512 MB (Q4 measurement).
 CLOSED_CACHE_KIB = 8192
@@ -152,7 +159,7 @@ def check_schema(con: Any) -> bool:
         seen = _schema_of(con)
     except Exception:  # noqa: BLE001 - a schema that cannot be read is not the app's schema
         return False
-    return seen - _SQLITE_OWN == reference_schema()
+    return seen - _sqlite_own(con) == reference_schema()
 
 
 def harden(con: Any, *, closed: bool) -> bool:
