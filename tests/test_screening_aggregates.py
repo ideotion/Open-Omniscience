@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.database.models import ScreeningPending
+from tests.js_source_helper import function_body, python_function_source
 from tests.test_bulletin_facts import _corpus as _bulletin_corpus
 from tests.test_bulletin_facts import _period
 from tests.test_source_article_counts import SINCE, s  # noqa: F401 - s is a fixture
@@ -126,8 +127,8 @@ def test_search_fed_figures_disclose_and_lists_keep_every_result():
     ins = (ROOT / "src/api/insights.py").read_text(encoding="utf-8")
     assert ins.count("split_not_screened(db, ids)") == 6, "keywords, www, sentiment, sources, coordination, graph"
     assert ins.count('"not_counted_yet"') >= 5
-    facets = ins[ins.index("def insights_corpus_source_language_facets") :]
-    assert "split_not_screened" not in facets[: facets.index("\n@router")], "the LIST's filter options keep every result"
+    facets = python_function_source(ins, "insights_corpus_source_language_facets")
+    assert "split_not_screened" not in facets, "the LIST's filter options keep every result"
     links = (ROOT / "src/api/link_analysis.py").read_text(encoding="utf-8")
     assert "split_not_screened(db, ids)" in links and '"not_counted_yet": not_yet' in links
     an = (ROOT / "src/static/app-analysis.js").read_text(encoding="utf-8")
@@ -137,8 +138,7 @@ def test_search_fed_figures_disclose_and_lists_keep_every_result():
     corpus = (ROOT / "src/static/app-corpus.js").read_text(encoding="utf-8")
     assert corpus.count("anNotCountedYetHtml(d)") == 2
     shell = (ROOT / "src/static/app-shell.js").read_text(encoding="utf-8")
-    show = shell[shell.index("function showTab(") :]
-    assert "ooNotCountedTabLine(name)" in show[: show.index("\n    }\n")]
+    assert "ooNotCountedTabLine(name)" in function_body(shell, "showTab")
     home = (ROOT / "src/static/app-home.js").read_text(encoding="utf-8")
     for key in ("of which quarantined: {n}", "of which not screened yet: {n}", "of which not analysed yet: {n}"):
         assert key in home
@@ -173,7 +173,7 @@ def test_the_late_review_sites_say_what_they_left_out():
     shell = (ROOT / "src/static/app-shell.js").read_text(encoding="utf-8")
     assert 'const status = name === "library";' in shell
     ai = (ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")
-    assert ai.count("notYet + ") == 2, "the framing table and its empty state both say what they left out"
+    assert ai.count("_aiNotCountedYetHtml(d) + ") == 2, "the framing table and its empty state both say what they left out"
     mk = (ROOT / "src/static/app-markets.js").read_text(encoding="utf-8")
     assert 'anNotCountedYetHtml(d) : "")' in mk
     assert 'F("{n} articles", {n: num(all)})' in shell, "the Library breakdown follows its total"
