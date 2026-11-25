@@ -130,8 +130,10 @@ def encrypt_database(
     library: bool = False,
     on_swapped: Callable[[], object] | None = None,
     keep_snapshot_on_failure: bool = True,
+    marks: dict | None = None,
 ) -> dict:
-    """Encrypt one SQLite file in place: snapshot -> export -> verify -> swap.
+    """Encrypt one SQLite file in place: snapshot -> export -> verify -> swap. ``marks`` (in memory only, never in the report):
+    filled with the swapped file's identity taken just BEFORE its keyed read-back, for the at-rest record (security reads, row 400).
 
     The live file is replaced only AFTER the encrypted copy passes
     quick_check and per-table count equality. Returns an honest report.
@@ -182,6 +184,10 @@ def encrypt_database(
     # app keyless against a file it has just encrypted.
     if on_swapped is not None:
         on_swapped()
+    if marks is not None:
+        from src.database.at_rest_state import _mark
+
+        marks["before_read"] = _mark(p)
     try:
         tables = len(_table_counts_safe(p, key))  # read back with the key BEFORE the replaced file is overwritten
     finally:
@@ -358,10 +364,11 @@ def dispose_lane_engines() -> None:
 
 #: A store already encrypted that the key does not open: it is not the operator's passphrase's store, and nothing here may treat it
 #: as done (R742: a store is recorded only once it reads back with the key).
-NOT_THIS_KEY = "a store is already encrypted, but not with this passphrase, so it was left as it is"
+#: R821: the header alone never says "encrypted": a store this key does not open may be under another passphrase, or not a database.
+NOT_THIS_KEY = "a store does not open with this passphrase (it may be encrypted with another one, or damaged), so it was left as it is"
 #: Row 154: the same check met a store another program holds: its key was never checked, so it is not called "not this passphrase".
 ALREADY_ENCRYPTED_IN_USE = (
-    "a store is already encrypted, but another program is using it right now, so the passphrase could not be checked; "
+    "a store looks encrypted, but another program is using it right now, so it could not be checked with the passphrase; "
     "it was left as it is, try again in a moment"
 )
 
@@ -399,12 +406,16 @@ def encrypt_store(
         guard: AbstractContextManager[object] = _APPEND_LOCK
     else:
         guard = nullcontext()
+    marks: dict = {}
     with guard:
         report = encrypt_database(
-            path, key, library=library, on_swapped=on_swapped, keep_snapshot_on_failure=keep_snapshot_on_failure
+            path, key, library=library, on_swapped=on_swapped, keep_snapshot_on_failure=keep_snapshot_on_failure, marks=marks
         )
     if report.get("skipped") == "file does not exist":
         return report
+    # Security reads (row 400): the file's identity taken BEFORE the keyed read that proves it (the read-back of a fresh encryption,
+    # or the check below), compared again when the record is written; one that could not be taken binds nothing.
+    expect = marks.get("before_read") if "before_read" in marks else at_rest_state._mark(Path(path))
     if report.get("skipped") == "already encrypted":
         from src.database.connect import StoreHeldError
 
@@ -414,7 +425,7 @@ def encrypt_store(
             raise EncryptToolError(ALREADY_ENCRYPTED_IN_USE) from None
         except Exception:  # noqa: BLE001 - any other failure to read it with this key means it is not this key's store
             raise EncryptToolError(NOT_THIS_KEY) from None
-    at_rest_state.record_encrypted(name, main)
+    at_rest_state.record_encrypted(name, main, expect=expect)
     return report
 
 

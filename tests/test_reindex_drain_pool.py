@@ -265,3 +265,35 @@ def test_a_released_drain_pool_may_start_again():
     finally:
         dp.close()
     assert _no_live_pool()
+
+
+def test_an_interrupt_while_the_ahead_window_is_taken_kills_it_rather_than_waits(db, monkeypatch):
+    """Row 425: ``_ahead`` is emptied when a window's turn starts, before its articles are read and its result is waited for.
+    A Ctrl-C in that gap used to leave the finally believing nothing was ahead, so it WAITED for the window computing in the
+    kept pool (up to the pool timeout) before closing it. The window still in flight is now killed, as on any other stop."""
+    ids = _seed(db, 3 * _WINDOW)
+    real_query = db.query
+    calls = {"n": 0}
+
+    def _query(*entities, **kw):
+        if entities and entities[0] is Article:
+            calls["n"] += 1
+            # 1: window 1 read; 2: window 2 read ahead (now computing in the pool); 3: window 2's own turn.
+            if calls["n"] == 3:
+                raise KeyboardInterrupt
+        return real_query(*entities, **kw)
+
+    monkeypatch.setattr(db, "query", _query)
+    closes: list[bool] = []
+    real_close = RP.DrainPool.close
+
+    def _close(self, *, abandon=False):
+        closes.append(abandon)
+        return real_close(self, abandon=abandon)
+
+    monkeypatch.setattr(RP.DrainPool, "close", _close)
+    with pytest.raises(KeyboardInterrupt):
+        S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=2)
+    assert calls["n"] == 3, "the interrupt landed in window 2's own read, with window 2 computed ahead"
+    assert closes and closes[-1] is True, "the window still ahead was killed, not waited for"
+    assert _no_live_pool()
