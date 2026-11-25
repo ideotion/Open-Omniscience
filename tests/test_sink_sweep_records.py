@@ -81,7 +81,9 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # (``REASONS``), to say why a segment is unavailable; the exception carries no driver text, path or key, and nothing is logged.
     # Stage 3 (L3): a failed open or check hands its exception to ``_held_or_unreadable``, which reads only the SQLite result code
     # (``held_by_another``) to choose between the two fixed codes "in_use" and "unreadable"; nothing of the error is kept
-    "src/database/segment_open.py": {"the caught exception 'exc' is used outside a scrubbing call": 4},
+    # Stage 3a: the same split for a hot journal's rollback, and for the writer's open in segment_write.py.
+    "src/database/segment_open.py": {"the caught exception 'exc' is used outside a scrubbing call": 5},
+    "src/database/segment_write.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},
     # Row 256 (R702 part 2): SQLAlchemy's pool record's own ``info`` dict, holding the lane's generation number for the open (stamped
     # at connect, compared at checkin); it carries an int, never words, and nothing is logged. Row 271: the same dict holds the
     # (device, inode) of the file the open reached (stamped at connect, read at checkout and detach): two ints, never words
