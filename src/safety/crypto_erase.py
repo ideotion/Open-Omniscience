@@ -967,8 +967,10 @@ def _drop_record_temps(folder: Path, dfd: int | None = None) -> str:
 
     try:
         names = os.listdir(dfd if dfd is not None else folder)
-    except Exception:  # noqa: BLE001 - an unlistable folder: nothing said about copies that were never seen
+    except (FileNotFoundError, NotADirectoryError):
         return "absent"
+    except Exception:  # noqa: BLE001 - a folder that cannot be listed may hold a copy never seen: said as left (security read)
+        return "left"
     prefix = RECORD_NAME + ".tmp."
     flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_BINARY", 0)
     outcome = "absent"
@@ -977,29 +979,30 @@ def _drop_record_temps(folder: Path, dfd: int | None = None) -> str:
             continue
         name = n if dfd is not None else str(folder / n)
         try:
-            took = _drop_one_temp(name, dfd, flags, RECORD_MAX_BYTES)
+            one = _drop_one_temp(name, dfd, flags, RECORD_MAX_BYTES)
         except Exception:  # noqa: BLE001 - one copy that could not be handled never stops the pass; said as left
-            took = False
-        outcome = _worse_record(outcome, "destroyed" if took else "left") or "left"
+            one = "left"
+        outcome = _worse_record(outcome, one) or "left"
     return outcome
 
 
-def _drop_one_temp(name: str, dfd: int | None, flags: int, max_bytes: int) -> bool:
-    """One record write copy for :func:`_drop_record_temps`: True when it was overwritten in full and unlinked, or is gone."""
+def _drop_one_temp(name: str, dfd: int | None, flags: int, max_bytes: int) -> str:
+    """One record write copy for :func:`_drop_record_temps`: ``"destroyed"`` (overwritten in full, then its name unlinked),
+    ``"absent"`` (gone before it was written: nothing overwritten, never said as destroyed; Opus read a2c1c6e44) or ``"left"``."""
     try:
         lst = os.lstat(name, dir_fd=dfd)
     except FileNotFoundError:
-        return True
+        return "absent"
     if not stat.S_ISREG(lst.st_mode) or lst.st_nlink != 1 or lst.st_size > max_bytes:
-        return False  # never written or removed: not a copy the app wrote alone
+        return "left"  # never written or removed: not a copy the app wrote alone (a copy too large is said as left)
     try:
         fd = os.open(name, flags, dir_fd=dfd)
     except FileNotFoundError:
-        return True
+        return "absent"
     ok = same = False
     try:
         st = os.fstat(fd)
-        same = (st.st_dev, st.st_ino) == (lst.st_dev, lst.st_ino) and st.st_nlink == 1
+        same = (st.st_dev, st.st_ino) == (lst.st_dev, lst.st_ino) and st.st_nlink == 1 and st.st_size <= max_bytes
         if same:
             size = max(st.st_size, lst.st_size)
             os.lseek(fd, 0, os.SEEK_SET)
@@ -1008,7 +1011,7 @@ def _drop_one_temp(name: str, dfd: int | None, flags: int, max_bytes: int) -> bo
             while True:
                 if done >= size:
                     break
-                k = os.write(fd, os.urandom(size - done))
+                k = os.write(fd, os.urandom(min(_CHUNK, size - done)))
                 if k <= 0:
                     raise OSError("nothing written")
                 done += k
@@ -1021,7 +1024,7 @@ def _drop_one_temp(name: str, dfd: int | None, flags: int, max_bytes: int) -> bo
             os.close(fd)
     if same:
         _unlink_if_same(name, dfd, lst)  # its name, only while it still holds that file; a copy not overwritten in full is said left
-    return ok
+    return "destroyed" if ok else "left"
 
 
 def _drop_record_lock(folder: Path, dfd: int | None = None) -> str:
@@ -2298,7 +2301,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         record_dirs.setdefault(base, base / "oo.db")
     plain_real = os.path.realpath(plain_main.parent) if plain_main is not None else None
     # The records of every folder but the plaintext store's, BEFORE its path (security and Opus reads of 0da0c37de, row 400): that
-    # path rewrites a -wal whole, which can be long and can be stopped, and no other folder's record may wait behind it. The folder
+    # path rewrites a -wal whole, which can be long and can be stopped, and no other folder's record may wait behind it. A store of
+    # unknown form taken by that path (it may prove to be SQLCipher) thus has its page 1 a few small record writes later, never a log
+    # rewrite later: a deliberate trade, since its page 1 goes through the handle the path opens and keeps (security read a2c1c6e44). The folder
     # the plaintext path takes is told apart by its real path and left to that path (it takes its record right after page 1).
     for folder, m in record_dirs.items():
         if plain_takes and plain_real is not None and os.path.realpath(folder) == plain_real:
@@ -2338,7 +2343,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         if folder_m is not None and (_under(folder_m.parent, base) or _folder_is_pinned(folder_m, plain_pin)) \
                 and not (_under(folder_m.parent, base) and (drive_absent or _off_drive())):
             record_state = _worse_record(record_state, _drop_record_beside(folder_m))
-        elif _kind(plain_main.parent / _RECORD_NAME) != "absent":
+        elif not (_under(plain_main.parent, base) and (drive_absent or _off_drive())) \
+                and _kind(plain_main.parent / _RECORD_NAME) != "absent":  # R809 / R812: nothing looked at on a changed drive
             record_state = _worse_record(record_state, "left")
     if plain_rec is not None and not plain_rec["touched"] and plain_main is not None:
         # Not this store's file at that place: its own sidecars still get step 1's old treatment (a log whole, a log index's head
