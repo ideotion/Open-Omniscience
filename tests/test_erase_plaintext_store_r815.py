@@ -210,7 +210,8 @@ def test_without_regions_the_logical_size_stops_at_the_reserve(tmp_path, monkeyp
     monkeypatch.setattr(crypto_erase, "_data_regions", lambda fd, size: None)
     monkeypatch.setattr(crypto_erase, "_fd_free_bytes", lambda fd: crypto_erase._DISK_RESERVE + 10)
     written, total, stop = _rewrite_path(p)
-    assert stop == "reserve" and written == 0 and total == p.stat().st_size
+    # row 332: the first page is written before any reserve check (a salt page wherever the file is encrypted), then it stops
+    assert stop == "reserve" and written == crypto_erase._SQLCIPHER_PAGE1 and total == p.stat().st_size
 
 
 @pytest.mark.skipif(os.name != "posix", reason="Windows takes the first-page fallback (R817 (4))")
@@ -436,6 +437,8 @@ def test_a_stop_during_the_body_rewrite_is_partially_overwritten(tmp_path, monke
     try:
         rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, [])
 
+        real = crypto_erase._rewrite_fd
+
         def killed(fd, **kw):  # the operator closes the app partway (a Ctrl-C on the CLI)
             os.lseek(fd, 0, os.SEEK_SET)
             os.write(fd, os.urandom(8192))
@@ -443,6 +446,8 @@ def test_a_stop_during_the_body_rewrite_is_partially_overwritten(tmp_path, monke
 
         monkeypatch.setattr(crypto_erase, "_rewrite_fd", killed)
         crypto_erase._rewrite_plain(rec, may_write=True)
+        # the held files' late rewrite goes through the same helper since row 332: the stop was the body rewrite's, not its
+        monkeypatch.setattr(crypto_erase, "_rewrite_fd", real)
     finally:
         crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
     assert rec["state"] == "partially_overwritten" and rec["reason"] == "stopped", rec
