@@ -12,13 +12,18 @@ With an empty registry (every corpus today) :func:`start_background_open` opens 
 EVERY OPEN (R826 b and d):
 
 1. The folder is the data folder's own ``corpus`` folder, a real directory; the file is ``seg-<n>.db`` exactly, a
-   regular file with one name. Anything else is never opened.
+   regular file with one name, and so is any ``-wal``, ``-shm`` or ``-journal`` beside it. Anything else is never
+   opened. Its first 100 bytes are read BEFORE any driver sees the file: a plaintext file must be in rollback-journal
+   mode (header bytes 18 and 19 both 1, as every segment this app makes is), so a read-only open never creates or
+   writes a ``-wal`` or ``-shm``, and its encryption must already match the shared file's (step 3).
 2. The open goes through the app's factory (:func:`src.database.connect.connect`), READ-ONLY, so it never creates a
    file and never writes one, with the corpus key and the page size this app creates segments at. A key that does not
    open the file makes THIS segment unavailable: the wrong-passphrase verdict comes from the shared file alone (R826
    Q4), never from a segment.
-3. The segment must be encrypted exactly when the shared file is. A plaintext segment beside an encrypted corpus is
-   refused, never read: it would be a file this app did not make, or a downgrade.
+3. The segment must be encrypted exactly when the shared file is: checked on the header before the open, and again on
+   the driver the open actually used (sqlcipher3 or the standard one), never on evidence kept from an earlier open.
+   A plaintext segment beside an encrypted corpus is refused, never read: it would be a file this app did not make,
+   or a downgrade.
 4. Before any row is read: ``trusted_schema`` off, ``cell_size_check`` on, ``writable_schema`` off, no memory map,
    and SQLite's defensive setting where the driver exposes it (the standard driver does; SQLCipher's driver has no
    ``db_config``, so on an encrypted segment the exact schema check below is what stands in its place).
@@ -56,6 +61,12 @@ from src.database.segments import (
 )
 from src.monitoring.secret_scrub import log_failure
 
+#: The plaintext SQLite header's first 16 bytes.
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+#: What a segment's sidecar files may be called; each, if present, must be a regular file with one name.
+_SIDECARS = ("-wal", "-shm", "-journal")
+
 _LOG = logging.getLogger(__name__)
 
 #: Stays False until stages 6, 7 and 8 (erase, backup/restore, passphrase change) are on main (R826). Nothing in the
@@ -87,6 +98,7 @@ REASONS = (
     "not_a_segment_file",  # a link, a directory, a file with a second name, or a folder that is not the corpus folder
     "locked",  # the corpus is locked: no key to open it with
     "wrong_key",  # the corpus key does not open this file
+    "in_use",  # another program holds a lock on the file
     "encryption_differs",  # plaintext beside an encrypted corpus, or the reverse
     "schema",  # the schema is not exactly the one this app makes
     "identity",  # the file records another segment, or no identity
@@ -162,25 +174,68 @@ def harden(con: Any, *, closed: bool) -> bool:
 def _identity_of_name(path: Path) -> tuple[int, int] | None:
     """(device, inode) of the regular, single-named file at ``path`` inside the corpus folder, else None."""
     folder = corpus_folder()
+    if path.parent != folder:
+        return None
     try:
         fst = os.lstat(folder)
-        pst = os.lstat(path.parent)
         st = os.lstat(path)
     except OSError:
         return None
-    if not (stat.S_ISDIR(fst.st_mode) and stat.S_ISDIR(pst.st_mode)) or (fst.st_dev, fst.st_ino) != (pst.st_dev, pst.st_ino):
-        return None
+    if not stat.S_ISDIR(fst.st_mode):
+        return None  # a link where the corpus folder should be
     if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
         return None
     return (st.st_dev, st.st_ino)
 
 
+def _sidecars_are_plain(path: Path) -> bool:
+    """Every ``-wal``/``-shm``/``-journal`` beside ``path`` is absent or a regular file with one name: SQLite would open
+    and could write one, and a hard link or a link there would point that write at another file."""
+    for suffix in _SIDECARS:
+        try:
+            st = os.lstat(f"{path}{suffix}")
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return False
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
+            return False
+    return True
+
+
+def _header_of(path: Path, ident: tuple[int, int]) -> bytes | None:
+    """The first 100 bytes of the file at ``path``, read through the store's shared read descriptor (R789: never closes a
+    descriptor another of this process's connections may hold a lock through), or None when the descriptor is not on
+    the file ``ident`` names."""
+    from src.database.connect import read_at, store_reader
+
+    try:
+        with store_reader(path) as fd:
+            got = os.fstat(fd)
+            if (got.st_dev, got.st_ino) != ident:
+                return None
+            return read_at(fd, 100, 0)
+    except OSError:
+        return None
+
+
+def _header_encrypted(header: bytes) -> bool | None:
+    """True: not a plaintext SQLite header (SQLCipher's page 1 begins with its random salt). False: a plaintext header in
+    rollback-journal mode. None: a plaintext header in any other journal mode (WAL), or too short to be a segment."""
+    if len(header) < 100:
+        return None
+    if header[:16] != _SQLITE_MAGIC:
+        return True
+    return False if (header[18], header[19]) == (1, 1) else None
+
+
 def _shared_is_encrypted() -> bool | None:
+    """The shared file's header, read now (never the cached reading: an encrypt-in-place changes it under the same name)."""
     from src.api.unlock import main_db_path
-    from src.database.connect import main_header_state
+    from src.database.connect import is_encrypted_file
 
     main = main_db_path()
-    return None if main is None else main_header_state(main)
+    return None if main is None else is_encrypted_file(main)
 
 
 def open_segment(seg: Segment, *, key: str | None = None):
@@ -188,9 +243,10 @@ def open_segment(seg: Segment, *, key: str | None = None):
     closes it) or raises :class:`SegmentUnavailable`. ``key`` defaults to the process passphrase."""
     from src.database.connect import (
         DatabaseLockedError,
+        StoreHeldError,
         WrongPassphraseError,
+        _is_sqlcipher_conn,
         connect,
-        last_open_of,
     )
 
     if seg.implicit or seg.file_name is None or seg.seg_no < 1:
@@ -205,11 +261,21 @@ def open_segment(seg: Segment, *, key: str | None = None):
     except OSError:
         raise SegmentUnavailable(seg.seg_no, "unreadable") from None
     before = _identity_of_name(path)
-    if before is None:
+    if before is None or not _sidecars_are_plain(path):
+        raise SegmentUnavailable(seg.seg_no, "not_a_segment_file")
+    header = _header_of(path, before)
+    if header is None:
+        raise SegmentUnavailable(seg.seg_no, "changed_while_opening")
+    on_disk = _header_encrypted(header)
+    if on_disk is None:
         raise SegmentUnavailable(seg.seg_no, "not_a_segment_file")
     shared_encrypted = _shared_is_encrypted()
+    if shared_encrypted is None or on_disk != shared_encrypted:
+        raise SegmentUnavailable(seg.seg_no, "encryption_differs")
     try:
         con = connect(path, key=key, read_only=True, check_same_thread=False, cipher_page_size=SEGMENT_PAGE_SIZE)
+    except StoreHeldError:
+        raise SegmentUnavailable(seg.seg_no, "in_use") from None
     except WrongPassphraseError:
         raise SegmentUnavailable(seg.seg_no, "wrong_key") from None
     except DatabaseLockedError:
@@ -224,8 +290,9 @@ def open_segment(seg: Segment, *, key: str | None = None):
     try:
         if _identity_of_name(path) != before:
             raise SegmentUnavailable(seg.seg_no, "changed_while_opening")
-        keyed = last_open_of(before) == "keyed"
-        if shared_encrypted is None or keyed != bool(shared_encrypted):
+        # The driver the open used, never evidence from an earlier open: a plaintext file swapped in for the open and back
+        # out again is opened by the standard driver, and is refused here.
+        if _is_sqlcipher_conn(con) != bool(shared_encrypted):
             raise SegmentUnavailable(seg.seg_no, "encryption_differs")
         harden(con, closed=seg.state == "closed")
         if not check_schema(con):
@@ -262,25 +329,35 @@ def create_segment(r: Reservation, *, key: str | None = None) -> Path:
     st = os.lstat(folder)
     if not stat.S_ISDIR(st.st_mode):
         raise SegmentError("the corpus folder is not a folder")
-    path = folder / r.file_name
-    try:
-        os.lstat(path)
-    except FileNotFoundError:
-        pass
-    else:
-        raise SegmentError("a file already has this segment's name; it is never overwritten")
     encrypted = _shared_is_encrypted()
     if encrypted is None:
         raise SegmentError("the shared file's encryption could not be read")
+    path = folder / r.file_name
+    # The name is TAKEN here, empty, by this call alone: O_EXCL refuses any file or link already there, O_NOFOLLOW any link,
+    # and the factory then treats the empty file as fresh. Its (device, inode) is checked again before anything is written,
+    # so a name swapped for a link to another file (the shared corpus, under the same key) gets no table and no row.
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o600)
+    except FileExistsError:
+        raise SegmentError("a file already has this segment's name; it is never overwritten") from None
+    try:
+        made = os.fstat(fd)
+    finally:
+        os.close(fd)  # nothing of this process holds the new, empty file yet (R789)
+    ident = (made.st_dev, made.st_ino)
     if encrypted:
         con = connect(path, key=key, create_encrypted=True, cipher_page_size=SEGMENT_PAGE_SIZE)
     else:
         con = connect(path, create_encrypted=False)
     try:
+        if _identity_of_name(path) != ident:
+            raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
         con.isolation_level = None
         for ddl in SEGMENT_DDL:
             if ddl is not _SEGMENT_META_DDL:
                 con.execute(ddl)
+        if _identity_of_name(path) != ident:
+            raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
         commit_segment(con, r)
     finally:
         con.close()
@@ -289,7 +366,8 @@ def create_segment(r: Reservation, *, key: str | None = None) -> Path:
         seg = Segment(r.seg_no, r.file_name, "reserved", r.id_lo, r.id_hi)
         back = open_segment(seg, key=key)
         try:
-            record_segment(path)
+            if not record_segment(path):
+                raise SegmentError("the new segment could not be named in the at-rest record")
         finally:
             back.close()
     return path
@@ -372,14 +450,23 @@ class SegmentSet:
 
 _CURRENT: SegmentSet | None = None
 _CURRENT_LOCK = threading.Lock()
+#: Bumped by every :func:`close_all` (each disposal: lock, erase, restore): a set built from a registry read that a disposal
+#: overtook is closed, never installed.
+_EPOCH = 0
+#: True when the last start could not read the registry: health then says so, never "no segments".
+_REGISTRY_UNREAD = False
+
+#: What the status says when the registry could not be read: the number of segments is unknown, never 0 (R775).
+REGISTRY_UNREADABLE: dict[str, Any] = {"total": None, "opened": None, "opening": False, "unavailable": [], "registry": "unreadable"}
 
 
 def current_status() -> dict:
-    """The live set's :meth:`SegmentSet.status`, or an empty set's (``total`` 0) before anything was started."""
+    """The live set's :meth:`SegmentSet.status`; :data:`REGISTRY_UNREADABLE` when the last start could not read the
+    registry; an empty set's (``total`` 0) when none is registered or nothing was started."""
     with _CURRENT_LOCK:
-        cur = _CURRENT
+        cur, unread = _CURRENT, _REGISTRY_UNREAD
     if cur is None:
-        return {"total": 0, "opened": 0, "opening": False, "unavailable": []}
+        return dict(REGISTRY_UNREADABLE) if unread else {"total": 0, "opened": 0, "opening": False, "unavailable": []}
     return cur.status()
 
 
@@ -387,19 +474,33 @@ def start_background_open(shared_con_factory: Any = None) -> SegmentSet | None:
     """Read the registry from the shared file and open its segments in a background thread, replacing (and closing) any
     set opened before. With no segment file registered (every corpus today) nothing starts and None is returned.
     ``shared_con_factory`` returns a DB-API connection to the shared file (default: one from the app's pool)."""
-    global _CURRENT
+    global _CURRENT, _REGISTRY_UNREAD
+    if shared_con_factory is None and not _shared_is_sqlite():
+        return None  # segments are SQLite files beside a SQLite corpus; another backend has none
+    with _CURRENT_LOCK:
+        epoch = _EPOCH
     try:
         con = shared_con_factory() if shared_con_factory is not None else _shared_read_only()
         try:
             segs = SegmentSet.wanted(registry(con))
         finally:
             con.close()
-    except Exception as exc:  # noqa: BLE001 - an unreadable registry opens nothing; the shared file's own checks say why
+    except Exception as exc:  # noqa: BLE001 - an unreadable registry opens nothing, and the status says it was not read
         log_failure(_LOG, "the corpus segment registry could not be read", exc, level=logging.DEBUG)
+        with _CURRENT_LOCK:
+            if epoch == _EPOCH:
+                old, _CURRENT, _REGISTRY_UNREAD = _CURRENT, None, True
+            else:
+                old = None
+        if old is not None:
+            old.close()
         return None
     new = SegmentSet(segments=segs) if segs else None
     with _CURRENT_LOCK:
-        old, _CURRENT = _CURRENT, new
+        if epoch != _EPOCH:
+            # A disposal ran while the registry was read: that registry may be the old store's, and the key may be gone.
+            return None
+        old, _CURRENT, _REGISTRY_UNREAD = _CURRENT, new, False
     if old is not None:
         old.close()
     if new is None:
@@ -410,9 +511,10 @@ def start_background_open(shared_con_factory: Any = None) -> SegmentSet | None:
 
 def close_all() -> None:
     """Close the live set (lock, erase, shutdown)."""
-    global _CURRENT
+    global _CURRENT, _EPOCH, _REGISTRY_UNREAD
     with _CURRENT_LOCK:
-        old, _CURRENT = _CURRENT, None
+        old, _CURRENT, _REGISTRY_UNREAD = _CURRENT, None, False
+        _EPOCH += 1
     if old is not None:
         old.close()
 
@@ -428,6 +530,12 @@ class _PooledShared:
 
     def close(self) -> None:
         self._raw.close()  # back to the pool, never a close of the store
+
+
+def _shared_is_sqlite() -> bool:
+    from src.database.session import engine
+
+    return engine.dialect.name == "sqlite"
 
 
 def _shared_read_only() -> _PooledShared:

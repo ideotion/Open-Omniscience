@@ -731,6 +731,22 @@ def init_db() -> None:
             _stamp.get("diffs") or _stamp.get("floor"),
         )
 
+    # R826 stage 2: the split corpus's segment files, opened in the background. HERE, at the end of every init_db, because
+    # every path that opens the store calls it: the boot, the unlock, and each disposal-then-reopen (restore, repair, merge,
+    # rebuild). A start that opened them anywhere else would leave an unlocked or restored corpus with none open, which
+    # reads as a corpus without segments. Nothing starts when no segment is registered; it never fails the init.
+    _init_step("_open_segments")
+    _open_segments()
+
+
+def _open_segments() -> None:
+    try:
+        from src.database.segment_open import start_background_open
+
+        start_background_open()
+    except Exception as exc:  # noqa: BLE001 - a segment that cannot open is "unavailable", never a failed start
+        logging.getLogger(__name__).debug("corpus segments not opened (%s)", type(exc).__name__)
+
 
 def get_session() -> SASession:
     """Return a new session. Caller is responsible for closing it.
