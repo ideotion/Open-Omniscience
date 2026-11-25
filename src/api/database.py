@@ -106,6 +106,19 @@ def _sqlite_file_bytes() -> dict | None:
     }
 
 
+def _not_counted(db: Session) -> dict:
+    from src.analytics.quarantine_scope import not_counted_tally
+    from src.analytics.screening_drain import get_screening_drain, kick_if_allowed
+
+    out: dict = dict(not_counted_tally(db))
+    if out.get("not_screened"):
+        # R830: while anything waits, the worker is running or is started here (idempotent), so a worker that stopped on an
+        # error is retried by the next read rather than left stopped until a restart; its state rides along.
+        kick_if_allowed()
+        out["screening"] = get_screening_drain().status()
+    return out
+
+
 @router.get("/stats")
 def database_stats(db: Session = Depends(get_db)) -> dict:
     """Real row counts per table plus backend/on-disk facts.
@@ -213,6 +226,9 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
             "table_count": len(present),
             # Whether the backup/restore controls in the Settings tab apply here.
             "backup_supported": is_sqlite(),
+            # R830 (row 408 PR 3): imported articles the aggregates leave out until the junk screening has reached them. The Home
+            # strip says "N articles not screened yet" while it is above 0; an unreadable count is absent, never a zero.
+            "not_counted": _not_counted(db),
         }
 
     return _cached("stats", _compute, db)

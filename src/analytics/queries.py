@@ -21,9 +21,9 @@ from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 
-from src.analytics.quarantine_scope import not_quarantined
+from src.analytics.quarantine_scope import not_counted, pending_ids_select
 from src.analytics.source_article_counts import unquarantined_counts_by_source
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
@@ -33,6 +33,7 @@ from src.database.models import (
     ArticleMentionedPlace,
     Keyword,
     KeywordFamilyOverride,
+    ScreeningPending,
     Source,
 )
 from src.database.outlet import FEEDS_NOT_OUTLETS
@@ -1000,7 +1001,7 @@ def _mention_series(session, ids, *, bucket: str, country: str | None) -> list[d
         q = session.query(KeywordMentionRead.observed_on, func.sum(KeywordMentionRead.count)).filter(
             KeywordMentionRead.keyword_id.in_(chunk),
             KeywordMentionRead.observed_on.isnot(None),
-            not_quarantined(KeywordMentionRead.article_id),  # R101
+            not_counted(KeywordMentionRead.article_id),  # R101
         )
         if country:
             q = q.filter(KeywordMentionRead.country == country.lower())
@@ -1032,7 +1033,7 @@ def _distinct_articles(session, ids) -> int:
             .filter(
                 KeywordMentionRead.keyword_id.in_(ids),
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
-                not_quarantined(KeywordMentionRead.article_id),  # R101
+                not_counted(KeywordMentionRead.article_id),  # R101
             )
             .scalar()
             or 0
@@ -1045,7 +1046,7 @@ def _distinct_articles(session, ids) -> int:
             .filter(
                 KeywordMentionRead.keyword_id.in_(chunk),
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
-                not_quarantined(KeywordMentionRead.article_id),  # R101
+                not_counted(KeywordMentionRead.article_id),  # R101
             )
             .distinct()
             .all()
@@ -1109,7 +1110,7 @@ def trend(
     q = session.query(KeywordMentionRead.observed_on, func.sum(KeywordMentionRead.count)).filter(
         KeywordMentionRead.keyword_id == kw.id,
         KeywordMentionRead.observed_on.isnot(None),
-        not_quarantined(KeywordMentionRead.article_id),  # R101
+        not_counted(KeywordMentionRead.article_id),  # R101
     )
     if country:
         q = q.filter(KeywordMentionRead.country == country.lower())
@@ -1225,7 +1226,7 @@ def trend_range_article_ids(
     ]
     mentions = int(
         session.query(func.sum(KeywordMentionRead.count))
-        .filter(*in_range, not_quarantined(KeywordMentionRead.article_id))  # R101: the bars' own total
+        .filter(*in_range, not_counted(KeywordMentionRead.article_id))  # R101: the bars' own total
         .scalar()
         or 0
     )
@@ -1245,6 +1246,9 @@ def trend_range_article_ids(
             .all()
         )
         held = {r[0] for r in rows}
+        # R830: an article still queued for screening is out of the bars' total (``not_counted`` above), so it is out of
+        # the selection too; it is counted with the excluded ones.
+        held |= {int(r[0]) for r in session.execute(pending_ids_select().where(ScreeningPending.article_id.in_(chunk)))}
         openable.extend(aid for aid in chunk if aid not in held)
 
     excluded = len(ids) - len(openable)
@@ -1278,6 +1282,45 @@ _BRUSH_CAVEAT = (
     "A bar's height counts mentions, not articles: one article mentioning the term "
     "several times raises the bar more than it adds to this selection."
 )
+
+
+def _counter_rows_without_pending(session, q, want: int) -> list:
+    """The first ``want`` ``(Keyword, mentions, articles)`` rows of ``q`` by mentions, descending, with the articles still
+    queued for screening taken out of the counters at query time (R830). The counters include such an article until it is
+    judged. With nothing queued this is the index-only read it always was; while anything is queued, the queued articles'
+    share is summed once per keyword (their own mention rows, through the ``article_id`` index) and the counters are
+    ordered by what is left: one pass over the keywords, never a page walk that a queue covering the top of the list
+    would stretch to the whole table."""
+    from sqlalchemy import func as _f
+
+    from src.analytics.quarantine_scope import any_pending, quarantined_ids_select
+
+    if not any_pending(session):
+        return q.order_by(Keyword.mention_count.desc()).limit(want).all()
+    p = (
+        select(
+            KeywordMentionRead.keyword_id.label("kid"),
+            _f.sum(KeywordMentionRead.count).label("pm"),
+            _f.count(_f.distinct(KeywordMentionRead.article_id)).label("pa"),
+        )
+        .where(
+            KeywordMentionRead.article_id.in_(pending_ids_select()),
+            KeywordMentionRead.article_id.not_in(quarantined_ids_select()),
+        )
+        .group_by(KeywordMentionRead.keyword_id)
+        .subquery()
+    )
+    m = Keyword.mention_count - _f.coalesce(p.c.pm, 0)
+    a = Keyword.article_count - _f.coalesce(p.c.pa, 0)
+    rows = (
+        q.outerjoin(p, p.c.kid == Keyword.id)
+        .with_entities(Keyword, m.label("m"), a.label("arts"))
+        .filter(m > 0)
+        .order_by(m.desc())
+        .limit(want)
+        .all()
+    )
+    return [(k, int(mm or 0), max(0, int(aa or 0))) for k, mm, aa in rows]
 
 
 def top_terms(
@@ -1332,7 +1375,7 @@ def top_terms(
             Keyword.article_count.label("arts"),
         ).filter(Keyword.mention_count > 0)
         q = _apply_kind(q, kind)
-        rows = q.order_by(Keyword.mention_count.desc()).limit(limit * 4).all()
+        rows = _counter_rows_without_pending(session, q, limit * 4)
     else:
         # Windowed / per-country: the corpus-wide counters cannot serve a scoped
         # SUM, so this path aggregates the mention table (filtered, then grouped) — UNLESS
@@ -1356,7 +1399,7 @@ def top_terms(
             ).join(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
             # R101: the rollup above and the corpus-wide counters leave a quarantined article out, so this does too,
             # or the same call would answer differently depending on which of them served it.
-            q = q.filter(not_quarantined(KeywordMentionRead.article_id))
+            q = q.filter(not_counted(KeywordMentionRead.article_id))
             if days and end is not None:
                 # Exact half-open [end - days, end): a closed, reproducible period.
                 q = q.filter(
@@ -2748,7 +2791,7 @@ def trending(
             hi=hi,
             keep=keep,
             # R101: a quarantined article's mentions are left out, as the rollup and the counters leave them out.
-            where=(not_quarantined(KeywordMentionRead.article_id),)
+            where=(not_counted(KeywordMentionRead.article_id),)
             + ((KeywordMentionRead.country == country.lower(),) if country else ()),
             deadline=read_deadline,
         )
@@ -3553,7 +3596,7 @@ def keyword_stats(
             func.count(func.distinct(KeywordMentionRead.article_id)),
             func.coalesce(func.sum(KeywordMentionRead.count), 0),
         )
-        .filter(KeywordMentionRead.keyword_id.in_(stat_ids), not_quarantined(KeywordMentionRead.article_id))
+        .filter(KeywordMentionRead.keyword_id.in_(stat_ids), not_counted(KeywordMentionRead.article_id))
         .one()
     )
     distinct_articles, total_mentions = int(row[0] or 0), int(row[1] or 0)
@@ -3574,7 +3617,7 @@ def keyword_stats(
                 KeywordMentionRead.keyword_id.in_(stat_ids),
                 KeywordMentionRead.observed_on >= lo,
                 KeywordMentionRead.observed_on < hi,
-                not_quarantined(KeywordMentionRead.article_id),
+                not_counted(KeywordMentionRead.article_id),
             )
             .scalar()
             or 0
