@@ -500,3 +500,33 @@ def test_a_create_that_fails_after_the_record_named_it_forgets_it(data, shared, 
     with pytest.raises(OSError):
         segment_open.create_segment(sg.Reservation(1, "seg-1.db", 10, 19), key=_PW)
     assert forgot == ["seg-1.db"] and list((data / "corpus").iterdir()) == []
+
+
+# --- R826 ordering (coordinator, 2026-11-25): with the switch off, nothing makes a file under corpus/ ----------------------
+
+
+def test_with_the_switch_off_no_path_makes_anything_under_corpus(data, shared, monkeypatch):
+    """Every entry that can reach a segment file, driven with the switch off over a registry that names segments: the
+    corpus folder is never created. (The erase sweep of corpus/ is on main since b001b6ffa, #2393; this holds anyway.)"""
+    monkeypatch.setattr(segment_open, "SEGMENT_WRITES_ENABLED", False)
+    shared.execute(
+        "INSERT INTO corpus_segments (seg_no, file_name, state, id_lo, id_hi) VALUES (0, NULL, 'closed', 1, 0),"
+        " (1, 'seg-1.db', 'closed', 1, 9), (2, 'seg-2.db', 'open', 10, 19), (3, 'seg-3.db', 'reserved', 20, 29)"
+    )
+    sset = segment_open.start_background_open(lambda: sqlite3.connect(data / "open_omniscience.db", check_same_thread=False))
+    assert sset is not None
+    sset._done.wait(30)
+    assert {u["reason"] for u in sset.status()["unavailable"]} == {"missing"}
+    segment_open.close_all()
+    for seg in sg.registry(shared):
+        if seg.file_name:
+            with pytest.raises(segment_open.SegmentUnavailable):
+                segment_open.open_segment(seg)
+    for call in (
+        lambda: segment_write.open_writer(shared),
+        lambda: segment_write.SegmentWriter.open(shared, _row(shared, 2)),
+        lambda: segment_open.create_segment(sg.Reservation(4, "seg-4.db", 30, 39)),
+    ):
+        with pytest.raises(SegmentError):
+            call()
+    assert not (data / "corpus").exists()
