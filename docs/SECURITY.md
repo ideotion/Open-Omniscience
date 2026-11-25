@@ -793,7 +793,7 @@ imply a protection we cannot deliver.
   is then dropped from it before anything writes to it (row 432): no SQL a backup brings in a trigger or a view ever runs,
   and a backup made by an older build still imports. What its schema can still run on the merge's connection is a
   CHECK, a DEFAULT, a generated column or an index expression, which can call only the pure functions that connection
-  registers. Public members (lanes, wiki dumps, maps, models) stay
+  registers (the search index's text normalisers and the incoming sources' key lookup) and can load no extension. Public members (lanes, wiki dumps, maps, models) stay
   plaintext inside the private folder. The erase treats every staging file as a file with no evidence of its identity:
   its head goes in the pass above and it is rewritten in full, after the key-material pass. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
   junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a

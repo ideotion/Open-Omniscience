@@ -288,7 +288,8 @@ def attach_staged(conn: Any, path: os.PathLike[str] | str, alias: str) -> bool:
     # keeps the setting a plaintext ATTACH gives it. The attached copy holds no trigger or view of the backup's: they
     # were dropped from it when it was staged (``disarm_staged``, row 432), whatever their names; what its schema can
     # still run on this connection is a CHECK, a DEFAULT, a generated column or an index expression, and the functions
-    # registered here are pure (``oo_feed_key``, ``oo_inc_feed_key``).
+    # registered here are pure: the search index's four (``fts_norm.register``) and ``oo_inc_feed_key``; no extension
+    # loads (``tests/test_staged_disarm_row432.py`` lists them).
     conn.execute("PRAGMA cell_size_check = ON")
     try:
         with sqlite_opening():  # R789

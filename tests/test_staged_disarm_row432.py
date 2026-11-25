@@ -12,6 +12,7 @@ the seal's refusal chosen by SQLite's result code, never by the driver's words.
 from __future__ import annotations
 
 import sqlite3
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -349,3 +350,52 @@ def test_a_source_another_connection_is_writing_is_called_in_use(tmp_path):
         holder.execute("ROLLBACK")
         holder.close()
     assert staged_key._seal_refusal(sqc.OperationalError("x"), p, 0) == staged_key.DAMAGED
+
+
+#: Every function the app registers on the merge's host connection, by name: what an expression in the staged schema
+#: (CHECK, DEFAULT, generated column, index expression) can still call there (row 432's residual). Each is pure. A new
+#: registration is added here on purpose, with a reason, or this test fails.
+_HOST_FUNCTIONS = {
+    "oo_inc_feed_key": "src/backup/merge.py:_merge_sources: a lookup in a dict of the incoming sources' keys",
+    "oo_fts_norm": "src/database/fts_norm.py: a text as the search index stores it (folding, segmentation); pure",
+    "oo_fts_used": "src/database/fts_norm.py: which normalisers a text needs, a mask; pure",
+    "oo_fts_caps": "src/database/fts_norm.py: the normalisers this install has, a constant",
+    "oo_search_fold": "src/database/fts_norm.py: the advanced search's case and accent fold; pure",
+}
+
+
+@pytest.mark.parametrize("sealed", [False, True], ids=["plaintext", "keyed"])
+def test_the_merge_host_registers_only_pure_functions_and_loads_no_extension(tmp_path, monkeypatch, sealed):
+    import src.backup.merge as M
+
+    work, inc = tmp_path / "work.db", tmp_path / "inc.db"
+    _build(work, 0, None)
+    _build(inc, 3, None)
+    if sealed:
+        staged_key.seal_plaintext(inc)
+    seen: dict[str, object] = {}
+    real = M._merge_sources
+
+    def watching(con, *a, **k):
+        real(con, *a, **k)  # after the merge's own registration
+        # The driver's own and its compiled-in extensions' (FTS5, R*Tree, geopoly) are read off a fresh connection of
+        # the same driver: what is left is what the app registered.
+        fresh = sys.modules[type(con).__module__].connect(":memory:")
+        try:
+            base = {r[0] for r in fresh.execute("PRAGMA function_list")}
+        finally:
+            fresh.close()
+        seen["functions"] = {r[0] for r in con.execute("PRAGMA function_list")} - base
+        try:
+            con.execute("SELECT load_extension('oo_no_such_library')").fetchall()
+            seen["extension"] = "loaded"
+        except Exception as exc:  # noqa: BLE001 - the refusal is the point
+            seen["extension"] = "not authorized" if "not authorized" in str(exc) else type(exc).__name__
+
+    monkeypatch.setattr(M, "_merge_sources", watching)
+    try:
+        M.merge_corpus(inc, work, _META, cache_mb=8)
+    finally:
+        staged_key.forget(inc)
+    assert seen["functions"] == set(_HOST_FUNCTIONS), seen["functions"]
+    assert seen["extension"] == "not authorized"
