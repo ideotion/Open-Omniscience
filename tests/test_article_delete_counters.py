@@ -245,3 +245,24 @@ def test_the_backup_copy_recount_tolerates_a_copy_without_counter_columns(tmp_pa
     _recount_keywords(con.cursor(), [1])  # nothing to recount, and no error
     assert con.execute("SELECT normalized FROM keywords").fetchall() == [("a",)]
     con.close()
+
+
+# ---------------------------------------------------------------- a fourth delete, guarded rather than counted
+
+
+def test_the_attach_undo_checks_and_deletes_its_empty_sources_under_one_gate_hold():
+    """``newsletter_attach_undo`` deletes ladder sources it found empty. The delete cascades to any article on the source,
+    so the emptiness check and the delete must sit under one hold of the gate: an import attaching an article between an
+    ungated check and the flush would be deleted with the source, its mentions with it, and no counter moved."""
+    import inspect
+
+    from src.api import ingestion
+
+    src = inspect.getsource(ingestion.newsletter_attach_undo)
+    tail = src[src.index("deleted: list[str] = []") :]
+    gate = tail.index("with write_lock():")
+    assert gate < tail.index("still = db.query(Article.id)") < tail.index("db.delete(src)") < tail.index("db.commit()")
+    body = tail[gate : tail.index("from src.analytics.store import reconcile_source_counters")]
+    for line in body.splitlines()[1:]:
+        if line.strip() and not line.lstrip().startswith("#"):
+            assert line.startswith(" " * 8), f"left the gate's block before the commit: {line!r}"
