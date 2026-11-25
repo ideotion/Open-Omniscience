@@ -9,7 +9,7 @@ pending column is declared additive, is the audit's judgement and is not written
 
 ## 1. Main database: the migration chain
 
-Head: `e4c1a7f3b9d2` (88 migrations, base first).
+Head: `b8d4f2a6c1e9` (89 migrations, base first).
 
 | # | revision | after | file |
 |---|---|---|---|
@@ -101,6 +101,7 @@ Head: `e4c1a7f3b9d2` (88 migrations, base first).
 | 86 | `e4b7c1d9a2f6` | `d7e3a9b2c5f1` | `e4b7c1d9a2f6_stage_versions_and_engine_registry.py` |
 | 87 | `a7c2e9d4b1f3` | `e4b7c1d9a2f6` | `a7c2e9d4b1f3_screening_pending.py` |
 | 88 | `e4c1a7f3b9d2` | `a7c2e9d4b1f3` | `e4c1a7f3b9d2_corpus_segments.py` |
+| 89 | `b8d4f2a6c1e9` | `e4c1a7f3b9d2` | `b8d4f2a6c1e9_corpus_segment_generation.py` |
 
 ## 2. Main database: tables (66, from `src/database/models.py`)
 
@@ -369,6 +370,7 @@ Head: `e4c1a7f3b9d2` (88 migrations, base first).
 | `id_hi` | INTEGER | yes |  |
 | `created_at` | DATETIME | yes |  |
 | `state_at` | DATETIME | yes |  |
+| `generation` | INTEGER | yes |  |
 
 ### `derived_meta`
 

@@ -41,6 +41,11 @@ SEGMENT_NAME_RE = re.compile(r"\Aseg-([1-9][0-9]{0,3})\.db\Z")
 #: R826 Q2: a segment closes at about this many articles (a starting value; Q4's measurement may change it).
 DEFAULT_SEGMENT_SIZE = 500_000
 
+#: R826 Q4: at most this many segment files; the size of a new segment doubles every :data:`SEGMENTS_PER_DOUBLING` files,
+#: so 64 files hold 16 x 500k x (1 + 2 + 4 + 8) = 120M articles before the cap refuses another (starting values).
+MAX_SEGMENT_FILES = 64
+SEGMENTS_PER_DOUBLING = 16
+
 STATES = frozenset({"reserved", "open", "closed", "abandoned"})
 
 
@@ -56,6 +61,7 @@ class Segment:
     id_lo: int
     id_hi: int | None  # None: open-ended, which only segment 0 may be
     implicit: bool = False  # True: answered for an empty registry, not read from a row
+    generation: int | None = None  # the registry's generation (stage 3a); None: none recorded, never compared
 
 
 #: What an empty registry means: the whole corpus is the shared file, open-ended (R826 g).
@@ -77,19 +83,38 @@ def _has_tables(con: Any) -> bool:
     return len(rows) == 2
 
 
+def _has_generation(con: Any) -> bool:
+    return any(r[1] == "generation" for r in con.execute("PRAGMA table_info(corpus_segments)").fetchall())
+
+
 def registry(con: Any) -> list[Segment]:
     """Every segment, in number order. Writes nothing: an absent or empty registry is legacy segment 0 alone."""
     if not _has_tables(con):
         return [LEGACY_SEGMENT_0]
-    rows = con.execute(
-        "SELECT seg_no, file_name, state, id_lo, id_hi FROM corpus_segments ORDER BY seg_no"
-    ).fetchall()
+    sql = (
+        "SELECT seg_no, file_name, state, id_lo, id_hi, generation FROM corpus_segments ORDER BY seg_no"
+        if _has_generation(con)
+        else "SELECT seg_no, file_name, state, id_lo, id_hi, NULL FROM corpus_segments ORDER BY seg_no"
+    )
+    rows = con.execute(sql).fetchall()
     if not rows:
         return [LEGACY_SEGMENT_0]
     return [
-        Segment(int(r[0]), r[1], str(r[2]), int(r[3]), None if r[4] is None else int(r[4]))
+        Segment(
+            int(r[0]), r[1], str(r[2]), int(r[3]), None if r[4] is None else int(r[4]),
+            generation=None if r[5] is None else int(r[5]),
+        )
         for r in rows
     ]
+
+
+def next_segment_size(segments: list[Segment]) -> int:
+    """The size of the next segment file (R826 Q4): it doubles every :data:`SEGMENTS_PER_DOUBLING` files. Refused at
+    :data:`MAX_SEGMENT_FILES` files (abandoned reservations made no file and are not counted)."""
+    files = sum(1 for s in segments if not s.implicit and s.seg_no >= 1 and s.state != "abandoned")
+    if files >= MAX_SEGMENT_FILES:
+        raise SegmentError("the corpus has reached its limit of segment files")
+    return DEFAULT_SEGMENT_SIZE * 2 ** (files // SEGMENTS_PER_DOUBLING)
 
 
 def _now() -> str:
@@ -180,7 +205,8 @@ def reserve_segment(con: Any, size: int = DEFAULT_SEGMENT_SIZE) -> Reservation:
 
 _SEGMENT_META_DDL = (
     "CREATE TABLE IF NOT EXISTS segment_meta ("
-    " seg_no INTEGER NOT NULL, id_lo INTEGER NOT NULL, id_hi INTEGER NOT NULL, created_at TEXT NOT NULL)"
+    " seg_no INTEGER NOT NULL, id_lo INTEGER NOT NULL, id_hi INTEGER NOT NULL, created_at TEXT NOT NULL,"
+    " generation INTEGER NOT NULL, next_id INTEGER NOT NULL)"
 )
 
 
@@ -197,8 +223,8 @@ def commit_segment(seg_con: Any, r: Reservation) -> None:
                 "this file already records a segment identity; it is not a new segment"
             )
         seg_con.execute(
-            "INSERT INTO segment_meta (seg_no, id_lo, id_hi, created_at) VALUES (?, ?, ?, ?)",
-            (r.seg_no, r.id_lo, r.id_hi, _now()),
+            "INSERT INTO segment_meta (seg_no, id_lo, id_hi, created_at, generation, next_id) VALUES (?, ?, ?, ?, 1, ?)",
+            (r.seg_no, r.id_lo, r.id_hi, _now(), r.id_lo),
         )
     except BaseException:
         _rollback(seg_con)
@@ -232,6 +258,39 @@ def _set_state(con: Any, seg_no: int, frm: str, to: str) -> bool:
         raise
     _commit(con)
     return changed
+
+
+def segment_counters(seg_con: Any) -> tuple[int, int] | None:
+    """(generation, next_id) the segment file records, or None when it records none (or not exactly one row)."""
+    try:
+        rows = seg_con.execute("SELECT generation, next_id FROM segment_meta").fetchall()
+    except Exception:  # noqa: BLE001 - no table or no column: nothing recorded, which is the safe answer
+        return None
+    if len(rows) != 1 or rows[0][0] is None or rows[0][1] is None:
+        return None
+    return (int(rows[0][0]), int(rows[0][1]))
+
+
+def mark_closed(con: Any, seg_no: int) -> bool:
+    """An open segment closes (it is full, or another took its place): one shared-file transaction. False: it was not open."""
+    return _set_state(con, seg_no, "open", "closed")
+
+
+def record_generation(con: Any, seg_no: int, generation: int) -> None:
+    """The registry's half of a generation raise, written AFTER the file's. Only ever raises the number (a crash between
+    the two writes left the file newer; this catches the registry up), in one shared-file transaction."""
+    if not isinstance(generation, int) or isinstance(generation, bool) or generation < 1:
+        raise SegmentError("a generation is a whole number, at least 1")
+    _begin(con)
+    try:
+        con.execute(
+            "UPDATE corpus_segments SET generation = ? WHERE seg_no = ? AND (generation IS NULL OR generation < ?)",
+            (generation, seg_no, generation),
+        )
+    except BaseException:
+        _rollback(con)
+        raise
+    _commit(con)
 
 
 def mark_open(con: Any, r: Reservation) -> None:

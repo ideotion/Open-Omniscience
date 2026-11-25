@@ -1055,6 +1055,20 @@ imply a protection we cannot deliver.
   shared folder an operator's empty folder at a shaped name is left, and a name that is a shaped folder's only through an ending
   the app strips (`wiki_dumps.tmp`) is not the app's. In a
   shared folder the bare cache names (`triton`, `inductor`, `nv`, `vllm`, `huggingface`) are left and counted; `vllm-config` goes.
+  **A file with another name elsewhere on the disk (a hard link; row 438, R839 as amended by R840 and R841)** is judged by what
+  it is, its link count read by `fstat` on the handle about to be written (a count that cannot be read counts as more than one):
+  only one positively the app's own is overwritten whatever its other name (a key file only when every one of its names is in
+  the keys folder or its `.pending`, counted through the held folder handle, since no copy of the public key is kept apart from
+  the key file itself; an unverified one is never written, its name is removed and the result says its contents may still be
+  readable through the other name; a store's main file at the app's own path, the columnar cache's key-derivation sidecar (the
+  only columnar file holding the salt), a segment or a database copy a record names by identity, a plaintext store's log whose own
+  valid header states the pinned store's page size), and the result says so; a store's name is the app's only where the app keeps
+  its stores (the data folder itself, never a name deeper down), and a log or log index with another name is never tied to its
+  store by its name alone (an encrypted store's log is said as a possible copy left; a late rewrite never reaches either); any other is never written, its name here is removed, it is counted once by identity and the result says its contents
+  may remain under that other name; a possible copy of the corpus that is not positively the app's (a segment or copy no record
+  names, a plaintext log not tied by its header) is left whole and said so. The at-rest record with another name stays refused.
+  Any of these keeps the result from being clean (`linked_files`). The keys folder is opened once, no-follow, and walked by
+  that handle (row 380); a link or special file in it is never written.
   Every other app folder is removed whole (`data_scope.WHOLE_DIRS`, which the shared-folder notice lists by name);
   `annotations`, `triage`, `bench`, `bulletin` and `diagnostics`
   always go, so an operator's own entry under one of those names there goes too; a

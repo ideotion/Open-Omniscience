@@ -77,9 +77,10 @@ def test_the_tally_says_how_many_wait_and_nothing_it_cannot_read(db):
     from src.analytics.quarantine_scope import not_counted_tally
 
     arts = _corpus(db)
-    assert not_counted_tally(db) == {"not_screened": 0}
+    # row 421 (R832): the tally carries the second reason too, "not analysed" (no import in flight here)
+    assert not_counted_tally(db) == {"not_screened": 0, "not_analysed": 0}
     _queue(db, arts[:2])
-    assert not_counted_tally(db) == {"not_screened": 2}
+    assert not_counted_tally(db) == {"not_screened": 2, "not_analysed": 0}
 
     class _Broken:
         def execute(self, *_a, **_k):

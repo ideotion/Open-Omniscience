@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from src.analytics import queries as q
 from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
-from src.analytics.quarantine_scope import split_not_screened
+from src.analytics.quarantine_scope import split_not_screened, with_not_analysed
 from src.api import served_cache
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.api.search_filters import AdvancedSearch, advanced_search_params
@@ -88,6 +88,7 @@ class InsightsStatus(_CacheEnvelopeFields):
     # R831(2): what the status total holds, absent when it could not be read.
     quarantined: int | None = None
     not_screened: int | None = None
+    not_analysed: int | None = None  # R832 (row 421): the re-index has not finished them; never also counted as not screened
     # The three figures that need a full pass over the mention index are ``None`` while that pass has not finished (or failed),
     # with ``index_counts_state`` saying which; never a zero standing for "not known".
     indexed_articles: int | None = None
@@ -1449,7 +1450,7 @@ def insights_corpus_keywords(
             if hits:
                 t["supergroups"] = hits
         res["not_counted_yet"] = not_yet
-        return res
+        return with_not_analysed(res, db, ids)  # R832: of the counted ids, those the re-index has not finished
 
     return _deadlined(db, key, _compute)
 
@@ -1517,6 +1518,7 @@ def insights_corpus_www(
             "not_counted_yet": not_yet,
             "caveat": "Deduced from article text, never confirmed; counts only.",
         }
+        with_not_analysed(out, db, ids)  # R832: places, people and dates come from the re-index
         # S05-03: people and places on the entity spine (Q415, Q818, Q827) -- additive
         # keys only, and a failure here must never blank the facet it annotates.
         try:
@@ -1874,6 +1876,7 @@ def insights_corpus_sentiment(
         resolved = len(ids)
         ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_sentiment(db, article_ids=ids)
+        with_not_analysed(res, db, ids)  # R832: the sentiment is written by the re-index
         res["total_matched"] = total
         _xl = _cross_language_block(
             db, article_ids=article_ids, query=query, expand=expand, ui_lang=ui_lang,
@@ -1941,6 +1944,7 @@ def insights_corpus_sources(
         resolved = len(ids)
         ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_sources(db, article_ids=ids, limit=limit)
+        with_not_analysed(res, db, ids)  # R832: the per-source tone averages Article.sentiment_score, which the re-index writes
         res["n_articles"] = len(ids)
         _xl = _cross_language_block(
             db, article_ids=article_ids, query=query, expand=expand, ui_lang=ui_lang,
@@ -4344,6 +4348,8 @@ def insights_graph(
         # read as one with too few keywords (a copy: the cached graph is shared across callers).
         if _not_yet and isinstance(graph, dict):
             graph = {**graph, "not_counted_yet": _not_yet}
+        if isinstance(graph, dict):  # R832: the map's keywords come from the re-index (a copy: the cached graph is shared)
+            graph = with_not_analysed(dict(graph), db, ids)
         return graph
     if level not in ("keyword", "family", "supergroup"):
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")

@@ -1430,12 +1430,22 @@ def _md_disclosures(edition: dict, T: Translator) -> list[str]:
     if "reindex_backlog" in d:
         backlog = d["reindex_backlog"] if isinstance(d["reindex_backlog"], dict) else {}
         if backlog.get("available"):
-            if backlog.get("articles_pending"):
+            # R832: ONE figure for the fact. The count without the articles named above under another reason, where the
+            # record carries it; when it could not be read, unknown (never the backlog's own figure, which would name the
+            # quarantined and not-screened articles twice); an edition recorded before R832 keeps the backlog's figure.
+            if "not_analysed" in backlog:
+                pending = backlog["not_analysed"]
+            elif backlog.get("not_analysed_unread"):
+                pending = None
+                stated.append("- " + T.t("The re-index backlog could not be read — unknown, not zero."))
+            else:
+                pending = backlog.get("articles_pending")
+            if pending:
                 stated.append(
                     T.f(
                         "- {n} imported article(s) await re-index, so they carry no keywords yet "
                         "and are missing from every keyword figure here.",
-                        n=_fmt(backlog["articles_pending"]),
+                        n=_fmt(pending),
                     )
                 )
         else:

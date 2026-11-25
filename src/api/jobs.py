@@ -1401,11 +1401,13 @@ def resume_job(job_id: str) -> dict:
         # be swapped would be discarded (the restore restarts the job itself when it ends).
         from src.scheduler.runner import get_scheduler
 
+        busy = "An import or restore is using the machine; it finishes the re-index itself."
         if get_scheduler().holds_exclusive():
-            raise HTTPException(status_code=409, detail="An import or restore is using the machine; it finishes the re-index itself.")
+            raise HTTPException(status_code=409, detail=busy)
         from src.api.backup_v2 import reindex_backlog_resume
 
-        reindex_backlog_resume()
+        if reindex_backlog_resume().get("held_for_import"):  # row 383: a committing import holds it and starts it when it ends
+            raise HTTPException(status_code=409, detail=busy)
         _backlog_cache["value"] = None
         return {"resumed": job_id, "detail": "Re-indexing the imported articles."}
     if job_id.startswith("dump:"):

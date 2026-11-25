@@ -1857,13 +1857,20 @@ def reindex_backlog_resume() -> dict:
     The half the guard was missing: the backlog was reported and then nobody could act
     on it from the app. Idempotent and resumable -- safe to start, stop and start again.
     An already-running job returns its status with ``started: false`` rather than 409,
-    so a double-click can never look like an error."""
+    so a double-click can never look like an error. Pressed while an import is being committed, it is held (row 383) and the job
+    starts when the import ends: ``started: false`` with ``held_for_import: true``."""
+    from src.jobs.background import StartHeldForRestore
+
+    held = False
     try:
         st = _REINDEX_RESUME_JOB.start()
         st["started"] = True
-    except RuntimeError:
+    except RuntimeError as exc:
+        held = isinstance(exc, StartHeldForRestore)
         st = _REINDEX_RESUME_JOB.status()
         st["started"] = False
+    if held:
+        st["held_for_import"] = True
     return st
 
 

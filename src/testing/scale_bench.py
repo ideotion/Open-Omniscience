@@ -239,6 +239,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_article_quarantine_columns,
         ensure_article_source_revision_column,
         ensure_article_top_keyword_columns,
+        ensure_corpus_segment_generation_column,
         ensure_external_source_discovery_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
@@ -290,6 +291,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_article_analysis_columns(engine)
     ensure_keyword_extractor_column(engine)
     ensure_watch_filters_column(engine)
+    ensure_corpus_segment_generation_column(engine)
     ensure_wiki_text_columns(engine)
     ensure_supergroup_ring_column(engine)
     ensure_external_source_discovery_columns(engine)

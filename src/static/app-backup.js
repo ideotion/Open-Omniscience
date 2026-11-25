@@ -4913,6 +4913,9 @@
         const shapedFolders = Object.keys(shapedLeft).filter((f) => Number(shapedLeft[f]) > 0).sort();
         const shapedN = shapedFolders.reduce((a, f) => a + (Number(shapedLeft[f]) || 0), 0);
         const hfTokenLeft = Array.isArray(r.hf_token_left) ? r.hf_token_left.map(String) : [];
+        // R839 / R840 (row 438): files with another name elsewhere on the disk, counts only
+        const lf = (r.linked_files && typeof r.linked_files === "object") ? r.linked_files : {};
+        const linkedWritten = Number(lf.written) || 0, linkedLeft = Number(lf.left) || 0, linkedRefused = Number(lf.refused) || 0, linkedKeys = Number(lf.keys) || 0;
         // ...but anything ELSE left at its top is a removal that failed, and "kept" never hides it (R806 / R807).
         const notRemoved = !back && r.scope === "data-folder" && r.removed === false && r.drive_absent !== true && r.drive_lost !== true && (!keptForeign || (r.not_removed || []).length > 0);
         // R806 (5) never follows a keys folder that is a link; the app's own keys may be where it points, so the result is never clean.
@@ -4938,7 +4941,7 @@
         // Security reads (row 402): a corpus folder that could not be reached counts too (the server says "not_overwritten" with no file)
         const segShort = Math.max((Number(seg.partially_overwritten) || 0) + (Number(seg.not_overwritten) || 0) + (Number(seg.left) || 0),
           (seg.corpus === "not_overwritten" || seg.corpus === "partially_overwritten") ? 1 : 0);
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !shapedN && !hfTokenLeft.length && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !shapedN && !hfTokenLeft.length && !linkedLeft && !linkedRefused && !linkedKeys && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
@@ -5047,6 +5050,12 @@
           // Row 378 (coordinator's ruling amending R837): a Hugging Face sign-in token the erase saw and left, or could not overwrite
           // and remove: a credential only the operator can revoke, said in plain words (the app's own folder names only).
           (hfTokenLeft.length ? `<div class="card-caveat">${esc(tfw("A Hugging Face sign-in token may remain in {folders}: you can revoke it in your Hugging Face account.", { folders: "\u0001folders\u0002" })).replace("\u0001folders\u0002", `<bdi translate="no" dir="ltr">${esc(hfTokenLeft.join(", "))}</bdi>`)}</div>` : "") +
+          // R839 / R840 (row 438): a file with another name elsewhere: the app's own written all the same; any other not written
+          // (contents may remain under that name); a possible copy of the corpus not shown to be the app's left whole. Counts only.
+          (linkedRefused ? `<div class="card-caveat">${esc(tfw("Some copies that may hold articles and the salt of their key were left, because they also had another name elsewhere on the disk and could not be shown to be the app’s own: the erase is not complete (count: {n}).", { n: fmtNum(linkedRefused, 0) }))}</div>` : "") +
+          (linkedKeys ? `<div class="card-caveat">${esc(tfw("Some key files also had another name elsewhere on the disk and could not be shown to be this installation’s own, so they were not overwritten, only removed from here: their contents may still be readable through that other name, and the erase is not complete (count: {n}).", { n: fmtNum(linkedKeys, 0) }))}</div>` : "") +
+          (linkedLeft ? `<div class="card-caveat">${esc(tfw("Some files also had another name elsewhere on the disk, so they were not overwritten, only removed from here: their contents may remain under that other name, and the erase is not complete (count: {n}).", { n: fmtNum(linkedLeft, 0) }))}</div>` : "") +
+          (linkedWritten ? `<div class="hint">${esc(tfw("Some of the app’s own files also had another name elsewhere on the disk; they were overwritten all the same, so that other name now leads to overwritten data (count: {n}).", { n: fmtNum(linkedWritten, 0) }))}</div>` : "") +
           (segShort ? `<div class="card-caveat">${esc(tfw("Some corpus files could not be overwritten, or only partially, so the erase may be incomplete (count: {n}).", { n: fmtNum(segShort, 0) }))}</div>` : "") +
           (segOver ? `<div class="hint">${esc(tfw("Corpus files that could not be shown to be encrypted were overwritten in full instead of being crypto-erased (count: {n}).", { n: fmtNum(segOver, 0) }))}</div>` : "") +
           (copiesShort ? `<div class="card-caveat">${esc(tfw("Database copies that could not be shown to be encrypted were only partially overwritten, or not at all, so the erase may be incomplete (count: {n}).", { n: fmtNum(copiesShort, 0) }))}</div>` : "") +

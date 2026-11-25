@@ -751,6 +751,36 @@ def ensure_watch_filters_column(engine: Engine) -> list[str]:
     return added
 
 
+# R826 stage 3a (b8d4f2a6c1e9): the registry's half of a segment's generation number. Additive, nullable, NO backfill: NULL
+# is "none recorded yet" and is never compared. ``ALTER TABLE ... ADD COLUMN`` on SQLite is a schema edit only (no row is
+# rewritten), and the table holds no segment row in the field yet, so nothing is rebuilt or re-extracted (the import hold).
+_CORPUS_SEGMENT_GENERATION_COLUMN: dict[str, str] = {
+    "generation": "ALTER TABLE corpus_segments ADD COLUMN generation INTEGER",
+}
+
+
+def ensure_corpus_segment_generation_column(engine: Engine) -> list[str]:
+    """Self-heal ``corpus_segments.generation`` (idempotent, additive)."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='corpus_segments'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(corpus_segments)")).fetchall()}
+        for name, ddl in _CORPUS_SEGMENT_GENERATION_COLUMN.items():
+            if name in existing:
+                continue
+            conn.execute(text(ddl))
+            added.append(name)
+    if added:
+        _LOG.info(f"added corpus_segments column(s): {', '.join(added)}")
+    return added
+
+
 # Q4a: the discovery funnel's resolution-table provenance. Additive, NO backfill -- it populates
 # forward as discovery resolves a domain (a pre-existing row stays NULL until re-resolved).
 _EXTERNAL_SOURCE_DISCOVERY_COLUMNS: dict[str, str] = {
@@ -1784,6 +1814,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "wiki_revisions": frozenset(_WIKI_REVISION_COLUMNS),
     "keyword_supergroup_members": frozenset(_SUPERGROUP_MEMBER_COLUMNS),
     "watches": frozenset(_WATCH_FILTERS_COLUMN),
+    "corpus_segments": frozenset(_CORPUS_SEGMENT_GENERATION_COLUMN),
     "external_sources": frozenset(_EXTERNAL_SOURCE_DISCOVERY_COLUMNS),
     "law_documents": (
         frozenset(_LAW_DOCUMENT_TEXT_COLUMNS)

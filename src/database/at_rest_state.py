@@ -599,7 +599,7 @@ def remove_leftover_replaced(main: Path | None = None, *, key: str) -> int:
         except Exception:  # noqa: BLE001 - a store that does not open with the key keeps every other copy beside it
             continue
         try:
-            _seen, _overwritten, unlinked = _shred(folder / n)
+            _seen, _overwritten, unlinked = _shred(folder / n, keyed=False)  # known by its name: R840
         except Exception as exc:  # noqa: BLE001 - a leftover that cannot be removed stays named in the status
             log_failure(_LOG, "a replaced plaintext store could not be removed", exc, level=logging.WARNING)
             continue
