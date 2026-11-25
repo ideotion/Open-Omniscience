@@ -410,3 +410,54 @@ def test_the_watcher_writes_a_segment_s_first_page_on_a_full_disk(tmp_path, monk
     text = _watch(tmp_path, {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log")}, _FULL_DISK + _HEAD_ON_REMOVE)
     assert out.read_bytes() != salt, text
     assert "partially overwritten <data>/.../seg-1.db (4096 of" in text and "salt pages destroyed" not in text, text
+
+
+def test_a_late_held_rewrite_that_stops_short_reaches_the_report(tmp_path, monkeypatch):
+    """Security read A / Opus read (row 332): the late pass's whole rewrite of a kept descriptor that stops at the reserve counts
+    in the report as partially overwritten, and the clean guarantee is no longer said, as the watcher says it (held_short)."""
+    blob = tmp_path / "seg-1.db"
+    blob.write_bytes(b"B" * (2 * MiB))
+    monkeypatch.setattr(crypto_erase, "_fd_free_bytes", lambda fd: 0)
+    monkeypatch.setattr(crypto_erase.shutil, "disk_usage", lambda p: (_ for _ in ()).throw(OSError(5, "no")))
+    fd = os.open(blob, os.O_RDWR)
+    generation = crypto_erase.new_hold_generation()
+    with crypto_erase._HELD_LOCK:
+        crypto_erase._HELD[generation] = [(fd, "whole", 4 * MiB)]
+        crypto_erase._WHOLE_HEADS[generation] = {fd}
+    report = {"limit": crypto_erase._LIMIT_NOTE, "partially_overwritten": 0, "partial_bytes_done": 0,
+              "partial_bytes_known": 0, "not_overwritten": 0}
+    try:
+        crypto_erase.finish_holder_check(report, generation)
+        crypto_erase.finish_holder_check(report, generation)  # each file said once
+    finally:
+        crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
+    assert report["partially_overwritten"] == 1, report
+    assert report["partial_bytes_done"] == 4096 and report["partial_bytes_known"] == 2 * MiB, report
+    assert crypto_erase._PARTIAL_SENTENCE in report["limit"] and crypto_erase._LIMIT_NOTE not in report["limit"], report
+    assert generation not in crypto_erase._HELD_SHORT and generation not in crypto_erase._HELD_SHORT_SAID
+
+
+def test_a_later_full_rewrite_clears_an_earlier_partial(tmp_path):
+    """Opus read (row 332): a file one pass rewrote only in part and a later pass rewrote in full is not said as partial."""
+    blob = tmp_path / "x-wal"
+    blob.write_bytes(b"W" * 8192)
+    token = crypto_erase._PARTIALS.set([])
+    try:
+        crypto_erase._note_partial(blob, 4096, 8192, "write_failed")
+        assert crypto_erase._overwrite(blob, keyed=False, capped=False) is True
+        assert crypto_erase._PARTIALS.get() == []
+    finally:
+        crypto_erase._PARTIALS.reset(token)
+
+
+def test_the_watcher_holds_a_foreign_log_named_file_to_the_reserve(tmp_path):
+    """Security read B (row 332): only the app's own logs are never held to the reserve; another file whose name ends in -wal is
+    held to it like any other file (on a copy-on-write drive, an uncapped rewrite of it could fill the disk)."""
+    data = tmp_path / "home" / "jane.doe" / "oo-data"
+    data.mkdir(parents=True)
+    (data / "notes-wal").write_bytes(b"N" * (2 * MiB))
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    (data / "open_omniscience.db-wal").write_bytes(b"L" * (2 * MiB))
+    text = _watch(tmp_path, {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log")}, _FULL_DISK)
+    assert "partially overwritten <data>/.../notes-wal (4096 of" in text, text
+    assert "partially overwritten <data>/.../open_omniscience.db-wal" not in text, text

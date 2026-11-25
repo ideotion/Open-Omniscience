@@ -463,6 +463,14 @@ def _note_partial(path: Path | None, written: int, total: int, stop: str) -> Non
         partials.append((str(path), written, total))
 
 
+def _clear_partial(path: Path) -> None:
+    """A file an earlier pass rewrote only in part and a later pass rewrote in full is no longer "partially overwritten"."""
+    partials = _PARTIALS.get()
+    if partials:
+        key = str(path)
+        partials[:] = [e for e in partials if e[0] != key]
+
+
 def _link_counts(notes: dict[str, set]) -> dict[str, int]:
     """The report's counts (R839/R840), each file once: one overwritten in any pass is never also said as left or refused."""
     keyed = notes["keyed"]
@@ -582,6 +590,7 @@ def _overwrite_whole(path: Path, fd: int, *, linked: os.stat_result | None, refu
             _note_partial(path, written, total, stop)
         return False
     _note_link(linked, keyed=True)  # None (one name): nothing to note
+    _clear_partial(path)  # rewritten in full by this later pass: never said as partial (Opus read of row 332)
     return True
 
 
@@ -941,7 +950,8 @@ def _fast_destroy(fd: int, kind: str) -> tuple[int, bool]:
     so nothing is slower or weaker than before: the main file's first page (random), the -shm head (zeros), a -wal or -journal whole
     (:func:`_rewrite_fd`). Returns ``(bytes written, whether the part is now rewritten in full)``. Never raises."""
     if kind == "whole":
-        written, _total, stop = _rewrite_fd(fd)
+        # R797 (a): a log holds copies of the salt page, so it is never held to the disk reserve (security read A of row 332)
+        written, _total, stop = _rewrite_fd(fd, capped=False)
         return written, stop is None
     try:
         size = min(os.fstat(fd).st_size, _SQLCIPHER_PAGE1)
@@ -1195,7 +1205,8 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
         # is neither written nor removed
         # the main file only while the descriptor written is the pinned one (security read of row 438: never judged on another open)
         ok = _overwrite(p, keyed=(lambda st: (st.st_dev, st.st_ino) == pin[:2]) if suffix == "" else False, refused=True,
-                        head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=suffix == "-shm", unverified="refused")
+                        head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=suffix == "-shm", unverified="refused",
+                        capped=not whole)  # R797 (a): its log is never held to the disk reserve (security read A of row 332)
         if ok is None:
             rec["reason"] = rec["reason"] or "changed"
             continue
@@ -1451,6 +1462,10 @@ _HELD_LOCK = threading.Lock()
 #: Per wipe, the kept descriptors of segments without evidence that turned "whole": still main files for :func:`shut_out_held`
 #: (their lock bytes are taken there, after every open and close, never earlier: Opus read, row 402).
 _WHOLE_HEADS: dict[int, set[int]] = {}
+#: Row 332 (security read A, Opus read): per wipe, each kept descriptor whose whole rewrite last stopped short, as fd -> (bytes
+#: written, bytes it was to write), and the ones the report already counts (:func:`_fold_held_shorts`), so each is said once.
+_HELD_SHORT: dict[int, dict[int, tuple[int, int]]] = {}
+_HELD_SHORT_SAID: dict[int, set[int]] = {}
 _GENERATIONS = itertools.count(1)
 
 # R792. ANOTHER PROCESS holding the store (a second copy of the app, a tool with the database open). Its own descriptors keep
@@ -1665,9 +1680,10 @@ def rescrub_held(*, close: bool, generation: int | None = None, settle: bool = T
         # Security read B (row 332): the segment bodies among them, taken before a closing pass forgets them, so they stay held to
         # the disk reserve
         bodies = {fd for g in gens for fd in _WHOLE_HEADS.get(g, set())}
+        gen_of = {e[0]: g for g in gens for e in _HELD.get(g, [])[: taken[g]]}
         if close:
             _forget_held(taken)
-        done = _rewrite_held(held, close=close, deadline=deadline, bodies=bodies)
+        done = _rewrite_held(held, close=close, deadline=deadline, bodies=bodies, gen_of=gen_of)
     return done
 
 
@@ -1681,6 +1697,8 @@ def _forget_held(taken: dict[int, int]) -> None:
         if not kept:
             _HELD.pop(g, None)
             _WHOLE_HEADS.pop(g, None)
+            _HELD_SHORT.pop(g, None)
+            _HELD_SHORT_SAID.pop(g, None)
 
 
 def held_count(generation: int | None = None) -> int:
@@ -1691,7 +1709,7 @@ def held_count(generation: int | None = None) -> int:
 
 
 def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: float | None = None,
-                  bodies: set[int] | None = None) -> int:
+                  bodies: set[int] | None = None, gen_of: dict[int, int] | None = None) -> int:
     done = 0
     # The salt-bearing heads first, as the watcher's rewrite_kept does: a long log must not use the whole bound before a main
     # file's first page is reached.
@@ -1707,9 +1725,13 @@ def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: fl
                 w_done, w_total, w_stop = _rewrite_fd(fd, capped=fd in (bodies or ()), limit=cap, deadline=deadline)
                 if w_stop == "deadline":
                     raise TimeoutError
+                g = (gen_of or {}).get(fd, -1)
                 if w_stop:
                     _note_partial(None, w_done, w_total, w_stop)
+                    if not close:  # said in the report (_fold_held_shorts); a closing pass comes after it and only logs
+                        _HELD_SHORT.setdefault(g, {})[fd] = (w_done, w_total)
                 else:
+                    _HELD_SHORT.get(g, {}).pop(fd, None)  # rewritten in full by this later pass
                     done += 1
                 continue
             limit = min(os.fstat(fd).st_size, cap, _SQLCIPHER_PAGE1)
@@ -3474,6 +3496,33 @@ def quick_crypto_erase(
             rescrub_held(close=True, generation=generation, settle=False)
 
 
+def _fold_held_shorts(report: dict, generation: int) -> None:
+    """Row 332 (security read A, Opus read): a kept descriptor's whole rewrite that stopped short in a late pass (the reserve, an
+    error) counts in the report as "partially overwritten", each once, and the clean guarantee is never said beside it, as the
+    uninstall watcher says it (``held_short``). The closing pass after the report is made can only log it. Never raises."""
+    try:
+        with _HELD_LOCK:
+            said = _HELD_SHORT_SAID.setdefault(generation, set())
+            new = {fd: v for fd, v in _HELD_SHORT.get(generation, {}).items() if fd not in said}
+            said.update(new)
+        if not new:
+            return
+        report["partially_overwritten"] = report.get("partially_overwritten", 0) + len(new)
+        report["partial_bytes_done"] = report.get("partial_bytes_done", 0) + sum(w for w, _t in new.values())
+        report["partial_bytes_known"] = report.get("partial_bytes_known", 0) + sum(t for _w, t in new.values())
+        limit = report.get("limit")
+        if not isinstance(limit, str) or _PARTIAL_SENTENCE in limit or report.get("drive_absent"):
+            return  # R809: the absent drive's sentence stands alone
+        if limit.endswith(_LIMIT_NOTE):
+            report["limit"] = limit[: -len(_LIMIT_NOTE)] + _PARTIAL_SENTENCE + " " + _DEFENCE_TAIL.lstrip()
+        elif report.get("drive_lost"):
+            report["limit"] = limit + " " + _PARTIAL_SENTENCE  # R809: the drive's sentence is said first
+        else:
+            report["limit"] = _PARTIAL_SENTENCE + " " + limit
+    except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping  # nosec B110
+        pass
+
+
 def finish_holder_check(report: dict, generation: int) -> str:
     """R792: take the kept files' lock bytes, go on rewriting while another process still holds the store (bounded), and set
     ``report["other_holder"]``; when it is not "none", ``report["limit"]`` says the corpus may still be recoverable instead of
@@ -3483,6 +3532,7 @@ def finish_holder_check(report: dict, generation: int) -> str:
         state = settle_other_holders(generation)
     except (Exception, KeyboardInterrupt):  # noqa: BLE001 - an erase result is never lost to its own bookkeeping, nor to a Ctrl-C
         state = HOLDER_UNKNOWN
+    _fold_held_shorts(report, generation)  # before the limit below is built from the counts
     if report.get("files_not_kept") and state == HOLDER_NONE:
         state = HOLDER_UNKNOWN  # a file of the store that could not be kept could not be asked either
     # R805 (a): this process's own connections that the erase could not close count as a holder too: a lock the process holds
@@ -4122,6 +4172,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             wiped += w
             if s and overwritten is False:
                 overwrite_failures.append(str(p.parent))
+                failed_writes.append(str(p))  # Revision 3: said "not overwritten" unless it was a partial (Opus read of row 332)
 
     # 5b) Every OTHER file the erase will reach gets the same treatment now, unlinking nothing, before the slow step 6.
     #    Encrypted copies of the corpus can live there under names no list here can keep up with, each with the corpus's

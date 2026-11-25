@@ -193,7 +193,8 @@ def write_regions(fd, limit, capped, deadline=None, where=None):
         stop = stop or ("disk" if ex.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)) else "error")
     return w, known, stop
 def uncapped(p):   # R797 (a): key material and the logs that hold copies of the salt page are written whole
-    return key_path(p) or os.path.basename(p).endswith(("-wal", "-journal"))
+    # only the app's own logs (its stores' and its segments'): another file with that ending stays held to the reserve (security read of row 332)
+    return key_path(p) or store_log(p) or (segment_path(p) and os.path.basename(p).endswith(("-wal", "-journal")))
 def overwrite(p, head_only, keyed=False):   # True once every byte it was to write is written and synced (R798: nothing else is "destroyed")
     # "left" / "refused": another name holds the file and it is not the app's own by what it is (R839/R840): never written
     pend = None
@@ -222,7 +223,7 @@ def overwrite(p, head_only, keyed=False):   # True once every byte it was to wri
             try: w, known, stop = write_regions(fd, n, not uncapped(p), where=os.path.dirname(p))
             finally: os.close(fd)
             if stop:   # never said as overwritten, and the delete goes on
-                if pend is not None: linked["left"].add(pend)   # its other name may still hold it
+                # a key file's other names were all counted in its keys folder (R841) and are erased in the same walk: never said as "left"
                 if w <= 0: return False                           # nothing written: "not overwritten", counted once
                 partials.append((w, known))
                 rec("partially overwritten %s (%d of %d bytes; stopped: %s)" % (tok(p), w, known, stop))
@@ -314,10 +315,10 @@ def rewrite_kept(deadline):
             size = min(os.fstat(fd).st_size, cap)
             if kind == "whole":   # a log: only what holds data, never a hole, never held to the reserve (R797)
                 _w, _k, stop = write_regions(fd, size, False, deadline)
-                if stop == "deadline": return
                 if stop:   # the result says "may be incomplete"; never counted again as a file (it was in the walk)
                     held_short.append(1)
                     rec("partially overwritten a held file (%d of %d bytes; stopped: %s)" % (_w, _k, stop))
+                    if stop == "deadline": return   # the bound is spent: the log stays named as short (security read of row 332)
                 continue
             limit = min(size, PAGE1)
             os.lseek(fd, 0, os.SEEK_SET); w = 0
