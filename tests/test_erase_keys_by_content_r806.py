@@ -28,7 +28,7 @@ def _app_folder(data: Path, *, keys: bool = True) -> None:
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)
     (data / "app_settings.json").write_text("{}", encoding="utf-8")
     (data / "wiki_dumps").mkdir()
-    (data / "wiki_dumps" / "part.xml").write_bytes(b"x" * 100)
+    (data / "wiki_dumps" / "enwiki-latest-pages-articles.xml.bz2").write_bytes(b"x" * 100)
     if keys:
         (data / "keys").mkdir()
         (data / "keys" / "custody_ed25519.pem").write_bytes(b"PRIVATE-ED")
@@ -309,9 +309,12 @@ def test_the_watcher_never_follows_a_keys_link(tmp_path):
 def test_kept_for_keys_never_hides_a_removal_that_failed(app_data, monkeypatch):
     _app_folder(app_data)
     (app_data / "keys" / "mine.asc").write_bytes(b"mine")
+    # row 378: wiki_dumps is emptied entry by entry now (and removed once empty), so the folder removed whole is annotations
+    (app_data / "annotations").mkdir()
+    (app_data / "annotations" / "note.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(crypto_erase, "_remove_app_folders", lambda roots, *a, **k: None)  # every removal fails
     out = _erase()
-    assert out["folder_kept_foreign"] is True and "wiki_dumps" in out["not_removed"], out
+    assert out["folder_kept_foreign"] is True and "annotations" in out["not_removed"], out
     assert out["limit"].startswith(crypto_erase._NOT_REMOVED_SENTENCE), out["limit"]
 
 

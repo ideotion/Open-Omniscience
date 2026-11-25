@@ -993,7 +993,9 @@ def test_a_callable_used_as_a_value_names_what_it_is():
 #: The functions OUTSIDE ``merge.py`` that receive the merge connection, each with why it is not a way to write unqualified. The scan reads
 #: ``merge.py`` only, so a callee in another module is read by a person once, here, and a NEW one fails the test below until it is.
 _CROSS_MODULE_CALLEES: dict[str, str] = {
-    "src.backup.country_codes.normalise_staged_country_codes": "writes only `{schema}.\"table\"` UPDATEs (schema='inc', the disposable staged copy, on purpose; its docstring says never main) and a SAVEPOINT",
+    "src.backup.country_codes.plan_staged_country_codes": "row 439: writes only `temp.` tables it names itself (DROP/CREATE/INSERT, and the conversion's UPDATEs and SAVEPOINTs on its `temp.` copies); `inc` and `main` are only read",
+    "src.backup.country_codes.staged_country_sql": "builds an SQL expression; its only statements are SELECTs on `temp.`",
+    "src.backup.country_codes.staged_alternates_sql": "builds a JOIN and two column names; its only statement is a SELECT on `temp.sqlite_master`",
     "src.backup.country_codes.store_form_of": "a read of the country-form marker of one named schema (`read_form_in`: a SELECT on `{schema}.app_state`)",
     "src.backup.staged_key.check_staged_schema": "row 410-A: one SELECT of `sqlite_master` on the staged file's OWN connection (`_staged_group_rows_or_none` opens it), writes nothing",
     "src.database.connect._is_sqlcipher_conn": "reads the connection's type",
