@@ -576,7 +576,7 @@ def test_the_watcher_never_names_an_entry_it_could_not_look_at_and_keeps_an_oper
 
 def test_the_token_sentence_is_the_same_on_the_page_in_the_result_and_in_twelve_languages():
     s3 = "A Hugging Face sign-in token may remain in {folders}: you can revoke it in your Hugging Face account."
-    assert crypto_erase._HF_TOKEN_LEFT_SENTENCE == s3
+    assert s3 == crypto_erase._HF_TOKEN_LEFT_SENTENCE
     backup = (_ROOT / "src/static/app-backup.js").read_text(encoding="utf-8")
     assert s3 in backup and "r.hf_token_left" in backup and "!leftOver && !shapedN && !hfTokenLeft.length" in backup, "a token or an item left is never a clean result"
     for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
