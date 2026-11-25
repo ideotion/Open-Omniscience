@@ -334,7 +334,7 @@ def test_the_clean_note_fails_closed_and_tells_plaintext_from_unknown():
 def test_the_page_fails_closed_and_says_the_store_apart():
     js = Path("src/static/app-backup.js").read_text(encoding="utf-8")
     assert "const plaintext = r.encrypted_corpus !== true;" in js
-    assert "&& !plaintext && !keyLeft && !recordLeft;" in js, "a plaintext erase (or a key left on the disk) is never the clean, crypto-erased result"
+    assert "&& !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;" in js, "a plaintext erase (or a key left on the disk) is never the clean, crypto-erased result"
     words = [*crypto_erase.PLAIN_STORE_STATE.values(), *crypto_erase.PLAIN_STORE_REASON.values(), crypto_erase.PLAIN_STORE_DELETED,
              crypto_erase.PLAIN_STORE_NOT_DELETED, crypto_erase.PLAIN_STORE_OTHER_NAMES, crypto_erase._PLAINTEXT_SENTENCE,
              crypto_erase._UNKNOWN_SENTENCE, crypto_erase.PLAIN_STORE_REST, crypto_erase.PLAIN_STORE_NOTICE,

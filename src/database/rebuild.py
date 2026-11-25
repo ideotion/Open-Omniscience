@@ -850,6 +850,9 @@ def _switch_lane_held(kind: str, target: Path, finished: Path, kept: Path, watch
     except OSError:
         raise Declined("no-hard-links", "the drive cannot give this store a second name, so the old file could not be kept") from None
     repair._fsync_dir(target.parent)
+    from src.database import at_rest_state as _ars
+
+    _ars.record_copy(kept, target, f"lane:{kind}")  # R823: the kept file is the very lane file, named only on the record's evidence
     if not lane_store.quiet(kind):  # read once more right before the name moves: nothing of this process may be open on the old file
         raise Declined("store-in-use", _IN_USE_WORDS)
     try:

@@ -218,7 +218,7 @@ def test_a_record_left_says_key_material_may_remain_and_is_never_clean(tmp_path,
     assert "key material may remain" in report["limit"]
     assert "permanently unrecoverable" not in report["limit"]
     js = (_ROOT / "src" / "static" / "app-backup.js").read_text(encoding="utf-8")
-    assert 'const recordLeft = r.at_rest_record === "left";' in js and "&& !recordLeft;" in js
+    assert 'const recordLeft = r.at_rest_record === "left";' in js and "&& !recordLeft && !copiesShort && !segShort;" in js
     assert "so key material may remain on the disk: the erase may be incomplete." in js
 
 

@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+from src.database import at_rest_state
 from src.database.connect import (
     WrongPassphraseError,
     connect,
@@ -682,7 +683,13 @@ def test_copies_beside_a_corpus_kept_outside_the_data_folder_are_destroyed(tmp_p
         assert salt_heads[p] not in kept[p].read_bytes()[:4096]
     assert b"plaintext-row" not in kept[plain].read_bytes()
     assert mine.exists() and mine.read_bytes() == b"not the app's" * 10
-    assert {salvage.name, damaged.name, sidecar.name, plain.name} <= set(report["copies_destroyed"])
+    # R823: no record names these copies, so none is head-only: each is rewritten in full and said "overwritten", by count and
+    # kind, never by name; the sidecar (a side file, no salt) is destroyed whole as before
+    assert report["copies_overwritten"] == {"salvage": 1, "damaged": 1, "pre-encrypt": 1}
+    assert report["copies_destroyed"] == {"salvage": 1}
+    flat = json.dumps(report["copies_overwritten"]) + json.dumps(report["copies_destroyed"])
+    assert all(p.name not in flat for p in (salvage, damaged, sidecar, plain))
+    assert "overwritten in full rather than crypto-erased (count: 3)" in report["limit"]
 
 
 def test_an_encrypted_copy_in_the_data_folder_is_head_shredded_and_never_rewritten_whole(tmp_path, monkeypatch):
@@ -694,6 +701,8 @@ def test_an_encrypted_copy_in_the_data_folder_is_head_shredded_and_never_rewritt
     con.close()
     (tmp_path / "open_omniscience.db").write_bytes(snap.read_bytes())
     _evidence(monkeypatch)
+    # R823: its writer named it in the record, the live corpus being keyed and the copy carrying its very salt
+    assert at_rest_state.record_copy(snap, tmp_path / "open_omniscience.db", "corpus")
     whole = []
     real_track = crypto_erase._shred
 
@@ -704,8 +713,29 @@ def test_an_encrypted_copy_in_the_data_folder_is_head_shredded_and_never_rewritt
 
     monkeypatch.setattr(crypto_erase, "_shred", spy)
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
-    assert snap.name in report["copies_destroyed"]
+    assert report["copies_destroyed"] == {"pre-restore": 1} and not report["copies_overwritten"]
     assert whole == []
+
+
+def test_an_encrypted_looking_copy_with_no_record_is_rewritten_in_full(tmp_path, monkeypatch):
+    """R823: a header that is not SQLite's, the main store being encrypted, the copy's name: none of it is evidence. Without the
+    record entry its writer binds to the very file, the copy is rewritten whole and said "overwritten"."""
+    snap = tmp_path / "pre-restore-20261114T101010Z.db"
+    con = connect(snap, key=_PW)
+    con.execute("CREATE TABLE t(x)")
+    con.commit()
+    con.close()
+    (tmp_path / "open_omniscience.db").write_bytes(snap.read_bytes())
+    _evidence(monkeypatch)
+    keep = os.open(snap, os.O_RDONLY)
+    before = snap.read_bytes()
+    try:
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
+        after = os.pread(keep, len(before), 0)
+    finally:
+        os.close(keep)
+    assert report["copies_overwritten"] == {"pre-restore": 1} and not report["copies_destroyed"]
+    assert after[4096:] != before[4096:], "the body too, not only page 1"
 
 
 def test_an_erase_in_a_folder_the_app_does_not_own_removes_only_the_app_s_files(tmp_path, monkeypatch):

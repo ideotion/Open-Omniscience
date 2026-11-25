@@ -8505,6 +8505,10 @@ def _prune_snapshots(keep: int = _SNAPSHOT_KEEP) -> list[str]:
             removed.append(p.name)
         except OSError:  # pragma: no cover
             pass
+        else:
+            from src.database import at_rest_state
+
+            at_rest_state.forget_copy(p)  # R823 / R828 (4): its record entry goes with it
     return removed
 
 
@@ -8595,6 +8599,10 @@ def prune_pre_restore_snapshots_by_age(max_age_hours: float | None = None) -> li
             removed.append(p.name)
         except OSError:  # pragma: no cover
             pass
+        else:
+            from src.database import at_rest_state
+
+            at_rest_state.forget_copy(p)  # R823 / R828 (4): its record entry goes with it
     return removed
 
 
@@ -10271,6 +10279,11 @@ def run_restore(
         with timings.stage("pre_restore_snapshot"):
             if _reuse is None:
                 snapshot_preserving(live_db_path(), snapshot, allow_file_copy=exclusive)
+                from src.database import at_rest_state
+
+                # R823: named in the record only when the live corpus is proven keyed and the copy carries its very salt; else
+                # an erase rewrites it whole (a corpus-sized write), never head-only on a guess
+                at_rest_state.record_copy(snapshot, live_db_path(), "corpus")
                 _remember_run_snapshot(snapshot)
                 report["pre_restore_snapshot"] = str(snapshot)
             else:
