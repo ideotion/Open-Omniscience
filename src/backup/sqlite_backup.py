@@ -154,6 +154,7 @@ def validate_sqlite_file(
     quick_check: bool = True,
     connection_cb: Callable[[sqlite3.Connection], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    alongside: bool = False,
 ) -> int:
     """Validate ``path`` is a healthy Open Omniscience SQLite DB.
 
@@ -182,7 +183,8 @@ def validate_sqlite_file(
     errors = db_errors()
     try:
         # Read-only connection: never mutate the candidate file. Hardened for a foreign file (R829 A1).
-        conn = open_staged(path)
+        # ``alongside``: the walk beside the merge takes no file lock (see ``open_staged``; R834).
+        conn = open_staged(path, unlocked=alongside)
     except errors as exc:  # pragma: no cover - defensive
         raise BackupError(f"cannot open uploaded file as SQLite: {record_text(exc)}") from None
     except Exception:  # noqa: BLE001 - StagedKeyError: fixed words of its own, never a key

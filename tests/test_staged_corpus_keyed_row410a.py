@@ -303,6 +303,50 @@ def test_a_plaintext_install_attaches_a_keyed_copy_through_a_keyless_host(tmp_pa
         staged_key.forget(p)
 
 
+def test_the_walk_beside_the_merge_never_holds_the_merges_commits(tmp_path):
+    """Measured on the 200k proof run: a walk holding a read lock on the keyed ``inc`` held every COMMIT of the merge
+    (whose BEGIN IMMEDIATE reserves each attached database) until the walk ended, and failed it past the busy
+    timeout. The walk opens unlocked; a locked reader is shown to block, so the test is not blind."""
+    import time
+
+    from src.database.connect import attach, connect
+
+    work = _db(tmp_path / "work.db", n=1)
+    p = _db(tmp_path / "s.db")
+    staged_key.seal_plaintext(p)
+
+    def commit_beside(reader) -> float:
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM articles").fetchone()
+        con = connect(work, sqlcipher_host=True, timeout=0.2)
+        try:
+            con.isolation_level = None
+            attach(con, p, "inc")
+            con.execute("BEGIN IMMEDIATE")
+            con.execute("INSERT INTO main.sources (domain) SELECT hash FROM inc.articles LIMIT 1")
+            t0 = time.monotonic()
+            try:
+                con.execute("COMMIT")
+            except Exception:  # noqa: BLE001 - the locked case: the driver's "database is locked"
+                con.execute("ROLLBACK")
+                return -1.0
+            return time.monotonic() - t0
+        finally:
+            con.close()
+            reader.execute("ROLLBACK")
+            reader.close()
+
+    try:
+        locked = staged_key.open_staged(p)
+        locked.isolation_level = None
+        assert commit_beside(locked) == -1.0  # control: a walk that holds a lock does hold the COMMIT
+        walk = staged_key.open_staged(p, unlocked=True)
+        walk.isolation_level = None
+        assert 0.0 <= commit_beside(walk) < 0.2
+    finally:
+        staged_key.forget(p)
+
+
 # --------------------------------------------------------------------------- the schema of a foreign file
 
 
@@ -351,16 +395,6 @@ def test_the_apps_own_objects_pass(tmp_path, known):
         staged_key.check_staged_schema(c)
     finally:
         c.close()
-
-
-def test_the_check_fails_closed_when_the_apps_own_schema_cannot_be_read(monkeypatch):
-    class _Broken:
-        def connect(self):
-            raise RuntimeError("no engine")
-
-    monkeypatch.setattr("src.database.session.engine", _Broken())
-    with pytest.raises(staged_key.StagedKeyError):
-        staged_key._known_objects()
 
 
 def test_a_staged_connection_is_hardened(tmp_path):

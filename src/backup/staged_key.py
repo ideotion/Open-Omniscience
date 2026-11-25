@@ -149,7 +149,9 @@ def _read_only_target(path: Path) -> str:
 BUSY_TIMEOUT_S = 5.0
 
 
-def _open_with(path: Path, secret: bytes, page_size: int | None, *, read_only: bool, check_same_thread: bool):
+def _open_with(
+    path: Path, secret: bytes, page_size: int | None, *, read_only: bool, check_same_thread: bool, unlocked: bool = False
+):
     """One keyed open as the main database. Returns the connection once a read of the schema proves the key, else
     None (a wrong key, a wrong page size, or a file the driver cannot open), and closes what it opened either way.
     Another program's lock raises :class:`StagedKeyError` at once: no other key or size opens a held file (row 156)."""
@@ -160,9 +162,8 @@ def _open_with(path: Path, secret: bytes, page_size: int | None, *, read_only: b
     try:
         with sqlite_opening():  # R789
             if read_only:
-                conn = sqc.connect(
-                    _read_only_target(path), uri=True, check_same_thread=check_same_thread, timeout=BUSY_TIMEOUT_S
-                )
+                target = _read_only_target(path) + ("&immutable=1" if unlocked else "")
+                conn = sqc.connect(target, uri=True, check_same_thread=check_same_thread, timeout=BUSY_TIMEOUT_S)
             else:
                 conn = sqc.connect(str(path), check_same_thread=check_same_thread, timeout=BUSY_TIMEOUT_S)
         conn.set_key(secret)  # the C API, never SQL text
@@ -184,13 +185,35 @@ def _open_with(path: Path, secret: bytes, page_size: int | None, *, read_only: b
     return conn
 
 
-def open_staged(path: os.PathLike[str] | str, *, read_only: bool = True, check_same_thread: bool = True):
+def open_staged(
+    path: os.PathLike[str] | str, *, read_only: bool = True, check_same_thread: bool = True, unlocked: bool = False
+):
     """A connection to a staged file as its main database: keyed when the registry names it, else the plaintext open
-    this file always had. Either way hardened for a foreign file."""
+    this file always had. Either way hardened for a foreign file.
+
+    ``unlocked`` (read-only) opens without taking SQLite's file locks, for the integrity walk that runs beside the
+    merge (``merge._quick_check_alongside``). Measured, row 410: the merge's ``BEGIN IMMEDIATE`` reserves every
+    attached database, so a walk holding a read lock on ``inc`` through the same SQLite library as the merge held each
+    of the merge's COMMITs until the walk ended (27.9 s of a 168 s import), and past the 30 s busy timeout at 4 GB the
+    import failed with "database is locked". That is the keyed walk (both on SQLCipher's library) and the plaintext
+    walk on a plaintext install (both on the standard one); only a plaintext walk on an encrypted install escaped it,
+    because there the two libraries do not see each other's locks. Reading without locks is sound because nothing
+    writes the staged copy while it is walked: the merge's one write to it waits for the walk's verdict first
+    (``merge._INC_WRITE_GATE``, R834)."""
     p = Path(path)
     key = key_for(p)
+    # An unlocked (immutable) open also skips SQLite's recovery of a hot journal: it is used only on a staged copy with
+    # no journal and no WAL beside it, which is every staged copy the import made itself; anything else opens locked.
+    unlocked = unlocked and read_only and not any(Path(f"{p}{s}").exists() for s in ("-journal", "-wal"))
     if key is None:
-        if read_only:
+        if unlocked:
+            from src.database.connect import sqlite_opening
+
+            if not p.is_file():
+                raise sqlite3.OperationalError("unable to open database file")
+            with sqlite_opening():  # R789
+                conn = sqlite3.connect(_read_only_target(p) + "&immutable=1", uri=True, check_same_thread=check_same_thread)
+        elif read_only:
             from src.database.read_only_uri import open_plain_read_only
 
             conn = open_plain_read_only(p)
@@ -203,7 +226,10 @@ def open_staged(path: os.PathLike[str] | str, *, read_only: bool = True, check_s
         return conn
     if not p.is_file():
         raise StagedKeyError("the staged copy of the backup is missing")
-    conn = _open_with(p, key.secret, key.page_size, read_only=read_only, check_same_thread=check_same_thread)
+    conn = _open_with(
+        p, key.secret, key.page_size, read_only=read_only, check_same_thread=check_same_thread,
+        unlocked=unlocked,
+    )
     if conn is None:
         raise StagedKeyError("the staged copy of the backup no longer opens with its key")
     _harden(conn)
@@ -238,7 +264,7 @@ def attach_staged(conn: Any, path: os.PathLike[str] | str, alias: str) -> bool:
                 conn.execute(f"PRAGMA cipher_default_page_size = {int(old[0])}")
     try:
         _harden(conn, alias)
-        conn.execute(f'SELECT count(*) FROM "{alias}".sqlite_master').fetchone()
+        conn.execute(f'SELECT count(*) FROM "{alias}".sqlite_master').fetchone()  # noqa: S608  # nosec B608 # alias asserted an identifier above
     except BaseException:
         with suppress(Exception):
             conn.execute(f'DETACH DATABASE "{alias}"')
@@ -355,36 +381,42 @@ _OBJ_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 #: Found from the history of every ``CREATE TRIGGER|VIEW|VIRTUAL TABLE`` in ``src/database``, ``src/analytics``,
 #: ``src/backup`` and ``migrations`` (2026-11-24): the first search index's names. Everything current is read from the
 #: live schema instead, so it is never listed twice.
-_LEGACY_OBJECTS: dict[str, str] = {
+#: ``name -> type`` of every trigger, view and virtual table the app makes in a corpus, this build's and older ones'
+#: (``articles_fts`` and its triggers). A fixed list, never read from the live store, so the check of a foreign file
+#: does not depend on the state of the user's own one; ``tests/test_staged_schema_objects_r834.py`` fails when the
+#: code creates one that is missing here (or names one, outside the corpus, in :data:`_NOT_CORPUS_OBJECTS`).
+_CORPUS_OBJECTS: dict[str, str] = {
+    "article_fts": "table",
+    "article_fts_ai": "trigger",
+    "article_fts_ad": "trigger",
+    "article_fts_au": "trigger",
+    "article_fts_title": "table",
+    "article_fts_title_vocab": "table",
+    "article_fts_title_ai": "trigger",
+    "article_fts_title_ad": "trigger",
+    "article_fts_title_au": "trigger",
+    "keyword_mentions_all": "view",
+    "trg_keyword_day_dirty_ad": "trigger",
+    "trg_keyword_day_dirty_au": "trigger",
+    "trg_sources_outlet_id_ai": "trigger",
+    "trg_sources_outlet_id_ad": "trigger",
+    "trg_sources_outlet_id_au": "trigger",
     "articles_fts": "table",
     "articles_fts_insert": "trigger",
     "articles_fts_update": "trigger",
     "articles_fts_delete": "trigger",
 }
 
+#: Objects the app makes in its other stores (law and wiki lanes, dump indexes, maps), never in a corpus: refused there.
+_NOT_CORPUS_OBJECTS = frozenset({
+    "law_version_fts", "dump_pages", "osm_addresses", "osm_names", "osm_rtree", "wiki_lane_fts",
+    "wiki_lane_iq_rev_ai", "wiki_lane_iq_warm_ai", "wiki_lane_iq_warm_au",
+})
+
 
 def _known_objects() -> dict[str, str]:
-    """``name -> type`` of every trigger, view and virtual table this app makes: the ones in the user's own corpus
-    (made by this build: read from the live store's schema, never from the staged file) and the few older builds made
-    (:data:`_LEGACY_OBJECTS`). Raises :class:`StagedKeyError` when the live schema cannot be read: the check fails closed."""
-    try:
-        from sqlalchemy import text
-
-        from src.database.session import engine
-
-        with engine.connect() as c:
-            rows = c.execute(
-                text(
-                    "SELECT type, name FROM sqlite_master WHERE type IN ('trigger', 'view')"
-                    " OR (type = 'table' AND sql LIKE 'CREATE VIRTUAL TABLE%')"
-                )
-            ).fetchall()
-    except Exception:  # noqa: BLE001 - fixed words; the reason is not the user's to act on
-        raise StagedKeyError("the app's own schema could not be read, so the backup's corpus was not read") from None
-    known = dict(_LEGACY_OBJECTS)
-    known.update({str(name).lower(): str(typ) for typ, name in rows})
-    return known
-
+    """``name -> type`` of every trigger, view and virtual table the app makes in a corpus (:data:`_CORPUS_OBJECTS`)."""
+    return dict(_CORPUS_OBJECTS)
 
 
 #: The modules a virtual table in a staged file may use: the app's own search index only.
@@ -397,7 +429,7 @@ def check_staged_schema(conn: Any, schema: str = "main") -> None:
     SQLite does not make. Reads only ``sqlite_master``; raises :class:`StagedKeyError` with fixed words."""
     assert schema.isidentifier(), schema
     known = _known_objects()
-    rows = conn.execute(f'SELECT type, name, sql FROM "{schema}".sqlite_master').fetchall()
+    rows = conn.execute(f'SELECT type, name, sql FROM "{schema}".sqlite_master').fetchall()  # noqa: S608  # nosec B608 # schema asserted an identifier above
     for typ, name, sql in rows:
         typ = str(typ)
         lname = str(name or "").lower()

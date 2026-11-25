@@ -43,6 +43,7 @@ import os
 import re
 import secrets
 import sqlite3
+import contextvars
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -839,6 +840,12 @@ def _sub_timer(timings: object):
     return _sub
 
 
+#: R834: set while the staged copy's integrity walk runs beside the merge. Called before the merge's first write to
+#: ``inc`` (only the country-code step writes it), it waits for the walk's verdict and refuses on a failed one, so the
+#: verdict always comes from a file nothing wrote to while it was read. Unset (no walk beside), nothing waits.
+_INC_WRITE_GATE: contextvars.ContextVar[Callable[[], None] | None] = contextvars.ContextVar("oo_inc_write_gate", default=None)
+
+
 @contextmanager
 def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]:
     """Run the staged copy's ``PRAGMA quick_check`` on its own thread while the body (the merge) runs.
@@ -872,7 +879,7 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
     def _walk() -> None:
         t0 = time.monotonic()
         try:
-            validate_sqlite_file(path, connection_cb=_connected, should_stop=stop.is_set)
+            validate_sqlite_file(path, connection_cb=_connected, should_stop=stop.is_set, alongside=True)
         except BackupError as exc:
             from src.monitoring.secret_scrub import record_text
 
@@ -885,12 +892,25 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
                 state["conn"] = None
 
     walker = threading.Thread(target=_walk, name="oo-import-quick-check", daemon=True)
+    gate_waited = {"seconds": 0.0, "used": False}
+
+    def _before_inc_write() -> None:
+        if not gate_waited["used"]:
+            gate_waited["used"] = True
+            t0 = time.monotonic()
+            walker.join()
+            gate_waited["seconds"] = time.monotonic() - t0
+        if state["error"] is not None:
+            raise MergeError(str(state["error"]))
+
     finished = False
+    gate_token = _INC_WRITE_GATE.set(_before_inc_write)
     try:
         walker.start()  # inside the try: the finally below stops and joins whatever it started
         yield
         finished = True
     finally:
+        _INC_WRITE_GATE.reset(gate_token)
         if not finished:
             stop.set()
         t_wait = time.monotonic()
@@ -906,6 +926,8 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
         if _record is not None:
             with suppress(Exception):
                 _record("merge:quick_check_wait", time.monotonic() - t_wait)
+                if gate_waited["used"]:
+                    _record("merge:quick_check_wait_before_write", gate_waited["seconds"])
                 if isinstance(state["seconds"], float):
                     _record("merge:quick_check", state["seconds"])
     if state["error"] is not None:
@@ -3615,7 +3637,7 @@ def _normalise_country_codes(con, batch_id, results) -> None:
     """
     from src.backup.country_codes import normalise_staged_country_codes
 
-    results["_country_codes"] = normalise_staged_country_codes(con, schema="inc")
+    results["_country_codes"] = normalise_staged_country_codes(con, schema="inc", before_write=_INC_WRITE_GATE.get())
 
 
 def _merge_keyword_categories(con, batch_id, results) -> None:

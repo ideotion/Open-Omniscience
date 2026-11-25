@@ -93,7 +93,7 @@ def test_a_failing_merge_stops_the_walk_and_keeps_its_own_error(tmp_path, monkey
 
     stopped = threading.Event()
 
-    def _slow_walk(path, *, connection_cb=None, should_stop=None, quick_check=True):
+    def _slow_walk(path, *, connection_cb=None, should_stop=None, quick_check=True, alongside=False):
         con = sqlite3.connect(":memory:")
         if connection_cb is not None:
             connection_cb(con)

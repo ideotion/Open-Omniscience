@@ -434,6 +434,7 @@ def test_only_reviewed_modules_can_open_a_database_through_sqlcipher3():
         "src/monitoring/machine_record.py",  # an in-memory probe of the driver
         "src/monitoring/merge_diag.py",  # a diagnostic over a copy it makes itself
         "src/backup/lane_merge.py",  # an in-memory read of the compiled page size
+        "src/backup/staged_key.py",  # opens only an import's keyed staged corpus or custody log (R829 A), never a working copy
     }
     found = set()
     for path in (_ROOT / "src").rglob("*.py"):
