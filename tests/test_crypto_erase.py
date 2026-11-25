@@ -669,9 +669,8 @@ def test_copies_beside_a_corpus_kept_outside_the_data_folder_are_destroyed(tmp_p
     mine = elsewhere / "my-notes.db"
     mine.write_bytes(b"not the app's" * 10)
     salt_heads = {p: p.read_bytes()[:16] for p in (salvage, damaged)}
-    kept = {p: tmp_path / f"kept-{p.name}" for p in (salvage, damaged, plain)}
-    for p, k in kept.items():
-        os.link(p, k)
+    # Kept read descriptors, never a second name: a copy with another name is never written (security reads, row 402)
+    kept = {p: (os.open(p, os.O_RDONLY), p.stat().st_size) for p in (salvage, damaged, plain)}
 
     real_resolve = crypto_erase._resolve
     monkeypatch.setattr(crypto_erase, "_resolve", lambda d: {**real_resolve(d), "main_db": main})
@@ -679,9 +678,12 @@ def test_copies_beside_a_corpus_kept_outside_the_data_folder_are_destroyed(tmp_p
 
     for p in (salvage, damaged, sidecar, plain):
         assert not p.exists(), p
+    after = {p: os.pread(fd, n, 0) for p, (fd, n) in kept.items()}
+    for fd, _n in kept.values():
+        os.close(fd)
     for p in (salvage, damaged):
-        assert salt_heads[p] not in kept[p].read_bytes()[:4096]
-    assert b"plaintext-row" not in kept[plain].read_bytes()
+        assert salt_heads[p] not in after[p][:4096]
+    assert b"plaintext-row" not in after[plain]
     assert mine.exists() and mine.read_bytes() == b"not the app's" * 10
     # R823: no record names these copies, so none is head-only: each is rewritten in full and said "overwritten", by count and
     # kind, never by name; the sidecar (a side file, no salt) is destroyed whole as before
@@ -701,6 +703,8 @@ def test_an_encrypted_copy_in_the_data_folder_is_head_shredded_and_never_rewritt
     con.close()
     (tmp_path / "open_omniscience.db").write_bytes(snap.read_bytes())
     _evidence(monkeypatch)
+    # the record the corpus's encryption wrote (the copy writer never creates one)
+    (tmp_path / at_rest_state.RECORD_NAME).write_text(json.dumps({"version": 1, "stores": {}}), encoding="utf-8")
     # R823: its writer named it in the record, the live corpus being keyed and the copy carrying its very salt
     assert at_rest_state.record_copy(snap, tmp_path / "open_omniscience.db", "corpus")
     whole = []
@@ -830,11 +834,15 @@ def test_a_damaged_copy_of_a_plaintext_store_is_rewritten_whole(tmp_path):
     _plain_sqlite(damaged)
     with open(damaged, "r+b") as f:
         f.write(b"\x00" * 100)  # page 1 damaged: no longer the SQLite magic
-    kept = tmp_path / "kept"
-    os.link(damaged, kept)
-    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+    kept = os.open(damaged, os.O_RDONLY)  # a read descriptor, never a second name (a copy with one is never written)
+    size = damaged.stat().st_size
+    try:
+        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
+        after = os.pread(kept, size, 0)
+    finally:
+        os.close(kept)
     assert report["encrypted_corpus"] is False
-    assert b"plaintext-row" not in kept.read_bytes()
+    assert b"plaintext-row" not in after
 
 
 def test_the_lane_pools_close_after_the_salt_pages_and_before_the_passphrase(tmp_path, monkeypatch):
@@ -1056,19 +1064,26 @@ def test_in_a_shared_folder_every_copy_of_the_salt_and_every_key_of_the_app_s_is
         key = shared / "keys" / "custody_ed25519.pem"
         key.write_bytes(b"PRIVATE KEY " * 20)
         kept = {}
-        for name, p in (("main", db), ("wal", db.with_name(db.name + "-wal")), ("salvage", salvage), ("key", key)):
+        for name, p in (("main", db), ("wal", db.with_name(db.name + "-wal")), ("key", key)):
             kept[name] = tmp_path / f"kept-{name}"
             os.link(p, kept[name])
+        # a copy with a second name is never written (security reads, row 402): read back through a kept descriptor instead
+        salvage_fd, salvage_size = os.open(salvage, os.O_RDONLY), salvage.stat().st_size
         assert _salt_hits(kept["wal"].read_bytes(), salt), "the setup must put the salt in the log"
 
-        report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=shared)
+        try:
+            report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=shared)
+            salvage_after = os.pread(salvage_fd, salvage_size, 0)
+        finally:
+            os.close(salvage_fd)
     finally:
         con.close()
 
     assert report["scope"] == "app-only" and report["scope_reason"] == "shared_folder"
     assert report["overwrite_failures"] == []
-    for name in ("main", "wal", "salvage"):
+    for name in ("main", "wal"):
         assert _salt_hits(kept[name].read_bytes(), salt) == [], f"a copy of the salt survived in the {name} file"
+    assert _salt_hits(salvage_after, salt) == [], "a copy of the salt survived in the salvage file"
     assert b"PRIVATE KEY" not in kept["key"].read_bytes()
     assert not db.exists() and not salvage.exists() and not key.exists()
     assert (shared / "thesis.docx").read_bytes() == b"years of work"

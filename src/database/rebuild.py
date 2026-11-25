@@ -242,6 +242,9 @@ def remove_kept_copy(name: str, store: str = LIBRARY) -> dict[str, Any]:
     chosen = listed[name]
     path = target.parent / str(chosen["name"])  # the name the folder listing gave, never the request's text
     path.unlink()
+    from src.database import at_rest_state
+
+    at_rest_state.forget_copy(path)  # R828 (4) (security reads, row 402): its record entry goes with the file
     for side in ("-wal", "-shm", "-journal"):
         with contextlib.suppress(OSError):
             Path(str(path) + side).unlink()
@@ -648,6 +651,9 @@ def _run(backup_answer: str, ctx: JobContext | None, store: str = LIBRARY) -> di
             # happened the kept name is the ONLY name of the old file and is never removed here.
             with contextlib.suppress(OSError):
                 kept.unlink()
+            from src.database import at_rest_state
+
+            at_rest_state.forget_copy(kept)  # R828 (4) (security reads, row 402): its record entry goes with the name
         _record(report)
 
 

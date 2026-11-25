@@ -4369,7 +4369,9 @@
         // R826: the split corpus's segments, by count: rewritten in full without evidence (said apart), or left short of that.
         const seg = r.corpus_segments && typeof r.corpus_segments === "object" ? r.corpus_segments : {};
         const segOver = Number(seg.overwritten) || 0;
-        const segShort = (Number(seg.partially_overwritten) || 0) + (Number(seg.not_overwritten) || 0) + (Number(seg.left) || 0);
+        // Security reads (row 402): a corpus folder that could not be reached counts too (the server says "not_overwritten" with no file)
+        const segShort = Math.max((Number(seg.partially_overwritten) || 0) + (Number(seg.not_overwritten) || 0) + (Number(seg.left) || 0),
+          (seg.corpus === "not_overwritten" || seg.corpus === "partially_overwritten") ? 1 : 0);
         const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
