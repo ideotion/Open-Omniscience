@@ -425,6 +425,8 @@ class ImportQueueManager:
         # R827 R7(a): the whole-file check owed after an activation that was checked only on the tables it wrote
         # (None = nothing owed this run; else {"state": "ok" | "failed" | "unchecked", ...}). Persisted with the run.
         self._corpus_check: dict[str, Any] | None = None
+        # R833: the run's own safety copy (removed or kept, and why) and the copies left in the data folder by count and size.
+        self._safety_copies: dict[str, Any] | None = None
         # Whether the item in flight is the run's last activation (R7(a)); True = the whole-file check.
         self._final_activation = True
         # THIS RUN's identity, stamped on every import report the run leaves behind so a
@@ -464,6 +466,7 @@ class ImportQueueManager:
                 "tuning_done": self._tuning_done,
                 "tuned": self._tuned,
                 "corpus_check": self._corpus_check,
+                "safety_copies": self._safety_copies,
                 "run_id": self._run_id,
             }
             p = self._path()
@@ -495,6 +498,8 @@ class ImportQueueManager:
             {str(k): bool(v) for k, v in tuned.items()} if isinstance(tuned, dict) else None
         )
         raw_tuning_done = raw.get("tuning_done")
+        sc = raw.get("safety_copies")
+        self._safety_copies = sc if isinstance(sc, dict) else None
         cc = raw.get("corpus_check")
         self._corpus_check = (
             _corpus_check_for_status(cc) if isinstance(cc, dict) and cc.get("state") in ("ok", "failed", "unchecked") else None
@@ -659,6 +664,7 @@ class ImportQueueManager:
             self._tuning_done = False
             self._tuned = None
             self._corpus_check = None
+            self._safety_copies = None
             self._collection_window_failed = False
             self._run_id = secrets.token_hex(6)
             self._cursor = -1
@@ -1035,6 +1041,9 @@ class ImportQueueManager:
             # before the run can end -- a Stop waits for it. A failure or an unfinished check never ends as "done".
             # In this ``finally`` so an exception escaping the loop still runs it (it never raises).
             corpus_check = self._check_owed_corpus()
+        # R833 (row 426): before anything else of the run writes to the corpus, the run's own safety copy goes when no item
+        # reached its swap (the corpus confirmed unchanged), and the copies left in the data folder are counted.
+        self._settle_safety_copy()
         if corpus_check is None or corpus_check.get("state") == "ok":
             self._tune_after_run()
         with self._lock:
@@ -1113,6 +1122,18 @@ class ImportQueueManager:
                 if self._state != "running":
                     self._state = "error"
                     self._save()
+
+    def _settle_safety_copy(self) -> None:
+        try:
+            from src.backup.merge import settle_run_safety_copy
+
+            got = settle_run_safety_copy()
+        except Exception as exc:  # noqa: BLE001 - a copy that is not settled is kept, never a failed import
+            log_failure(_LOG, "could not settle the run's safety copy", exc, *self._secrets(), level=logging.WARNING)
+            return
+        with self._lock:
+            self._safety_copies = got
+            self._save()
 
     def _tune_after_run(self) -> None:
         """ONE post-bulk tuning pass for the whole run (import-speed fix 2026-07-30).
@@ -1896,6 +1917,7 @@ class ImportQueueManager:
             paused = self._collection_paused
             window_failed = self._collection_window_failed
             corpus_check = self._corpus_check
+            safety_copies = self._safety_copies
             tuned = self._tuned
             tuning_done = self._tuning_done
             k = self._checkpoint_k
@@ -1939,6 +1961,9 @@ class ImportQueueManager:
             else None
         )
         return {
+            # R833: the run's own safety copy (removed when no item reached its swap, else kept with the reason) and the
+            # safety copies in the data folder by count and total size.
+            "safety_copies": safety_copies,
             "stages": self._stage_rows(items, live, tuning_done, state),
             "state": state,
             "items": items,

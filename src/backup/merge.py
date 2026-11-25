@@ -951,6 +951,7 @@ def _net_read_back_alongside(net: tuple[Path, dict] | None, timings: object = No
     if not state["ok"]:
         raise MergeError(str(state["error"] or _NET_NOT_VERIFIED))
     facts["read_back"] = True
+    _NET_READ_BACK[str(path)] = True  # R833: a copy that read back whole is a safety copy, settled as one
     # Only now is it the run's safety net: a later item of the run reuses it without reading it again, so it is
     # recorded as the run's net only once it has read back whole (security read of #2379).
     _remember_run_snapshot(path)
@@ -1242,6 +1243,9 @@ def _drop_unverified_net(path: Path) -> None:
         unregister_active_staging(path)
     with suppress(OSError):
         path.unlink(missing_ok=True)
+    _NET_READ_BACK.pop(str(path), None)
+    with suppress(Exception):
+        _own_net().forget(path)
 
 
 def prepare_staged_corpus(
@@ -7377,6 +7381,52 @@ def _remember_run_snapshot(path: Path) -> None:
 
 #: The safety net THIS thread's run_restore took and has not yet handed to its commit (R830; security read of #2379).
 _NET_PENDING = threading.local()
+#: R833: the safety copies that read back whole in this process (path -> True); an unverified one is no safety copy.
+_NET_READ_BACK: dict[str, bool] = {}
+
+
+def _own_net():
+    from src.backup import own_net
+
+    return own_net
+
+
+def _settle_own_net(net: Path) -> dict:
+    """R833 (row 426): remove the safety copy THIS run made when the run never reached its swap and the live corpus is
+    confirmed unchanged; else keep it and say why. Its staging registration is released either way, and a removed copy is
+    forgotten as the run's net. Never raises."""
+    from src.backup.stream_backup import unregister_active_staging
+
+    try:
+        out = _own_net().remove_if_refused_before_activation(net)
+    except Exception:  # noqa: BLE001 - unconfirmed = kept
+        out = {"removed": False, "name": Path(net).name, "bytes": None, "message": "kept: the copy could not be checked"}
+    with suppress(Exception):
+        unregister_active_staging(net)
+    if out.get("removed"):
+        global _RUN_SNAPSHOT
+        with _RUN_SNAPSHOT_LOCK:
+            if _RUN_SNAPSHOT is not None and _RUN_SNAPSHOT[1] == net:
+                _RUN_SNAPSHOT = None
+        _NET_READ_BACK.pop(str(net), None)
+        _LOG.info("%s (%s)", out.get("message"), Path(net).name)
+    return out
+
+
+def settle_run_safety_copy() -> dict:
+    """At the end of an import run, before anything else writes to the corpus: the run's own safety copy, removed when
+    no item of the run reached its swap (R833), and the safety copies left in the data folder by count and total size.
+    ``{"safety_copy": <the removal's answer, or None when this run made none>, "leftovers": {...}}``. Never raises."""
+    net = None
+    with suppress(Exception):
+        net = _run_scoped_snapshot()
+    settled = None
+    if net is not None and _own_net().is_own(net):
+        settled = _settle_own_net(net)
+    left: dict = {"count": None, "bytes": None, "names": []}
+    with suppress(Exception):
+        left = _own_net().leftovers()
+    return {"safety_copy": settled, "leftovers": left}
 
 
 def _release_pending_net(net: Path) -> None:
@@ -7393,6 +7443,11 @@ def _release_pending_net(net: Path) -> None:
 
         with suppress(Exception):
             unregister_active_staging(net)
+        return
+    if _NET_READ_BACK.get(str(net)) and _own_net().is_own(net):
+        # R833: a verified copy a lone restore made and never activated goes only after the live corpus is confirmed
+        # unchanged; otherwise it stays and is listed (src/backup/own_net.py).
+        _settle_own_net(net)
         return
     _drop_unverified_net(net)
 
@@ -7460,6 +7515,9 @@ def _take_safety_net_with_the_copy(working: Path, timings: object = None) -> tup
     if facts is None:
         unregister_active_staging(net)
         return None
+    # R833 (row 426): recorded as a copy THIS run made, with the live corpus's state as the copy ended, so a run refused
+    # before its swap can remove it, and only it (src/backup/own_net.py).
+    _own_net().note_made(net)
     # NOT yet the run's net: that is recorded by _net_read_back_alongside once the copy has read back whole. Until the
     # commit takes it as its safety net, a run_restore that ends any other way removes or releases it
     # (:func:`_settle_pending_net`).
@@ -11205,6 +11263,7 @@ def run_restore(
         with timings.stage("pre_restore_snapshot"):
             if _reuse is None:
                 snapshot_preserving(live_db_path(), snapshot, allow_file_copy=exclusive)
+                _own_net().note_made(snapshot)  # R833: this run's own copy, until its swap
                 _remember_run_snapshot(snapshot)
                 report["pre_restore_snapshot"] = str(snapshot)
             elif _net_here is not None:
@@ -11307,6 +11366,9 @@ def run_restore(
             why: list[str] = []
             if not _checkpoint_before_swap(why=why):
                 raise RestoreRefused(_swap_refusal(why[0] if why else _CKPT_BLOCKED))
+            # R833 (row 426): from here the safety copy is the state to return to, never removed as "refused before any
+            # change"; written down before the live corpus changes (a record that could not be written reads the same).
+            _own_net().note_activation(_run_scoped_snapshot() or _reuse or snapshot)
             # R827 R7(a): an activation checked only on the tables it wrote is written down, durably, BEFORE the
             # live corpus changes; a whole-file check passing on the corpus is what clears it.
             _scoped = verification.get("file_check") == "scoped"
