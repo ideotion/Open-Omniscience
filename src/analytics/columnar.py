@@ -865,10 +865,14 @@ def build_keyword_read_model(con, session, *, batch_size: int | None = None) -> 
     """
     from sqlalchemy import text as _sql
 
+    from src.analytics.quarantine_scope import pending_keyword_contributions
     from src.analytics.queries import kind_from
 
     batch_size = batch_size or BUILD_BATCH_ROWS
     con.execute(_KEYWORD_AGG_DDL)
+    # R830: the counters include an article still queued for screening until it is judged; the projection takes it out, as every
+    # aggregate does. Read once (only the queued articles' mention rows); the worker that screens them bumps the epoch, so this rebuilds.
+    pend = pending_keyword_contributions(session)
     total = 0
     cursor_id = 0
     while True:
@@ -887,8 +891,9 @@ def build_keyword_read_model(con, session, *, batch_size: int | None = None) -> 
         total += _bulk_insert(
             con, "keyword_agg", _AGG_TYPES,
             [
-                (r[1], r[2], kind_from(r[3], r[4]), int(r[5] or 0), int(r[6] or 0), r[7])
+                (r[1], r[2], kind_from(r[3], r[4]), m, max(0, int(r[6] or 0) - pend.get(int(r[0]), (0, 0))[1]), r[7])
                 for r in chunk
+                if (m := int(r[5] or 0) - pend.get(int(r[0]), (0, 0))[0]) > 0
             ],
         )
         cursor_id = int(chunk[-1][0])
@@ -1310,7 +1315,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
     """
     from sqlalchemy import text as _sql
 
-    from src.analytics.quarantine_scope import quarantined_article_ids
+    from src.analytics.quarantine_scope import not_counted_article_ids
     from src.analytics.queries import kind_from
 
     ensure_store_meta(con)  # idempotent: guarantees oo_meta exists
@@ -1367,7 +1372,7 @@ def build_keyword_daily(con, session, *, batch_size: int = BUILD_BATCH_ROWS, on_
         # R101: a quarantined article's mentions are left out of the rollup, as they are out of the counters and the
         # live windowed queries, so one call answers the same whichever of them serves it. Read once, here, after the
         # scan boundary: a stamp that lands later bumps the corpus epoch, and that forces the next full rebuild.
-        quarantined = quarantined_article_ids(session)
+        quarantined = not_counted_article_ids(session)
         # DuckDB's total at the batches' boundaries: the last reading and the largest. A FATAL error invalidates the
         # instance, so what a stop can say about memory is what was read BEFORE it (a lower bound on the peak).
         seen_mib: dict = {"last": None, "peak": None}
@@ -1904,9 +1909,11 @@ def keyword_daily_parity(
     """
     from sqlalchemy import text as _sql
 
+    from src.analytics.quarantine_scope import NOT_COUNTED_SQL
+
     roll = windowed_term_counts(con, start_day=start_day, end_day=end_day) or {}  # None (out of memory) reads as before: no rows
-    # R101: the live side leaves quarantined articles out exactly as the build does.
-    clauses = ["observed_on IS NOT NULL", "article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"]
+    # R101 and R830: the live side leaves quarantined and still-unscreened articles out exactly as the build does.
+    clauses = ["observed_on IS NOT NULL", NOT_COUNTED_SQL.removeprefix(" AND ")]
     p: dict = {}
     bounded = scan_bound is not _UNBOUNDED
     if bounded:
@@ -2095,7 +2102,7 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     # -- INCREMENTAL: merge only the tail (id > watermark) ------------------------------- #
     from sqlalchemy import text as _sql
 
-    from src.analytics.quarantine_scope import quarantined_article_ids
+    from src.analytics.quarantine_scope import not_counted_article_ids
 
     last_id = int(_get_meta(con, "keyword_daily.last_mention_id") or 0)
 
@@ -2142,7 +2149,7 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
 
     con.execute("CREATE OR REPLACE TABLE keyword_daily_stage "
                 "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
-    quarantined = quarantined_article_ids(session)  # R101, as in the full build: a tail row of a quarantined article is left out
+    quarantined = not_counted_article_ids(session)  # R101, as in the full build: a tail row of a quarantined article is left out
     streamed_any = False
     streamed_rows = 0
     max_streamed_id = last_id

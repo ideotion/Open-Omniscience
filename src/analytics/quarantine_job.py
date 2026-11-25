@@ -90,6 +90,51 @@ def merge_samples(
     return out
 
 
+def _stamp_chunks(to_write: dict[int, str]) -> list[tuple[str, list[int]]]:
+    """``(reason, ids)`` pairs, each at most :data:`_ID_SET_CHUNK` ids, in ascending id order within a reason."""
+    by_signal: dict[str, list[int]] = {}
+    for aid in sorted(to_write):
+        by_signal.setdefault(to_write[aid], []).append(aid)
+    out: list[tuple[str, list[int]]] = []
+    for signal in sorted(by_signal):
+        ids = by_signal[signal]
+        out.extend((signal, ids[i : i + _ID_SET_CHUNK]) for i in range(0, len(ids), _ID_SET_CHUNK))
+    return out
+
+
+def _stamp_chunk(session, ids: list[int], signal: str, criteria_version, now) -> list[int]:
+    """Stamp ``ids`` not already quarantined, in ONE statement; returns the ids this UPDATE changed (RETURNING)."""
+    from sqlalchemy import update
+
+    from src.database.models import Article
+
+    stmt = (
+        update(Article)
+        .where(Article.id.in_(ids), Article.quarantined.isnot(True))
+        .values(quarantined=True, quarantine_reason=signal, quarantine_criteria_version=criteria_version, quarantined_at=now)
+        .returning(Article.id)
+        .execution_options(synchronize_session=False)
+    )
+    return [int(r[0]) for r in session.execute(stmt)]
+
+
+def _release_pending(session, ids: list[int]) -> int:
+    """Remove ``ids`` from the screening queue (R830), in the caller's transaction; how many rows left it."""
+    from sqlalchemy import delete
+
+    from src.database.models import ScreeningPending
+
+    gone = 0
+    for i in range(0, len(ids), _ID_SET_CHUNK):
+        res = session.execute(
+            delete(ScreeningPending)
+            .where(ScreeningPending.article_id.in_(ids[i : i + _ID_SET_CHUNK]))
+            .execution_options(synchronize_session=False)
+        )
+        gone += int(res.rowcount or 0)
+    return gone
+
+
 def default_quarantine_candidates_batch(
     session: Any,
     *,
@@ -103,6 +148,7 @@ def default_quarantine_candidates_batch(
     article_ids: list[int] | None = None,
     index_page_tiers: frozenset[int] | set[int] | None = None,
     collect_ids: bool = False,
+    release_pending: bool = False,
 ) -> dict[str, Any]:
     """The default per-batch WORK FUNCTION: DETECT already-flagged non-article candidates (the
     #659 URL-shape rules via ``classify_non_article``, plus the opt-in NAV-SOUP PROSE GATE for
@@ -152,7 +198,12 @@ def default_quarantine_candidates_batch(
 
     ``collect_ids`` (default False): also return ``ids_by_reason`` (this batch's candidate ids per
     signal) for the job's spot-check sample. Only the job asks; the import-time callers store this
-    function's whole result in their saved reports and must not gain an unbounded key."""
+    function's whole result in their saved reports and must not gain an unbounded key.
+
+    ``release_pending`` (R830, row 408 PR 3; needs ``article_ids`` and ``write=True``): the screening worker's call. In the SAME
+    commit as the stamps, the ids judged here leave ``screening_pending``, so the aggregates count the articles that passed and
+    the queue never says "not screened" of one that was. The corpus epoch is bumped whenever a row leaves the queue, so the
+    rollups built without those articles rebuild with them. ``released`` in the result says how many left."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
     from src.database.models import Article, HostMismatchConfirmed, Source
     from src.ingest.furniture import stub_verdict
@@ -275,7 +326,9 @@ def default_quarantine_candidates_batch(
         done = scanned < limit
 
     newly_written = 0
-    if write and to_write:
+    released = 0
+    release = release_pending and write and article_ids is not None
+    if write and (to_write or release):
         from src.analytics.corpus_epoch import bump_corpus_epoch
         from src.analytics.store import shift_keyword_counters_for_quarantine
         from src.database.writer import connection_first, write_lock
@@ -290,33 +343,20 @@ def default_quarantine_candidates_batch(
         with write_lock():
             try:
                 stamped: list[int] = []
-                for aid, signal in to_write.items():
-                    # A targeted, no-load UPDATE (the batch already read every candidate's
-                    # columns above; no second content decrypt). synchronize_session=False --
-                    # this session never re-reads these rows again in the same batch.
-                    #
-                    # CONDITIONAL, under the gate (R101): ``to_write`` was read before the gate, so another stamping path
-                    # (the retroactive job beside an import's screening) may have stamped the article since. Only a row
-                    # this UPDATE really changed leaves the counters; subtracting one twice would be hidden by the floor.
-                    changed = session.query(Article).filter(
-                        Article.id == aid, Article.quarantined.isnot(True)
-                    ).update(
-                        {
-                            "quarantined": True,
-                            "quarantine_reason": signal,
-                            "quarantine_criteria_version": criteria_version,
-                            "quarantined_at": now,
-                        },
-                        synchronize_session=False,
-                    )
-                    if not changed:
-                        continue  # the guard-clause form keeps the loop's back-edge inside the try (src/utils/interrupts.py)
-                    stamped.append(aid)
+                # SET-BASED (row 408 PR 3): one guarded UPDATE per reason and chunk of at most _ID_SET_CHUNK ids, in place of one
+                # statement per article (about 7 s of the 9.8 s screening of a junk-heavy 26k-article import on the bench). The
+                # same guard, ``quarantined IS NOT 1`` under the gate, and the counters move only for the ids the UPDATE itself
+                # RETURNS as changed -- never for the ids it was asked to change -- so a row another path stamped in between
+                # leaves them alone, as the per-row form's rowcount did (Plan 2026-11-24).
+                for signal, chunk in _stamp_chunks(to_write):
+                    stamped.extend(_stamp_chunk(session, chunk, signal, criteria_version, now))
                 shift_keyword_counters_for_quarantine(session, stamped, quarantined=True)
+                if release:
+                    released = _release_pending(session, article_ids or [])
             except BaseException:
                 session.rollback()
                 raise
-            if stamped:
+            if stamped or released:
                 bump_corpus_epoch(session, reason="quarantine", strict=True)  # commits the batch with the bump
             else:
                 session.commit()  # nothing changed under the gate: nothing to subtract, no rebuild to force
@@ -334,7 +374,7 @@ def default_quarantine_candidates_batch(
         "write": write,
         "read_s": round(read_s, 3),
         "classify_s": round(classify_s, 3),
-    } | ({"ids_by_reason": ids_by_reason} if collect_ids else {}) | (
+    } | ({"released": released} if release else {}) | ({"ids_by_reason": ids_by_reason} if collect_ids else {}) | (
         {"host_mismatch": host_counts} if include_host_mismatch else {}
     )
 

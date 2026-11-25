@@ -3800,7 +3800,13 @@ def _supergroup_totals(
             .filter(Keyword.id.in_(chunk))
             .all()
         )
-    for kid, norm, m, a in rows:
+    from src.analytics.quarantine_scope import any_pending, pending_keyword_contributions
+
+    # R830: take out what articles still queued for screening put into the counters, as every aggregate does.
+    pend = pending_keyword_contributions(db, (r[0] for r in rows)) if any_pending(db) else {}
+    adjusted = [(kid, norm, int(m or 0) - pend.get(int(kid), (0, 0))[0], int(a or 0) - pend.get(int(kid), (0, 0))[1])
+                for kid, norm, m, a in rows]
+    for kid, norm, m, a in adjusted:
         if norm in hidden:
             continue
         mention_by_id[int(kid)] = int(m or 0)

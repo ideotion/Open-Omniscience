@@ -106,6 +106,12 @@ def _sqlite_file_bytes() -> dict | None:
     }
 
 
+def _not_counted(db: Session) -> dict:
+    from src.analytics.quarantine_scope import not_counted_tally
+
+    return not_counted_tally(db)
+
+
 @router.get("/stats")
 def database_stats(db: Session = Depends(get_db)) -> dict:
     """Real row counts per table plus backend/on-disk facts.
@@ -213,6 +219,9 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
             "table_count": len(present),
             # Whether the backup/restore controls in the Settings tab apply here.
             "backup_supported": is_sqlite(),
+            # R830 (row 408 PR 3): imported articles the aggregates leave out until the junk screening has reached them. The Home
+            # strip says "N articles not screened yet" while it is above 0; an unreadable count is absent, never a zero.
+            "not_counted": _not_counted(db),
         }
 
     return _cached("stats", _compute, db)

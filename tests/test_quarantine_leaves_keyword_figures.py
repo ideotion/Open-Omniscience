@@ -786,7 +786,8 @@ def test_every_stand_in_gate_on_the_mentions_has_its_r101_twin(path):
     src = (Path(__file__).resolve().parent.parent / path).read_text(encoding="utf-8")
     stand_in = src.count("not_a_stand_in_article_id(KeywordMentionRead.article_id)")
     assert stand_in, f"{path} no longer gates stand-ins on the mentions; update this list"
-    assert src.count("not_quarantined(KeywordMentionRead.article_id)") >= stand_in
+    # R830 (row 408 PR 3): the slice is now ``not_counted`` (quarantined, and imported articles not screened yet).
+    assert src.count("not_counted(KeywordMentionRead.article_id)") >= stand_in
 
 
 def _two_outlets(db) -> list[Article]:
@@ -828,3 +829,74 @@ def test_the_source_tag_evidence_floor_counts_no_quarantined_article(db):
     assert _articles_of_x() == 3
     _stamp(db, arts[0])
     assert _articles_of_x() == 2
+
+
+def _junk(db, n: int) -> Article:
+    a = Article(
+        url=f"https://x.test/?page={n}" if n else "https://x.test/", canonical_url=f"https://x.test/j{n}", source_id=1,
+        title="Home", content=f"{WORD} {WORD} menu home{n}", hash=f"junk-mixed-{n}", country="fr", language="en", word_count=3,
+        published_at=datetime.now(UTC) - timedelta(days=1), created_at=datetime.now(UTC) - timedelta(days=1),
+    )
+    db.add(a)
+    db.commit()
+    index_article(db, a, extractor=BaselineExtractor())
+    return a
+
+
+def _all_counters(db) -> dict:
+    db.expire_all()
+    return {k.normalized_term: (k.mention_count, k.article_count) for k in db.query(Keyword).order_by(Keyword.id)}
+
+
+def _old_per_row_stamp(db, to_write: dict[int, str]) -> int:
+    """The stamp loop as it was before row 408 PR 3: one guarded UPDATE per article, counters moved for the changed rows."""
+    stamped = []
+    for aid, signal in to_write.items():
+        changed = db.query(Article).filter(Article.id == aid, Article.quarantined.isnot(True)).update(
+            {"quarantined": True, "quarantine_reason": signal}, synchronize_session=False
+        )
+        if changed:
+            stamped.append(aid)
+    shift_keyword_counters_for_quarantine(db, stamped, quarantined=True)
+    db.commit()
+    return len(stamped)
+
+
+def test_the_set_based_stamp_moves_exactly_what_the_per_row_one_did_over_a_mixed_chunk(db, monkeypatch):
+    """Row 408 PR 3 (Plan 2026-11-24): the stamp is one guarded UPDATE per reason and chunk, and the counters move only
+    for the ids that UPDATE returns as changed. A mixed batch -- several chunks, one article another path stamped
+    between the read and the gate -- ends with every counter exactly where the old per-row path left it."""
+    import src.analytics.quarantine_job as qj
+    from src.database import writer
+
+    monkeypatch.setattr(qj, "_ID_SET_CHUNK", 2)  # four candidates across two chunks
+    _corpus(db)
+    junk = [_junk(db, n) for n in range(4)]
+    plan = qj.default_quarantine_candidates_batch(db, article_ids=[j.id for j in junk], write=False)
+    assert plan["quarantined"] == 4, plan
+
+    # The reference: the old per-row path on a snapshot of the same counters, with the same raced row.
+    snapshot = _all_counters(db)
+    _stamp(db, junk[1])  # the other path, first
+    to_write = {j.id: "ref" for j in junk}
+    assert _old_per_row_stamp(db, to_write) == 3
+    expected = _all_counters(db)
+    for j in junk:  # back to the start state, counters and stamps
+        _unstamp(db, j)
+    assert _all_counters(db) == snapshot
+
+    real = writer.connection_first
+    raced = []
+
+    def other_path_first(session):
+        if not raced:
+            raced.append(1)
+            _stamp(session, junk[1])
+        return real(session)
+
+    monkeypatch.setattr(writer, "connection_first", other_path_first)
+    out = qj.default_quarantine_candidates_batch(db, article_ids=[j.id for j in junk], write=True)
+    assert raced and out["newly_written"] == 3, out
+    assert _all_counters(db) == expected
+    kw = _kw(db)
+    assert (kw.mention_count, kw.article_count) == _live_unquarantined(db, kw.id)

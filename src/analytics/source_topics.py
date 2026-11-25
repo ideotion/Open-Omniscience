@@ -107,7 +107,7 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
     from sqlalchemy import func, select
 
     from src.analytics.filters import hidden_set
-    from src.analytics.quarantine_scope import not_quarantined
+    from src.analytics.quarantine_scope import not_counted
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Keyword, KeywordTag, Source
     from src.database.stand_in import not_a_stand_in_article_id
@@ -133,7 +133,7 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
         .where(
             KeywordTag.axis == "topic",
             not_a_stand_in_article_id(KeywordMentionRead.article_id),
-            not_quarantined(KeywordMentionRead.article_id),
+            not_counted(KeywordMentionRead.article_id),
         )
         .group_by(Source.domain, KeywordTag.tag)
     )

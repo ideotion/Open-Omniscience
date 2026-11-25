@@ -2492,6 +2492,35 @@ class IndexEngine(Base):
     )
 
 
+class ScreeningPending(Base):
+    """An imported article the junk screening has not reached yet (R827 R10, R830; row 408 PR 3).
+
+    A restore writes one row per article it ADDS, in the working copy before the swap, so the corpus that goes live already says
+    which of its articles are unscreened. A background worker drains the table after the import run: it judges each article with the
+    same rules as before (``default_quarantine_candidates_batch``), stamps the junk (whose mentions leave the keyword counters, as
+    the screening has always done) and removes the row, all in one commit per chunk. The counters themselves still include a pending
+    article; a reader that serves them as an aggregate subtracts the pending share at query time
+    (``pending_keyword_contributions``). The table is therefore also the worker's durable cursor: a stop, a crash or a
+    later swap leaves the rows of every article not yet judged, and the next start drains them.
+
+    A pending article stays readable and searchable (R827), but the aggregates leave it out, through the one slice in
+    ``src/analytics/quarantine_scope.py`` (``not_counted``), and say "N articles not screened yet" until the table is empty.
+
+    A side table, not a column on ``articles``, for the reason ``ArticleIndexStamp`` gives: the readers ask about many articles at
+    once, and a column after ``content`` is reached only through the row's overflow pages. Never merged from another corpus: an
+    incoming article is pending HERE because it is new here.
+    """
+
+    __tablename__ = "screening_pending"
+
+    article_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), primary_key=True
+    )
+    queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+
 class ArticleWwwStamp(Base):
     """The WWW engine's twin of :class:`ArticleIndexStamp` (R415, 2026-11-04).
 

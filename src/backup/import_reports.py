@@ -384,6 +384,19 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             )
         lines.append("")
 
+    scr = report.get("screening")
+    if isinstance(scr, dict):
+        lines.append("## Junk screening")
+        lines.append("")
+        lines.append(
+            f"- {_fmt_count(scr.get('queued'))} of the newly-imported articles were queued for the junk screening, which runs "
+            "in the background once the import has finished. Until an article is screened it stays readable and searchable, "
+            "and the keyword figures, trends and other aggregates leave it out."
+        )
+        if isinstance(scr.get("not_screened"), int) and scr["not_screened"] > 0:
+            lines.append(f"- {_fmt_count(scr['not_screened'])} articles not screened yet when this report was written.")
+        lines.append("")
+
     qs = report.get("quarantine_summary")
     if qs:
         lines.append("## Quarantine screening")

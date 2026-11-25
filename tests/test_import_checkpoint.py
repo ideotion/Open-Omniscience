@@ -733,12 +733,13 @@ def test_a_checkpoint_runs_its_post_swap_stages_over_every_batch_the_group_carri
     for domain, c in state["sources"].items():
         assert c["counter"] == c["live"], (
             f"{domain}: counter {c['counter']} over {c['live']} articles after the checkpoint")
-    assert rep["quarantine_summary"]["scanned"] == 4, (
-        "the checkpoint's quarantine scan skipped the held item's new articles")
+    # R830 (row 408 PR 3): the checkpoint queues them for the background screening instead of scanning in its window.
+    assert rep["screening"]["queued"] == 4, (
+        "the checkpoint's screening queue skipped the held item's new articles")
     assert state["held_event_mirrored"], (
         "the held item's calendar event never reached the durable event mirror")
     assert rep["swap_group"] == {"batch_ids": [held["batch_id"], rep["batch_id"]], "derived": True}
-    assert rep["quarantine_summary"]["batches"] == rep["swap_group"]["batch_ids"]
+    assert rep["screening"]["batches"] == rep["swap_group"]["batch_ids"]
     assert "quarantine_scope" not in rep, "a derived group must not carry the fallback's disclosure"
 
 

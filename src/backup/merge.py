@@ -3053,6 +3053,9 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # keyword vocabulary by its own job; a carried copy would point at another corpus'
     # keyword ids. The next build after a restore covers the merged vocabulary.
     "spell_deletes": "the did-you-mean table, derived from the keywords and rebuilt by its job",
+    # R830 (row 408 PR 3): the incoming corpus's own unscreened articles. Every article a restore ADDS is queued here on this side
+    # whatever the other corpus said, and one it already holds was screened here, so an incoming row says nothing true about this corpus.
+    "screening_pending": "this corpus's own queue of articles the junk screening has not reached; a restore queues what it adds",
     # R625: the per-day keyword counts trending reads, derived WHOLE from the mentions by their own job, and
     # their stale-day marks and state. A carried copy would describe another corpus's mentions; the restore
     # bumps the corpus epoch, which rebuilds them over the merged corpus.
@@ -4657,6 +4660,17 @@ def _merge_articles(con, batch_id, results) -> None:
                 " SELECT row_id FROM merged_rows WHERE batch_id = ? AND table_name = 'articles')",
                 (batch_id,),
             )
+    # R830 (row 408 PR 3): every article this merge ADDS is queued for the junk screening, in the working copy, so the corpus that goes
+    # live already says which of its articles are unscreened; the aggregates leave them out until a background worker has judged them.
+    # One that arrives already quarantined is judged. A store without the table (never migrated) queues nothing, and the restore then
+    # screens in its own window as before.
+    if _local_has_table(con, "screening_pending"):
+        con.execute(
+            "INSERT OR IGNORE INTO main.screening_pending (article_id, queued_at)"
+            " SELECT row_id, ? FROM merged_rows WHERE batch_id = ? AND table_name = 'articles'"
+            " AND row_id NOT IN (SELECT id FROM main.articles WHERE quarantined IS 1)",
+            (datetime.now(UTC).replace(tzinfo=None).isoformat(sep=" ", timespec="microseconds"), batch_id),
+        )
     r.samples = _new_row_samples(
         con, batch_id, "articles", "COALESCE(NULLIF(m.title, ''), '(untitled)')"
     )
@@ -6168,6 +6182,29 @@ def _alt_fields(table: str) -> dict:
 
     spec = ALTERNATE_SPECS[table]
     return {"differs": spec["differs"], "shown": spec["shown"]}
+
+
+def _queued_for_screening(session: Any, batches: list[int]) -> int | None:
+    """How many of the articles these batches added are queued for the background screening (R830), or None when the corpus
+    has no queue (a store never migrated), in which case the restore screens them in its own window as before. Never raises
+    into the restore: an unreadable queue is None too, so the old path runs."""
+    from sqlalchemy import bindparam
+    from sqlalchemy import text as _text
+
+    try:
+        return int(
+            session.execute(
+                _text(
+                    "SELECT COUNT(*) FROM screening_pending WHERE article_id IN"
+                    " (SELECT row_id FROM merged_rows WHERE batch_id IN :bs AND table_name = 'articles')"
+                ).bindparams(bindparam("bs", expanding=True)),
+                {"bs": batches},
+            ).scalar()
+            or 0
+        )
+    except Exception:  # noqa: BLE001 - no queue: the restore screens in its own window
+        session.rollback()
+        return None
 
 
 def _local_has_table(con: sqlite3.Connection, name: str) -> bool:
@@ -11538,7 +11575,16 @@ def run_restore(
                             {"bs": q_batches},
                         ).fetchall()
                     ]
-                    if new_article_ids:
+                    queued = _queued_for_screening(_q_sess, q_batches) if new_article_ids else None
+                    if queued is not None:
+                        # R830 (row 408 PR 3): the merge queued them before the swap; a background worker judges them once the
+                        # run lets go of the machine, so this window no longer waits for it. The report says how many wait.
+                        from src.analytics.quarantine_scope import not_counted_tally
+                        from src.analytics.screening_drain import kick_if_allowed
+
+                        report["screening"] = {"queued": queued, "batches": q_batches, **not_counted_tally(_q_sess)}
+                        kick_if_allowed()
+                    elif new_article_ids:
                         report["quarantine_summary"] = default_quarantine_candidates_batch(
                             _q_sess, article_ids=new_article_ids, write=True
                         )

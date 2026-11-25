@@ -38,7 +38,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from src.analytics.quarantine_scope import NOT_QUARANTINED_SQL
+from src.analytics.quarantine_scope import NOT_COUNTED_SQL
 from src.database.models import MENTIONS_VIEW
 
 # Cap the number of plotted points so the payload stays small regardless of how many
@@ -88,7 +88,7 @@ def _rate_per_1k(d_vocab: int, d_tokens: int) -> float | None:
 
 #: R101: a quarantined article's mentions are not in any keyword figure, this curve included. Index-only
 #: (``idx_article_quarantined``): it reads no article row, so the curve stays decrypt-free.
-_NOT_QUARANTINED = NOT_QUARANTINED_SQL
+_NOT_QUARANTINED = NOT_COUNTED_SQL
 
 
 def keyword_growth_curve(session: Session) -> dict[str, Any]:

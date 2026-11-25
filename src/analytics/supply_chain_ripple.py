@@ -34,7 +34,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import distinct, func
 
-from src.analytics.quarantine_scope import not_quarantined
+from src.analytics.quarantine_scope import not_counted
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
     CommodityPrice,
@@ -177,7 +177,7 @@ def _daily_series(session, kw_ids: list[int], cutoff: date, hi: date) -> dict[in
                 # a day's count is a count of articles: a mention kept for a lost one is none, and
                 # it would otherwise carry a keyword past min_nonzero_days on its own
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
-                not_quarantined(KeywordMentionRead.article_id),  # R101
+                not_counted(KeywordMentionRead.article_id),  # R101
             )
             .group_by(KeywordMentionRead.keyword_id, KeywordMentionRead.observed_on)
             .all()
@@ -205,7 +205,7 @@ def _daily_totals(session, cutoff: date, hi: date) -> dict[date, int]:
             KeywordMentionRead.observed_on.isnot(None),
             # the denominator counts articles, so it leaves the same ones out as the series do
             not_a_stand_in_article_id(KeywordMentionRead.article_id),
-            not_quarantined(KeywordMentionRead.article_id),  # R101
+            not_counted(KeywordMentionRead.article_id),  # R101
         )
         .group_by(KeywordMentionRead.observed_on)
         .all()
@@ -233,7 +233,7 @@ def _source_counts(session, kw_ids: list[int], cutoff: date, hi: date) -> dict[i
                 KeywordMentionRead.source_id.isnot(None),
                 # the independence gate counts outlets: a mention kept for a lost article is none
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
-                not_quarantined(KeywordMentionRead.article_id),  # R101
+                not_counted(KeywordMentionRead.article_id),  # R101
             )
             .group_by(KeywordMentionRead.keyword_id)
             .all()
@@ -291,7 +291,7 @@ def find_supply_chain_ripples(
             # The same two gates every series below is re-read through, so a
             # topic carried by stand-in or quarantined pages cannot take a slot.
             not_a_stand_in_article_id(KeywordMentionRead.article_id),
-            not_quarantined(KeywordMentionRead.article_id),  # R101
+            not_counted(KeywordMentionRead.article_id),  # R101
         )
         .group_by(KeywordMentionRead.keyword_id)
         .order_by(func.count(distinct(KeywordMentionRead.article_id)).desc())
@@ -424,7 +424,7 @@ def _pair_article_ids(session, cid: int, kid: int, cutoff, hi, cap: int) -> list
                 KeywordMentionRead.observed_on >= cutoff,
                 KeywordMentionRead.observed_on < hi,
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
-                not_quarantined(KeywordMentionRead.article_id),  # R101
+                not_counted(KeywordMentionRead.article_id),  # R101
             )
             .distinct()
         }

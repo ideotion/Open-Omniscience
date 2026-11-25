@@ -133,11 +133,11 @@ def corpus_language_shares(session: Session) -> dict[str, float]:
     QUARANTINE (R101): an article quarantined as "not an article" is left out, so the lever does not steer on
     nav-soup. ``article_counts_by_language`` (``src/database/snapshots.py``), the feed that describes this
     quantity, leaves them out by the same filter, so the two keep describing one corpus."""
-    from src.analytics.quarantine_scope import not_quarantined
+    from src.analytics.quarantine_scope import not_counted
 
     rows = (
         session.query(Article.language, func.count(Article.id))
-        .filter(not_quarantined(Article.id))
+        .filter(not_counted(Article.id))
         .group_by(Article.language)
         .all()
     )

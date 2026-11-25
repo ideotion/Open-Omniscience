@@ -351,6 +351,11 @@ def _run_startup_upkeep() -> None:
             _resume_reindex_backlog_at_boot(int(_bk.get("articles_pending") or 0))
     except Exception as exc:  # noqa: BLE001 - a report must never block startup
         log_failure(logger, "re-index backlog check failed", exc, level=logging.WARNING)
+    # R830 (row 408 PR 3): imported articles still queued for the junk screening (the app stopped before the background worker
+    # reached them) are screened now, off the startup path; the worker yields to an import. OO_SCREENING_AUTOSTART=0 declines it.
+    from src.analytics.screening_drain import kick_if_pending
+
+    kick_if_pending()
 
     # R827 R7(a) / R830 stop rule (3): an import activation checked only on the tables it wrote, whose whole-file
     # check never ran (the process stopped first), is checked once here, read-only, in the background. A failure

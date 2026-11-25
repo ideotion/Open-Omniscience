@@ -64,6 +64,7 @@ from typing import Any
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
+from src.analytics.quarantine_scope import NOT_COUNTED_SQL
 from src.database.writer import write_lock
 from src.jobs.background import BackgroundJob, Framed, JobContext, register_job
 from src.monitoring.secret_scrub import log_failure
@@ -73,8 +74,9 @@ _LOG = logging.getLogger(__name__)
 #: R101: a quarantined article's mentions are left out of every day this table holds and every stale day read live, as they are out of
 #: the keyword counters, the rollup and the live windows (``src/analytics/quarantine_scope.py``). A stamp bumps the corpus epoch, so a
 #: table built before it is no longer ``current`` and is rebuilt without the article. Answered from ``idx_article_quarantined``; the day's
-#: rows are still found through ``ix_mention_date_keyword``, which no longer covers the read (it has no ``article_id``).
-_NOT_QUARANTINED = " AND article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"
+#: rows are still found through ``ix_mention_date_keyword``, which no longer covers the read (it has no ``article_id``). R830: an imported
+#: article still queued for screening is left out the same way; the worker that screens it bumps the epoch, so it comes back.
+_NOT_QUARANTINED = NOT_COUNTED_SQL
 
 TABLE = "keyword_day_counts"
 DIRTY = "keyword_day_dirty"
