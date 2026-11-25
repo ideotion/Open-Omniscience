@@ -190,4 +190,8 @@ def test_the_import_report_names_the_scope_of_each_screening_figure():
     old = render_import_report_markdown({"screening": {"queued": 2, "not_screened": 2}})
     assert "2 articles from this import" in old, "an older report's bare keys still read"
     unread = render_import_report_markdown({"screening": {"queued_from_this_import": 1, "batches": []}})
-    assert "in your corpus" not in unread, "an unread corpus count is absent, never 0"
+    assert "The number of articles in your corpus not screened yet could not be read." in unread, (
+        "an unread corpus count is said, never left out or printed as 0")
+    none_left = render_import_report_markdown({"screening": {"queued_from_this_import": 1, "batches": [],
+                                                             "not_screened_in_your_corpus": 0}})
+    assert "in your corpus" not in none_left

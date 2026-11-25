@@ -401,6 +401,8 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
                 f"- {_fmt_count(in_corpus)} articles in your corpus were not screened yet when this report was written "
                 "(across the whole corpus, not just this import)."
             )
+        elif in_corpus is None:  # an unread count is said, never left out or printed as 0 (R775)
+            lines.append("- The number of articles in your corpus not screened yet could not be read.")
         lines.append("")
 
     qs = report.get("quarantine_summary")
