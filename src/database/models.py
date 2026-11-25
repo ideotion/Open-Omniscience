@@ -2576,6 +2576,9 @@ class CorpusSegment(Base):
     id_hi: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     state_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    #: R826 stage 3a: the generation the segment file last recorded when opened for writing (raised in the file first,
+    #: then here). NULL: none recorded yet, never compared. A file older than this is refused as an older copy.
+    generation: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class CorpusIdCounter(Base):
