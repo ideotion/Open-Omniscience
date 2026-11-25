@@ -85,8 +85,11 @@ def test_a_keyed_open_writes_no_byte_of_page_one(tmp_path):
     raw = (tmp_path / at_rest_state.RECORD_NAME).read_text(encoding="utf-8")
     doc = json.loads(raw)
     page1 = db.read_bytes()[:4096]
+    rec_bytes = (tmp_path / at_rest_state.RECORD_NAME).read_bytes()
+    assert page1[:16].hex() not in raw.lower() and page1[:16] not in rec_bytes, "neither the salt as hex nor as raw bytes"
     for start in range(0, 16):  # not the salt, nor any 4-byte run of it, in any case
         assert page1[start:start + 4].hex() not in raw.lower()
+        assert page1[start:start + 4] not in rec_bytes
     entry = doc["stores"]["corpus"]
     assert set(entry) == {"encrypted_at", "read_back_with_key", "dev", "ino", "mac"} and "head" not in entry
     assert at_rest_state.record_names_identity(raw.encode(), _ident(db), page1[:16])
