@@ -403,14 +403,23 @@ def test_a_shared_folder_s_cache_huggingface_token_is_never_entered(tmp_path, mo
 # -- the two security reads -----------------------------------------------------------------------------------------------------
 
 
-def test_a_file_at_a_shaped_name_is_overwritten_as_before_in_both_walks(tmp_path, walk):
-    """A regular file called ``osm_work`` is the app's by its name: overwritten and removed, never only unlinked."""
+def test_a_file_at_a_shaped_name_is_overwritten_as_before_in_both_walks(tmp_path, monkeypatch, walk):
+    """A regular file called ``osm_work`` is the app's by its name: overwritten and removed, never only unlinked. (Watched through
+    the overwrite itself: a second name as the probe is no longer written, R839.)"""
     data = _own(tmp_path)
     (data / "osm_work").write_bytes(b"S" * 4096)
-    twin = tmp_path / "twin"
-    os.link(data / "osm_work", twin)  # a second name shows whether it was written
+    real = crypto_erase._overwrite
+    written: list[str] = []
+
+    def spy(path, **kw):
+        done = real(path, **kw)
+        if done:
+            written.append(Path(path).name)
+        return done
+
+    monkeypatch.setattr(crypto_erase, "_overwrite", spy)
     crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
-    assert not data.exists() and twin.read_bytes() != b"S" * 4096
+    assert not data.exists() and "osm_work" in written
 
 
 def test_a_file_at_a_shaped_name_in_a_shared_folder_goes_in_both_walks(tmp_path, monkeypatch, walk):

@@ -196,7 +196,11 @@ def validate_sqlite_file(
             if _validate_warm_enabled():
                 # Same check, read in a cheaper order (P1.3, measured 2026-11-15): see _warm_sequentially.
                 _warm_sequentially(path, should_stop)
-                if not keyed:  # SQLCipher reads through its own page cipher, never a map
+                # SQLCipher reads through its own page cipher, never a map. The walk BESIDE the merge maps nothing either
+                # (row 441): it runs in the stdlib driver while the merge holds the same file through sqlcipher3, and
+                # neither library sees the other's locks, so a change to the file under a live map ends the process with
+                # SIGBUS where a read through the file descriptor fails as an error the import refuses on.
+                if not keyed and not alongside:
                     with suppress(*errors):
                         conn.execute(f"PRAGMA mmap_size={_VALIDATE_MMAP_BYTES}")
             if should_stop is not None and should_stop():

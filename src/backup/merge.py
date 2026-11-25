@@ -7684,6 +7684,44 @@ def _settle_pending_net(fn: Any) -> Any:
     return _wrapped
 
 
+def _holding_drain_starts(fn: Any) -> Any:
+    """Wrap :func:`run_restore` so that a COMMITTING restore holds the starts of the jobs it stops for itself (row 383).
+
+    The re-index drain could be started by the boot's last step, the Resume button or a hand-off after the restore's last writer
+    check: it then took its lease batch after batch, the swap's barrier waited the whole ``_SWAP_QUIESCE_S`` for it and the import was
+    refused with "import again". The hold opens before the first check (so a drain already running is stopped by it, R659) and closes
+    on every way out, after the safety net is settled; a start asked for in between is then made, unless an exclusive window is open
+    (an import run starts the drain once, when it ends; another window's owner leaves it to the drain's own Resume, the rule
+    :func:`start_jobs_stopped_for_restore` already follows) or the app began shutting down since. A restore that does not commit holds
+    nothing."""
+
+    @functools.wraps(fn)
+    def _wrapped(*args: Any, **kwargs: Any) -> Any:
+        if not kwargs.get("commit"):
+            return fn(*args, **kwargs)
+        from src.jobs.background import (
+            hold_starts_for_restore,
+            release_restore_hold,
+            start_held_jobs,
+        )
+
+        opened = False
+        try:
+            hold_starts_for_restore()
+            opened = True
+            return fn(*args, **kwargs)
+        finally:
+            held = release_restore_hold() if opened else {}
+            if held:
+                with suppress(Exception):  # a held start that is not made keeps its own Resume
+                    from src.scheduler.runner import exclusive_window_open
+
+                    if not exclusive_window_open():
+                        start_held_jobs(held)
+
+    return _wrapped
+
+
 def _take_safety_net_with_the_copy(working: Path, timings: object = None) -> tuple[Path, dict] | None:
     """R827 R5/R6(a): the run's pre-restore safety net, taken BEFORE the merge, from which the working copy is cloned.
 
@@ -10880,7 +10918,8 @@ def refuse_while_writer_jobs_run() -> None:
     refuses anyway (another writer runs), the jobs it stopped are started again before it raises. Called before the backup is staged (the volume restore, the
     single-file restore), before ``run_restore`` prepares anything, and again at the working copy.
 
-    STATED LIMITS: a job started AFTER the working copy is not caught (the swap's own barrier waits only for a lease holder); writers that are
+    STATED LIMITS: a job started AFTER the working copy is not caught (the swap's own barrier waits only for a lease holder), except a
+    job flagged ``stops_for_restore``, whose start :func:`run_restore` holds while it commits (row 383); writers that are
     not registry jobs (the collection pass, the housekeeping lane, the Wikipedia drain, API write routes) are outside this list, as are
     writers left unflagged on purpose (``tests/test_job_writer_flags.py``). A writer the restore does not stop for itself refuses an import
     until it ends or the operator stops it (where it can be stopped), so the indexes a fresh launch builds (``title-index``,
@@ -11022,6 +11061,7 @@ def _leave_counters_to_drain() -> str | None:
         return None
 
 
+@_holding_drain_starts  # OUTSIDE the net's settlement: a held drain started first could change the live store the settlement compares
 @_settle_pending_net
 def run_restore(
     staged: StagedArtifact,
