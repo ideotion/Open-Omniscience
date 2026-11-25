@@ -3050,8 +3050,9 @@
         + `<div class="imp-chips">${chips.join("")}</div></div>`;
     }
 
-    function _uxImElapsedHtml(m, t) {
-      return m.elapsed != null ? ooLabelHtml(esc(t("Elapsed")), esc(_uxImDur(m.elapsed))) : "";
+    // Plain text (it is set as textContent): the elapsed time, or nothing when unsent.
+    function _uxImElapsedText(m, t) {
+      return m.elapsed != null ? ooLabelText(t("Elapsed"), _uxImDur(m.elapsed)) : "";
     }
 
     function _uxImRenderHero(st) {
@@ -3061,29 +3062,26 @@
       const tf = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf
         : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
-      if (!st || !(st.items || []).length) { host.hidden = true; host.innerHTML = ""; delete host.dataset.sig; _uxImHeroDialogClass(false); return; }
+      if (!st || !(st.items || []).length) { host.hidden = true; _uxPruneRows(host, []); _uxImHeroDialogClass(false); return; }
       const model = _uxImRunModel(st);
       const html = _uxImHeroHtml(model, t, tf);
       host.hidden = false;
       _uxImHeroDialogClass(true, st.state === "running");
-      const paintTime = () => {
-        const el = host.querySelector(".imp-hero-time");
-        const h = _uxImElapsedHtml(model, t);
-        if (el && el.innerHTML !== h) el.innerHTML = h;
-      };
-      if (host.dataset.sig === html) { paintTime(); return; }
-      // The ring animates from its old value: patch the arc rather than replace it.
+      // The ring animates from its old value: the patch replaces the card only when its
+      // facts change (never for the elapsed time, set apart below), and the arc is then
+      // started from where it was.
       const oldFg = host.querySelector(".imp-ring-fg");
       const oldDash = oldFg ? oldFg.getAttribute("stroke-dasharray") : null;
-      host.dataset.sig = html;
-      host.innerHTML = html;
+      _uxPatchRow(host, "hero", html, html);
       const fg = host.querySelector(".imp-ring-fg");
       if (fg && oldDash && oldDash !== fg.getAttribute("stroke-dasharray")) {
         const want = fg.getAttribute("stroke-dasharray");
         fg.setAttribute("stroke-dasharray", oldDash);
         requestAnimationFrame(() => fg.setAttribute("stroke-dasharray", want));
       }
-      paintTime();
+      const time = host.querySelector(".imp-hero-time");
+      const txt = _uxImElapsedText(model, t);
+      if (time && time.textContent !== txt) time.textContent = txt;
     }
 
     // While the hero shows, the native bar it replaces is hidden by CSS (its own logic
@@ -3149,9 +3147,9 @@
         : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       const rows = st ? _uxImFactsRows(st, t, tf) : [];
       const html = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
-      if (host.dataset.sig === html) return;
-      host.dataset.sig = html;
-      host.innerHTML = html;
+      // Through the keyed patch (an unchanged list is not rewritten); no rows, no list.
+      if (rows.length) _uxPatchRow(host, "facts", html, html);
+      _uxPruneRows(host, rows.length ? ["facts"] : []);
     }
 
     // ── THE TOP-BAR PILL ─────────────────────────────────────────────────────
@@ -3171,14 +3169,16 @@
         ? OOI18N.tf
         : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       const pctEl = document.getElementById("imp-pill-pct");
-      const ringHost = document.getElementById("imp-pill-ring");
+      const arc = document.getElementById("imp-pill-arc");
+      // The ring is static markup; only its arc's length is set (a number, never HTML).
+      const setArc = (pct) => { if (arc) { arc.setAttribute("stroke-dasharray", `${pct == null ? 0 : pct} ${100 - (pct == null ? 0 : pct)}`); arc.style.display = pct == null ? "none" : ""; } };
       if (_ooImpPillHideT && (unread || (st && st.state === "running"))) { clearTimeout(_ooImpPillHideT); _ooImpPillHideT = null; }
       if (unread) {
         // Only once a run was being shown: a failed read with no run in sight shows nothing.
         if (pill.hidden) return;
         pill.className = "imp-pill imp-pill-unread";
         if (pctEl) pctEl.textContent = "?";
-        if (ringHost) ringHost.innerHTML = _uxImRingSvg(null, "imp-pill-svg");
+        setArc(null);
         const why = t("Import status could not be read. The import may still be running; open the import to check.");
         pill.title = why; pill.setAttribute("aria-label", why);
         return;
@@ -3192,7 +3192,7 @@
       const pctTxt = m.pct == null ? "—" : _uxImPctText(m.pct, tf);
       if (pctEl) pctEl.textContent = m.running ? pctTxt : (tone === "ok" ? "✓" : tone === "warn" ? "■" : "!");
       // A clean finish is a full ring; any other ending keeps the share it reached.
-      if (ringHost) ringHost.innerHTML = _uxImRingSvg(tone === "ok" ? 100 : m.pct, "imp-pill-svg");
+      setArc(tone === "ok" ? 100 : m.pct);
       const lines = [_uxImRunTitle(m, t)];
       if (m.stepsTotal != null) lines.push(ooLabelText(t("Import steps finished"), tf("{done} of {total}", { done: fmtNum(m.stepsDone, 0), total: fmtNum(m.stepsTotal, 0) }) + " · " + pctTxt));
       else lines.push(t("steps not reported"));

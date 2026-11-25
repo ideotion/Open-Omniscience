@@ -2480,6 +2480,7 @@
       border:1px solid color-mix(in srgb, var(--accent) 28%, var(--border)); border-radius:14px;
       background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, var(--panel)), var(--panel) 70%); }
     .imp-hero[hidden] { display:none; }
+    .imp-hero > [data-row-key] { display:contents; }
     .imp-hero-ring { position:relative; flex:0 0 auto; width:84px; height:84px; }
     .imp-ring { width:84px; height:84px; transform:rotate(0deg); }
     .imp-ring-bg { stroke:color-mix(in srgb, var(--fg) 12%, transparent); }
@@ -2527,7 +2528,8 @@
       width:9px !important; height:9px !important; box-shadow:0 0 0 3px var(--panel2); }
     #ux-imp-statements > div { padding:2px 0; }
     .imp-section-h { margin:12px 0 2px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
-    .imp-facts { display:grid; grid-template-columns:auto 1fr; gap:3px 14px; margin:4px 0 0; font-size:12.5px; }
+    .imp-facts { margin:4px 0 0; font-size:12.5px; }
+    .imp-facts > div { display:grid; grid-template-columns:auto 1fr; gap:3px 14px; }
     .imp-facts dt { color:var(--muted); }
     .imp-facts dd { margin:0; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
     .imp-facts:empty { display:none; }
@@ -2549,7 +2551,7 @@
     .imp-pill[hidden] { display:none; }
     .imp-pill:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
     .imp-pill-icon { position:relative; width:20px; height:20px; flex:0 0 20px; }
-    .imp-pill-ring, .imp-pill-svg { position:absolute; inset:0; width:20px; height:20px; }
+    .imp-pill-svg { position:absolute; inset:0; width:20px; height:20px; }
     .imp-pill-svg .imp-ring-fg { stroke:var(--accent); }
     .imp-pill-arrow { position:absolute; inset:4px; width:12px; height:12px; color:var(--accent); }
     .imp-pill-pct { flex:1 1 auto; text-align:end; font-weight:600; }

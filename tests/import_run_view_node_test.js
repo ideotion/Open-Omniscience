@@ -50,7 +50,7 @@ const src = [
   extract("function _uxImRingSvg("),
   extract("function _uxImHeroHtml("),
   extract("function _uxImFactsRows("),
-  extract("function _uxImElapsedHtml("),
+  extract("function _uxImElapsedText("),
   "let _ooImpPillHideT = null;",
   extract("function _ooImportPillPaint("),
 ].join("\n");
@@ -71,7 +71,7 @@ function pillDom() {
   const els = {
     "imp-pill": { hidden: true, className: "", title: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } },
     "imp-pill-pct": { textContent: "" },
-    "imp-pill-ring": { innerHTML: "" },
+    "imp-pill-arc": { attrs: {}, style: {}, setAttribute(k, v) { this.attrs[k] = v; } },
   };
   return els;
 }
@@ -83,7 +83,7 @@ const sandbox = {
 };
 const fn = new Function("tf", "t", "esc", "fmtNum", "ooLabelHtml", "ooLabelText", "_uxImDur", "_uxImPhaseBits",
   "_uxVolPhase", "fmtDateTime", "window", "document", "setTimeout", "clearTimeout",
-  src + "\nreturn { _uxImRunModel, _uxImRunTitle, _uxImHeroHtml, _uxImFactsRows, _ooImportPillPaint, _uxImPctText, _uxImElapsedHtml };");
+  src + "\nreturn { _uxImRunModel, _uxImRunTitle, _uxImHeroHtml, _uxImFactsRows, _ooImportPillPaint, _uxImPctText, _uxImElapsedText };");
 const M = fn(tf, t, esc, fmtNum, ooLabelHtml, ooLabelText, _uxImDur, _uxImPhaseBits, _uxVolPhase, fmtDateTime,
   sandbox.window, sandbox.document, sandbox.setTimeout, sandbox.clearTimeout);
 
@@ -176,8 +176,8 @@ test("the elapsed time is not part of the card's HTML, so a tick does not rewrit
   const a = M._uxImHeroHtml(M._uxImRunModel(run({ elapsed_s: 60 })), t, tf);
   const b = M._uxImHeroHtml(M._uxImRunModel(run({ elapsed_s: 61 })), t, tf);
   assert(a === b, "same card one second later");
-  assert(M._uxImElapsedHtml(M._uxImRunModel(run({ elapsed_s: 61 })), t) === "Elapsed: 61 s", "filled in apart");
-  assert(M._uxImElapsedHtml(M._uxImRunModel(run({ elapsed_s: null })), t) === "", "nothing when unsent");
+  assert(M._uxImElapsedText(M._uxImRunModel(run({ elapsed_s: 61 })), t) === "Elapsed: 61 s", "filled in apart");
+  assert(M._uxImElapsedText(M._uxImRunModel(run({ elapsed_s: null })), t) === "", "nothing when unsent");
 });
 
 test("an ended run shows no current-backup figures", () => {
@@ -194,6 +194,7 @@ test("the pill shows the step percentage while a run runs", () => {
   assert(pill.title.indexOf("Import steps finished: 2 of 8") !== -1, "the hover counts steps: " + pill.title);
   assert(pill.title.indexOf("The percentage counts import steps") !== -1, "and says what they are");
   assert(pill.attrs["aria-label"] && pill.attrs["aria-label"].length > 0, "it has an accessible name");
+  assert(DOM["imp-pill-arc"].attrs["stroke-dasharray"] === "25 75", "the arc is the same share");
 });
 
 test("a failed read says so: never 0%, never blank", () => {
@@ -204,6 +205,7 @@ test("a failed read says so: never 0%, never blank", () => {
   assert(pill.hidden === false, "the pill stays");
   assert(DOM["imp-pill-pct"].textContent === "?", "a question mark, not 0%");
   assert(/could not be read/.test(pill.title) && /could not be read/.test(pill.attrs["aria-label"]), "and the words");
+  assert(DOM["imp-pill-arc"].style.display === "none", "and no arc");
   DOM = pillDom();
   M._ooImportPillPaint(null, true);
   assert(DOM["imp-pill"].hidden === true, "a failed read with no run in sight shows nothing");
