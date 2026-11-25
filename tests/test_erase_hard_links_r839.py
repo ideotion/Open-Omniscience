@@ -422,6 +422,31 @@ def _run_watcher(tmp_path: Path, data: Path) -> str:
 
 
 @posix_only
+def test_a_key_whose_link_count_changes_between_the_count_and_the_write_is_unverified(tmp_path, monkeypatch):
+    """R841 (coordinator, 11:07Z): the names are counted against the descriptor's link count; a name made elsewhere after the
+    count and before the write cannot be reconciled, so the file is never written."""
+    data = _own(tmp_path)
+    (data / "keys" / ".pending").mkdir(parents=True)
+    key = data / "keys" / "custody_ed25519.pem"
+    key.write_bytes(b"K" * 64)
+    os.link(key, data / "keys" / ".pending" / _pending_name("custody_ed25519.pem"))
+    late = tmp_path / "zq-late-name"
+    real = crypto_erase._KeysHold.verify
+
+    def verify(self, st):
+        ok = real(self, st)
+        if not late.exists():
+            os.link(data / "keys" / ".pending" / _pending_name("custody_ed25519.pem"), late)
+        return ok
+
+    monkeypatch.setattr(crypto_erase._KeysHold, "verify", verify)
+    report = _erase(data)
+    assert late.read_bytes() == b"K" * 64, "never written once the count no longer matches"
+    assert report["linked_files"]["keys"] == 1
+    assert crypto_erase._LINKED_KEYS_SENTENCE.format(n=1) in report["limit"]
+
+
+@posix_only
 def test_the_watcher_never_writes_an_other_file_with_a_second_name(tmp_path):
     data = _own(tmp_path)
     (data / "annotations").mkdir()

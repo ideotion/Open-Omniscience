@@ -494,6 +494,8 @@ def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], re
                 # R841 (row 438 / R810 (3)): a key file with another name is written only when verified, through this descriptor's
                 # fstat (its identity), to be this installation's own; never on a guess
                 own = keyed(st)
+                if own:  # a link count that changed between the count and the write cannot be reconciled: unverified (R841)
+                    own = os.fstat(fd).st_nlink == st.st_nlink
                 _note_link(st, keyed=own, key=not own)
                 keyed = own
             else:
@@ -1789,7 +1791,7 @@ def _keys_walk_fd(hold: _KeysHold, dfd: int, folder: Path, track, unlisted, *, d
         names = sorted(os.listdir(dfd))
     except OSError as exc:
         if unlisted is not None:
-            unlisted(exc)
+            unlisted(OSError(exc.errno, "", str(folder)))  # named by its path, never a handle number
         return seen, wiped
     for name in names:
         kind = _kind(folder / name, None, _At(dfd, name))
@@ -1810,7 +1812,7 @@ def _keys_sub(hold: _KeysHold, dfd: int, folder: Path, name: str, track, unliste
     sub, err = _open_below(dfd, (name,))
     if sub is None:
         if unlisted is not None and err is not None:
-            unlisted(err)
+            unlisted(OSError(err.errno, "", str(folder / name)))  # by its path, as the walk by path names it
         return 0, 0
     try:
         return _keys_walk_fd(hold, sub, folder / name, track, unlisted, depth=depth + 1)

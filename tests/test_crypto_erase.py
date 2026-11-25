@@ -614,7 +614,15 @@ def test_a_keys_subfolder_the_erase_cannot_list_is_named_as_a_failure(tmp_path, 
                     onerror(PermissionError(13, "Permission denied", str(sub)))
             yield root, dirs, names
 
-    scope_os(monkeypatch, crypto_erase, walk=walk)
+    scope_os(monkeypatch, crypto_erase, walk=walk)  # the walk by path (no folder handles: Windows)
+    real_open_below = crypto_erase._open_below
+
+    def open_below(dfd, parts):  # row 380: the walk by the keys folder's handle; its .pending cannot be opened
+        if tuple(parts) == (sub.name,) and os.path.samestat(os.fstat(dfd), os.stat(sub.parent)):
+            return None, PermissionError(13, "Permission denied", sub.name)
+        return real_open_below(dfd, parts)
+
+    monkeypatch.setattr(crypto_erase, "_open_below", open_below)
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert report["overwrite_failures"].count(str(sub)) == 1
 
@@ -1065,9 +1073,11 @@ def test_in_a_shared_folder_every_copy_of_the_salt_and_every_key_of_the_app_s_is
         key = shared / "keys" / "custody_ed25519.pem"
         key.write_bytes(b"PRIVATE KEY " * 20)
         kept = {}
-        for name, p in (("main", db), ("wal", db.with_name(db.name + "-wal")), ("key", key)):
+        for name, p in (("main", db), ("wal", db.with_name(db.name + "-wal"))):
             kept[name] = tmp_path / f"kept-{name}"
             os.link(p, kept[name])
+        # a key file with a name outside the keys folder is never written (R841): read back through a kept descriptor instead
+        key_fd, key_size = os.open(key, os.O_RDONLY), key.stat().st_size
         # a copy with a second name is never written (security reads, row 402): read back through a kept descriptor instead
         salvage_fd, salvage_size = os.open(salvage, os.O_RDONLY), salvage.stat().st_size
         assert _salt_hits(kept["wal"].read_bytes(), salt), "the setup must put the salt in the log"
@@ -1075,8 +1085,10 @@ def test_in_a_shared_folder_every_copy_of_the_salt_and_every_key_of_the_app_s_is
         try:
             report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=shared)
             salvage_after = os.pread(salvage_fd, salvage_size, 0)
+            key_after = os.pread(key_fd, key_size, 0)
         finally:
             os.close(salvage_fd)
+            os.close(key_fd)
     finally:
         con.close()
 
@@ -1085,7 +1097,7 @@ def test_in_a_shared_folder_every_copy_of_the_salt_and_every_key_of_the_app_s_is
     for name in ("main", "wal"):
         assert _salt_hits(kept[name].read_bytes(), salt) == [], f"a copy of the salt survived in the {name} file"
     assert _salt_hits(salvage_after, salt) == [], "a copy of the salt survived in the salvage file"
-    assert b"PRIVATE KEY" not in kept["key"].read_bytes()
+    assert b"PRIVATE KEY" not in key_after
     assert not db.exists() and not salvage.exists() and not key.exists()
     assert (shared / "thesis.docx").read_bytes() == b"years of work"
 
