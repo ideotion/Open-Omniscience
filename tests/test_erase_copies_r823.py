@@ -14,6 +14,7 @@ import pytest
 from src.database import at_rest_state
 from src.database.connect import connect, have_driver
 from src.safety import crypto_erase
+from tests.os_scope import scope_os
 
 _PW = "row-402-r823-test-passphrase"
 sqlcipher_only = pytest.mark.skipif(not have_driver(), reason="sqlcipher3 not installed")
@@ -424,7 +425,7 @@ def test_on_windows_a_corpus_folder_with_foreign_items_is_kept_and_its_segments_
     corpus.mkdir()
     (corpus / "seg-1.db").write_bytes(b"x" * 100)
     (corpus / "notes.txt").write_bytes(b"mine")
-    monkeypatch.setattr(os, "supports_dir_fd", set())
+    scope_os(monkeypatch, crypto_erase, supports_dir_fd=set())
     sweep = crypto_erase._corpus_open(tmp_path, 1)
     assert sweep["state"] == "by_path" and sweep["foreign"] == 1 and sweep["left"] == 1
     assert crypto_erase._corpus_report(sweep)["corpus"] == "not_overwritten"
@@ -442,14 +443,10 @@ def test_the_copy_and_segment_sentences_are_in_every_locale():
 def test_the_kept_handle_reads_and_writes_without_pread_or_pwrite(tmp_path, monkeypatch):
     """Windows has neither ``os.pread`` nor ``os.pwrite``: the copy and segment steps read and write through seek then read/write,
     so no AttributeError can end the erase there."""
-    import os
-
-    from src.safety import crypto_erase
-
     p = tmp_path / "f.bin"
     p.write_bytes(b"A" * 64)
-    monkeypatch.delattr(os, "pread", raising=False)
-    monkeypatch.delattr(os, "pwrite", raising=False)
+    scope_os(monkeypatch, crypto_erase)._hidden.update({"pread", "pwrite"})
+    assert not hasattr(crypto_erase.os, "pread") and not hasattr(crypto_erase.os, "pwrite")
     fd = os.open(p, os.O_RDWR | getattr(os, "O_BINARY", 0))
     try:
         assert crypto_erase._read_at(fd, 16, 0) == b"A" * 16
