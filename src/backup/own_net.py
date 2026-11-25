@@ -240,6 +240,10 @@ def remove_if_refused_before_activation(net: Path) -> dict:
         _OWN.pop(str(net), None)
     with suppress(Exception):
         _set_state(net.name, None)
+    with suppress(Exception):
+        from src.database import at_rest_state
+
+        at_rest_state.forget_copy(net)  # R823 / R828 (4): its at-rest record entry goes with the file
     return {**out, "removed": True, "message": REMOVED}
 
 

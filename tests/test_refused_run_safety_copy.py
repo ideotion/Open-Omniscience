@@ -245,3 +245,25 @@ def test_the_folder_path_is_shown_on_screen_and_never_stored(tmp_path, monkeypat
     assert str(data) not in state.read_text(encoding="utf-8")
     shown = q.status()["safety_copies"]
     assert shown["folder"] == str(data) and shown["leftovers"]["count"] == 2
+
+
+def test_a_removed_copy_takes_its_at_rest_record_entry_with_it_and_a_kept_one_keeps_it(folder, monkeypatch):
+    """R823 / R828 (4): when the R833 removal deletes the copy, its entry in the at-rest record goes with it, so the record never
+    names a file that is gone (a later file at that name would otherwise inherit "encrypted"); a copy that is kept keeps its
+    entry."""
+    from src.backup import own_net as own
+    from src.database import at_rest_state
+
+    data, live, con = folder
+    forgot: list[Path] = []
+    monkeypatch.setattr(at_rest_state, "forget_copy", lambda p: forgot.append(Path(p)))
+    removed = _make_net(data, live)
+    own.note_made(removed)
+    assert own.remove_if_refused_before_activation(removed)["removed"]
+    assert forgot == [removed]
+    kept = _make_net(data, live)
+    own.note_made(kept)
+    con.execute("INSERT INTO t VALUES (2)")
+    con.commit()
+    assert not own.remove_if_refused_before_activation(kept)["removed"]
+    assert forgot == [removed], "a kept copy keeps its entry"
