@@ -61,7 +61,10 @@ class StagedSchemaRefused(StagedKeyError):
 
 class NotADatabase(StagedKeyError):
     """The staged file does not open as a SQLite database at all: there is nothing to seal, and the validation refuses
-    it in its own words a moment later."""
+    it in its own words a moment later. Carries fixed words of its own, for a caller that reports it as it is."""
+
+    def __init__(self, message: str = "the backup's corpus does not read as a database, so nothing was imported") -> None:
+        super().__init__(message)
 
 
 #: Why a staged database that opened could not be sealed: it could not be read to its end.
@@ -594,10 +597,11 @@ def check_staged_schema(conn: Any, schema: str = "main") -> None:
                     or _declared_name(str(sql or "")) != lname):
                 raise StagedSchemaRefused(f"the backup's corpus holds a {typ} this app does not make; it was not read")
             continue
-        if typ == "table" and rootpage and _OBJ_NAME.match(lname):
+        if typ == "table" and rootpage:
             # A generated column runs its expression on every write and read of its row, on the merge's connection too
             # (row 432's security read); the app makes none, so a backup that carries one is not the app's.
-            cols = conn.execute(f'PRAGMA "{schema}".table_xinfo("{name}")').fetchall()
+            quoted = str(name).replace('"', '""')  # any table name, quoted as an identifier: never left unchecked
+            cols = conn.execute(f'PRAGMA "{schema}".table_xinfo("{quoted}")').fetchall()
             if any(int(c[6]) in (2, 3) for c in cols):
                 raise StagedSchemaRefused("the backup's corpus holds a generated column this app does not make; it was not read")
         # A table with no root page is virtual, whatever its SQL text looks like: a comment inside the text
@@ -621,6 +625,8 @@ def disarm_staged(path: os.PathLike[str] | str) -> int:
     backup made by an older build, whose triggers read differently, still imports. A schema upgrade of an older copy
     re-creates the app's own triggers from this build's text. Called once the copy is staged, before the newsletter filter,
     the upgrade and the merge, and before the integrity walk starts beside the merge (R834)."""
+    if not Path(path).is_file():
+        raise StagedKeyError("the staged copy of the backup is missing")  # never created by a read-write open here
     try:
         conn = open_staged(path, read_only=False)
     except StagedKeyError:
@@ -630,7 +636,9 @@ def disarm_staged(path: os.PathLike[str] | str) -> int:
     try:
         try:
             conn.execute("SELECT count(*) FROM main.sqlite_master").fetchone()
-        except db_errors():
+        except db_errors() as exc:
+            if _is_held(getattr(exc, "sqlite_errorcode", None)):
+                raise StagedKeyError(IN_USE) from None  # another program's lock is not a file that is no database
             raise NotADatabase from None  # nothing a database holds is in it: the validation refuses it in its own words
         check_staged_schema(conn)
         # Triggers first: an INSTEAD OF trigger sits on a view. Each name passed check_staged_schema's identifier match.
@@ -650,7 +658,9 @@ def disarm_staged(path: os.PathLike[str] | str) -> int:
         # Read back from the table itself, not the parsed schema: a DROP can remove the object SQLite loaded and leave a
         # row it did not match, which loads again on the next open. Anything left refuses the copy.
         if left:
-            conn.rollback()
+            # DDL here commits statement by statement, so the drops that worked stay done; the copy is refused all the same.
+            with suppress(Exception):
+                conn.rollback()
             raise StagedSchemaRefused("the backup's corpus holds a trigger or view that could not be removed; it was not read")
         try:
             conn.commit()

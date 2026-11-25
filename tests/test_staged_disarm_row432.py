@@ -442,7 +442,7 @@ def test_the_drop_is_read_back_from_the_table_itself(tmp_path, monkeypatch):
     monkeypatch.setattr(staged_key, "check_staged_schema", lambda conn, schema="main": None)  # the check bypassed
     with pytest.raises(staged_key.StagedSchemaRefused, match="could not be removed"):
         staged_key.disarm_staged(inc)
-    assert "article_fts_au" in _names(inc, "trigger")  # rolled back: refused as a whole, never half-disarmed
+    assert "article_fts_au" in _names(inc, "trigger")  # the row the DROP missed is still there, and the copy is refused
 
 
 @pytest.mark.parametrize("kind", ["VIRTUAL", "STORED"])
@@ -568,6 +568,56 @@ def test_the_lock_probe_creates_nothing_and_follows_no_link(tmp_path):
     try:
         holder.execute("BEGIN EXCLUSIVE")
         assert staged_key._held_now(real) is True and staged_key._held_now(link) is False
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+
+
+# --------------------------------------------------------------------------- the final head's read
+
+
+def test_a_generated_column_in_a_table_of_any_name_is_refused(tmp_path):
+    inc = tmp_path / "inc.db"
+    _build(inc, 1, None)
+    _plant(inc, 'CREATE TABLE "a b""c" (a TEXT, g TEXT GENERATED ALWAYS AS (a) VIRTUAL)')
+    with pytest.raises(staged_key.StagedSchemaRefused, match="generated column"):
+        staged_key.disarm_staged(inc)
+
+
+def test_a_missing_copy_is_refused_and_never_created(tmp_path):
+    gone = tmp_path / "inc.db"
+    with pytest.raises(staged_key.StagedKeyError, match="missing"):
+        staged_key.disarm_staged(gone)
+    assert not gone.exists()
+
+
+def test_the_merge_entry_refuses_a_file_that_is_no_database_in_words(tmp_path):
+    from src.backup.merge import MergeError, _check_staged_schema_file
+
+    junk = tmp_path / "inc.db"
+    junk.write_bytes(b"SQLite format 3\x00" + b"\xff" * 4080)
+    with pytest.raises(MergeError) as refused:
+        _check_staged_schema_file(junk)
+    assert str(refused.value).strip()  # never an empty refusal
+
+
+def test_a_copy_another_program_holds_is_called_in_use(tmp_path, monkeypatch):
+    inc = tmp_path / "inc.db"
+    _build(inc, 1, None)
+    real = staged_key.open_staged
+
+    def held(*a, **k):
+        conn = real(*a, **k)
+        conn.execute("PRAGMA busy_timeout = 0")
+        return conn
+
+    monkeypatch.setattr(staged_key, "open_staged", held)
+    holder = sqlite3.connect(inc, isolation_level=None)
+    try:
+        holder.execute("BEGIN EXCLUSIVE")
+        with pytest.raises(staged_key.StagedKeyError) as refused:
+            staged_key.disarm_staged(inc)
+        assert str(refused.value) == staged_key.IN_USE
     finally:
         holder.execute("ROLLBACK")
         holder.close()
