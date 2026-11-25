@@ -166,6 +166,10 @@ def hand_off_reindex(report: dict) -> None:
         return
 
     started, detail = start_reindex_drain()
+    if not started and _drain_running():
+        # Row 383: a start asked for during the import was made as it ended, so the drain is already running: the report says so,
+        # never "not started" beside a running drain.
+        started, detail = True, None
     report["reindex_deferred"]["started"] = started
     if detail:
         report["reindex_deferred"]["start_detail"] = detail
@@ -186,6 +190,16 @@ def _sweep_counters_here(report: dict) -> None:
     except Exception as exc:  # noqa: BLE001 - a committed import must never fail on its own epilogue
         log_failure(_LOG, "the counter sweep owed by this import did not run; they stay estimated", exc,
                     level=logging.WARNING)
+
+
+def _drain_running() -> bool:
+    """Whether the re-index drain's thread is running now. Never raises (an unreadable state answers False)."""
+    try:
+        from src.api.backup_v2 import _REINDEX_RESUME_JOB
+
+        return bool(_REINDEX_RESUME_JOB._alive())
+    except Exception:  # noqa: BLE001 - the report then keeps what the start said
+        return False
 
 
 def start_reindex_drain() -> tuple[bool, str | None]:

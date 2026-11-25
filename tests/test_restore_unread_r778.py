@@ -359,6 +359,34 @@ def test_an_unread_name_that_is_not_utf8_still_renders_as_json(tmp_path, monkeyp
     assert res["unread"][0]["rel"] == "x�.bin"
 
 
+def test_a_surrogate_escaped_name_from_the_walk_renders_as_json_on_every_platform(tmp_path, monkeypatch):
+    # The same rule without making the file: the walk hands back a name that is not valid UTF-8 (as the system
+    # does for a foreign drive, with lone surrogates) and that name cannot be read. Every file system can run this.
+    backup = _backup(tmp_path)
+    bad = os.fsdecode(b"x\xff.bin")
+    monkeypatch.setattr(folder_backup, "_FD_RELATIVE", False)
+    real_walk = os.walk
+
+    def fake_walk(top, topdown=True, onerror=None, followlinks=False):
+        for dirpath, dirnames, names in real_walk(top, topdown=topdown, onerror=onerror, followlinks=followlinks):
+            if os.path.basename(dirpath) == "wiki_dumps":
+                names = [bad if n == "a.bz2" else n for n in names]
+            yield dirpath, dirnames, names
+
+    real_lstat = os.lstat
+    stand_in = backup / "wiki_dumps" / "a.bz2"  # the bad name looks like this real file; it is never opened
+
+    def fake_lstat(path, *a, **k):
+        return real_lstat(stand_in) if os.fspath(path).endswith(bad) else real_lstat(path, *a, **k)
+
+    scope_os(monkeypatch, folder_backup, walk=fake_walk, lstat=fake_lstat)
+    _refuse_open(monkeypatch, bad, PermissionError(errno.EACCES, "Permission denied"))
+    res = restore_folder_backup(backup, targets=_targets(tmp_path))
+    assert res["unread_total"] == 1 and res["incomplete"] is True
+    json.dumps(res, ensure_ascii=False).encode("utf-8")
+    assert res["unread"][0]["rel"] == "x\ufffd.bin"
+
+
 def test_the_closed_dialog_toast_never_calls_an_incomplete_restore_complete():
     js = (ROOT / "src" / "static" / "app-backup.js").read_text(encoding="utf-8")
     i = js.index('toast(t("Import complete."))')
