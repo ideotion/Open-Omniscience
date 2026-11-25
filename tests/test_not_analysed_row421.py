@@ -34,17 +34,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(autouse=True)
 def _fresh_cache():
-    qs._not_analysed_cache.update(at=None, value=None, store=None)
+    qs._not_analysed_cache.update(at=None, value=None, store=None, failed=False)
     yield
-    qs._not_analysed_cache.update(at=None, value=None, store=None)
+    qs._not_analysed_cache.update(at=None, value=None, store=None, failed=False)
 
 
-def _store(status: str = "merged"):
+def _store(status: str = "merged", path: str = ":memory:"):
     """Six articles. Of the merged import's five: 1 analysed (both stamps), 2 only its keyword stamp, 3 no stamp, 4 no stamp
     and queued for screening, 5 no stamp and quarantined. Article 6 was collected, not imported, and has no stamp."""
     from src.backup.merge import _backlog_engines, _backlog_www_engine
 
-    eng = app_sqlite_engine(":memory:")
+    eng = app_sqlite_engine(path, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     s = Session(eng)
     src = Source(name="a", domain="a.test")
@@ -105,6 +105,84 @@ def test_an_unreadable_count_is_absent_from_the_tally(monkeypatch):
 
     monkeypatch.setattr(qs, "not_analysed_count", unread)
     assert qs.not_counted_tally(s) == {"not_screened": 1}
+
+
+def test_an_imported_article_deleted_before_its_reindex_is_not_counted():
+    # merged_rows has no cascade: a deleted article keeps its row there, and it is not an article the corpus holds.
+    s = _store()
+    s.query(Article).filter(Article.id == 3).delete()
+    s.commit()
+    assert qs.not_analysed_count(s) == 1, "only article 2 is still owed"
+    assert qs.count_not_analysed(s, [2, 3]) == 1
+
+
+def test_an_id_past_the_first_chunk_is_counted():
+    s = _store()
+    s.add(Article(id=1500, url="https://a.test/1500", canonical_url="https://a.test/1500", source_id=1, title="t",
+                  content="x", hash=f"{1500:064d}"))
+    batch_id = s.query(MergeBatch.id).scalar()
+    s.add(MergedRow(batch_id=batch_id, table_name="articles", row_id=1500))
+    s.commit()
+    assert qs.count_not_analysed(s, list(range(1, 2000))) == 3
+    assert qs.count_not_analysed(s, list(range(901, 2000))) == 1
+
+
+def test_an_unreadable_screening_count_leaves_the_not_analysed_count(monkeypatch):
+    s = _store()
+    real = s.execute
+    calls = {"n": 0}
+
+    def first_fails(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("locked")
+        return real(*a, **k)
+
+    monkeypatch.setattr(s, "execute", first_fails)
+    assert qs.not_counted_tally(s) == {"not_analysed": 2}, "each reason is read on its own"
+
+
+def test_a_failed_count_is_not_read_again_by_every_poll_and_never_reads_as_zero(monkeypatch):
+    s = _store()
+    reads = {"n": 0}
+
+    def unreadable():
+        reads["n"] += 1
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(qs, "_not_analysed_params", unreadable)
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            qs.not_analysed_count(s)
+    assert reads["n"] == 1, "the failure is reused for the cache's time, like a count"
+    assert "not_analysed" not in qs.not_counted_tally(s)
+
+
+def test_two_polls_that_miss_the_cache_together_scan_once(monkeypatch, tmp_path):
+    import threading
+
+    s1 = _store(path=str(tmp_path / "s.db"))  # one session for both: with the lock, the second poll never reaches the store
+    scans = {"n": 0}
+    real = qs._not_analysed_params
+    gate = threading.Event()
+
+    def slow():
+        scans["n"] += 1
+        gate.wait(2)
+        return real()
+
+    monkeypatch.setattr(qs, "_not_analysed_params", slow)
+    out: list = []
+    t = threading.Thread(target=lambda: out.append(qs.not_analysed_count(s1)))
+    t.start()
+    while scans["n"] == 0:
+        pass
+    t2 = threading.Thread(target=lambda: out.append(qs.not_analysed_count(s1)))
+    t2.start()
+    gate.set()
+    t.join(5)
+    t2.join(5)
+    assert out == [2, 2] and scans["n"] == 1
 
 
 def test_a_cached_count_is_never_served_for_another_store():

@@ -31,6 +31,7 @@ answered from the table's own primary key, so it costs one small index read like
 from __future__ import annotations
 
 import contextlib
+import threading
 from typing import Any
 
 from sqlalchemy import select
@@ -87,14 +88,17 @@ def not_counted_article_ids(session: Session) -> frozenset[int]:
 #: same test as the backlog, ``src/backup/merge.py`` ``_BACKLOG_SQL``). An article that is quarantined (a stand-in is) or still
 #: queued for screening is counted under that reason, never also here, so the reasons never name one article twice: the
 #: screening wins, because an aggregate leaves a queued article out whatever its analysis holds. Query time only: nothing is
-#: written. The quarantine and queue subqueries are index-only (``idx_article_quarantined``, the queue's primary key).
+#: written. The queue subquery is index-only (the queue's primary key). The article itself is joined: ``merged_rows`` has no
+#: cascade, so an imported article deleted while its import is still ``merged`` keeps its row there, and it is not an article
+#: the corpus holds (the re-index counts it as absent, ``_BATCH_ABSENT_SQL``), so it is never counted here.
 _NOT_ANALYSED_FROM = (
     " FROM merge_batches b"
     " JOIN merged_rows m ON m.batch_id = b.id AND m.table_name = 'articles'"
+    " JOIN articles a ON a.id = m.row_id"
     " LEFT JOIN article_index_stamps st ON st.article_id = m.row_id AND st.engine IN (:engine, :kw_legacy)"
     " LEFT JOIN article_www_stamps ws ON ws.article_id = m.row_id AND ws.engine = :www_engine"
     " WHERE b.status = :s AND (st.article_id IS NULL OR ws.article_id IS NULL)"
-    " AND m.row_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"
+    " AND a.quarantined IS NOT 1"
     " AND m.row_id NOT IN (SELECT article_id FROM screening_pending)"
 )
 _NOT_ANALYSED_SQL = "SELECT COUNT(DISTINCT m.row_id)" + _NOT_ANALYSED_FROM
@@ -102,7 +106,9 @@ _NOT_ANALYSED_SQL = "SELECT COUNT(DISTINCT m.row_id)" + _NOT_ANALYSED_FROM
 _ANY_MERGED_SQL = "SELECT 1 FROM merge_batches WHERE status = :s LIMIT 1"
 #: How long the whole-store count is reused by the surfaces that poll it (as the backlog's own cache, ``api/jobs.py``).
 _NOT_ANALYSED_TTL_S = 30.0
-_not_analysed_cache: dict[str, Any] = {"at": None, "value": None, "store": None}
+_not_analysed_cache: dict[str, Any] = {"at": None, "value": None, "store": None, "failed": False}
+#: One whole-store count at a time: two polls that both miss the cache would otherwise each scan every merged row at once.
+_not_analysed_lock = threading.Lock()
 
 
 def _not_analysed_params() -> dict[str, str]:
@@ -116,28 +122,46 @@ def _not_analysed_params() -> dict[str, str]:
 
 def not_analysed_count(session: Session) -> int:
     """How many articles of the corpus the re-index has not finished (R832), disjoint from the quarantined and the not-screened
-    ones. Raises when the store cannot be read (the caller says nothing then, never 0). Reused for ``_NOT_ANALYSED_TTL_S``."""
+    ones. Raises when the store cannot be read (the caller says nothing then, never 0). Reused for ``_NOT_ANALYSED_TTL_S``,
+    and so is a failure: a read that failed is not tried again by every poll inside that time (it raises again, never 0)."""
     import time
 
     from sqlalchemy import text
 
-    now = time.monotonic()
     try:  # the store it was read from: a cached count is never served for another one (a swap, a second engine)
         bind = session.get_bind()
         store = (id(bind), str(getattr(bind, "url", "")))
     except Exception:  # noqa: BLE001 - no store to name: never served from the cache
         store = None
-    at = _not_analysed_cache["at"]
-    if (store is not None and at is not None and now - at <= _NOT_ANALYSED_TTL_S and _not_analysed_cache["store"] == store
-            and _not_analysed_cache["value"] is not None):
-        return int(_not_analysed_cache["value"])
-    params = _not_analysed_params()
-    if session.execute(text(_ANY_MERGED_SQL), {"s": params["s"]}).first() is None:
-        n = 0
-    else:
-        n = int(session.execute(text(_NOT_ANALYSED_SQL), params).scalar() or 0)
-    _not_analysed_cache.update(at=now, value=n, store=store)
-    return n
+
+    def _cached() -> int | None:
+        at = _not_analysed_cache["at"]
+        if store is None or at is None or time.monotonic() - at > _NOT_ANALYSED_TTL_S or _not_analysed_cache["store"] != store:
+            return None
+        if _not_analysed_cache["failed"]:
+            raise RuntimeError("the not-analysed count could not be read")
+        return None if _not_analysed_cache["value"] is None else int(_not_analysed_cache["value"])
+
+    hit = _cached()
+    if hit is not None:
+        return hit
+    with _not_analysed_lock:
+        hit = _cached()  # another poll may have filled it while this one waited
+        if hit is not None:
+            return hit
+        try:
+            params = _not_analysed_params()
+            if session.execute(text(_ANY_MERGED_SQL), {"s": params["s"]}).first() is None:
+                n = 0
+            else:
+                n = int(session.execute(text(_NOT_ANALYSED_SQL), params).scalar() or 0)
+        except Exception:
+            if store is not None:
+                _not_analysed_cache.update(at=time.monotonic(), value=None, store=store, failed=True)
+            raise
+        if store is not None:
+            _not_analysed_cache.update(at=time.monotonic(), value=n, store=store, failed=False)
+        return n
 
 
 def count_not_analysed(session: Session, ids: Any) -> int | None:
@@ -179,20 +203,19 @@ def not_counted_tally(session: Session) -> dict[str, int]:
     """How many articles the aggregates leave out, or count only in part, for a reason that will pass: ``not_screened``
     (queued for the junk screening, R830) and ``not_analysed`` (the re-index has not finished them, R832; never also counted
     as not screened or quarantined). A surface says "N articles not screened yet" / "N articles not analysed yet" while
-    each is above 0 and nothing at 0. Never raises: a count that cannot be read is absent (an empty dict when neither can)."""
+    each is above 0 and nothing at 0. Never raises: each count that cannot be read is absent on its own (an empty dict when
+    neither can)."""
     from sqlalchemy import func
 
     from src.database.models import ScreeningPending
 
-    try:
-        # A queued article that is already quarantined (a restore can bring one) is counted as quarantined, never
-        # also as "not screened yet", so a breakdown never names one article twice.
-        n = int(session.execute(
+    out: dict[str, int] = {}
+    # A queued article that is already quarantined (a restore can bring one) is counted as quarantined, never
+    # also as "not screened yet", so a breakdown never names one article twice. An unreadable count is not a zero.
+    with contextlib.suppress(Exception):
+        out["not_screened"] = int(session.execute(
             select(func.count()).select_from(ScreeningPending).where(not_quarantined(ScreeningPending.article_id))
         ).scalar() or 0)
-    except Exception:  # noqa: BLE001 - an unreadable count is not a zero: say nothing
-        return {}
-    out = {"not_screened": n}
     # R832: the second reason, disjoint from the first (``not_analysed_count``); absent when it cannot be read, never 0.
     with contextlib.suppress(Exception):
         out["not_analysed"] = not_analysed_count(session)
