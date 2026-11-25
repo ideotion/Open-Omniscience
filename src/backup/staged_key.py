@@ -441,6 +441,47 @@ def _seal_refusal(exc: BaseException, source: Path, written: int, need: int | No
     return DAMAGED
 
 
+#: The cipher page size a sealed copy is written at, whatever the plaintext's page size (row 427). ``sqlcipher_export`` rebuilds
+#: every table and index anyway, so the source's page size is not kept by copying it; at 16 KiB the copy holds a quarter of the
+#: pages, each with its own IV and MAC, and the 200,000-article cold seal measured 105.0 s against 111 to 123 s at 4 KiB.
+SEAL_PAGE_SIZE = 16384
+
+#: What a read of the plaintext before the seal must leave free: the larger of this and a quarter of the file (row 427).
+_PREREAD_MARGIN_BYTES = 512 * 1024 * 1024
+
+
+def preread_fits(size: int, available_mb: float | None, source: str) -> bool:
+    """Whether a plaintext file of ``size`` bytes may be read whole into the page cache before it is sealed (row 427).
+
+    ``sqlcipher_export`` walks the file in b-tree order, close to random on disk; one sequential read first turns the walk into
+    cache hits. But a file that does not fit only pushes other files, and its own first pages, out of the cache, and under a
+    cgroup limit the cache counts against the process. So the read runs only when the file and a margin fit in the SMALLER of
+    the machine's available memory and the cgroup's (``available_mb``, :func:`src.config.cgroup_memory.smaller_available_mb`),
+    and never when in doubt: no figure, or a cgroup limit that exists and could not be read."""
+    if available_mb is None or "could not be read" in source or size <= 0:
+        return False
+    return size + max(_PREREAD_MARGIN_BYTES, size // 4) <= available_mb * 1024 * 1024
+
+
+def _preread_before_seal(p: Path) -> bool:
+    """Read the plaintext once, front to back, when :func:`preread_fits` says it fits; ``True`` when it was read. The read
+    keeps nothing: the bytes go to the OS cache the seal reads from, and the walk is ``sqlite_backup._warm_sequentially``,
+    the same one the validation uses (``OO_VALIDATE_WARM=0`` turns both off). Best effort: any failure leaves the seal as it was."""
+    try:
+        from src.backup.sqlite_backup import _validate_warm_enabled, _warm_sequentially
+        from src.config.cgroup_memory import machine_memory_mb, smaller_available_mb
+
+        if not _validate_warm_enabled():
+            return False
+        available, source = smaller_available_mb(machine_memory_mb()[1])
+        if not preread_fits(p.stat().st_size, available, source):
+            return False
+        _warm_sequentially(p)
+        return True
+    except Exception:  # noqa: BLE001 - a cache warm-up never fails a seal
+        return False
+
+
 def seal_plaintext(path: os.PathLike[str] | str) -> None:
     """A2: re-key a plaintext staged file into a SQLCipher copy under a random in-memory key, put the copy at the same
     name, unlink the plaintext (and its ``-wal``/``-shm``), and register the key.
@@ -462,17 +503,21 @@ def seal_plaintext(path: os.PathLike[str] | str) -> None:
         src = sqc.connect(str(p), check_same_thread=True)
     try:
         _harden(src)
+        # The export's index builds sort the plaintext's rows; a temp FILE would hold those sort runs in the clear in the OS
+        # temp folder, outside the private staging. Set here, not left to how the wheel was compiled.
+        src.execute("PRAGMA temp_store = MEMORY")
         try:
             src.execute("SELECT count(*) FROM sqlite_master").fetchone()
         except sqc.DatabaseError:
             raise NotADatabase from None
         check_staged_schema(src)  # a foreign file: refused before the export reads a row or replays its schema
-        page_size = int(src.execute("PRAGMA page_size").fetchone()[0])
+        page_size = SEAL_PAGE_SIZE
         auto_vacuum = int(src.execute("PRAGMA auto_vacuum").fetchone()[0])
         need = _live_bytes(src)
         if _short_of_space(p, 0, need):
             raise StagedKeyError(DISK_FULL)  # refused before a byte of the copy is written (as R793 does for a snapshot)
         create_new(sealed, mode=0o600).close()
+        _preread_before_seal(p)
         src.set_trace_callback(None)  # as in attach_staged: a trace would see the key expanded into the ATTACH
         with sqlite_opening():
             src.execute("ATTACH DATABASE ? AS sealed KEY ?", (str(sealed), secret))
