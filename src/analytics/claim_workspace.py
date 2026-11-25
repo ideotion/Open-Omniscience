@@ -42,14 +42,14 @@ network and nothing here writes.
 
 from __future__ import annotations
 
-from src.analytics.quarantine_scope import not_counted
-
 import re
 import unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime
 from functools import lru_cache
 from typing import Any
+
+from src.analytics.quarantine_scope import not_counted
 
 #: The longest claim the workspace accepts (characters). A claim is a sentence or a short
 #: paragraph; anything longer is a document, and deriving a query from it would widen the

@@ -28,8 +28,8 @@ from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
 from src.analytics import readmodel as rm
-from src.analytics.quarantine_scope import split_not_screened
 from src.analytics.convergence import find_convergences
+from src.analytics.quarantine_scope import split_not_screened
 from src.api import served_cache
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.api.search_filters import AdvancedSearch, advanced_search_params
@@ -1144,8 +1144,8 @@ def insights_reindex(limit: int = Query(300, ge=1, le=5000), db: Session = Depen
     and ``busy``, instead of draining the same rows beside it for one batch (Lane E follow-up (e))."""
     from src.analytics.extract import get_extractor
     from src.analytics.store import backfill_corpus
-    from src.jobs.insights_backlog import KIND as _BACKLOG_KIND
     from src.jobs.insights_backlog import _JOB as _BACKLOG_JOB
+    from src.jobs.insights_backlog import KIND as _BACKLOG_KIND
     from src.scheduler.maintenance import note_page_drain
 
     if _BACKLOG_JOB.status().get("running"):

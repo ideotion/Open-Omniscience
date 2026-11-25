@@ -43,9 +43,9 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.analytics.quarantine_scope import not_counted
 from src.analytics import queries as q
 from src.analytics.managed import UNSEGMENTED
+from src.analytics.quarantine_scope import not_counted
 from src.catalog.provenance import HAZARD, LAW, NEWSLETTER, STATISTICS, WIKIPEDIA, provenance_of
 from src.database.derived_views import KeywordMentionRead
 from src.database.feed_key import shown_feed_key
