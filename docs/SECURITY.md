@@ -1047,7 +1047,13 @@ imply a protection we cannot deliver.
   data folder, the result saying the erase of the data folder is not complete (what is left may be the app's own under an older
   name). `models/ollama` and `models/huggingface` are the app's only while their own first level holds nothing but Ollama's
   `blobs` and `manifests`, or Hugging Face's `hub`, `xet`, `token` and `stored_tokens`, checked again through the handle that
-  walks and removes them; Hugging Face's two token files are credentials and go in the early pass, right after the keys. In a
+  walks and removes them. Hugging Face's two token files are credentials and go in the early pass, right after the keys, overwritten
+  and removed through their folder's handle (plaintext: never said "destroyed"): in a folder the app owns by their exact names in
+  `models/huggingface` and `cache/huggingface` whatever else that folder holds, in a shared folder only in a home that fits the
+  rule; one seen and left, or not overwritten and removed, is said ("a Hugging Face sign-in token may remain ... revoke it in your
+  Hugging Face account", `hf_token_left`). An entry that cannot be looked at makes its folder "could not check", never named. In a
+  shared folder an operator's empty folder at a shaped name is left, and a name that is a shaped folder's only through an ending
+  the app strips (`wiki_dumps.tmp`) is not the app's. In a
   shared folder the bare cache names (`triton`, `inductor`, `nv`, `vllm`, `huggingface`) are left and counted; `vllm-config` goes.
   Every other app folder is removed whole (`data_scope.WHOLE_DIRS`, which the shared-folder notice lists by name);
   `annotations`, `triage`, `bench`, `bulletin` and `diagnostics`

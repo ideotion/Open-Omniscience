@@ -194,9 +194,10 @@ def test_a_huggingface_folder_holding_anything_else_is_left(tmp_path, walk):
     _app_entries(data)
     (data / "models" / "huggingface" / "datasets").mkdir()
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
-    assert (data / "models" / "huggingface" / "token").read_bytes() == b"hf_token"
+    assert (data / "models" / "huggingface" / "datasets").is_dir() and (data / "models" / "huggingface" / "hub").is_dir()
+    assert not (data / "models" / "huggingface" / "token").exists(), "a credential: taken by its exact name in the app's own folder"
     assert not (data / "models" / "ollama").exists()
-    assert report["shaped_left"] == {"models": 1}
+    assert report["shaped_left"] == {"models": 1} and report["hf_token_left"] == []
 
 
 def test_a_link_in_a_shaped_folder_is_never_followed_and_is_counted(tmp_path, walk):
@@ -396,3 +397,187 @@ def test_a_shared_folder_s_cache_huggingface_token_is_never_entered(tmp_path, mo
     (tmp_path / "cache" / "huggingface" / "token").write_bytes(b"theirs")
     crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
     assert (tmp_path / "cache" / "huggingface" / "token").read_bytes() == b"theirs"
+
+
+# -- the two security reads -----------------------------------------------------------------------------------------------------
+
+
+def test_a_file_at_a_shaped_name_is_overwritten_as_before_in_both_walks(tmp_path, walk):
+    """A regular file called ``osm_work`` is the app's by its name: overwritten and removed, never only unlinked."""
+    data = _own(tmp_path)
+    (data / "osm_work").write_bytes(b"S" * 4096)
+    twin = tmp_path / "twin"
+    os.link(data / "osm_work", twin)  # a second name shows whether it was written
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert not data.exists() and twin.read_bytes() != b"S" * 4096
+
+
+def test_a_file_at_a_shaped_name_in_a_shared_folder_goes_in_both_walks(tmp_path, monkeypatch, walk):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    (tmp_path / "holiday.jpg").write_bytes(b"jpeg")
+    (tmp_path / "wiki_dumps").write_bytes(b"x")
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
+    assert not (tmp_path / "wiki_dumps").exists() and report["not_removed"] == []
+
+
+def test_an_entry_that_cannot_be_looked_at_is_could_not_check_and_never_named(tmp_path, monkeypatch):
+    """The first security read: an entry of a shaped folder that cannot be looked at went into the report and the log by its
+    own name. Now its FOLDER is "could not check" (R798) and the entry is neither taken nor counted."""
+    data = _own(tmp_path)
+    _app_entries(data)
+    (data / "cache" / "my-private-name.txt").write_bytes(b"own")
+    real = crypto_erase._kind
+
+    def kind(p, unreached=None, at=None):
+        if Path(p).name == "my-private-name.txt":
+            if unreached is not None:
+                unreached(p)
+            return "unreached"
+        return real(p, unreached, at)
+
+    monkeypatch.setattr(crypto_erase, "_kind", kind)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert "my-private-name" not in json.dumps(report)
+    assert report["unlisted_folders"] >= 1 and (data / "cache" / "my-private-name.txt").read_bytes() == b"own"
+    assert report["shaped_left"].get("cache", 0) == 0, "never counted as an item the app did not create"
+
+
+def test_an_ollama_folder_whose_first_level_cannot_be_listed_is_could_not_check(tmp_path, monkeypatch, walk):
+    data = _own(tmp_path)
+    _app_entries(data)
+    monkeypatch.setattr(crypto_erase, "_second_ok_fd", lambda fd, shape: None)
+    monkeypatch.setattr(crypto_erase, "_second_ok_path", lambda p, shape: None)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert (data / "models" / "ollama" / "blobs" / "sha256-00").exists()
+    assert report["unlisted_folders"] >= 1 and report["shaped_left"].get("models", 0) == 0
+
+
+def test_an_entry_judged_a_file_that_is_a_folder_by_the_walk_is_never_entered(tmp_path, monkeypatch, walk):
+    data = _own(tmp_path)
+    _app_entries(data)
+    real = crypto_erase._erase_roots
+    calls: list[int] = []
+
+    def roots(base, **kw):
+        out = real(base, **kw)
+        calls.append(1)
+        if len(calls) == 2:  # step 6 listed it as a file; it becomes a folder of the operator's before the walk reaches it
+            target = data / "runtime" / "ollama-install-0123456789abcdef.sh"
+            target.unlink()
+            target.mkdir()
+            (target / "mine.txt").write_bytes(b"own")
+        return out
+
+    monkeypatch.setattr(crypto_erase, "_erase_roots", roots)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert (data / "runtime" / "ollama-install-0123456789abcdef.sh" / "mine.txt").read_bytes() == b"own"
+    assert report["shaped_left"] == {"runtime": 1}
+
+
+def test_an_operator_s_empty_folder_with_a_shaped_name_stays_in_a_shared_folder(tmp_path, monkeypatch, walk):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    (tmp_path / "holiday.jpg").write_bytes(b"jpeg")
+    (tmp_path / "models").mkdir()
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
+    assert (tmp_path / "models").is_dir() and report["shaped_left"] == {} and report["not_removed"] == []
+
+
+@pytest.mark.parametrize("name", ["wiki_dumps.tmp", "models.oopart", "osm_regions.part"])
+def test_a_variant_of_a_shaped_name_is_never_taken_whole_in_a_shared_folder(tmp_path, monkeypatch, name):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    (tmp_path / "holiday.jpg").write_bytes(b"jpeg")
+    (tmp_path / name).mkdir()
+    (tmp_path / name / "mine.txt").write_bytes(b"own")
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
+    assert report["scope"] == "app-only"
+    assert (tmp_path / name / "mine.txt").read_bytes() == b"own" and name in report["left_untouched"]
+
+
+def test_a_token_in_a_shared_folder_s_home_that_does_not_fit_is_left_and_said(tmp_path, monkeypatch):
+    """Coordinator's ruling: in a folder the app does not own, a token is taken only in a home that fits R837; one seen and left
+    is said in plain words (a sign-in token may remain; revoke it in the Hugging Face account)."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    (tmp_path / "holiday.jpg").write_bytes(b"jpeg")
+    (tmp_path / "models" / "huggingface" / "hub").mkdir(parents=True)
+    (tmp_path / "models" / "huggingface" / "modules").mkdir()
+    (tmp_path / "models" / "huggingface" / "token").write_bytes(b"theirs?")
+    (tmp_path / "cache" / "huggingface").mkdir(parents=True)
+    (tmp_path / "cache" / "huggingface" / "token").write_bytes(b"theirs")
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=tmp_path)
+    assert (tmp_path / "models" / "huggingface" / "token").read_bytes() == b"theirs?"
+    assert report["hf_token_left"] == ["cache/huggingface", "models/huggingface"]
+    assert "A Hugging Face sign-in token may remain in cache/huggingface, models/huggingface:" in report["limit"]
+    assert "destroy" not in crypto_erase._HF_TOKEN_LEFT_SENTENCE
+
+
+def test_a_token_whose_overwrite_fails_is_said_to_remain(tmp_path, monkeypatch):
+    data = _own(tmp_path)
+    _app_entries(data)
+    real = crypto_erase._shred
+
+    def shred(path, **kw):
+        if Path(path).name == "token":
+            return True, False, False
+        return real(path, **kw)
+
+    monkeypatch.setattr(crypto_erase, "_shred", shred)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["hf_token_left"] == ["models/huggingface"]
+
+
+def test_settle_no_longer_says_left_a_shaped_folder_removed_since(tmp_path, walk):
+    data = _own(tmp_path)
+    _app_entries(data)
+    (data / "wiki_dumps" / "mine.txt").write_bytes(b"own")
+    (data / "models" / "mine.txt").write_bytes(b"own")
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["shaped_left"] == {"models": 1, "wiki_dumps": 1}
+    import shutil
+
+    shutil.rmtree(data / "wiki_dumps")
+    crypto_erase.settle_removed(report)
+    assert report["shaped_left"] == {"models": 1}
+
+
+def test_the_watcher_takes_the_token_in_its_own_folder_whatever_else_the_home_holds(tmp_path):
+    data = _own(tmp_path)
+    _app_entries(data)
+    (data / "models" / "huggingface" / "modules").mkdir()
+    log = _run_watcher(tmp_path, data, broad=False)
+    assert not (data / "models" / "huggingface" / "token").exists()
+    assert (data / "models" / "huggingface" / "modules").is_dir()
+    assert "sign-in token may remain" not in log
+
+
+def test_the_watcher_says_a_token_left_in_a_shared_folder(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "holiday.jpg").write_bytes(b"jpeg")
+    (shared / "models" / "huggingface" / "modules").mkdir(parents=True)
+    (shared / "models" / "huggingface" / "token").write_bytes(b"theirs?")
+    (shared / "models").chmod(0o755)
+    log = _run_watcher(tmp_path, shared, broad=True)
+    assert (shared / "models" / "huggingface" / "token").read_bytes() == b"theirs?"
+    assert "a Hugging Face sign-in token may remain in models/huggingface of" in log
+
+
+def test_the_watcher_never_names_an_entry_it_could_not_look_at_and_keeps_an_operator_s_empty_folder(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "holiday.jpg").write_bytes(b"jpeg")
+    (shared / "models").mkdir()
+    (shared / "wiki_dumps.tmp").mkdir()
+    (shared / "wiki_dumps.tmp" / "mine.txt").write_bytes(b"own")
+    _run_watcher(tmp_path, shared, broad=True)
+    assert (shared / "models").is_dir(), "an operator's own empty folder the erase took nothing from"
+    assert (shared / "wiki_dumps.tmp" / "mine.txt").read_bytes() == b"own"
+
+
+def test_the_token_sentence_is_the_same_on_the_page_in_the_result_and_in_twelve_languages():
+    s3 = "A Hugging Face sign-in token may remain in {folders}: you can revoke it in your Hugging Face account."
+    assert crypto_erase._HF_TOKEN_LEFT_SENTENCE == s3
+    backup = (_ROOT / "src/static/app-backup.js").read_text(encoding="utf-8")
+    assert s3 in backup and "r.hf_token_left" in backup and "!leftOver && !hfTokenLeft.length" in backup, "a token left is never a clean result"
+    for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
+        loc = json.loads((_ROOT / f"src/static/locales/{lang}.json").read_text(encoding="utf-8"))
+        assert "{folders}" in loc[s3] and "Hugging" in loc[s3], lang
