@@ -259,9 +259,11 @@ def test_a_key_never_reaches_sql_text_a_trace_a_repr_or_a_pickle(tmp_path):
         host = sqc.connect(":memory:")
         traced: list[str] = []
         host.set_trace_callback(traced.append)  # a trace expands bound values: attach_staged must not be watched
+        host.execute("SELECT 1").fetchone()  # the trace is live before the attach: the loop below has something to read
         assert staged_key.attach_staged(host, p, "inc")
         assert host.execute("SELECT count(*) FROM inc.articles").fetchone() == (60,)
         host.close()
+        assert traced, "the trace saw nothing at all"
         for text in traced:
             assert key.secret.decode() not in text and hex_of_secret not in text.lower() and key.secret[2:66].decode() not in text
         assert not any("ATTACH" in t.upper() for t in traced), "the ATTACH was traced"
