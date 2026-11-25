@@ -121,6 +121,18 @@ def _fill(path: Path, rng: random.Random, form: str, *, n: int, tag: str) -> Non
                     json.dumps({"v": 1, "kind": "model", "producer": "m1"}),
                 ),
             )
+        # An alternate of a table whose JSON cannot hold a code (read as stored, never copied), and one unreadable row on each side of
+        # that line: the copy holds only the rows that can convert, and the report still counts the whole table's unreadable rows.
+        for table, identity, fields in (
+            ("keyword_translations", json.dumps({"keyword_id": 1, "language": "fr"}, separators=(",", ":")), json.dumps({"text": f"{tag}-mot"})),
+            ("keyword_translations", "not json", json.dumps({"text": "x"})),
+            ("places", json.dumps({"place_id": 1}), "{broken"),
+        ):
+            con.execute(
+                "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields, provenance, origin, status, created_at)"
+                " VALUES (1, ?, ?, 1, ?, ?, 'machine-Z', 'pending', '2026-01-01')",
+                (table, identity, fields, json.dumps({"v": 1, "kind": "model", "producer": "m1"})),
+            )
         con.commit()
     finally:
         con.close()
@@ -273,5 +285,88 @@ def test_a_duplicate_article_adopts_its_country_converted(tmp_path, template, tf
     con = sqlite3.connect(tgt)
     try:
         assert con.execute("SELECT country FROM articles").fetchall() == [(expected,)]
+    finally:
+        con.close()
+
+
+# --------------------------------------------------------------------------- #
+#  R825: the plan's temp tables never reach a temp FILE on an encrypted connection
+# --------------------------------------------------------------------------- #
+def test_on_an_encrypted_working_copy_the_plan_is_built_with_temp_store_memory(monkeypatch, tmp_path, template):
+    """The spelling map, the law_documents copy and the alternates copy hold the user's codes, urls and identities; SQLCipher writes
+    a FILE temp database without its codec. Asserted on the merge's own connection, at the moment the plan is built, not assumed
+    from a driver default."""
+    pytest.importorskip("sqlcipher3")
+    import src.database.connect as connect_mod
+    from src.backup import country_codes as cc
+
+    key = "correct horse battery staple"
+    src, plain, enc = tmp_path / "src.db", tmp_path / "plain.db", tmp_path / "working.db"
+    shutil.copy(template, src)
+    shutil.copy(template, plain)
+    _fill(src, random.Random("enc"), "alpha2", n=12, tag="B")
+    _fill(plain, random.Random("enc-t"), "alpha3", n=4, tag="A")
+    connect_mod.reencrypt_plain_to(plain, enc, key)
+    seen: list[tuple] = []
+    real = cc.plan_staged_country_codes
+
+    def spy(con, **kw):  # noqa: ANN001, ANN003, ANN202
+        out = real(con, **kw)
+        temp = {r[1]: r[2] for r in con.execute("PRAGMA database_list")}.get("temp")
+        tables = sorted(r[0] for r in con.execute("SELECT name FROM temp.sqlite_master WHERE type = 'table' AND name LIKE 'oo_country_%'"))
+        seen.append((type(con).__module__, con.execute("PRAGMA temp_store").fetchone()[0], temp, tables))
+        return out
+
+    monkeypatch.setattr(cc, "plan_staged_country_codes", spy)
+    monkeypatch.setattr(merge_mod, "check_memory_for_encrypted_merge", lambda *a, **k: None)
+    before = connect_mod.get_passphrase()
+    connect_mod.set_passphrase(key)
+    try:
+        merge_corpus(src, enc, _META)
+    finally:
+        connect_mod.set_passphrase(before)
+    assert len(seen) == 1, seen
+    module, mode, temp_file, tables = seen[0]
+    assert "sqlcipher" in module
+    assert mode == 2, "temp_store is not MEMORY on the encrypted merge's connection"
+    assert not temp_file, f"the temp schema is backed by a file: {temp_file!r}"
+    assert {"oo_country_plan", "oo_country_map", "oo_country_law_documents", "oo_country_alternates"} <= set(tables), tables
+
+
+def test_the_plan_refuses_an_encrypted_connection_whose_temp_store_is_not_memory(tmp_path):
+    """Fail closed: the plan does not switch temp_store itself (that drops the connection's temp tables), it refuses and says why."""
+    sqlcipher3 = pytest.importorskip("sqlcipher3")
+    from src.backup.country_codes import plan_staged_country_codes
+
+    con = sqlcipher3.connect(str(tmp_path / "e.db"))
+    try:
+        con.execute("PRAGMA key='k'")
+        con.execute("PRAGMA temp_store=FILE")
+        with pytest.raises(RuntimeError, match="temp_store"):
+            plan_staged_country_codes(con, schema="main")
+        assert not con.execute("SELECT name FROM temp.sqlite_master").fetchall(), "a temp table was created before the refusal"
+    finally:
+        con.close()
+
+
+def test_only_the_alternates_that_can_hold_a_code_are_copied(tmp_path, template):
+    """The alternates copy is bounded by what can convert: a table whose JSON has no country key stays in the staged file only."""
+    from src.backup.country_codes import plan_staged_country_codes
+
+    src = tmp_path / "src.db"
+    shutil.copy(template, src)
+    _fill(src, random.Random("alt"), "alpha3", n=12, tag="B")
+    con = sqlite3.connect(":memory:")
+    try:
+        con.execute("ATTACH DATABASE ? AS inc", (str(src),))
+        cf.write_form(con, "alpha2", by="test")
+        report = plan_staged_country_codes(con, schema="inc")
+        copied = {r[0] for r in con.execute("SELECT DISTINCT table_name FROM temp.oo_country_alternates")}
+        assert copied == {"law_revision_summaries", "places"}, copied
+        total_bad = con.execute(
+            "SELECT COUNT(*) FROM inc.metadata_alternates WHERE NOT json_valid(identity) OR NOT json_valid(fields)"
+        ).fetchone()[0]
+        assert total_bad == 2
+        assert report["alternates"]["left_unreadable"] == total_bad, report["alternates"]
     finally:
         con.close()

@@ -564,6 +564,25 @@ def _drop_plan(con: sqlite3.Connection) -> None:
         con.execute(f"DROP TABLE IF EXISTS temp.{name}")  # noqa: S608  # fixed names
 
 
+def _refuse_temp_on_disk_for_encrypted(con: sqlite3.Connection) -> None:
+    """Refuse to build the plan's temp tables on an encrypted connection whose temp storage is not MEMORY (R825).
+
+    SQLCipher writes a FILE temp database through the VFS without its codec, so the spelling map, the law_documents copy and the
+    alternates copy (country codes, urls, JSON identities of the user's corpus) would sit in the clear in the temp directory. The
+    merge sets MEMORY on an encrypted working copy (``merge._temp_store_for``); this does not set it itself, because changing
+    ``temp_store`` drops every temp table the connection already holds -- it fails closed instead, naming the reason."""
+    from src.database.connect import _is_sqlcipher_conn
+
+    if not _is_sqlcipher_conn(con):
+        return  # a plain store's rows are plaintext on disk already; FILE is its measured choice
+    mode = con.execute("PRAGMA temp_store").fetchone()
+    if mode is None or int(mode[0]) != 2:
+        raise RuntimeError(
+            "the country-code plan would put the corpus's codes and urls in a temp file outside the encryption "
+            f"(temp_store={mode[0] if mode else 'unknown'}, MEMORY required on an encrypted connection)"
+        )
+
+
 def plan_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -> dict:
     """Merge step 1 (Q310 = a) WITHOUT writing the staged copy (row 439): decide every conversion, and let the copy steps read it.
 
@@ -585,6 +604,7 @@ def plan_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -
     collisions: list[dict] = []
     scanned = 0
     form = store_form_of(con)
+    _refuse_temp_on_disk_for_encrypted(con)
     _drop_plan(con)
     con.execute(f"CREATE TEMP TABLE {_PLAN} (col TEXT PRIMARY KEY, how TEXT NOT NULL)")  # noqa: S608  # fixed names
     con.execute(f"CREATE TEMP TABLE {_MAP} (col TEXT NOT NULL, f TEXT NOT NULL, t TEXT NOT NULL, PRIMARY KEY (col, f)) WITHOUT ROWID")  # noqa: S608  # fixed names
@@ -638,16 +658,32 @@ def plan_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -
     if _table_exists(con, schema, "metadata_alternates") and {"id", "table_name", "identity", "fields"} <= _columns_of(
         con, schema, "metadata_alternates"
     ):
+        # Only the alternates of a table whose identity or field set CAN hold a country code are copied (the others are read as
+        # stored, through the LEFT JOIN in staged_alternates_sql): the copy's memory is bounded by what can convert, not by the table.
+        from src.backup.provenance import ALTERNATE_SPECS
+
+        holders = sorted(t for t in ALTERNATE_SPECS if any(alternate_country_keys(t)))
         con.execute(f"CREATE TEMP TABLE {_ALTERNATES_COPY} (rid INTEGER PRIMARY KEY, id, table_name, identity, fields)")  # noqa: S608  # fixed names
-        con.execute(
-            f"INSERT INTO temp.{_ALTERNATES_COPY} (rid, id, table_name, identity, fields)"  # noqa: S608  # nosec B608 # fixed names; `schema` is a module-internal literal
-            f" SELECT rowid, id, table_name, identity, fields FROM {schema}.metadata_alternates"
-        )
+        if holders:
+            marks = ", ".join("?" for _ in holders)
+            con.execute(
+                f"INSERT INTO temp.{_ALTERNATES_COPY} (rid, id, table_name, identity, fields)"  # noqa: S608  # nosec B608 # fixed names; `schema` is a module-internal literal; the names are bound
+                f" SELECT rowid, id, table_name, identity, fields FROM {schema}.metadata_alternates WHERE table_name IN ({marks})",
+                holders,
+            )
         con.execute(f"CREATE INDEX temp.{_ALTERNATES_COPY}_id ON {_ALTERNATES_COPY} (id)")  # noqa: S608  # fixed names
         alternates = convert_alternate_countries(
             con, schema="temp", form=form, keep_with_unconverted_document=True,
             table=_ALTERNATES_COPY, law_table=_copy_name("law_documents"),
         )
+        # The unreadable count is the whole table's, as the in-place walk published it, not only the copied rows'.
+        bad_copy, bad_all = (
+            con.execute(
+                f"SELECT COUNT(*) FROM {where} WHERE NOT json_valid(identity) OR NOT json_valid(fields)"  # noqa: S608  # nosec B608 # two fixed names
+            ).fetchone()[0]
+            for where in (f"temp.{_ALTERNATES_COPY}", f"{schema}.metadata_alternates")
+        )
+        alternates["left_unreadable"] += int(bad_all) - int(bad_copy)
 
     return _conversion_report(
         con, form, scanned, alternates, converted, refused, collisions,
@@ -687,8 +723,13 @@ def staged_alternates_sql(con: sqlite3.Connection, alias: str = "i") -> tuple[st
         raise ValueError("bad alias")
     if not _table_exists(con, "temp", _ALTERNATES_COPY):
         return "", f"{alias}.identity", f"{alias}.fields"
-    join = f" JOIN temp.{_ALTERNATES_COPY} oo_cc_alt ON oo_cc_alt.rid = {alias}.rowid"
-    return join, "oo_cc_alt.identity", "oo_cc_alt.fields"
+    # LEFT: only the rows that can hold a code were copied; every other row is read as stored.
+    join = f" LEFT JOIN temp.{_ALTERNATES_COPY} oo_cc_alt ON oo_cc_alt.rid = {alias}.rowid"
+    return (
+        join,
+        f"CASE WHEN oo_cc_alt.rid IS NULL THEN {alias}.identity ELSE oo_cc_alt.identity END",
+        f"CASE WHEN oo_cc_alt.rid IS NULL THEN {alias}.fields ELSE oo_cc_alt.fields END",
+    )
 
 
 def _conversion_report(
