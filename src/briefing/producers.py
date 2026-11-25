@@ -295,7 +295,7 @@ def _recent_spread(
     It reads the mention's own denormalised ``source_id`` and never joins ``articles``: that join drags whole article rows
     through the codec (the trap ``models.py`` measures), once per candidate term. Only a mention written before
     ``source_id`` existed (NULL) is looked up on its article, by primary key."""
-    from src.analytics.quarantine_scope import not_quarantined
+    from src.analytics.quarantine_scope import not_counted
 
     w_end = (date.today() + timedelta(days=1)) if end is None else end
     rows = (
@@ -303,7 +303,7 @@ def _recent_spread(
         .filter(KeywordMentionRead.keyword_id == keyword_id)
         .filter(KeywordMentionRead.observed_on >= w_end - timedelta(days=window_days))
         .filter(KeywordMentionRead.observed_on < w_end)
-        .filter(not_quarantined(KeywordMentionRead.article_id))  # R101
+        .filter(not_counted(KeywordMentionRead.article_id))  # R101
         .filter(not_a_stand_in_article_id(KeywordMentionRead.article_id))
         .distinct()
         .all()

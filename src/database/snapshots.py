@@ -476,7 +476,7 @@ def article_counts_by_language(
     so a zero after it is a measured zero.
     """
     from src.analytics.managed import normalize_lang
-    from src.analytics.quarantine_scope import not_quarantined
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article
 
     now = now or datetime.now(UTC)
@@ -512,7 +512,7 @@ def article_counts_by_language(
             has_deduced.label("deduced"),
             func.count().label("n"),
         )
-        .filter(Article.created_at >= since, not_quarantined(Article.id))
+        .filter(Article.created_at >= since, not_counted(Article.id))
         .group_by("bucket", Article.language, "deduced")
         .all()
     )

@@ -190,7 +190,32 @@
       // itself when it lands).
       if (!fromCache) renderHomeWikiFigure();
       else if (_homeWikiLane) renderHomeWikiFigure(true);
+      renderHomeNotScreened(payload);
       _homeGlanceWhenReady();
+    }
+
+    // R830 (row 408 PR 3): imported articles the junk screening has not reached yet. They stay readable and searchable, and
+    // every figure on Home leaves them out until they are screened, so the strip says how many, once, and says nothing at 0.
+    function renderHomeNotScreened(payload) {
+      const el = $("home-stats");
+      if (!el) return;
+      const old = $("home-not-screened");
+      if (old) old.remove();
+      const n = payload && payload.not_counted ? payload.not_counted.not_screened : null;
+      if (typeof n !== "number" || n <= 0) return;
+      const i18n = (typeof window !== "undefined" && window.OOI18N) || null;
+      const F = (i18n && i18n.tf)
+        ? i18n.tf
+        : ((s2, v) => s2.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const span = document.createElement("span");
+      span.className = "s";
+      span.id = "home-not-screened";
+      span.textContent = F("{n} articles not screened yet", {n: (typeof fmtNum === "function") ? fmtNum(n, 0) : String(n)});
+      span.title = (i18n && i18n.t ? i18n.t : ((x) => x))(
+        "Imported articles the junk screening has not reached yet. They are readable and searchable, but the counts, trends and cards leave them out until they are screened, which happens in the background after an import."
+      );
+      span.setAttribute("data-i18n-dyn", "");
+      el.appendChild(span);
     }
 
     // Q714's own figure: "Wikipedia: N pages · M changes today".
