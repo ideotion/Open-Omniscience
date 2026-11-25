@@ -241,8 +241,16 @@ def test_run_restore_reconciles_unconditionally_not_only_after_a_successful_rein
     # `backfill_keyword_counters` for the sweep the idle maintenance already uses,
     # so an import queue amortises ONE sweep across its items instead of redoing a
     # whole-corpus GROUP BY per item). What this test pins is unchanged: the restore
-    # reconciles, and it does so outside the `if reindex_imported:` branch.
-    assert "reconcile_keyword_counters" in body
+    # reconciles, and it does so outside the `if reindex_imported:` branch. Since row 424
+    # (2026-11-25) the stage calls reconcile_counters_after_import, which reconciles the
+    # imported articles' keywords and runs that same sweep when it is owed
+    # (tests/test_scoped_counter_reconcile.py pins its routes).
+    assert "reconcile_counters_after_import(" in body
+    import inspect
+
+    from src.analytics.store import reconcile_counters_after_import
+
+    assert "reconcile_keyword_counters(" in inspect.getsource(reconcile_counters_after_import)
 
     # The reconcile must NOT live inside the `if reindex_imported:` block. That block
     # ends at the first line whose indentation returns to its own level, so slice it
