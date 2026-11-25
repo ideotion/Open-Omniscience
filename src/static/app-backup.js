@@ -565,7 +565,10 @@
         // one of run_restore's stages: an FTS5 'optimize' that runs once after the
         // last item. It is single-threaded and index-scaled, so on a large corpus it
         // is minutes of 100%-of-one-core work AFTER every item already reads "Done".
-        tuning: t("Merging the search index…") };
+        tuning: t("Merging the search index…"),
+        // R827 R7(a): the run's whole-file check of the live corpus, owed when a checkpoint was checked only on
+        // the tables it wrote (ImportQueueManager._check_owed_corpus). Read-only; a Stop waits for it.
+        checking_corpus: t("Checking the whole corpus file…") };
       // verify + restore share the phase names (verifying/reassembling); only a backup
       // uses the write-side names. Default is mode-aware so a verify never falls back to
       // "Backing up…" or shows a raw untranslated phase.
@@ -2457,6 +2460,19 @@
       // "Done" that phase had nowhere to appear -- the header read "1/1 imported", the
       // item read "Done", collection was still paused and one core sat at 100%. The
       // backend was already publishing it; there was simply no element to put it in.
+      // R827 R7(a) / R830: the whole-file check a scoped checkpoint left owed. A failed or unfinished check is said
+      // in plain words and the run is never called complete; a failure names the safety copy kept before the run.
+      const cc = st.corpus_check || null;
+      let corpusCheckLine = "";
+      if (cc && cc.state === "failed") {
+        // The file name is isolated (<bdi translate="no">) so a right-to-left line cannot reorder it and no translator rewrites it.
+        corpusCheckLine = `<div class="card-caveat">${cc.safety_net
+          ? esc(tf("The check of your whole corpus after this import found a problem, so the import is not complete. The safety copy of your corpus from before the import is kept in your data folder as {name}.", { name: "\u0001name\u0002" }))
+            .replace("\u0001name\u0002", `<bdi translate="no" dir="ltr">${esc(String(cc.safety_net))}</bdi>`)
+          : esc(t("The check of your whole corpus after this import found a problem, so the import is not complete."))}</div>`;
+      } else if (cc && cc.state === "unchecked") {
+        corpusCheckLine = `<div class="card-caveat">${esc(t("The check of your whole corpus after this import did not finish, so the import is not complete. It runs again the next time the app starts."))}</div>`;
+      }
       const tail = items.some((i) => i.state === "running") ? "" : _uxImPhaseBits(st.live, t);
       const tailLine = (st.state === "running" && tail) ? `<div>${tail}</div>` : "";
       // The RUN's bar counts STAGES, not items: with every item done the item count is
@@ -2514,6 +2530,7 @@
       const collHover = esc(t("Paused: the collection loop and the Collect now button. Not paused: the background tasks (markets, calendars, law, hazards, crawling and backfill), Wikipedia updates, other background jobs, AI sweeps, start-up upkeep and anything you change in the app. Some background jobs wait at their next batch and carry on after the import, so a batch that is already running can still save to your corpus. Starting collection again yourself while the import runs (the Collection switch, the Start button, or switching the network back on) is not blocked. The import merges the backup into a copy of your corpus and then replaces your corpus with that copy. Whatever is saved to your corpus after the copy was made and before it is replaced is not in the copy, except your settings, agenda and interface choices, which are carried over. Before it makes each copy, the import waits up to 10 minutes for a collection pass that was still running; if one is still running after that, the import goes on and says so."));
       const collHtml = collLines.map((line) => `<div title="${collHover}">${esc(line)}</div>`).join("");
       const bodyHtml = stagedLine
+        + corpusCheckLine
         + tailLine
         + collHtml
         + (st.state === "interrupted" ? _uxImInterruptedHtml(t) : "");
@@ -2770,7 +2787,7 @@
       if ((bk.articles_pending || 0) > 0) {
         return [{ ok: false, text: tf(
           "Analytics are still catching up: {n} imported article(s) carry no keywords until the re-index finishes.",
-          { n: fmtNum(Number(bk.articles_pending), 0) }) }];
+          { n: fmtNum(Number(bk.articles_pending), 0) }) }].concat(_uxImStageLines(bk, tf));
       }
       if (st.state === "running" || rx.state === "running") {
         // AFTER STAGE 4, and not before (Q203 = a; 2026-09-26, I2). An empty backlog at
@@ -2781,6 +2798,31 @@
         return [{ ok: false, text: t("Analytics are complete once the re-index (stage 4) finishes.") }];
       }
       return [{ ok: true, text: t("Analytics are complete — every imported article is indexed.") }];
+    }
+
+    // R824 (row 405): per stage, the imported articles whose extraction was reused from the
+    // backup, done on this computer, and still to do (and the stamps too old to say) -- counts read from the stamps,
+    // never estimated. A stage the backlog did not report is left out, never drawn as zeros.
+    function _uxImStageLines(bk, tf) {
+      const st = bk && bk.stages;
+      if (!st) return [];
+      const out = [];
+      for (const [key, tpl] of [
+        ["kw", "Keywords and dates, articles reused from the backup: {carried}; extracted on this computer: {here}; still to extract: {awaiting}."],
+        ["www", "Places, people and organisations, articles reused from the backup: {carried}; extracted on this computer: {here}; still to extract: {awaiting}."],
+      ]) {
+        const s = st[key];
+        if (!s) continue;
+        out.push({ ok: Number(s.awaiting) === 0, text: tf(tpl, {
+          carried: fmtNum(Number(s.carried), 0), here: fmtNum(Number(s.extracted_here), 0),
+          awaiting: fmtNum(Number(s.awaiting), 0) }) });
+        // A stamp written before stamps recorded where they came from: carried or extracted here, nobody can say which now.
+        if (Number(s.not_recorded) > 0) {
+          out.push({ ok: true, text: tf("{n} more articles were extracted before this version began recording whether an extraction came from a backup, so for these it is not known.", {
+            n: fmtNum(Number(s.not_recorded), 0) }) });
+        }
+      }
+      return out;
     }
 
     // `only` ("reindex") keeps the analytics statement alone -- the one of the three that
@@ -4288,9 +4330,11 @@
       const why = { permission: "permission refused",
                     short_header: "the file is too short to be a database", io: "a read error" };
       const word = (s) => !s ? t("not created yet")
-        : s.state === "encrypted" ? (s.key_checked === false ? t("Encrypted (SQLCipher 4), not yet checked against this passphrase") : t("Encrypted (SQLCipher 4)"))
+        // R821: "encrypted" only with evidence (a key opened it, or this installation's record names it); a header alone only looks so
+        : s.state === "encrypted" ? (s.evidence === "record" ? t("Encrypted, per this installation's record (not yet checked with your key)") : t("Encrypted (SQLCipher 4)"))
+        : s.state === "looks_encrypted" ? t("Looks encrypted; not yet checked with your key")
         : s.state === "plaintext" ? t("NOT encrypted")
-        : s.state === "not_this_key" ? t("Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)")
+        : s.state === "not_this_key" ? t("This passphrase does not open it (it may be encrypted with another passphrase, or damaged)")
         : s.state === "unreadable" ? tfw("Cannot be read: {why}", { why: t(why[s.reason] || why.io) })
         : s.state === "busy" ? t("In use right now, try again in a moment")
         : t("not created yet");
@@ -4316,7 +4360,9 @@
       } else if (ar.complete) {
         overall = `<div><b>${esc(t("Every store is encrypted."))}</b></div>`;
       }
-      if (ar.key_held && d.corpus.state === "encrypted" && unchecked.length) {
+      // R821: a library that only LOOKS encrypted while a key is held is "not checked yet" too, never counted as encrypted
+      if (ar.key_held && d.corpus.state === "looks_encrypted" && !unchecked.includes("corpus")) unchecked.unshift("corpus");
+      if (ar.key_held && (d.corpus.state === "encrypted" || d.corpus.state === "looks_encrypted") && unchecked.length) {
         // Row 153: while a store is in use, being encrypted or unreadable the summary says so (beside a pending line too).
         overall += `<div class="caveat">${esc(tfw("Not checked yet against this passphrase: {names} (in use, being encrypted, or a read error). Until then, do not count them as encrypted. Open this panel again in a moment.", { names: names(unchecked) }))}</div>`;
       }
@@ -4334,7 +4380,8 @@
         `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>` +
         lanes.map((k) => `<div>${ooLabelHtml(esc(tfw("Source store ({kind})", { kind: laneWord(k) })), `<b>${esc(word(d.lanes[k]))}</b>`)}</div>`).join("");
       // The panel stays for a plaintext library, and (R742) for an encrypted one whose other stores are not finished.
-      $("atrest-encrypt").style.display = (d.corpus.state === "plaintext" || (d.corpus.state === "encrypted" && pending.length)) ? "" : "none";
+      $("atrest-encrypt").style.display = (d.corpus.state === "plaintext" || (d.corpus.state === "encrypted" && pending.length)
+        || (ar.key_held && d.corpus.state === "looks_encrypted")) ? "" : "none";
     }
     async function encryptCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -4417,18 +4464,35 @@
         // during the erase (partially erased, the rest not checked).
         const driveAbsent = r.drive_absent === true;
         const driveLost = r.drive_lost === true;
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext;
+        // R820 (6): an encrypted main database whose first page could not be overwritten keeps its key on the disk: never clean.
+        const keyLeft = r.corpus_encryption === "encrypted_key_left";
+        // R828 (2): the app's at-rest record could not be overwritten and removed: "key material may remain", never clean.
+        const recordLeft = r.at_rest_record === "left";
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
           : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
         const ps = r.plaintext_store && typeof r.plaintext_store === "object" ? r.plaintext_store : null;
-        const psState = ps ? {
+        // R819 (4) / R820 (6): a main database whose encryption could not be determined is never called "unencrypted" in words.
+        const psState = ps ? (ps.form === "unknown" ? {
+          overwritten: "The main database was overwritten in full.",
+          partially_overwritten: "The main database was only partially overwritten.",
+          not_overwritten: "The main database was not overwritten.",
+          first_page: "The main database had its first page overwritten.",
+        } : {
           overwritten: "The unencrypted main database was overwritten in full.",
           partially_overwritten: "The unencrypted main database was only partially overwritten.",
           not_overwritten: "The unencrypted main database was not overwritten.",
           first_page: "The unencrypted main database had its first page overwritten.",
-        }[ps.state] : null;
+        })[ps.state] : null;
+        // R819 (4): the three states, said beside the result: encrypted (key destroyed), not encrypted, could not be determined.
+        const encLine = {
+          encrypted: "The main database was encrypted, and its key was destroyed.",
+          encrypted_key_left: "The main database was encrypted, but its first page could not be overwritten, so its key may still be on the disk.",
+          not_encrypted: "The main database was not encrypted.",
+          unknown: "Whether the main database was encrypted could not be determined.",
+        }[r.corpus_encryption] || "";
         const psReason = ps ? {
           absent: "It was no longer there.",
           unidentified: "It could not be identified, so nothing there was touched.",
@@ -4495,6 +4559,7 @@
             // R812 (b): only when the erase had already made the app forget the drive's id (it is never restored).
             (r.drive_forgotten === true ? ` ${esc(t("Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a later launch unless it is set up again."))}` : "") +
             `</div>` : "") +
+          (encLine ? `<div class="${r.corpus_encryption === "encrypted" ? "hint" : "card-caveat"}">${esc(t(encLine))}</div>` : "") +
           (psWords ? `<div class="card-caveat">${esc(psWords)}</div>` : "") +
           (plainNote ? `<div class="card-caveat">${esc(r.encrypted_corpus === false
             ? t("The main database was not encrypted, so no key was destroyed: old pages of it may remain on the disk after the overwrite and delete. Full-disk encryption is the remedy.")
@@ -4506,6 +4571,7 @@
           (keptForeign
             ? (keptCount ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds items the app did not create (count: {n}).", { n: fmtNum(keptCount, 0) }))}</div>` : "")
             : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
+          (recordLeft ? `<div class="card-caveat">${esc(t("The app’s at-rest record could not be overwritten and removed, so key material may remain on the disk: the erase may be incomplete."))}</div>` : "") +
           (keysLeft ? `<div class="card-caveat">${esc(tfw("Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}` +
             // the app's own exact file names only (never another entry of the folder), so the operator knows which to remove
             ((r.keys_left_names || []).length ? ` <bdi translate="no" dir="ltr">${esc(r.keys_left_names.join(", "))}</bdi>` : "") + `</div>` : "") +

@@ -2470,6 +2470,26 @@ class ArticleIndexStamp(Base):
     stamped_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC)
     )
+    #: R824 (row 405): the stage's hand-bumped version that wrote the rows; NULL on a stamp written before it (read through ``engine``).
+    stage_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: R824: the import batch whose carry wrote this stamp; NULL when the rows were extracted on this machine.
+    carried_from_batch: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class IndexEngine(Base):
+    """What an engine id is a hash of (R824, row 405): one row per id this store has stamped, written by ``index_article`` beside the
+    stamp. The components are the JSON ``engine_identity`` hashes, so a reader can recompute the id from them and trust nothing it
+    cannot recompute. A restore reads the incoming store's rows to name WHICH component differs when a stamp is not this machine's;
+    it never copies them. ``stage`` is ``kw`` (keywords and dates) or ``www`` (places and entities)."""
+
+    __tablename__ = "index_engines"
+
+    engine: Mapped[str] = mapped_column(String(40), primary_key=True)
+    stage: Mapped[str] = mapped_column(String(8), nullable=False)
+    components: Mapped[str] = mapped_column(Text, nullable=False)
+    recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
 
 
 class ArticleWwwStamp(Base):
@@ -2497,6 +2517,10 @@ class ArticleWwwStamp(Base):
     stamped_at: Mapped[datetime | None] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC)
     )
+    #: R824 (row 405): the stage's hand-bumped version that wrote the rows; NULL on a stamp written before it (read through ``engine``).
+    stage_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: R824: the import batch whose carry wrote this stamp; NULL when the rows were extracted on this machine.
+    carried_from_batch: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class CorpusSegment(Base):

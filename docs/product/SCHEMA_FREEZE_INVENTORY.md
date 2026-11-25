@@ -9,7 +9,7 @@ pending column is declared additive, is the audit's judgement and is not written
 
 ## 1. Main database: the migration chain
 
-Head: `e4c1a7f3b9d2` (86 migrations, base first).
+Head: `e4c1a7f3b9d2` (87 migrations, base first).
 
 | # | revision | after | file |
 |---|---|---|---|
@@ -98,9 +98,10 @@ Head: `e4c1a7f3b9d2` (86 migrations, base first).
 | 83 | `f61a2b3c4d5e` | `c4e8a2d6f1b9` | `f61a2b3c4d5e_article_fetched_host.py` |
 | 84 | `c2a6e8f1d4b7` | `f61a2b3c4d5e` | `c2a6e8f1d4b7_ipcc_predictions.py` |
 | 85 | `d7e3a9b2c5f1` | `c2a6e8f1d4b7` | `d7e3a9b2c5f1_law_format_changes.py` |
-| 86 | `e4c1a7f3b9d2` | `d7e3a9b2c5f1` | `e4c1a7f3b9d2_corpus_segments.py` |
+| 86 | `e4b7c1d9a2f6` | `d7e3a9b2c5f1` | `e4b7c1d9a2f6_stage_versions_and_engine_registry.py` |
+| 87 | `e4c1a7f3b9d2` | `e4b7c1d9a2f6` | `e4c1a7f3b9d2_corpus_segments.py` |
 
-## 2. Main database: tables (64, from `src/database/models.py`)
+## 2. Main database: tables (65, from `src/database/models.py`)
 
 ### `ai_custom_prompt`
 
@@ -172,6 +173,8 @@ Head: `e4c1a7f3b9d2` (86 migrations, base first).
 | `engine` | VARCHAR(40) | no |  |
 | `inputs` | VARCHAR(40) | no |  |
 | `stamped_at` | DATETIME | yes |  |
+| `stage_version` | INTEGER | yes |  |
+| `carried_from_batch` | INTEGER | yes |  |
 
 ### `article_keyword_association`
 
@@ -288,6 +291,8 @@ Head: `e4c1a7f3b9d2` (86 migrations, base first).
 | `engine` | VARCHAR(40) | no |  |
 | `inputs` | VARCHAR(40) | no |  |
 | `stamped_at` | DATETIME | yes |  |
+| `stage_version` | INTEGER | yes |  |
+| `carried_from_batch` | INTEGER | yes |  |
 
 ### `articles`
 
@@ -451,6 +456,15 @@ Head: `e4c1a7f3b9d2` (86 migrations, base first).
 | `article_site` | VARCHAR(255) | no |  |
 | `confirmed_at` | DATETIME | no |  |
 | `note` | TEXT | yes |  |
+
+### `index_engines`
+
+| column | type | null | key |
+|---|---|---|---|
+| `engine` | VARCHAR(40) | no | primary |
+| `stage` | VARCHAR(8) | no |  |
+| `components` | TEXT | no |  |
+| `recorded_at` | DATETIME | yes |  |
 
 ### `ipcc_predictions`
 

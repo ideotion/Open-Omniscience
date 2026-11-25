@@ -33,7 +33,7 @@ from pathlib import Path
 APP_FILES: frozenset[str] = frozenset({
     "open_omniscience.db", "custody_log.db", "anchors.db",
     "analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb",
-    "activity_ledger.jsonl", "app_errors.jsonl", "app_settings.json", "archive_backfill.json",
+    "activity_ledger.jsonl", "app_errors.jsonl", "app_settings.json", "archive_backfill.json", "at_rest_encryption.json",
     "article-indexes-attempt.json", "backup-temp-dests.json", "bench-anchors.json", "bench_progress_state.json",
     "briefing_cache.json", "briefing_dismiss_reasons.json", "briefing_dismissed.json", "briefing_draft.json",
     "collect_capacity.json", "collect_perf.jsonl", "criteria_calibration_cursor.json", "custody_pending.jsonl",
@@ -59,6 +59,8 @@ APP_FILES: frozenset[str] = frozenset({
     ".oo-instance-id", "card_quality_selfcheck.jsonl",
     # R729: which backups still owe this machine a living-source merge (src/backup/lane_merge.py)
     "lane_merge_pending.json",
+    # R827 R7(a): an import activation whose whole-file check is still owed (src/backup/merge.py)
+    "import-unverified-activation.json",
 })
 
 #: Top-level FOLDERS the app writes into its data folder.

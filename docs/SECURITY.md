@@ -933,6 +933,76 @@ imply a protection we cannot deliver.
   unrecoverable") is said only when the main database is positively known to be encrypted; a plaintext one fails closed to
   "not encrypted, old pages may remain on the disk, full-disk encryption is the remedy", one whose state could not be read to
   "could not be confirmed as encrypted", on the CLI, the HTTP answer, the page and the free-space overwrite after it.
+  **Encrypted only on positive evidence (R819/R820, row 396).** A header that is not SQLite's is never by itself evidence
+  of encryption (a plaintext store whose page 1 an earlier, failed erase randomised reads exactly so). The erase takes the
+  encrypted path (three salt passes, no body rewrite) only when this process read the very file it pinned under a key, state
+  the process already holds (`connect.opened_with_key`, by device and inode, never persisted; a plaintext open of the same
+  identity forgets it); nothing of the store is opened or read for it before its key is destroyed. Every other main
+  database takes the plaintext path above, and the verdict is settled after its first page and log were destroyed: its first
+  16 bytes, read once through the kept handle before that, decide "not encrypted" when they are SQLite's own header whatever
+  any record says; "encrypted" (no body rewrite, counted like the encrypted path) needs another header AND the app's
+  record `at_rest_encryption.json` beside it naming this very (device, inode) as read back with the key AND a fast
+  destruction that reached the first page and every log whole with no part refused; every other case (no record, an
+  unreadable, malformed, oversized or linked record, a record from before R820 without an identity, another identity, a
+  short read) is "could not be determined", with the full rewrite and R815 (3)'s note. The record is read no-follow through
+  the pinned folder's handle, a regular file only, at most 64 KiB, and destroyed with its store (it is one of the app's own
+  files, R806). It gets the identity only after a real keyed page read by the app's own engine (stat by path, never an
+  open and close of the store's files, R789), atomically, and a plaintext open of the same identity removes it; a failed
+  write never fails the open. Any replacement of the store (restore, repair, encrypt, decrypt) is a new identity, so a
+  mismatch and the full rewrite. The result names one of three states on the CLI and in the HTTP answer
+  (`corpus_encryption`): encrypted and its key destroyed (or its first page could not be overwritten, so its key may still
+  be on the disk), not encrypted, or could not be determined; a store whose state could not be determined is never called
+  "unencrypted" in words. The in-process evidence counts only while the process still holds a descriptor on that very file
+  (POSIX: listed from the process's own descriptors, a `fstat` each, never a read), since only then can the file system not
+  hand its inode to another file; a disposal of the app's pool forgets it all (restore, repair, unlock and power dispose
+  before they swap files; an erase that disposes the pool itself asks for the evidence first, before it opens anything of the
+  store, so only the pool's own descriptor can meet the test, then keeps a descriptor on that file until the end; on Windows
+  it opens nothing, which would block the delete), and an open of the corpus known to be plaintext removes any identity the record names (an open whose kind
+  this process cannot tell, after a disposal on another thread, leaves the record as it is). Where the file at the store's
+  path is not the store, the record goes only from the pinned folder, through its handle: a link or another drive at that
+  place holds another store's record, never removed. An encrypted main
+  database whose first page could not be overwritten is said as such, and neither the result nor the free-space scrub
+  after it calls it unrecoverable. The record's `.lock` goes with the record. LIMIT (Windows): the in-process evidence has no
+  descriptor check there (an open file is not deleted or replaced while held, and the disposal forgets it; an NTFS file ID
+  could be reused after a delete the app did not make while no pool was disposed, which is not guarded), and the
+  first-page fallback never reaches "encrypted" from the record, so an erase there without in-process evidence says "could
+  not be determined".
+  **"Encrypted" is said only on evidence, everywhere (R821, row 400).** The same rule as the erase's, for every place that
+  tells a person or a report that the corpus is encrypted: the Settings at-rest panel, the lock screen, `GET
+  /api/system/doctor`, `GET /api/system/lock-state` (`at_rest_claim` and `at_rest_evidence` beside the lock word), the
+  terminal panel, the benchmark and performance reports, the encrypt tool and `scripts/encrypt_db.py`, and the click-through
+  harness. Evidence is a keyed open in this process, or this installation's record naming the very file: its (device,
+  inode) AND an HMAC-SHA-256 of its first 16 bytes (its SQLCipher salt, read from the same descriptor as the identity, R789),
+  keyed by a random 32-byte value kept in the same record (R828 (1)), so a file that later takes the same inode is never named
+  by an older record; the erase checks the same MAC over the bytes it reads through its kept handle. The record never holds
+  the salt or any byte of page 1: the MAC only lets a file that is present be matched, and a MAC of a random 16-byte value
+  cannot give the value back. A record without the MAC (older builds, or one that kept the bytes) is no evidence. The record
+  is destroyed in the erase's key-material pass on every path (CLI, HTTP, the locked app): read bounded and no-follow,
+  overwritten in place, fsynced and unlinked right after the store's first page and before the key files and every bulk step;
+  a failure is said as "key material may remain", never as destroyed, and the result is never clean (R828 (2)). It and its
+  lock are never carried by a backup, export, field-data file or diagnostic bundle (R828 (3); every writer takes named files
+  and none names it; a bundle's folder inventory may list its name and size, never its content). An entry goes when its file
+  is replaced (the corpus swap of a restore, repair or rebuild, a lane switch) or opened as plaintext (decrypted, or another
+  file at the name) (R828 (4)). Builds between R820 and R828 (on main only, never in a tag) wrote the 16 bytes into an
+  entry as `head`: that field is dropped from every entry on each read and write, and the first open of a store after an
+  update rewrites a record that still holds one. Every write of the record replaces its file, so its EARLIER versions sit in
+  freed disk blocks that no rewrite or erase reaches: on an install that ran one of those builds, such a block may still hold
+  a salt. Full-disk encryption is the remedy, as for every freed block. The erase never writes a record that has a second
+  name (a hard link): that write would land in the other file, and the result says "key material may remain". LIMIT (security
+  reads, row 400): the MAC's key sits in the record beside it, so the record proves nothing against someone who can WRITE the
+  data folder; such a person can also replace the files themselves. A locked app holds no secret to sign it with. Its
+  leftover write copies (`.tmp.*`) are destroyed with it. Outside the
+  data folder, a record written by this process during an erase is not held off by the erase's latch. A header that is not SQLite's, alone,
+  is "looks encrypted; not yet checked with your key"; SQLite's own header is "not encrypted", whatever the record says.
+  The lock word ("unlocked-encrypted", "locked") stays a control word, never a claim: reports say
+  "unlocked-looks-encrypted" without evidence. Nothing is encrypted, skipped as "already encrypted", recorded or finished on
+  a header: the finish of pending stores and the encrypt route first prove the library with the held key (a read-only,
+  cache-bypassing probe under the probe lock, recorded with the identity and first bytes taken before it only when they are
+  unchanged after it), and `encrypt_db.py` without evidence changes nothing and says to unlock once and rerun.
+  `--require-encrypted` needs the doctor's keyed reading after the walk, else it refuses as not verified. Every read of the
+  record is no-follow, non-blocking, a regular file only and at most 64 KiB. LIMITS: the probe's before-and-after check does
+  not see the library swapped away and back within the probe; on Windows the record read cannot refuse a link (no
+  `O_NOFOLLOW`), though the size and regular-file checks hold.
   **A data folder the app does not own (R711).** Ownership is where the app put the
   folder, never what is in it (the app writes its own files at every start): the default location and the first-launch
   `OOS data` folder are the app's; a folder set by hand in `OO_DATA_DIR` is shared when it is, on the path it leads to, the

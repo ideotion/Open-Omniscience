@@ -143,7 +143,7 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # link at the name" (never followed); nothing else of the exception is read, stored or logged.
     "src/safety/crypto_erase.py": {
         ("_data_regions", "if exc.errno == errno.ENXIO:"): 1,
-        ("_open_and_unlink_plain", "if exc.errno == errno.ELOOP:  # a link at the name: never followed"): 1,
+        ("_open_and_unlink_plain_at", "if exc.errno == errno.ELOOP:  # a link at the name: never followed"): 1,
     },
     # R397 (b): only the errno is read, to tell damage in the file (EIO) from a passing error that must not mark a healthy store
     "src/events/feeds.py": {("_load_json", "damaged = not isinstance(exc, OSError) or exc.errno == errno.EIO"): 1},
@@ -198,6 +198,9 @@ CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     # class only for a database driver's exception (``record_text``); the lock probes read an attribute and no text.
     "src/backup/merge.py": {
         ("_file_is_locked", 'return getattr(exc, "winerror", None) in (32, 33)'): 1,
+        # R830/R7a: a corrupt answer from the live check after a scoped activation goes to the damage registry, which records
+        # only corruption and only its code and name (the same call as ``country_form._note_damage``); nothing else is kept
+        ("check_live_after_scoped_activation", 'damage.registry.note(damage.FILE_CORPUS, exc, statement="PRAGMA quick_check", path=live_db_path())'): 1,
         ("_lock_holder_note", 'name = getattr(exc, "filename", None)'): 1,
         ("classify_restore_error", "msg = str(exc)"): 1,
         ("classify_restore_error", "if _file_is_locked(exc):"): 1,

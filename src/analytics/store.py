@@ -321,8 +321,31 @@ def _get_or_create_keyword(
     language: str | None,
     extractor: str,
     prefetched: dict[str, Keyword] | None = None,
+    created: list[Keyword] | None = None,
 ) -> Keyword:
     """Get-or-create ONE keyword. ``prefetched`` is the only thing that changed.
+
+    ``created`` (row 406; only with ``prefetched``): a new keyword is added to the session and appended to this list
+    WITHOUT the flush that gives it its id and without its baseline tags; the caller flushes once for all of them and
+    adds the tags after, in the list's order (see :func:`index_article`). Its id is then the one the per-keyword flush
+    would have given it."""
+    if created is not None and prefetched is None:
+        raise ValueError("created needs prefetched: a deferred keyword must be found again by the next term")
+    return _get_or_create_keyword_impl(
+        session, t, language=language, extractor=extractor, prefetched=prefetched, created=created
+    )
+
+
+def _get_or_create_keyword_impl(
+    session: Session,
+    t: ExtractedTerm,
+    *,
+    language: str | None,
+    extractor: str,
+    prefetched: dict[str, Keyword] | None,
+    created: list[Keyword] | None,
+) -> Keyword:
+    """The body of :func:`_get_or_create_keyword`, whose docstring it follows.
 
     ``prefetched=None`` (the default) keeps the original per-term query verbatim, so
     every caller that does not pass it is byte-identical. When a caller HAS already
@@ -368,12 +391,15 @@ def _get_or_create_keyword(
             extractor=extractor,
         )
         session.add(kw)
-        session.flush()  # assign id for the mention FK
-        # Item AC: a curated baseline pre-tags a known keyword at creation time
-        # (forward-only — existing keywords are not retroactively tagged here).
-        # Each tag is a labelled assertion carrying its source provenance.
-        for axis, tag in baseline_tags(language, t.normalized):
-            session.add(KeywordTag(keyword_id=kw.id, axis=axis, tag=tag, source="baseline"))
+        if created is not None:
+            created.append(kw)  # flushed, and tagged, by the caller (row 406)
+        else:
+            session.flush()  # assign id for the mention FK
+            # Item AC: a curated baseline pre-tags a known keyword at creation time
+            # (forward-only — existing keywords are not retroactively tagged here).
+            # Each tag is a labelled assertion carrying its source provenance.
+            for axis, tag in baseline_tags(language, t.normalized):
+                session.add(KeywordTag(keyword_id=kw.id, axis=axis, tag=tag, source="baseline"))
         if prefetched is not None:
             prefetched[t.normalized] = kw
     elif is_entity and not kw.is_entity:
@@ -641,19 +667,22 @@ def _stamp_index_engine(
     from src.database.models import ArticleIndexStamp
 
     try:
-        from src.analytics.engine_identity import accepted_engine_ids
+        from src.analytics.engine_identity import INDEXER_VERSION, accepted_engine_ids_and_record
 
         # R758: the canonical id is the one written; a stamp naming the pre-R758 Windows id of the SAME engine (same bytes, other file
         # names) still vouches for the earlier pass's rows, so the conditional delete below keeps it.
-        accepted = accepted_engine_ids(extractor)
+        accepted, record = accepted_engine_ids_and_record(extractor)
         current = accepted[0]
     except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
         log_failure(_LOG, "could not compute the engine identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleIndexStamp).where(ArticleIndexStamp.article_id == article.id))
         return
     if certified:
+        # R824 (row 405): the stage version beside the id, and no carry provenance -- these rows were extracted HERE, whatever an
+        # earlier stamp said; the engine's readable components ride their own table, once per id.
         stmt = sqlite_insert(ArticleIndexStamp).values(
-            article_id=article.id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC)
+            article_id=article.id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
+            stage_version=INDEXER_VERSION, carried_from_batch=None,
         )
         session.execute(
             stmt.on_conflict_do_update(
@@ -662,9 +691,12 @@ def _stamp_index_engine(
                     "engine": stmt.excluded.engine,
                     "inputs": stmt.excluded.inputs,
                     "stamped_at": stmt.excluded.stamped_at,
+                    "stage_version": stmt.excluded.stage_version,
+                    "carried_from_batch": None,
                 },
             )
         )
+        _record_engine(session, current, "kw", record)
     else:
         session.execute(
             delete(ArticleIndexStamp).where(
@@ -689,16 +721,21 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
     from src.database.models import ArticleWwwStamp
 
     try:
-        from src.analytics.engine_identity import www_engine_id, www_inputs_digest
+        from src.analytics.engine_identity import (
+            WWW_INDEXER_VERSION,
+            www_engine_record,
+            www_inputs_digest,
+        )
 
-        current = www_engine_id()
+        current, record = www_engine_record()
         inputs = www_inputs_digest(raw_content=raw_content, country=country)
     except Exception as exc:  # noqa: BLE001 - an uncertified article is safe; a failed index is not
         log_failure(_LOG, "could not compute the www identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleWwwStamp).where(ArticleWwwStamp.article_id == article_id))
         return
     stmt = sqlite_insert(ArticleWwwStamp).values(
-        article_id=article_id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC)
+        article_id=article_id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
+        stage_version=WWW_INDEXER_VERSION, carried_from_batch=None,
     )
     session.execute(
         stmt.on_conflict_do_update(
@@ -707,8 +744,26 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
                 "engine": stmt.excluded.engine,
                 "inputs": stmt.excluded.inputs,
                 "stamped_at": stmt.excluded.stamped_at,
+                "stage_version": stmt.excluded.stage_version,
+                "carried_from_batch": None,
             },
         )
+    )
+    _record_engine(session, current, "www", record)
+
+
+def _record_engine(session: Session, engine: str, stage: str, components: str) -> None:
+    """One ``index_engines`` row per engine id (R824, row 405): what the id is a hash of, so a later restore of this store can name the
+    component that differs from its own engine. An insert that keeps an existing row, one primary-key probe per stamp; it writes inside
+    the stamp's own transaction, so the row exists exactly when a stamp naming it does."""
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    from src.database.models import IndexEngine
+
+    session.execute(
+        sqlite_insert(IndexEngine)
+        .values(engine=engine, stage=stage, components=components, recorded_at=datetime.now(UTC))
+        .on_conflict_do_nothing(index_elements=[IndexEngine.engine])
     )
 
 
@@ -964,6 +1019,13 @@ def index_article(
         (t.normalized for t in terms if t.normalized.casefold() not in self_forms),
         language=known_lang,
     )
+    # Row 406: the keywords this article creates are inserted in ONE flush after the loop rather than one flush each (a
+    # flush per new keyword was 29 of 45 s of the single writer's time on a first pass, measured). The ids come out
+    # the same: the unit of work inserts one mapper's new rows in the order they were added, which is the order the
+    # per-keyword flushes used, and an entity upgrade of a keyword created earlier in this article is applied to the
+    # same pending object either way. The baseline tags follow in the same order once the ids exist.
+    created: list[Keyword] = []
+    resolved: list[tuple[ExtractedTerm, Keyword]] = []
     for t in terms:
         # Case-insensitive: _self_name_forms is casefolded, but the entity
         # detector keeps acronyms UPPERCASE (2026-06-16 ruling), so a source
@@ -974,8 +1036,15 @@ def index_article(
             self_suppressed += 1
             continue
         kw = _get_or_create_keyword(
-            session, t, language=known_lang, extractor=extractor.name, prefetched=prefetched
+            session, t, language=known_lang, extractor=extractor.name, prefetched=prefetched, created=created
         )
+        resolved.append((t, kw))
+    if created:
+        session.flush()  # one INSERT for every keyword this article made: their ids for the mention rows
+        for kw in created:
+            for axis, tag in baseline_tags(known_lang, kw.normalized_term):
+                session.add(KeywordTag(keyword_id=kw.id, axis=axis, tag=tag, source="baseline"))
+    for t, kw in resolved:
         mention_rows.append(
             {
                 "keyword_id": kw.id,
@@ -1800,7 +1869,8 @@ def _reindex_articles_impl(
         tasks: list[Task], stats_out: dict, *, serial_fallback: bool = True
     ) -> tuple[dict[int, ArticleDerivatives], float]:
         _t = time.monotonic()
-        out = precompute_batch(tasks, extractor=extractor, workers=workers, stats=stats_out, serial_fallback=serial_fallback)
+        out = precompute_batch(tasks, extractor=extractor, workers=workers, stats=stats_out, serial_fallback=serial_fallback,
+                               drain_pool=_drain_pool)
         return out, time.monotonic() - _t
 
     def _fold_pre_stats(extra: dict) -> None:
@@ -1830,14 +1900,22 @@ def _reindex_articles_impl(
     import os as _os
     from concurrent.futures import Future, ThreadPoolExecutor
 
-    from src.analytics.reindex_parallel import PoolUnavailable, _serial, uses_pool
+    from src.analytics.reindex_parallel import DrainPool, PoolUnavailable, _serial, uses_pool
 
     _pipeline_on = _os.getenv("OO_REINDEX_PIPELINE", "1").strip() != "0"
     _windows = [article_ids[w : w + _PRECOMPUTE_WINDOW] for w in range(0, len(article_ids), _PRECOMPUTE_WINDOW)]
     # The next window's tasks and text, its precompute in flight, that precompute's own stats, and the seconds its read took.
     _ahead: tuple[list[Task], dict[int, str], Future, dict, float] | None = None
     _ahead_pool: ThreadPoolExecutor | None = None
+    # ROW 425: the window computed ahead whose result has not been taken yet. ``_ahead`` is emptied when its turn
+    # STARTS, before the article read and the wait for its result; this stays set until that result is taken, so a
+    # stop or an exception in between (Ctrl-C during the read or the wait) still kills that window rather than waits.
+    _pending_fut: Future | None = None
     _pipelined_windows = 0
+    # ROW 416: ONE worker pool for the whole drain rather than one per window -- a fresh worker reloads every dictionary
+    # it meets (about 4.4 s of CPU per worker on a mixed-language window), and a long drain paid that once per window.
+    # Recycled after a measured number of articles to bound worker memory; see DrainPool. Closed in the finally below.
+    _drain_pool = DrainPool()
     try:
         for _wi, window_ids in enumerate(_windows):
             # Cooperative stop (field ruling 2026-07-29 item 15): a POST-SWAP import
@@ -1868,6 +1946,7 @@ def _reindex_articles_impl(
                     # full-width pools never run together. Its result is not used and its figures are not counted.
                     with contextlib.suppress(Exception):
                         _fut.result()
+                    _pending_fut = None
                 continue
 
             # Precompute (parallel when it's worth it; falls back to serial in-process on any pool trouble -- see
@@ -1878,8 +1957,10 @@ def _reindex_articles_impl(
             if _fut is not None:
                 try:
                     derivs, _secs = _fut.result()
+                    _pending_fut = None
                     _pipelined_windows += 1
                 except PoolUnavailable:
+                    _pending_fut = None
                     # Straight to serial, here: asking the pool again would wait out a second pool timeout on a wedged pool
                     # before the same serial redo. Counted once, as the fallback it is.
                     _ts = time.monotonic()
@@ -1898,22 +1979,19 @@ def _reindex_articles_impl(
             # Start the NEXT window before applying this one, when its precompute will run in the pool. A failure to read it here
             # is left for its own turn, so this window is applied (and its progress kept) first.
             nxt = _windows[_wi + 1] if _wi + 1 < len(_windows) else None
-            if _pipeline_on and nxt is not None and uses_pool(len(nxt), extractor=extractor, workers=workers):
+            if _pipeline_on and nxt is not None and uses_pool(len(nxt), extractor=extractor, workers=workers, drain_pool=_drain_pool):
                 try:
                     _n_art, n_tasks, n_content, n_secs = _load_window(nxt)
                 except Exception as exc:  # noqa: BLE001 - read again, and raised, when the window's own turn comes
                     log_failure(_LOG, "reading the next re-index window ahead failed; it is read in its own turn", exc,
                                 level=logging.WARNING)
                 else:
-                    if n_tasks and uses_pool(len(n_tasks), extractor=extractor, workers=workers):
+                    if n_tasks and uses_pool(len(n_tasks), extractor=extractor, workers=workers, drain_pool=_drain_pool):
                         if _ahead_pool is None:
                             _ahead_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="oo-reindex-ahead")
                         n_stats: dict = {}
-                        _ahead = (
-                            n_tasks, n_content,
-                            _ahead_pool.submit(_precompute, n_tasks, n_stats, serial_fallback=False),
-                            n_stats, n_secs,
-                        )
+                        _pending_fut = _ahead_pool.submit(_precompute, n_tasks, n_stats, serial_fallback=False)
+                        _ahead = (n_tasks, n_content, _pending_fut, n_stats, n_secs)
                     del _n_art  # applied from a fresh read in its own turn
 
             _t0 = time.monotonic()
@@ -1921,9 +1999,16 @@ def _reindex_articles_impl(
             _apply_s += time.monotonic() - _t0
     finally:
         if _ahead_pool is not None:
-            # Nothing left ahead: the helper is idle and this returns at once. A window still ahead (a stop, or an exception in the
+            # Nothing left ahead: the helper is idle and this returns at once. A window still ahead (a stop, or an exception or Ctrl-C in the
             # apply) is not waited for: a Stop is answered now, and the pool it runs in ends at the pool timeout at the latest.
-            _ahead_pool.shutdown(wait=_ahead is None, cancel_futures=True)
+            _ahead_pool.shutdown(wait=_pending_fut is None, cancel_futures=True)
+        # A window still ahead (a stop, or an exception in the apply) is running in the kept pool: its workers are killed
+        # rather than waited for, which also ends that window's helper thread at once instead of at the pool timeout.
+        _drain_pool.close(abandon=_pending_fut is not None)
+        _pre_stats["pools_started"] = _drain_pool.started
+        _pre_stats["pools_recycled"] = _drain_pool.recycled
+        _pre_stats["pools_broken"] = _drain_pool.broken
+        _pre_stats["pools_shrunk"] = _drain_pool.shrunk
 
     # The END of the exclusive drain, which is where R22 says the reconcile belongs. The
     # marker closes ONLY on a sweep that reports `complete` -- a budgeted pass that

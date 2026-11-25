@@ -82,6 +82,11 @@ INDEXER_VERSION = 3
 #: re-extracts only the places and entities.
 WWW_INDEXER_VERSION = 1
 
+#: R824 (row 405): the output version of each extraction stage, the carry key a stamp records beside its engine id. Read from the two
+#: hand-bumped constants above, never a third number: ``kw`` is keywords, sentiment and dates (:data:`INDEXER_VERSION`), ``www`` is places
+#: and entities (:data:`WWW_INDEXER_VERSION`). Bumping one re-queues that stage for every article, in the background (R824 addition 1).
+STAGE_VERSIONS: dict[str, int] = {"kw": INDEXER_VERSION, "www": WWW_INDEXER_VERSION}
+
 #: The prefix every stamp carries. A stamp is ``e1-`` + 32 hex digits = 35 characters,
 #: inside ``Article.index_engine``'s String(40).
 STAMP_PREFIX = "e1-"
@@ -759,6 +764,64 @@ def engine_id(extractor=None, *, extractor_name: str | None = None, legacy: bool
     return _stamp_for(blob)
 
 
+def _canonical_blob(components: dict) -> str:
+    return json.dumps(components, sort_keys=True, separators=(",", ":"))
+
+
+def engine_record(extractor=None, *, extractor_name: str | None = None) -> tuple[str, str]:
+    """``(engine id, components JSON)`` for the keyword engine that would run now (R824, row 405): the exact text the id is a hash of, so
+    a reader recomputes the id from it (:func:`recorded_components`) and never trusts a row it cannot recompute."""
+    blob = _canonical_blob(engine_components(extractor, extractor_name=extractor_name))
+    return _stamp_for(blob), blob
+
+
+def www_engine_record() -> tuple[str, str]:
+    """``(engine id, components JSON)`` for the places-and-entities engine that would run now (R824)."""
+    blob = _canonical_blob(www_engine_components())
+    return WWW_STAMP_PREFIX + hashlib.sha256(blob.encode()).hexdigest()[:32], blob
+
+
+def recorded_components(engine: object, blob: object) -> dict | None:
+    """The components an ``index_engines`` row records for ``engine``, or None when they cannot be read: not text, not a JSON object, or
+    not the text whose hash IS ``engine`` (a row that does not recompute to its own id says nothing about that engine). R824 addition 3:
+    unreadable is never a guess."""
+    if not isinstance(engine, str) or not isinstance(blob, str):
+        return None
+    try:
+        parsed = json.loads(blob)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    canon = _canonical_blob(parsed)
+    digest = hashlib.sha256(canon.encode()).hexdigest()[:32]
+    if engine not in (STAMP_PREFIX + digest, WWW_STAMP_PREFIX + digest):
+        return None
+    return parsed
+
+
+def component_differences(incoming: dict, local: dict) -> list[str]:
+    """The names of the components that differ between two engines' records, sorted: a top-level key, or ``key:sub`` for a key inside
+    the ``distributions`` or ``switches`` maps (which dictionary, which switch). Every difference is named; none is chosen as "the" one.
+
+    Names come from THIS machine's record (``local``), never from the incoming one: an incoming record is a backup's text, and a key only
+    it holds is counted as ``unrecognised`` (or ``key:unrecognised`` inside a map) rather than copied into a report."""
+    out: set[str] = set()
+    for key in set(incoming) | set(local):
+        a, b = incoming.get(key), local.get(key)
+        if a == b:
+            continue
+        if key not in local:
+            out.add("unrecognised")
+        elif isinstance(a, dict) and isinstance(b, dict):
+            for sub in set(a) | set(b):
+                if a.get(sub) != b.get(sub):
+                    out.add(f"{key}:{sub}" if sub in b else f"{key}:unrecognised")
+        else:
+            out.add(str(key))
+    return sorted(out)
+
+
 def accepted_engine_ids(extractor=None, *, extractor_name: str | None = None) -> tuple[str, ...]:
     """Every stamp that names the engine that would run right now (R758, row 210): the canonical id FIRST -- the one written -- then the
     id a pre-R758 Windows install computed for the same engine, which hashed the same data files' bytes under backslash names. The two
@@ -768,6 +831,14 @@ def accepted_engine_ids(extractor=None, *, extractor_name: str | None = None) ->
     canonical = engine_id(extractor, extractor_name=extractor_name)
     legacy = engine_id(extractor, extractor_name=extractor_name, legacy=True)
     return (canonical,) if legacy == canonical else (canonical, legacy)
+
+
+def accepted_engine_ids_and_record(extractor=None) -> tuple[tuple[str, ...], str]:
+    """:func:`accepted_engine_ids` and the canonical id's components JSON (:func:`engine_record`), computed once: what ``index_article``
+    needs to write a stamp and its ``index_engines`` row (R824) at the cost the stamp alone had."""
+    canonical, blob = engine_record(extractor)
+    legacy = engine_id(extractor, legacy=True)
+    return ((canonical,) if legacy == canonical else (canonical, legacy)), blob
 
 
 def baseline_engine_id() -> str:

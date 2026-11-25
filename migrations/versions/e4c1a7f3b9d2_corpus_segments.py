@@ -7,7 +7,7 @@ GUARDED like ``article_www_stamps``: the boot path's ``create_all`` and the rest
 tables first.
 
 Revision ID: e4c1a7f3b9d2
-Revises: d7e3a9b2c5f1
+Revises: e4b7c1d9a2f6
 Create Date: 2026-11-24
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "e4c1a7f3b9d2"
-down_revision: str | None = "d7e3a9b2c5f1"
+down_revision: str | None = "e4b7c1d9a2f6"
 branch_labels: str | None = None
 depends_on: str | None = None
 

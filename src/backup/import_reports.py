@@ -297,6 +297,10 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             lines.append(f"  - {col}: {_fmt_count(n)}")
         lines.append("")
 
+    carry = plan.get("_derived_carry") if isinstance(plan, dict) else None
+    if isinstance(carry, dict):
+        _carry_markdown(lines, carry)
+
     qual = plan.get("_source_qualification") if isinstance(plan, dict) else None
     if isinstance(qual, dict):
         gained_q = (qual.get("introduced_qualified") or 0) + (qual.get("adopted_qualified") or 0)
@@ -504,6 +508,68 @@ _OPENED_WITH = {
     "backup and corpus": "the passphrase given for both the backup and its corpus",
     "given": "a passphrase this restore was given",
 }
+
+
+#: Plain words for the parts of an extraction engine's identity (R824, row 405). A part not listed here is shown by its code name, never
+#: dropped: the report names every part that differs.
+_ENGINE_PART_WORDS = {
+    "schema": "the stamp format",
+    "extractor": "the extractor",
+    "gazetteer": "the extractor's place list",
+    "indexer": "the extraction version",
+    "data": "the stoplists, keyword rings or place lists (data files)",
+    "python": "the Python version",
+    "unicode": "the Unicode tables",
+    "unrecognised": "a part this version of the app does not know",
+}
+
+
+def _engine_part(name: str) -> str:
+    outer, _, inner = name.partition(":")
+    if inner == "unrecognised":
+        return _ENGINE_PART_WORDS["unrecognised"]
+    if outer == "distributions" and inner:
+        return f"the installed dictionary {inner}"
+    if outer == "switches" and inner:
+        return f"the setting {inner}"
+    return _ENGINE_PART_WORDS.get(outer, name)
+
+
+def _carry_markdown(lines: list[str], carry: dict[str, Any]) -> None:
+    """Which already-extracted rows the import reused instead of extracting again (R24, R824), and, for the articles it could not reuse,
+    WHAT differed between the engine that extracted them and this one. Counts and part names only, from the merge's own plan."""
+    stages = (
+        ("Keywords and dates", "planned", "stamped", "differences"),
+        ("Places, people and organisations", "www_planned", "www_stamped", "www_differences"),
+    )
+    lines.append("## Extraction reused from the backup")
+    lines.append("")
+    if carry.get("reason"):
+        lines.append(f"- Nothing was reused: {carry['reason']}.")
+    for label, planned, stamped, diff_key in stages:
+        lines.append(
+            f"- {label}: {_fmt_count(carry.get(planned))} articles reused, of {_fmt_count(carry.get(stamped))} "
+            "extracted by an engine identical to this one."
+        )
+        diff = carry.get(diff_key)
+        if not isinstance(diff, dict):
+            continue
+        if diff.get("available") is False:
+            lines.append("  - What differed for the other articles could not be worked out on this computer.")
+            continue
+        if not diff.get("articles"):
+            continue
+        lines.append(
+            f"  - {_fmt_count(diff.get('articles'))} articles were extracted by a different engine and are extracted again here. "
+            "What differs, by number of articles (an article can count under several):"
+        )
+        for name, n in sorted((diff.get("components") or {}).items(), key=lambda kv: (-int(kv[1] or 0), kv[0])):
+            lines.append(f"    - {_engine_part(str(name))}: {_fmt_count(n)}")
+        if diff.get("could_not_be_read"):
+            lines.append(
+                f"    - could not be read (the backup does not record what that engine was): {_fmt_count(diff['could_not_be_read'])}"
+            )
+    lines.append("")
 
 
 def _key_name(value: object) -> str:

@@ -102,6 +102,9 @@ _PHASE_STAGE: dict[str, int] = {
     "quarantine_scan": STAGE_MERGE_SWAP,
     "work_induced_tally": STAGE_MERGE_SWAP,
     "prune_snapshots": STAGE_MERGE_SWAP,
+    # the run's whole-file check of the live corpus, owed after a checkpoint checked only on the tables it wrote
+    # (ImportQueueManager._check_owed_corpus, R827 R7(a)): the check stage 2's swap deferred to the run's end
+    "checking_corpus": STAGE_MERGE_SWAP,
     # the run's own tail phase (ImportQueueManager._tune_after_run)
     "tuning": STAGE_SEARCH_INDEX,
     # the in-restore re-index, when it is NOT deferred (defer_reindex() False)
@@ -419,6 +422,11 @@ class ImportQueueManager:
         # whether it succeeded or not (`_tuned` reports which). Skipped after a Stop, so a
         # stopped run correctly never reaches its own end.
         self._tuning_done = False
+        # R827 R7(a): the whole-file check owed after an activation that was checked only on the tables it wrote
+        # (None = nothing owed this run; else {"state": "ok" | "failed" | "unchecked", ...}). Persisted with the run.
+        self._corpus_check: dict[str, Any] | None = None
+        # Whether the item in flight is the run's last activation (R7(a)); True = the whole-file check.
+        self._final_activation = True
         # THIS RUN's identity, stamped on every import report the run leaves behind so a
         # multi-backup import can be read back as ONE import (the "Last import" line
         # sums its reports). Random, never derived from anything the run imported.
@@ -455,6 +463,7 @@ class ImportQueueManager:
                 # "not started". Optional keys: a file written before them still loads.
                 "tuning_done": self._tuning_done,
                 "tuned": self._tuned,
+                "corpus_check": self._corpus_check,
                 "run_id": self._run_id,
             }
             p = self._path()
@@ -486,6 +495,10 @@ class ImportQueueManager:
             {str(k): bool(v) for k, v in tuned.items()} if isinstance(tuned, dict) else None
         )
         raw_tuning_done = raw.get("tuning_done")
+        cc = raw.get("corpus_check")
+        self._corpus_check = (
+            _corpus_check_for_status(cc) if isinstance(cc, dict) and cc.get("state") in ("ok", "failed", "unchecked") else None
+        )
         state = str(raw.get("state") or "idle")
         # EVERY ITEM HAD RECORDED ITS OWN OUTCOME (2026-09-26, I4). Each item's final
         # state is saved in its own ``finally`` before the next one starts, and stage 3
@@ -639,12 +652,13 @@ class ImportQueueManager:
             # What this start overwrites, for a start that cannot make its worker thread (below).
             before = (
                 self._state, self._items, self._cursor, self._started_at, self._ended_at,
-                self._tuning_done, self._tuned, self._collection_window_failed, self._run_id,
+                self._tuning_done, self._tuned, self._collection_window_failed, self._run_id, self._corpus_check,
             )
             self._stop.clear()
             self._items = queued
             self._tuning_done = False
             self._tuned = None
+            self._corpus_check = None
             self._collection_window_failed = False
             self._run_id = secrets.token_hex(6)
             self._cursor = -1
@@ -670,7 +684,7 @@ class ImportQueueManager:
                 self._thread = None
                 (
                     self._state, self._items, self._cursor, self._started_at, self._ended_at,
-                    self._tuning_done, self._tuned, self._collection_window_failed, self._run_id,
+                    self._tuning_done, self._tuned, self._collection_window_failed, self._run_id, self._corpus_check,
                 ) = before
                 self._drop_keys()
                 self._save()
@@ -908,6 +922,8 @@ class ImportQueueManager:
                         level=logging.WARNING,
                     )
                     hold = False
+                # Read by _run_corpus (an attribute, not a parameter: _run_item's signature is the tests' seam).
+                self._final_activation = self._is_final_activation(idx, item, hold)
                 with self._lock:
                     self._cursor = idx
                     item["state"] = "running"
@@ -1014,7 +1030,13 @@ class ImportQueueManager:
             self._discard_group(
                 "the run ended before this group of backups reached a checkpoint"
             )
-        self._tune_after_run()
+            # R830 stop rule (2): the last activation was an intermediate checkpoint checked only on the tables it wrote
+            # (a Stop, or a later item that never committed), so the whole-file check runs now, on the live corpus,
+            # before the run can end -- a Stop waits for it. A failure or an unfinished check never ends as "done".
+            # In this ``finally`` so an exception escaping the loop still runs it (it never raises).
+            corpus_check = self._check_owed_corpus()
+        if corpus_check is None or corpus_check.get("state") == "ok":
+            self._tune_after_run()
         with self._lock:
             stopped = self._stop.is_set()
             for it in self._items:
@@ -1022,12 +1044,75 @@ class ImportQueueManager:
                     # Explicitly cancelled, never left looking "still to come" --
                     # a queued item after a stop would read as work still pending.
                     it["state"] = "cancelled" if stopped else "skipped"
-            any_error = any(it["state"] == "error" for it in self._items)
-            self._state = "stopped" if stopped else ("error" if any_error else "done")
+            any_error = any(it["state"] == "error" for it in self._items) or (
+                corpus_check is not None and corpus_check.get("state") != "ok"
+            )
+            # A whole-file check that failed or did not finish outranks a Stop: "stopped" would hide it.
+            owed_failed = corpus_check is not None and corpus_check.get("state") != "ok"
+            self._state = "error" if owed_failed else ("stopped" if stopped else ("error" if any_error else "done"))
             self._cursor = -1
             self._ended_at = time.time()
             self._drop_keys()  # drop the keys the moment the run ends
             self._save()
+
+    def _check_owed_corpus(self, *, at_start: bool = False) -> dict[str, Any] | None:
+        """Run the whole-file check an unverified activation owes (R827 R7(a); R830 stop rules (2) and (3)).
+
+        Returns None when nothing is owed. Not stoppable by the queue's Stop: the ruling makes the Stop wait for it,
+        because a run must never end with an activation nobody checked whole. Never raises."""
+        from src.backup.merge import check_live_after_scoped_activation, unverified_activation
+
+        try:
+            if unverified_activation() is None:
+                return None
+        except Exception:  # noqa: BLE001 - the check below reads it again and says what it found
+            pass
+        live = {"phase": "checking_corpus", "own_the_machine": True, "detail": "checking the whole corpus file"}
+        with self._lock:
+            if not at_start:
+                self._cursor = -1
+            if not at_start or self._state != "running":
+                self._live = live
+        # At start, the check gives way to an import started meanwhile (security read, 2026-11-24): it is interrupted and
+        # says "unchecked", the record stays, and that run's own end runs the check on the file it leaves live.
+        should_stop = self._a_run_started if at_start else None
+        try:
+            got = check_live_after_scoped_activation(should_stop=should_stop)
+        except Exception as exc:  # noqa: BLE001 - documented never to raise; an unread result is not a pass
+            log_failure(_LOG, "the whole-file check of the corpus after the import failed to run", exc, *self._secrets())
+            got = {"state": "unchecked", "reason": "not-finished"}
+        finally:
+            with self._lock:
+                if self._live is live:
+                    self._live = None
+        if got.get("state") == "none":
+            return None
+        got = _corpus_check_for_status(got)
+        with self._lock:
+            if at_start and (self._state == "running" or got.get("reason") == "superseded"):
+                # the run's own end reports the check; and a check superseded by a newer activation is no verdict on the
+                # corpus now live, so it never overwrites a status (final-head read, 2026-11-24)
+                return got
+            self._corpus_check = got
+            self._save()
+        return got
+
+    def _a_run_started(self) -> bool:
+        with self._lock:
+            return self._state == "running"
+
+    def check_owed_at_start(self) -> None:
+        """R830 stop rule (3): a process stopped after an intermediate activation and before its whole-file check.
+        The next start runs that check once, here, unless a run is in flight (its own end runs it). Never raises."""
+        with self._lock:
+            if self._state == "running":
+                return
+        got = self._check_owed_corpus(at_start=True)
+        if got is not None and got.get("state") != "ok" and got.get("reason") != "superseded":
+            with self._lock:
+                if self._state != "running":
+                    self._state = "error"
+                    self._save()
 
     def _tune_after_run(self) -> None:
         """ONE post-bulk tuning pass for the whole run (import-speed fix 2026-07-30).
@@ -1120,6 +1205,33 @@ class ImportQueueManager:
         if open_items + 1 >= self._checkpoint_k:
             return False
         return self._another_item_will_merge(idx)
+
+    def _is_final_activation(self, idx: int, item: dict, hold: bool) -> bool:
+        """Is this item's swap the run's LAST activation (R827/R830, row 408 R7a)?
+
+        An activation that another corpus merge will follow is an intermediate
+        checkpoint: its file check may be scoped to the tables the merge wrote,
+        because the run's final activation checks the whole file. A question this
+        cannot answer is treated as final, so that doubt buys the full check. One
+        doubt goes the other way: a later item whose digest cannot be read counts
+        as "will merge" (:meth:`_another_item_will_merge`, which must agree with the
+        skip rule), so this one may be scoped and the later item may then never
+        activate. The record this activation leaves owes the whole-file check, and
+        the run's end (or the next start) runs it before the run can read as done.
+        """
+        if hold or item.get("kind") != "corpus":
+            return True
+        try:
+            return not self._another_item_will_merge(idx)
+        except Exception as exc:  # noqa: BLE001
+            log_failure(
+                _LOG,
+                f"could not tell whether {item.get('id')} is the run's last activation; checking the whole file",
+                exc,
+                *self._secrets(),
+                level=logging.WARNING,
+            )
+            return True
 
     def _another_item_will_merge(self, idx: int) -> bool:
         """True when some corpus item AFTER ``idx`` would open a working copy.
@@ -1503,6 +1615,7 @@ class ImportQueueManager:
             item["path"], backup_key, force=bool(item.get("force")),
             corpus_passphrase=corpus_key or None,
             working_copy=working_copy, hold_after_merge=hold,
+            final_activation=self._final_activation,
             already_merged_digests=already,
             allow_unverified=bool(item.get("allow_unverified")),
             trust_fetch_history=item.get("trust_fetch_history"),
@@ -1782,6 +1895,7 @@ class ImportQueueManager:
             started, ended = self._started_at, self._ended_at
             paused = self._collection_paused
             window_failed = self._collection_window_failed
+            corpus_check = self._corpus_check
             tuned = self._tuned
             tuning_done = self._tuning_done
             k = self._checkpoint_k
@@ -1884,6 +1998,9 @@ class ImportQueueManager:
             # planner statistics). None while the run is still going; a False half is
             # reported as such rather than quietly presented as done.
             "tuned": dict(tuned) if isinstance(tuned, dict) else None,
+            # R827 R7(a): the whole-file check of the live corpus a scoped checkpoint left owed. None when nothing was
+            # owed; "failed" names the run's safety copy (file name only) as the state to return to.
+            "corpus_check": dict(corpus_check) if isinstance(corpus_check, dict) else None,
             # Stated so the UI can say it rather than the user having to infer it
             # (ruling item 12).
             "collection_note": _collection_note(state, exit_unconfirmed, window_failed, paused, exit_wait is not None),
@@ -1905,6 +2022,53 @@ class ImportQueueManager:
 
 _MANAGER: ImportQueueManager | None = None
 _MANAGER_LOCK = threading.Lock()
+
+
+def _corpus_check_for_status(got: dict) -> dict:
+    """The check's outcome as the status shows it: the safety net by FILE NAME only (it lives in the data folder;
+    a full path would put the operator's folder layout in every status read)."""
+    out: dict[str, Any] = {"state": got.get("state")}
+    net = got.get("safety_net")
+    if isinstance(net, str) and net:
+        out["safety_net"] = Path(net).name
+    if got.get("reason"):
+        out["reason"] = str(got["reason"])
+    findings = got.get("findings")
+    if isinstance(findings, dict):
+        # named findings with a count (Plan 2026-11-24): a foreign-key-only finding latches nothing, so it is kept here
+        try:
+            fk_count = int(findings.get("foreign_key_violations") or 0)
+        except (TypeError, ValueError):
+            fk_count = -1  # a record that does not say a count: shown as unknown, never as zero
+        out["findings"] = {"quick_check": str(findings.get("quick_check") or "")[:16], "foreign_key_violations": fk_count}
+    return out
+
+
+def corpus_check_for_field_data() -> dict:
+    """The whole-file check owed or done after scoped import activations (R827 R7(a), R830), for Field data: the last
+    run's outcome as the status shows it and the owed-check record, if any, with its named findings and counts. File
+    names only, never a path; a few hundred bytes."""
+    from src.backup.merge import unverified_activation
+
+    with _MANAGER_LOCK:
+        mgr = _MANAGER
+    last = None
+    if mgr is not None:
+        with mgr._lock:
+            last = dict(mgr._corpus_check) if isinstance(mgr._corpus_check, dict) else None
+    record = unverified_activation()
+    owed = None
+    if isinstance(record, dict):
+        # Bounded field by field (Field data files stay under 200 KB): a timestamp is 40 characters at most and a file
+        # name 255, whatever a damaged or hand-edited record holds; the findings are a fixed pair of counts.
+        owed = {k: record[k][:40] for k in ("since", "failed_at") if isinstance(record.get(k), str)}
+        net = record.get("safety_net")
+        owed["safety_net"] = Path(net).name[:255] if isinstance(net, str) and net else None
+        if isinstance(record.get("findings"), dict):
+            owed["findings"] = _corpus_check_for_status({"findings": record["findings"]}).get("findings")
+    if isinstance(last, dict):
+        last = {k: (v[:255] if isinstance(v, str) else v) for k, v in last.items() if k in ("state", "safety_net", "reason", "findings")}
+    return {"last_run": last, "owed": owed}
 
 
 def get_import_queue() -> ImportQueueManager:

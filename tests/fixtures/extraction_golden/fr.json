@@ -1,0 +1,156 @@
+{
+ "sources": [
+  {
+   "name": "Le Courrier de Paris",
+   "domain": "courrier-paris.example",
+   "country": "fr",
+   "language": "fr"
+  }
+ ],
+ "articles": [
+  {
+   "id": "fr-001",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Réunion budgétaire",
+   "text": "Les ministres se sont réunis à Paris le 3 mars 2024 pour discuter du budget. Les discussions ont repris hier après une courte pause."
+  },
+  {
+   "id": "fr-002",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Sommet européen",
+   "text": "Le président Emmanuel Macron a reçu le chancelier Olaf Scholz à Paris mardi. Les deux dirigeants ont parlé d'énergie et de défense."
+  },
+  {
+   "id": "fr-003",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Rapport des Nations unies",
+   "text": "Les Nations unies ont publié un rapport sur l'alimentation le 2024-02-14. António Guterres a jugé la situation préoccupante."
+  },
+  {
+   "id": "fr-004",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Grève des transports",
+   "text": "Les cheminots ont cessé le travail jeudi à Paris. Les syndicats annoncent une reprise le 15 mai 2024."
+  },
+  {
+   "id": "fr-005",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": null,
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Élections législatives",
+   "text": "Les électeurs ont voté le 30 juin 2024 et le 7 juillet 2024. La participation a dépassé soixante pour cent."
+  },
+  {
+   "id": "fr-006",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Inondations au sud",
+   "text": "De fortes pluies ont touché le sud du pays hier. Les écoles rouvriront le 12 janvier 2025 selon la préfecture."
+  },
+  {
+   "id": "fr-007",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Banque centrale européenne",
+   "text": "La Banque centrale européenne a baissé ses taux le 6 juin 2024. Christine Lagarde a refusé de promettre d'autres baisses."
+  },
+  {
+   "id": "fr-008",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Visite à Dakar",
+   "text": "Le ministre des Affaires étrangères s'est rendu à Dakar le 20 septembre 2023. Il a rencontré des responsables de la Banque africaine de développement."
+  },
+  {
+   "id": "fr-009",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Salon de l'agriculture",
+   "text": "Le salon de l'agriculture a ouvert ses portes le 24 février 2024. Des éleveurs venus de toute la France étaient présents."
+  },
+  {
+   "id": "fr-010",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": null,
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Tempête sur la Bretagne",
+   "text": "Une tempête a frappé la Bretagne dans la nuit de lundi. Météo-France avait placé quatre départements en alerte orange."
+  },
+  {
+   "id": "fr-011",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Coopération avec Berlin",
+   "text": "Paris et Berlin ont signé un accord sur l'hydrogène le 22 janvier 2024. Le texte prévoit des investissements communs."
+  },
+  {
+   "id": "fr-012",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Courrier de Paris",
+   "text": "Le Courrier de Paris lance une nouvelle rubrique scientifique. Le Courrier de Paris publiera chaque semaine un dossier à partir du 4 avril 2024."
+  },
+  {
+   "id": "fr-013",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Jeux olympiques",
+   "text": "La cérémonie d'ouverture des Jeux olympiques a eu lieu à Paris le 26 juillet 2024. Des milliers de spectateurs étaient sur les quais."
+  },
+  {
+   "id": "fr-014",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Commerce avec Pékin",
+   "text": "Une délégation française est arrivée à Pékin le 5 décembre 2023. Les entretiens portaient sur l'aéronautique."
+  },
+  {
+   "id": "fr-015",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": null,
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Rentrée scolaire",
+   "text": "La rentrée scolaire aura lieu le 2 septembre 2024. Le ministère de l'Éducation nationale a présenté le calendrier demain."
+  },
+  {
+   "id": "fr-016",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Musée du Louvre",
+   "text": "Le musée du Louvre a accueilli près de neuf millions de visiteurs en 2023. La direction prévoit des travaux à partir de 2025."
+  }
+ ]
+}

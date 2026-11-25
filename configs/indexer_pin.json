@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "a776ecc22d1bf48cb4e0468cfabb36b8fb14f9b231879cdc77e479c4dbe73e23",
+  "digest": "b2b4fb39f46d80984df44b3784d6e7ac2f5a0cbf34c933bb7b2c75d164372260",
   "log": [
     {
       "version": 1,
@@ -115,6 +115,30 @@
       "digest": "a776ecc22d1bf48cb4e0468cfabb36b8fb14f9b231879cdc77e479c4dbe73e23",
       "kind": "same",
       "note": "src/timemap/datestore.py changed only in its agenda READ path (upcoming_deduced gains a default limit, truncated and ids_complete; a new read-only deduced_date_article_ids); extract_dates and every function index_article calls to write date rows are untouched, so the rows an article gets are identical (row 399)"
+    },
+    {
+      "version": 3,
+      "digest": "133bf730d6571df65e0d24d8ebc9c9ea6f01856e038c39dcbaf6a639bec5d050",
+      "kind": "same",
+      "note": "R824 row 405: index_article's stamp writes also record the stage version, clear carried_from_batch and add one index_engines row per engine id; no keyword, sentiment, top-keyword or date row changes (golden output digest unchanged)"
+    },
+    {
+      "version": 3,
+      "digest": "0f92b84e6f45f27c0cd1224b7ffb5c9e2ca0325b3578fb0512398b74f7bf04bd",
+      "kind": "same",
+      "note": "Row 406: index_article inserts an article's new keywords in one flush instead of one each, and the script check counts per distinct letter; the rows written are identical (tests/test_import_writer_speed_row406.py)"
+    },
+    {
+      "version": 3,
+      "digest": "e96db328f2644adbcf5067cc2f4b2415021b1275890e8bcfda608e9859bae970",
+      "kind": "same",
+      "note": "Row 416 changes only reindex_parallel.py's pool lifetime and worker count (one kept pool per drain, recycled, memory-bounded); every task is computed by the same _worker_compute in a worker built by the same _worker_init, and index_article is untouched"
+    },
+    {
+      "version": 3,
+      "digest": "b2b4fb39f46d80984df44b3784d6e7ac2f5a0cbf34c933bb7b2c75d164372260",
+      "kind": "same",
+      "note": "Row 425 changes only which flag the re-index drain's finally reads to decide whether to wait for or kill a window computed ahead (a stop-path change); no task, derivation or apply is touched, so index_article writes the same rows"
     }
   ]
 }

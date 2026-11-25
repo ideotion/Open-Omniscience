@@ -134,6 +134,7 @@ def test_quick_crypto_erase_destroys_dbs_keys_and_removes_dir(tmp_path):
         con.execute("INSERT INTO t VALUES (1)")
         con.commit()
         con.close()
+        _read_back(tmp_path / name)
     keys = tmp_path / "keys"
     keys.mkdir()
     (keys / "custody_ed25519.pem").write_bytes(b"PRIVATE" * 100)
@@ -153,6 +154,30 @@ def test_quick_crypto_erase_destroys_dbs_keys_and_removes_dir(tmp_path):
     assert not tmp_path.exists()
     # An explicit override dir must NOT mutate the live process passphrase.
     assert report["passphrase_cleared"] is False
+
+
+_READ_BACK: list = []
+
+
+@pytest.fixture(autouse=True)
+def _close_read_backs():
+    yield
+    while _READ_BACK:
+        with contextlib.suppress(Exception):
+            _READ_BACK.pop().close()
+
+
+def _read_back(path: Path) -> None:
+    """R819 (1): the app reads its store under its key, and its pool keeps the connection open, before an erase can call it
+    encrypted from what the process holds; a store only ever created in this process, or no longer held open, is not evidence."""
+    _READ_BACK.append(connect(path, key=_PW, check_same_thread=False))
+
+
+def _evidence(monkeypatch) -> None:
+    """For a stand-in store made of raw bytes: the in-process evidence that it is encrypted (R819 (1)), so the encrypted path runs."""
+    import src.database.connect as connect_module
+
+    monkeypatch.setattr(connect_module, "opened_with_key", lambda ident: True)
 
 
 def _salt_hits(data: bytes, salt: bytes) -> list[int]:
@@ -180,6 +205,7 @@ def test_quick_crypto_erase_destroys_every_copy_of_the_salt_in_the_write_ahead_l
         con.execute("PRAGMA wal_autocheckpoint=0")
         con.execute("CREATE TABLE t(x)")
         con.commit()
+        _read_back(db)
         for _ in range(20):
             con.execute("CREATE TABLE IF NOT EXISTS u(x)")  # schema churn rewrites page 1 on every commit
             con.execute("INSERT INTO t VALUES (randomblob(3000))")
@@ -239,13 +265,14 @@ def test_a_transaction_that_commits_after_the_erase_is_rewritten_through_the_kep
     )
 
 
-def test_the_log_index_head_is_zeroed_never_randomised(tmp_path):
+def test_the_log_index_head_is_zeroed_never_randomised(tmp_path, monkeypatch):
     """A connection that rolls back after the erase reads its frame count from the -shm header and grows the mapped file
     toward it: random bytes there grew it toward 32 GiB in the security read (the disk filled). The header holds no page
     data, so the erase writes zeros over it, which read as "rebuild the index from the log"."""
     data = tmp_path / "OOS data"
     data.mkdir()
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    _evidence(monkeypatch)
     shm = data / "open_omniscience.db-shm"
     shm.write_bytes(b"\xff" * 32768)
     kept = tmp_path / "kept-shm"
@@ -257,12 +284,13 @@ def test_the_log_index_head_is_zeroed_never_randomised(tmp_path):
     assert str(shm) not in report["overwrite_failures"]
 
 
-def test_quick_crypto_erase_overwrites_the_whole_rollback_journal(tmp_path):
+def test_quick_crypto_erase_overwrites_the_whole_rollback_journal(tmp_path, monkeypatch):
     """R708, the rollback-mode twin: a hot -journal holds the original page 1, salt included, at an offset past the
     head. The erase rewrites it whole."""
     data = tmp_path / "OOS data"
     data.mkdir()
     (data / "open_omniscience.db").write_bytes(b"\x00" * 8192)
+    _evidence(monkeypatch)
     salt = b"SALT-SALT-SALT-!"
     journal = data / "open_omniscience.db-journal"
     journal.write_bytes(b"\x00" * 8192 + salt + b"\x00" * 8192)
@@ -665,6 +693,7 @@ def test_an_encrypted_copy_in_the_data_folder_is_head_shredded_and_never_rewritt
     con.commit()
     con.close()
     (tmp_path / "open_omniscience.db").write_bytes(snap.read_bytes())
+    _evidence(monkeypatch)
     whole = []
     real_track = crypto_erase._shred
 
@@ -690,6 +719,7 @@ def test_an_erase_in_a_folder_the_app_does_not_own_removes_only_the_app_s_files(
         con.execute("CREATE TABLE t(x)")
         con.commit()
         con.close()
+        _read_back(home / name)
     keys = home / "keys"
     keys.mkdir()
     (keys / "custody_ed25519.pem").write_bytes(b"PRIVATE" * 10)
@@ -927,6 +957,7 @@ def test_an_encrypted_database_step_one_could_not_unlink_loses_its_head_again_an
     con.executemany("INSERT INTO t VALUES (?)", [("row" * 50,)] * 200)
     con.commit()
     con.close()
+    _read_back(main)
     body = main.read_bytes()[4096:]
     kept = tmp_path / "kept"
     os.link(main, kept)
@@ -983,6 +1014,7 @@ def test_in_a_shared_folder_every_copy_of_the_salt_and_every_key_of_the_app_s_is
         con.execute("PRAGMA wal_autocheckpoint=0")
         con.execute("CREATE TABLE t(x)")
         con.commit()
+        _read_back(db)
         for _ in range(10):
             con.execute("CREATE TABLE IF NOT EXISTS u(x)")
             con.execute("INSERT INTO t VALUES (randomblob(3000))")

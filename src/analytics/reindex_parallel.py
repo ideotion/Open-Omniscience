@@ -212,8 +212,16 @@ def all_cores_worker_count() -> int:
     still bounded at :data:`_MAX_EXCLUSIVE_WORKERS_CAP` (never literally
     unbounded) so a huge box can't spawn an equally huge process pool, once
     per precompute window, stacked on top of the concurrently-enlarged SQLite
-    cache -- a resource-EXHAUSTION concern, not a correctness one."""
-    return max(1, min(_MAX_EXCLUSIVE_WORKERS_CAP, os.cpu_count() or 1))
+    cache -- a resource-EXHAUSTION concern, not a correctness one.
+
+    THE WRITER IS ALSO A COMPETITOR (rows 413 and 416, measured 2026-11-24). "No writer process competing" holds for
+    the collector, not for the drain's own writer: the parent applies every article serially while the pool computes
+    the next window, so on 4 cores W=4 drained no faster than W=3 (43.5 vs 43.8 articles/s), and on 2 cores W=3 fell
+    back to the serial rate (27.8 vs 27.0). So above two cores one core is left to the writer. At two cores it is
+    NOT: one worker means the serial path, which measured 27.0 against 33.9 for two workers, so two cores keep two
+    workers. That is ``max(2, cores - 1)`` from two cores up, and one on a one-core machine."""
+    cpu = os.cpu_count() or 1
+    return max(1, min(_MAX_EXCLUSIVE_WORKERS_CAP, cpu if cpu <= 2 else cpu - 1))
 
 
 def _pool_timeout_s() -> float | None:
@@ -408,6 +416,160 @@ def _abandon_pool(pool: ProcessPoolExecutor) -> None:
                 worker.terminate()
         except Exception as exc:  # noqa: BLE001 - best effort
             log_failure(_LOG, "could not terminate a pool worker", exc, level=logging.DEBUG)
+
+
+#: How many articles one kept pool computes before it is replaced by a fresh one (row 416). See :class:`DrainPool`.
+_RECYCLE_AFTER_ARTICLES = 50_000
+
+
+def _recycle_after_articles() -> int | None:
+    """``OO_REINDEX_POOL_RECYCLE_ARTICLES`` overrides; ``0`` means never recycle (one pool for the whole drain)."""
+    raw = os.getenv("OO_REINDEX_POOL_RECYCLE_ARTICLES", "").strip()
+    if raw:
+        try:
+            parsed = int(raw)
+        except ValueError:
+            return _RECYCLE_AFTER_ARTICLES
+        return parsed if parsed > 0 else None
+    return _RECYCLE_AFTER_ARTICLES
+
+
+class DrainPool:
+    """ONE worker pool kept across the windows of a drain (row 416), instead of one pool per window.
+
+    WHY. :func:`precompute_batch` used to build a pool for every window and shut it down after. A worker starts with no
+    dictionaries, so the first article it sees in each language loads that language's stoplists, lemmatiser
+    dictionaries, place tables and date patterns: measured at about 4.4 s of CPU per worker for one article in each of
+    the twelve languages, against 0.21 s for the same twelve once warm. A mixed-language import meets most languages in
+    every window, so every window paid that again, in every worker -- about 4,000 times over a 2M-article drain. Keeping
+    the pool measured +29% drain throughput on 2 cores and +24% on 4 on a three-window run, with identical output; the
+    gain grows with drain length.
+
+    WHAT DOES NOT CHANGE. Every task is computed by the same ``_worker_compute`` in a worker built by the same
+    ``_worker_init``; windows are still applied strictly in order by the caller. Only process lifetime changes.
+
+    BOUNDED MEMORY. A worker's caches grow with the vocabulary it has seen, so the pool is replaced by a fresh one once
+    it has computed :data:`_RECYCLE_AFTER_ARTICLES` articles (``OO_REINDEX_POOL_RECYCLE_ARTICLES``), between windows,
+    when nothing is in flight. One warm-up per that many articles instead of one per window.
+
+    FAILURE. A pool that breaks or times out is killed (:func:`_abandon_pool`) and forgotten; the window that saw it is
+    computed serially exactly as before (the ruled fallback), and the next window gets a fresh pool. Never a hang, and
+    nothing the caller already committed is touched.
+
+    OWNERSHIP. The caller closes it in a ``finally`` (:meth:`close`); while open, its pool is registered in
+    ``_LIVE_POOLS`` like any other, so :func:`terminate_live_pools` still reaches its workers at app shutdown. At most
+    one window uses it at a time (the re-index has at most one window in flight); the lock makes the bookkeeping safe
+    whichever thread that window runs on.
+    """
+
+    def __init__(self, *, recycle_after: int | None = None) -> None:
+        self._lock = threading.Lock()
+        self._pool: ProcessPoolExecutor | None = None
+        self._key: tuple | None = None
+        self._articles = 0
+        self._n = 0
+        self._closed = False
+        self._recycle_after = recycle_after if recycle_after is not None else _recycle_after_articles()
+        #: Pools started, how many of those replaced a pool that had reached the recycle count, and how many broke.
+        #: Measurements, not control: a run whose ``started`` is close to its window count did not keep its pool.
+        self.started = 0
+        self.recycled = 0
+        self.broken = 0
+        self.shrunk = 0
+
+    def acquire(self, *, n_workers: int, extractor_name: str, gazetteer: dict[str, str] | None) -> ProcessPoolExecutor:
+        """The pool to compute the next window in: the kept one when it fits and is not due for recycling, else a new one."""
+        key = (extractor_name, repr(sorted(gazetteer.items())) if gazetteer else None)
+        with self._lock:
+            if self._closed:
+                # The drain ended (a stop, an exception in the apply) while a window computed ahead was still on its way
+                # here: starting a pool now would leave one nobody closes (security read of row 416, finding 1).
+                raise PoolUnavailable("the drain this pool belonged to has ended")
+            # A kept pool is reused while it is no LARGER than asked for. A smaller ask (memory got tighter, see
+            # pool_workers) replaces it with a smaller pool; a larger one does not grow it -- that waits for the recycle,
+            # so a reading that moves back and forth cannot restart the workers every window.
+            if self._pool is not None and self._key == key and self._n <= n_workers:
+                if self._recycle_after is None or self._articles < self._recycle_after:
+                    return self._pool
+                self.recycled += 1
+            elif self._pool is not None and self._key == key:
+                self.shrunk += 1
+            if self._pool is not None:
+                self._close_locked(abandon=False)
+            ctx = _pool_context()
+            pool = ProcessPoolExecutor(
+                max_workers=n_workers,
+                initializer=_worker_init,
+                initargs=(extractor_name, gazetteer),
+                **({"mp_context": ctx} if ctx is not None else {}),
+            )
+            _register_pool(pool)
+            self._pool, self._key, self._articles, self._n = pool, key, 0, n_workers
+            self.started += 1
+            return pool
+
+    def held_mb(self) -> float:
+        """Resident memory of the kept pool's live workers, in MiB (0 when there is none or it cannot be read).
+
+        :func:`pool_workers` adds this back to the machine's available memory: those workers are what the drain would
+        give up to start the next pool, so counting them as used would shrink the pool every window."""
+        with self._lock:
+            pool = self._pool
+        if pool is None:
+            return 0.0
+        try:
+            import psutil
+
+            total = 0
+            for proc in list((getattr(pool, "_processes", None) or {}).values()):
+                with contextlib.suppress(Exception):
+                    total += psutil.Process(proc.pid).memory_info().rss
+            return total / (1024 * 1024)
+        except Exception:  # noqa: BLE001 - unread is 0: the cap then errs small, the safe direction
+            return 0.0
+
+    def computed(self, pool: ProcessPoolExecutor, n_articles: int) -> None:
+        """Count a window ``pool`` finished toward its recycle point."""
+        with self._lock:
+            if pool is self._pool:
+                self._articles += n_articles
+
+    def discard(self, pool: ProcessPoolExecutor) -> None:
+        """Kill ``pool`` after it broke; when it is the kept one, the next :meth:`acquire` starts a fresh pool."""
+        with self._lock:
+            if pool is self._pool:
+                self.broken += 1
+                self._close_locked(abandon=True)
+                return
+        _abandon_pool(pool)
+
+    def close(self, *, abandon: bool = False) -> None:
+        """End the drain's pool. ``abandon`` kills the workers without waiting: for a drain that ended with a window
+        still in flight, so a Stop is answered now rather than when that window ends. Final: a window still on its way
+        to :meth:`acquire` after this gets ``PoolUnavailable`` rather than a new pool."""
+        with self._lock:
+            self._closed = True
+            self._close_locked(abandon=abandon)
+
+    def release(self) -> None:
+        """Close the kept pool for now (memory ran short); unlike :meth:`close`, a later window may start a new one."""
+        with self._lock:
+            self._close_locked(abandon=False)
+
+    def _close_locked(self, *, abandon: bool) -> None:
+        pool = self._pool
+        self._pool, self._key, self._articles, self._n = None, None, 0, 0
+        if pool is None:
+            return
+        if abandon:
+            _abandon_pool(pool)
+            return
+        _unregister_pool(pool)
+        try:
+            pool.shutdown(wait=True)
+        except Exception as exc:  # noqa: BLE001 - a pool that will not close cleanly is killed instead
+            log_failure(_LOG, "closing the kept precompute pool failed; terminating it", exc, level=logging.WARNING)
+            _abandon_pool(pool)
 
 
 # --------------------------------------------------------------------------- #
@@ -672,14 +834,52 @@ def compute_derivatives_with_www(
     return d
 
 
-def uses_pool(n_tasks: int, *, extractor, workers: int | None = None) -> bool:
+#: Resident memory one worker reaches, MiB. MEASURED 2026-11-24 (row 416): a worker that has met all twelve UI languages
+#: sits at about 686 MiB after its first window and 703 MiB after 28,800 articles carrying 1.15M never-seen words (a
+#: 58-window drain on one kept pool); a per-window pool reaches the same figure within each window. Rounded up.
+_WORKER_MEMORY_MB = 750
+#: Memory left free beside the workers, MiB: the writer's own growth, the database page cache and the OS file cache the
+#: import's reads and writes go through. A worker costs the drain its speed only; this room costs it the disk.
+_MEMORY_RESERVE_MB = 1536
+
+
+def pool_workers(workers: int | None = None, *, drain_pool: DrainPool | None = None) -> int:
+    """How many worker processes to start now: :func:`worker_count`, bounded by the memory that is free for them.
+
+    MEMORY-AWARE (row 416, the coordinator's condition). A worker holds about :data:`_WORKER_MEMORY_MB` for as long as it
+    lives, and a kept pool lives for the whole drain; on a 2-core machine with 6-8 GB and a corpus larger than RAM, two
+    workers too many would push the writer's file cache out, or the app into swap. So the count is also
+    ``(available - reserve) / per-worker``, where available is the machine's or the cgroup's, whichever is smaller
+    (:func:`src.config.cgroup_memory.effective_memory`), with the kept pool's own workers added back. It is read before
+    every window, so pressure that appears mid-drain shrinks the pool at the next window, and below two workers the
+    window is computed serially and the pool is closed.
+
+    Unchanged when the memory cannot be read (an unmeasured machine is not a small one), and when ``OO_REINDEX_WORKERS``
+    is set: the operator's explicit number is never second-guessed."""
+    n = worker_count(workers)
+    if n <= 1 or os.getenv("OO_REINDEX_WORKERS", "").strip():
+        return n
+    try:
+        from src.config.cgroup_memory import effective_memory
+
+        avail = effective_memory().get("available_mb")
+    except Exception:  # noqa: BLE001 - unreadable memory leaves the core-based count
+        avail = None
+    if avail is None:
+        return n
+    held = drain_pool.held_mb() if drain_pool is not None else 0.0
+    return max(0, min(n, int((avail + held - _MEMORY_RESERVE_MB) // _WORKER_MEMORY_MB)))
+
+
+def uses_pool(n_tasks: int, *, extractor, workers: int | None = None, drain_pool: DrainPool | None = None) -> bool:
     """Whether :func:`precompute_batch` would hand ``n_tasks`` tasks to the process pool (before any fallback).
 
     The ONE answer to that question, so a caller that plans around it (the re-index pipelines the next window's precompute only
     when the work runs in other processes) cannot drift from the function that decides it."""
     return (
-        worker_count(workers) > 1
-        and n_tasks >= _MIN_PARALLEL_BATCH
+        n_tasks >= _MIN_PARALLEL_BATCH
+        and getattr(extractor, "name", None) in _RECONSTRUCTIBLE_EXTRACTORS
+        and pool_workers(workers, drain_pool=drain_pool) > 1
         and getattr(extractor, "name", None) in _RECONSTRUCTIBLE_EXTRACTORS
     )
 
@@ -699,6 +899,7 @@ def precompute_batch(
     workers: int | None = None,
     stats: dict | None = None,
     serial_fallback: bool = True,
+    drain_pool: DrainPool | None = None,
 ) -> dict[int, ArticleDerivatives]:
     """Compute ``{article_id: ArticleDerivatives}`` for a batch of
     ``(article_id, content, title, language, sentiment_language)`` tuples.
@@ -717,6 +918,10 @@ def precompute_batch(
     core, which is exactly the question a "why is my import slow?" report has
     to answer. An out-parameter rather than a changed return type, so every
     existing caller and its exact-equality assertions are untouched.
+
+    ``drain_pool`` (row 416): a :class:`DrainPool` the caller keeps across windows. With it, the window runs in that
+    pool and the pool is left running for the next window; without it, a pool is built and shut down for this window
+    alone, as before.
     """
     if not tasks:
         return {}
@@ -730,8 +935,12 @@ def precompute_batch(
         by = stats.setdefault("by_path", {})
         by[path] = by.get(path, 0) + 1
 
-    n_workers = worker_count(workers)
-    if not uses_pool(len(tasks), extractor=extractor, workers=workers):
+    n_workers = pool_workers(workers, drain_pool=drain_pool)
+    if stats is not None and n_workers < worker_count(workers):
+        stats["memory_capped_windows"] = stats.get("memory_capped_windows", 0) + 1
+    if not (n_workers > 1 and len(tasks) >= _MIN_PARALLEL_BATCH and getattr(extractor, "name", None) in _RECONSTRUCTIBLE_EXTRACTORS):
+        if drain_pool is not None:
+            drain_pool.release()  # computed here: a kept pool would only hold memory the serial path may need
         if not serial_fallback:
             raise PoolUnavailable("this window would not run in the pool")
         _t0 = time.monotonic()
@@ -742,7 +951,10 @@ def precompute_batch(
     # A str here: uses_pool() above only answers True for a name in _RECONSTRUCTIBLE_EXTRACTORS.
     extractor_name: str = str(getattr(extractor, "name", ""))
     gazetteer = getattr(extractor, "gazetteer", None)
-    n_workers = min(n_workers, len(tasks))
+    if drain_pool is None:
+        # A pool for one window is never larger than the window. A kept pool keeps its size across windows: a short
+        # last window leaves a worker idle rather than starting a second pool.
+        n_workers = min(n_workers, len(tasks))
     chunksize = max(1, len(tasks) // (n_workers * 4))
     _t0 = time.monotonic()
     # Deliberately NOT `with`: that exits via shutdown(wait=True), which joins
@@ -750,14 +962,17 @@ def precompute_batch(
     pool: ProcessPoolExecutor | None = None
     try:
         out: dict[int, ArticleDerivatives] = {}
-        ctx = _pool_context()
-        pool = ProcessPoolExecutor(
-            max_workers=n_workers,
-            initializer=_worker_init,
-            initargs=(extractor_name, gazetteer),
-            **({"mp_context": ctx} if ctx is not None else {}),
-        )
-        _register_pool(pool)
+        if drain_pool is not None:
+            pool = drain_pool.acquire(n_workers=n_workers, extractor_name=extractor_name, gazetteer=gazetteer)
+        else:
+            ctx = _pool_context()
+            pool = ProcessPoolExecutor(
+                max_workers=n_workers,
+                initializer=_worker_init,
+                initargs=(extractor_name, gazetteer),
+                **({"mp_context": ctx} if ctx is not None else {}),
+            )
+            _register_pool(pool)
         # Tolerate BOTH task shapes (5-tuple, or 6-tuple with the WWW context)
         # in the same batch: zip(*tasks) would raise on a ragged mix, and a
         # caller that supplies context for some articles and not others is a
@@ -818,8 +1033,11 @@ def precompute_batch(
             _receive_all(pool)
         finally:
             w_stop.set()
-        _unregister_pool(pool)
-        pool.shutdown(wait=True)
+        if drain_pool is not None:
+            drain_pool.computed(pool, len(tasks))
+        else:
+            _unregister_pool(pool)
+            pool.shutdown(wait=True)
         pool = None
         _note("pool", time.monotonic() - _t0)
         return out
@@ -829,7 +1047,10 @@ def precompute_batch(
         # import that never finishes.
         log_failure(_LOG, "parallel precompute failed; falling back to serial", exc, level=logging.WARNING)
         if pool is not None:
-            _abandon_pool(pool)
+            if drain_pool is not None:
+                drain_pool.discard(pool)
+            else:
+                _abandon_pool(pool)
             pool = None
         if not serial_fallback:
             _note("pool_failed", time.monotonic() - _t0)
@@ -848,4 +1069,7 @@ def precompute_batch(
         # would leave a live pool whose atexit handler joins it -- turning a
         # deliberate interrupt into the same hang, at shutdown instead.
         if pool is not None:
-            _abandon_pool(pool)
+            if drain_pool is not None:
+                drain_pool.discard(pool)
+            else:
+                _abandon_pool(pool)

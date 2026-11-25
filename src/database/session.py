@@ -122,9 +122,12 @@ def _build_engine() -> Engine:
         db_path = _sqlite_file(DATABASE_URL)
 
         def _creator():
+            from src.database.at_rest_state import note_main_open
             from src.database.connect import connect
 
-            return connect(db_path, check_same_thread=False, timeout=30)
+            conn = connect(db_path, check_same_thread=False, timeout=30)
+            note_main_open(db_path)  # R820 (4): the record's identity of the corpus, once per process; never fails the open
+            return conn
 
         # Pool sized for the bandwidth-governed collector: up to ~50 workers may
         # hold a session concurrently (reads; writes still serialise through the
@@ -486,6 +489,7 @@ def init_db() -> None:
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
         ensure_source_qualification_columns,
+        ensure_stamp_provenance_columns,
         ensure_supergroup_ring_column,
         ensure_watch_filters_column,
         ensure_wiki_text_columns,
@@ -548,6 +552,9 @@ def init_db() -> None:
     ensure_article_fetched_host_column(engine)
     _init_step("ensure_source_catalog_baseline_column")
     ensure_source_catalog_baseline_column(engine)
+    # The stamps' stage version and carry provenance (R824, row 405; self-heal, no backfill): index_article writes both.
+    _init_step("ensure_stamp_provenance_columns")
+    ensure_stamp_provenance_columns(engine)
 
     # The read seam over the derived keyword rows (segmented-index step 0, R96): create the
     # view for a database made before it existed, or re-create it if the table's columns
@@ -576,8 +583,13 @@ def init_db() -> None:
     # turning every query that used them into a full scan, silently. The heal is driven
     # by a durable marker and asks sqlite_master what is actually absent, so it is a
     # no-op (one small read, no DDL) on every boot where nothing was interrupted.
+    # R825 (b): the heal no longer BUILDS here. A CREATE INDEX over a corpus-sized table inside the call
+    # that opens the database is minutes with nothing on screen; reads stay correct without the dropped
+    # indexes (the unique ones and ix_mention_article are never dropped), so this only reads the marker and
+    # says what is owed; the re-index drain or the background heal (bulk_build.start_heal, started by the boot
+    # sequence's re-index step and after a restore) rebuilds it.
     _init_step("heal_bulk_build")
-    heal_bulk_build(engine)
+    heal_bulk_build(engine, inline=False)
 
     # Per-feed de-churn backoff columns (field log finding F) for databases that
     # already had feed_fetch_state before these columns existed (create_all never
@@ -1075,6 +1087,15 @@ _LEFT_BEHIND_LOCK = threading.Lock()
 _LEFT_BEHIND: int | None = 0
 
 
+def _forget_keyed_reads() -> None:
+    try:
+        from src.database.connect import forget_keyed_reads
+
+        forget_keyed_reads()
+    except Exception as exc:  # noqa: BLE001 - a disposal never fails on bookkeeping; the erase then has less evidence, never more
+        logging.getLogger(__name__).debug("keyed-read evidence not cleared (%s)", type(exc).__name__)
+
+
 def dispose_engine() -> dict[str, Any]:
     """Dispose the engine's connection pool (call on app shutdown), and say what the pool held when it did.
 
@@ -1095,6 +1116,7 @@ def dispose_engine() -> dict[str, Any]:
     global _LEFT_BEHIND
     seen = pool_checkouts()
     engine.dispose()
+    _forget_keyed_reads()  # R819 (1): after a disposal the store at the path may be another file (restore, repair, a swap)
     n = seen.get("checked_out")
     with _LEFT_BEHIND_LOCK:
         earlier = _LEFT_BEHIND

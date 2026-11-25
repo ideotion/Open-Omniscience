@@ -1,0 +1,156 @@
+{
+ "sources": [
+  {
+   "name": "Folha Paulista de Teste",
+   "domain": "folha-paulista.example",
+   "country": "br",
+   "language": "pt"
+  }
+ ],
+ "articles": [
+  {
+   "id": "pt-001",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Reunião sobre o orçamento",
+   "text": "Os ministros reuniram-se em Brasília em 3 de março de 2024 para discutir o orçamento. As conversas recomeçaram ontem."
+  },
+  {
+   "id": "pt-002",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Visita a Lisboa",
+   "text": "O presidente Luiz Inácio Lula da Silva visitou Lisboa na terça-feira. Ele conversou sobre comércio e energia."
+  },
+  {
+   "id": "pt-003",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Relatório das Nações Unidas",
+   "text": "As Nações Unidas publicaram um relatório sobre alimentos em 2024-02-14. António Guterres disse que a situação é grave."
+  },
+  {
+   "id": "pt-004",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Chuvas no Sul",
+   "text": "Fortes chuvas atingiram o Rio Grande do Sul ontem. As escolas reabrem em 12 de janeiro de 2025."
+  },
+  {
+   "id": "pt-005",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": null,
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Banco Central",
+   "text": "O Banco Central do Brasil manteve a taxa Selic em 19 de junho de 2024. A decisão foi unânime."
+  },
+  {
+   "id": "pt-006",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Feira em São Paulo",
+   "text": "Uma feira de tecnologia abriu em São Paulo em 9 de setembro de 2024. Empresas de Tóquio e Toronto participaram."
+  },
+  {
+   "id": "pt-007",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Folha Paulista de Teste",
+   "text": "A Folha Paulista de Teste lança uma página de ciência. A Folha Paulista de Teste publicará a página toda semana a partir de 4 de abril de 2024."
+  },
+  {
+   "id": "pt-008",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Eleições municipais",
+   "text": "Os eleitores votaram em 6 de outubro de 2024. O segundo turno ocorreu em 27 de outubro de 2024."
+  },
+  {
+   "id": "pt-009",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Comércio com Pequim",
+   "text": "Uma delegação brasileira chegou a Pequim em 5 de dezembro de 2023. O tema foi a exportação de soja."
+  },
+  {
+   "id": "pt-010",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": null,
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Greve de professores",
+   "text": "Os professores entraram em greve na quinta-feira. O sindicato anunciou o fim da greve para 15 de maio de 2024."
+  },
+  {
+   "id": "pt-011",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Amazônia",
+   "text": "O desmatamento na Amazônia caiu em 2023, segundo o Instituto Nacional de Pesquisas Espaciais. Os dados saíram em 9 de novembro de 2023."
+  },
+  {
+   "id": "pt-012",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Futebol",
+   "text": "O Palmeiras venceu o campeonato em 6 de dezembro de 2023. O clube celebrou em São Paulo no domingo."
+  },
+  {
+   "id": "pt-013",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Cúpula do G20",
+   "text": "A cúpula do G20 aconteceu no Rio de Janeiro em 18 de novembro de 2024. Líderes de Nova Iorque a Nova Deli estiveram presentes."
+  },
+  {
+   "id": "pt-014",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Seca no Norte",
+   "text": "Os rios do Norte atingiram níveis mínimos na segunda-feira. A Defesa Civil enviou ajuda."
+  },
+  {
+   "id": "pt-015",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": null,
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Vacinação",
+   "text": "O Ministério da Saúde começou a vacinação contra a dengue em 9 de fevereiro de 2024. A Organização Mundial da Saúde acompanhou o lançamento."
+  },
+  {
+   "id": "pt-016",
+   "source": "Folha Paulista de Teste",
+   "language": "pt",
+   "country": "br",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Novo aeroporto",
+   "text": "O novo terminal do aeroporto abrirá amanhã. As obras terminaram em 30 de abril de 2024."
+  }
+ ]
+}

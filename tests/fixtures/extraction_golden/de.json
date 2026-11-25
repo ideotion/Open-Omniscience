@@ -1,0 +1,156 @@
+{
+ "sources": [
+  {
+   "name": "Berliner Tagesbote",
+   "domain": "tagesbote.example",
+   "country": "de",
+   "language": "de"
+  }
+ ],
+ "articles": [
+  {
+   "id": "de-001",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Haushaltsgespräche",
+   "text": "Die Finanzminister trafen sich am 3. März 2024 in Berlin. Die Gespräche wurden gestern nach einer kurzen Pause fortgesetzt."
+  },
+  {
+   "id": "de-002",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Besuch in Paris",
+   "text": "Bundeskanzler Olaf Scholz reiste am Dienstag nach Paris. Er sprach mit Präsident Emmanuel Macron über Energiepreise."
+  },
+  {
+   "id": "de-003",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Bericht der Vereinten Nationen",
+   "text": "Die Vereinten Nationen veröffentlichten am 2024-02-14 einen Bericht über Lebensmittelpreise. Generalsekretär António Guterres zeigte sich besorgt."
+  },
+  {
+   "id": "de-004",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Bahnstreik",
+   "text": "Die Lokführer legten am Donnerstag die Arbeit nieder. Die Gewerkschaft kündigte das Ende des Streiks für den 15. Mai 2024 an."
+  },
+  {
+   "id": "de-005",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": null,
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Europäische Zentralbank",
+   "text": "Die Europäische Zentralbank senkte am 6. Juni 2024 den Leitzins. Christine Lagarde ließ weitere Schritte offen."
+  },
+  {
+   "id": "de-006",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Hochwasser im Süden",
+   "text": "Starke Regenfälle führten gestern zu Hochwasser in Bayern. Die Schulen sollen am 12. Januar 2025 wieder öffnen."
+  },
+  {
+   "id": "de-007",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Wahl in Brandenburg",
+   "text": "Die Landtagswahl in Brandenburg fand am 22. September 2024 statt. Die Wahlbeteiligung lag über siebzig Prozent."
+  },
+  {
+   "id": "de-008",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Berliner Tagesbote",
+   "text": "Der Berliner Tagesbote startet eine neue Wissenschaftsseite. Der Berliner Tagesbote erscheint damit ab dem 4. April 2024 wöchentlich erweitert."
+  },
+  {
+   "id": "de-009",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Handel mit Peking",
+   "text": "Eine Wirtschaftsdelegation reiste am 5. Dezember 2023 nach Peking. Gesprächsthema war die Automobilindustrie."
+  },
+  {
+   "id": "de-010",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": null,
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Messe in Hannover",
+   "text": "Die Industriemesse in Hannover öffnete am 22. April 2024. Aussteller aus Tokio und Toronto waren vertreten."
+  },
+  {
+   "id": "de-011",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Klimakonferenz",
+   "text": "Die Klimakonferenz in Bonn begann am 3. Juni 2024. Delegierte aus Nairobi und Jakarta forderten mehr Unterstützung."
+  },
+  {
+   "id": "de-012",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Sturm an der Küste",
+   "text": "Ein Sturm traf in der Nacht zum Montag die Nordseeküste. Der Deutsche Wetterdienst hatte zuvor gewarnt."
+  },
+  {
+   "id": "de-013",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Gespräche in Moskau",
+   "text": "Ein Diplomat reiste am 18. Oktober 2023 nach Moskau. Das Auswärtige Amt bestätigte das Treffen."
+  },
+  {
+   "id": "de-014",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Fußball",
+   "text": "Bayer Leverkusen gewann am 14. April 2024 die Meisterschaft. Trainer Xabi Alonso dankte den Fans."
+  },
+  {
+   "id": "de-015",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": null,
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Rente",
+   "text": "Das Kabinett beschloss am 29. Mai 2024 ein Rentenpaket. Der Bundestag soll im Herbst abstimmen."
+  },
+  {
+   "id": "de-016",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Bauarbeiten in Berlin",
+   "text": "Die Bauarbeiten an der Stadtbahn in Berlin beginnen morgen. Sie sollen bis zum 30. November 2025 dauern."
+  }
+ ]
+}

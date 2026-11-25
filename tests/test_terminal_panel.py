@@ -153,7 +153,8 @@ class _Fetch:
 
 
 def _snap(**kw):
-    s = P.Snapshot(reachable=True, version="0.5.0", lock_state="unlocked-encrypted", online=True, collecting=True, jobs_known=True)
+    s = P.Snapshot(reachable=True, version="0.5.0", lock_state="unlocked-encrypted", at_rest_claim="encrypted", online=True,
+                   collecting=True, jobs_known=True)
     for k, v in kw.items():
         setattr(s, k, v)
     return s
@@ -1184,3 +1185,13 @@ def test_the_real_panel_speaks_the_language_the_browser_reported(server):
         with contextlib.suppress(OSError):
             proc.kill()
         os.close(master)
+
+
+def test_the_panel_says_encrypted_only_on_the_server_s_evidence():
+    """R821 (5): the gate's word says a key is held, never that it opened the file."""
+    looks = _snap(at_rest_claim="looks_encrypted")
+    assert P._lock_text(looks) == ("Unlocked (looks encrypted; not yet checked with your key).", "ok")
+    assert "looks encrypted" in P._status_line(looks) and P._lock_key(looks) == "looks"
+    assert P._lock_key(_snap(at_rest_claim="")) == "looks", "no claim from the server is never read as encrypted"
+    assert P._lock_key(_snap(lock_state="some-new-word")) == "" and P._lock_text(_snap(lock_state="some-new-word")) is None
+    assert P._lock_text(_snap()) == ("Unlocked (encrypted).", "ok")

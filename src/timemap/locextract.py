@@ -171,6 +171,79 @@ def _dispatch() -> tuple[list[tuple[int, re.Pattern, str, str]], dict[str, list[
     return scan, index
 
 
+@lru_cache(maxsize=1)
+def _scan_prefilter() -> tuple[re.Pattern | None, list[tuple[int, re.Pattern, str, str]], list[tuple[int, re.Pattern, str, str]]]:
+    """``(head_rx, headed, rest)`` — the CASE-INSENSITIVE half found in one pass instead of one pass per pattern.
+
+    THE COST THIS REMOVES (row 419, measured in row 413). ``_dispatch`` keeps the case-insensitive half on a
+    per-pattern ``finditer`` for the folding reason it gives, and that half is ~160 ``\\b literal \\b`` scans of every
+    article: 8.07 ms of an article's ~9 ms of place extraction, about 15% of a re-index worker's whole CPU.
+
+    WHAT REPLACES IT, without touching the folding question. ``head_rx`` is ONE alternation of the DISTINCT leading word
+    runs of those patterns, compiled with the SAME flags as the patterns themselves (no ``str.lower()``, no token key,
+    so ``İSTANBUL``/``ſ``-style folds are decided by the same engine with the same rules). Its matches are the only
+    positions where any of the patterns can start; each pattern is then confirmed there with its own compiled
+    ``rx.match``, keeping the non-overlap rule ``finditer`` applied per pattern.
+
+    WHY THE POSITIONS ARE ALL OF THEM. ``head_rx`` is a zero-width LOOKAHEAD, ``(?=\\b(?:heads))``, so ``finditer``
+    tries it at every position and consumes nothing: no earlier hit can overlap a later position and hide it. If a
+    pattern ``\\b<name>\\b`` matches at ``pos``, then ``\\b`` followed by a PREFIX of its literal -- the name's leading word
+    run -- matches at ``pos`` too, under the same flags (``re`` matches a literal one character at a time, folding one
+    character to one character), so the lookahead reports ``pos``. No word-boundary argument about where the head ENDS
+    is needed, and none is made: an earlier draft required ``\\b`` after the head as well, which a fold that maps a word
+    character to a non-word one (Greek small iota U+03B9 and U+0345) would have defeated for a name whose first word ends in that iota
+    -- found by an independent read, absent from today's table, and now impossible by construction. Pinned over the
+    whole pattern table and a fold-heavy corpus by tests/test_locextract_prefilter.py, against the per-pattern loop
+    kept there as the reference.
+
+    ``rest`` keeps ``finditer`` for anything outside the argument: a name not starting with a word run, or (should
+    the table ever hold one) a pattern whose flags differ from the others'. Dropping such a name would silently lose
+    a place, which is the one outcome worse than being slow."""
+    scan, _index = _dispatch()
+    heads: dict[str, None] = {}
+    headed: list[tuple[int, re.Pattern, str, str]] = []
+    rest: list[tuple[int, re.Pattern, str, str]] = []
+    flags = {rx.flags for _i, rx, _n, _k in scan if rx.flags & re.IGNORECASE}
+    one_flags = flags.pop() if len(flags) == 1 else None
+    for entry in scan:
+        _i, rx, name, _kind = entry
+        head = _WORD_RUN.match(name)
+        if one_flags is not None and rx.flags == one_flags and head is not None and head.start() == 0:
+            heads.setdefault(head.group(0), None)
+            headed.append(entry)
+        else:
+            rest.append(entry)
+    if not headed or one_flags is None:
+        return None, [], list(scan)
+    alternation = "|".join(re.escape(h) for h in sorted(heads, key=len, reverse=True))
+    return re.compile(rf"(?=\b(?:{alternation}))", one_flags), headed, rest
+
+
+def _scan_candidates(text: str) -> list[tuple[int, int, int, str, str]]:
+    """Every ``(pattern index, start, end, name, kind)`` the case-insensitive half finds in ``text``: the same list the
+    per-pattern ``finditer`` loop produced (see :func:`_scan_prefilter`), in the same per-pattern, left-to-right order."""
+    head_rx, headed, rest = _scan_prefilter()
+    cands: list[tuple[int, int, int, str, str]] = []
+    if head_rx is not None:
+        positions = [m.start() for m in head_rx.finditer(text)]
+        if positions:
+            for i, rx, name, kind in headed:
+                last_end = -1
+                for pos in positions:
+                    if pos < last_end:
+                        continue  # finditer never reports a match overlapping its previous one
+                    m = rx.match(text, pos)
+                    if m:
+                        cands.append((i, m.start(), m.end(), name, kind))
+                        last_end = m.end()
+    for i, rx, name, kind in rest:
+        for m in rx.finditer(text):
+            cands.append((i, m.start(), m.end(), name, kind))
+    if rest:
+        cands.sort(key=lambda c: (c[0], c[1]))  # the reference loop's order: pattern index, then left to right
+    return cands
+
+
 def _display_name(iso2: str) -> str:
     """The canonical English name for a country code, so every surface form that
     matched ("uk", "britain", "united kingdom") renders as one place.
@@ -225,11 +298,8 @@ def extract_locations(
     # decides everything; all that changed is how the candidates are found (see
     # ``_dispatch``). They are replayed in the original pattern order, so the longest
     # name still runs first and still wins the span.
-    scan_pats, name_index = _dispatch()
-    cands: list[tuple[int, int, int, str, str]] = []
-    for i, rx, name, kind in scan_pats:
-        for m in rx.finditer(text):
-            cands.append((i, m.start(), m.end(), name, kind))
+    _scan_pats, name_index = _dispatch()
+    cands = _scan_candidates(text)  # the case-insensitive half, one prefilter pass (row 419)
     for w in _WORD_RUN.finditer(text):
         bucket = name_index.get(w.group(0))
         if not bucket:

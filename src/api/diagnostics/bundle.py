@@ -541,6 +541,11 @@ def debug_bundle(
             for p in db.query(WikiPage).order_by(WikiPage.wiki, WikiPage.title).all()
         ]
 
+    def _import_corpus_check() -> dict:
+        from src.backup.import_queue import corpus_check_for_field_data
+
+        return corpus_check_for_field_data()
+
     def _import_results() -> list:
         imports_path = _data_dir() / "import_results.jsonl"
         out: list = []
@@ -640,6 +645,10 @@ def debug_bundle(
         # No cursor here: a GET has no side effects, and inside the all-diagnostics archive this section is its own member
         # (corpus-integrity.json, see _DEBUG_BUNDLE_STANDS_ALONE), which is where the job keeps the exact scans' place.
         "corpus_integrity": _member("corpus_integrity", lambda: _corpus_integrity(db), threaded=False),
+        # R827 R7(a) / R830: the whole-file check owed after an import checkpoint checked only the tables it wrote -- the
+        # last run's outcome and any record still owed, with named findings and counts (a foreign-key-only finding latches
+        # nothing, so this is where it stays visible). File names only.
+        "import_corpus_check": _member("import_corpus_check", _import_corpus_check),
         # Session forensics (2026-07-09 field event): data-dir inventory (what IS the
         # disk usage — orphaned PLAINTEXT backup staging detected loudly), the previous
         # session's clean/unclean-end verdict (+ the collector's last RSS sample = the

@@ -134,7 +134,7 @@ main ai_keyword: id, article_id, term, kind, language, model, prompt_version, co
 main app_state: key, value, updated_at
 main article_analyses: id, article_id, kind, result, model, prompt_version, prompt_text, created_at
 main article_entities: id, article_id, name, entity_class, mentions, snippet, note, extractor, created_at
-main article_index_stamps: article_id, engine, inputs, stamped_at
+main article_index_stamps: article_id, engine, inputs, stamped_at, stage_version, carried_from_batch
 main article_keyword_association: article_id, keyword_id, frequency, position, relevance_score, created_at
 main article_keywords: article_id, keyword_id, frequency, first_position, last_position, relevance_score, created_at
 main article_links: id, article_id, url, normalized_url, link_text, position, link_type, classification, external_source_id, source_article_id, is_followable, is_working, last_checked_at, redirect_url, http_status, created_at, updated_at
@@ -142,7 +142,7 @@ main article_mentioned_dates: id, article_id, mentioned_on, precision, snippet, 
 main article_mentioned_places: id, article_id, name, country, kind, mentions, snippet, lat, lon, note, extractor, created_at
 main article_source_relationships: id, article_id, source_id, source_article_id, link_id, relationship_type, time_delta_days, is_temporal_anomaly, confidence_score, notes, created_at, updated_at
 main article_title_translations: id, article_id, source_lang, target_lang, title, summary, model, prompt_version, created_at
-main article_www_stamps: article_id, engine, inputs, stamped_at
+main article_www_stamps: article_id, engine, inputs, stamped_at, stage_version, carried_from_batch
 main articles: id, url, canonical_url, source_id, title, content, compressed_content, published_at, language, detected_language, hash, content_multihash, canon_version, server_ip, ip_observed_at, server_ip_reason, fetched_host, created_at, updated_at, region, country, author, word_count, reading_time, sentiment_score, sentiment_label, quarantined, quarantine_reason, quarantine_criteria_version, quarantined_at, top_keyword_id, top_keyword_count, top_keyword_tied_n, keyword_indexed_at, source_revision, newsletter_list_id, newsletter_attached_via
 main commodity_prices: id, symbol, market, observed_on, price, currency, unit, source, created_at
 main corpus_id_counter: id, next_id
@@ -153,6 +153,7 @@ main external_sources: id, domain, name, url, source_type, credibility_score, po
 main feed_fetch_state: source_id, etag, last_modified, last_status, last_checked_at, consecutive_unchanged, skip_until
 main hazard_event_details: id, article_id, provider, event_id, event_type, severity, magnitude, lat, lon, place, event_time, source_url, created_at, updated_at
 main host_mismatch_confirmed: id, source_id, article_site, confirmed_at, note
+main index_engines: engine, stage, components, recorded_at
 main ipcc_predictions: id, spm_key, sentence_hash, sentence, decision, method_version, decided_at
 main keyword_categories: id, name, description, parent_id, color, is_active, created_at, updated_at
 main keyword_day_counts: observed_on, keyword_id, mentions
