@@ -6103,6 +6103,7 @@
   "The safe range. Outside it the value is corrected AND reported — never silently.": "安全な範囲です。範囲外では値が補正され、その旨も必ず報告されます — 黙って行われることはありません。",
   "The safety copies could not be read.": "安全コピーを読み取れませんでした。",
   "The safety copy could not be deleted.": "安全コピーを削除できませんでした。",
+  "The safety copy could not be deleted: {reason}.": "安全コピーを削除できませんでした：{reason}。",
   "The safety settings cannot be read now, so a click cannot start it.": "安全設定を今は読み取れないため、クリックしても開始できません。",
   "The same Wikidata discovery over EVERY country (~250), as a long background job — one country at a time through the guarded transport, every find added DISABLED for review, nothing scraped until you enable it. RESUMABLE: progress persists per country, so cancelling (task manager), airplane mode or a restart continues where it stopped instead of re-querying the world. Consent-gated, airplane-refused. This also advances AUTOMATICALLY a few countries per online collection pass (scheduler setting world_discovery_per_pass, 0 disables); this button just runs it all now.": "同じ Wikidata による発見を、すべての国（約250）に対して、長時間のバックグラウンドジョブとして実行します — 保護されたトランスポートを通じて一度に1か国ずつ、見つかったものはすべて確認用に無効な状態で追加され、あなたが有効にするまで何もスクレイピングされません。再開可能です: 進捗は国ごとに保存されるため、（タスクマネージャーからの）取り消し、機内モード、再起動があっても、世界中を問い合わせ直すのではなく、停止した地点から続行します。同意が必要で、機内モードでは拒否されます。これはオンラインの収集パスごとに数か国ずつ自動的にも進みます（スケジューラー設定 world_discovery_per_pass、0 で無効）。このボタンは、それを今すべて実行するだけのものです。",
   "The same count for the seven days ending on that day.": "その日で終わる7日間の同じ集計。",

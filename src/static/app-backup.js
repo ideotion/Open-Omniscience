@@ -3257,14 +3257,16 @@
       try {
         r = await api("/api/backup/safety-copies/delete", { method: "POST", body: JSON.stringify({ name: String(c.name), confirm: true }) });
       } catch (e) {
-        toast(t("The safety copy could not be deleted.") + " " + (e.message || e), "err");
+        toast(tf("The safety copy could not be deleted: {reason}.", { reason: String((e && e.message) || e) }), "err");
       }
       if (r && r.removed) {
         toast(typeof r.freed === "number" && r.freed > 0
           ? tf("Safety copy deleted. Free space on that drive went up by {size}.", { size: humanBytes(r.freed) })
           : t("Safety copy deleted."));
       } else if (r) {
-        toast(t(String(r.message || "The safety copy could not be deleted.")) + (r.reason ? " " + String(r.reason) : ""), "err");
+        toast(r.reason
+          ? tf("The safety copy could not be deleted: {reason}.", { reason: String(r.reason) })
+          : t(String(r.message || "The safety copy could not be deleted.")), "err");
       }
       _uxSafetyCopiesLoad();
     }

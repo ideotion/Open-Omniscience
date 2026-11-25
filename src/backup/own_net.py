@@ -40,8 +40,8 @@ it made it; :func:`remove_copy` deletes one, and only one the record names:
    ``busy``), and for the copy of the most recent import that was refused or did not finish until a later import has completed
    and been checked (:func:`note_run_verified`, :data:`VERIFIED_KEY`).
 3. An ordinary delete: one regular file, never through a link, inside the data folder (R783/R799), worded "deleted", never
-   "erased", "destroyed" or "securely removed" (R797/R815). The freed size is measured from the file's own allocated blocks once
-   its last name is gone, never assumed (R785). Its at-rest record entry goes with it (R828).
+   "erased", "destroyed" or "securely removed" (R797/R815). The freed size is the drive's free space measured before and
+   after the delete, never assumed, and absent when it did not go up (R785). Its at-rest record entry goes with it (R828).
 """
 
 from __future__ import annotations

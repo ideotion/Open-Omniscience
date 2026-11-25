@@ -6103,6 +6103,7 @@
   "The safe range. Outside it the value is corrected AND reported — never silently.": "安全范围。超出范围时数值会被修正并同时告知——绝不会悄悄进行。",
   "The safety copies could not be read.": "无法读取安全副本。",
   "The safety copy could not be deleted.": "无法删除安全副本。",
+  "The safety copy could not be deleted: {reason}.": "无法删除安全副本：{reason}。",
   "The safety settings cannot be read now, so a click cannot start it.": "目前无法读取安全设置，因此点击无法启动它。",
   "The same Wikidata discovery over EVERY country (~250), as a long background job — one country at a time through the guarded transport, every find added DISABLED for review, nothing scraped until you enable it. RESUMABLE: progress persists per country, so cancelling (task manager), airplane mode or a restart continues where it stopped instead of re-querying the world. Consent-gated, airplane-refused. This also advances AUTOMATICALLY a few countries per online collection pass (scheduler setting world_discovery_per_pass, 0 disables); this button just runs it all now.": "对每一个国家（约 250 个）执行同样的 Wikidata 发现流程，作为一项长时间的后台任务——一次一个国家，经由受保护的传输通道进行，所有发现都以停用状态添加以供审阅，在你启用之前不会抓取任何内容。可续跑：进度按国家持久保存，因此取消（任务管理器）、进入飞行模式或重启后会从中断处继续，而不是重新查询全世界。需先获得同意，飞行模式下被拒绝。此流程也会在每次联网采集时自动推进若干个国家（调度器设置 world_discovery_per_pass，设为 0 则停用）；这个按钮只是现在就把它全部跑完。",
   "The same count for the seven days ending on that day.": "截至当天的七天内的同一计数。",
