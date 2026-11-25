@@ -106,3 +106,40 @@ def test_a_name_outside_the_argument_keeps_the_per_pattern_scan(monkeypatch):
     finally:
         monkeypatch.undo()
         L._scan_prefilter.cache_clear()
+
+
+def _with_extra_patterns(monkeypatch, extra):
+    scan, index = L._dispatch()
+    monkeypatch.setattr(L, "_dispatch", lambda: (scan + extra, index))
+    L._scan_prefilter.cache_clear()
+
+
+def test_a_fold_from_a_word_character_to_a_non_word_one_is_still_found(monkeypatch):
+    """Found by the independent read of the first draft: under IGNORECASE Greek ι matches U+0345 (YPOGEGRAMMENI), which is
+    not a word character, so a head regex that ALSO demanded a boundary after the head missed ``Aι b`` in ``A\\u0345 b``.
+    Not in today's table; the lookahead form makes it impossible by construction, and this pins it."""
+    flags = L._dispatch()[0][0][1].flags
+    extra = [(9001, re.compile(r"\bAι b\b", flags), "Aι b", "country"), (9002, re.compile(r"\bΑλβανι Χ\b", flags), "Αλβανι Χ", "country")]
+    try:
+        _with_extra_patterns(monkeypatch, extra)
+        for text in ("Aͅ b", "x Aͅ b y", "ΑΛΒΑΝͅ Χ", "αλβανͅ χ and Aι b"):
+            ref = [(i, m.start(), m.end(), n, k) for i, rx, n, k in L._dispatch()[0] for m in rx.finditer(text)]
+            assert ref, text
+            assert L._scan_candidates(text) == ref, text
+    finally:
+        monkeypatch.undo()
+        L._scan_prefilter.cache_clear()
+
+
+def test_names_left_to_the_per_pattern_scan_keep_the_reference_order(monkeypatch):
+    flags = L._dispatch()[0][0][1].flags
+    odd = (0, re.compile(r"-zone\b", flags), "-zone", "guard")  # index 0: sorts before every headed pattern
+    try:
+        _with_extra_patterns(monkeypatch, [odd])
+        text = "France -zone Germany -zone"
+        ref = sorted([(i, m.start(), m.end(), n, k) for i, rx, n, k in L._dispatch()[0] for m in rx.finditer(text)],
+                     key=lambda c: (c[0], c[1]))
+        assert L._scan_candidates(text) == ref
+    finally:
+        monkeypatch.undo()
+        L._scan_prefilter.cache_clear()

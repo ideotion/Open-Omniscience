@@ -185,14 +185,16 @@ def _scan_prefilter() -> tuple[re.Pattern | None, list[tuple[int, re.Pattern, st
     positions where any of the patterns can start; each pattern is then confirmed there with its own compiled
     ``rx.match``, keeping the non-overlap rule ``finditer`` applied per pattern.
 
-    WHY THE POSITIONS ARE ALL OF THEM. If a pattern ``\\b<name>\\b`` matches at ``pos``, then the name's leading word run
-    matches at ``pos`` under the same flags; ``re`` folds one character to one character, so that span is exactly the
-    text's word run at ``pos``, preceded by a boundary (the pattern's own ``\\b``) and followed by one (either the
-    name ends there, or its next character is a non-word one the text repeats). So ``head_rx`` -- ``\\b(?:heads)\\b``
-    -- matches at ``pos`` too, and since every match it makes is one whole word run, no earlier match can overlap
-    ``pos`` and hide it from ``finditer``. The alternation is longest-first only for tidiness; at a given ``pos`` any
-    head that matches spans the same word run. Pinned over the whole pattern table and a fold-heavy corpus by
-    tests/test_locextract_prefilter.py, against the per-pattern loop kept there as the reference.
+    WHY THE POSITIONS ARE ALL OF THEM. ``head_rx`` is a zero-width LOOKAHEAD, ``(?=\\b(?:heads))``, so ``finditer``
+    tries it at every position and consumes nothing: no earlier hit can overlap a later position and hide it. If a
+    pattern ``\\b<name>\\b`` matches at ``pos``, then ``\\b`` followed by a PREFIX of its literal -- the name's leading word
+    run -- matches at ``pos`` too, under the same flags (``re`` matches a literal one character at a time, folding one
+    character to one character), so the lookahead reports ``pos``. No word-boundary argument about where the head ENDS
+    is needed, and none is made: an earlier draft required ``\\b`` after the head as well, which a fold that maps a word
+    character to a non-word one (Greek small iota U+03B9 and U+0345) would have defeated for a name whose first word ends in that iota
+    -- found by an independent read, absent from today's table, and now impossible by construction. Pinned over the
+    whole pattern table and a fold-heavy corpus by tests/test_locextract_prefilter.py, against the per-pattern loop
+    kept there as the reference.
 
     ``rest`` keeps ``finditer`` for anything outside the argument: a name not starting with a word run, or (should
     the table ever hold one) a pattern whose flags differ from the others'. Dropping such a name would silently lose
@@ -214,7 +216,7 @@ def _scan_prefilter() -> tuple[re.Pattern | None, list[tuple[int, re.Pattern, st
     if not headed or one_flags is None:
         return None, [], list(scan)
     alternation = "|".join(re.escape(h) for h in sorted(heads, key=len, reverse=True))
-    return re.compile(rf"\b(?:{alternation})\b", one_flags), headed, rest
+    return re.compile(rf"(?=\b(?:{alternation}))", one_flags), headed, rest
 
 
 def _scan_candidates(text: str) -> list[tuple[int, int, int, str, str]]:
@@ -237,6 +239,8 @@ def _scan_candidates(text: str) -> list[tuple[int, int, int, str, str]]:
     for i, rx, name, kind in rest:
         for m in rx.finditer(text):
             cands.append((i, m.start(), m.end(), name, kind))
+    if rest:
+        cands.sort(key=lambda c: (c[0], c[1]))  # the reference loop's order: pattern index, then left to right
     return cands
 
 
