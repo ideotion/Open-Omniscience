@@ -43,7 +43,7 @@ NOT_QUARANTINED_SQL = " AND article_id NOT IN (SELECT id FROM articles WHERE qua
 
 
 #: :data:`NOT_QUARANTINED_SQL` plus the articles still queued for screening (R830): the slice every aggregate takes.
-NOT_COUNTED_SQL = NOT_QUARANTINED_SQL + " AND article_id NOT IN (SELECT article_id FROM screening_pending)"
+NOT_COUNTED_SQL = NOT_QUARANTINED_SQL + " AND article_id NOT IN (SELECT article_id FROM screening_pending)"  # nosec B608 # two module constants, never input
 
 
 def quarantined_ids_select():
