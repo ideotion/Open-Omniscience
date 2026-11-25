@@ -2535,13 +2535,13 @@ def _exact_counts(session: Session, mention_filter) -> dict[int, tuple[int, int]
         int(kid): (int(m or 0), int(a or 0))
         for kid, m, a in (
             session.query(
-                KeywordMention.keyword_id,
-                func.sum(KeywordMention.count),
-                func.count(func.distinct(KeywordMention.article_id)),
+                KeywordMentionRead.keyword_id,
+                func.sum(KeywordMentionRead.count),
+                func.count(func.distinct(KeywordMentionRead.article_id)),
             )
             .filter(mention_filter)
-            .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
-            .group_by(KeywordMention.keyword_id)
+            .filter(not_quarantined(KeywordMentionRead.article_id))  # R101: a quarantined article counts for nothing
+            .group_by(KeywordMentionRead.keyword_id)
         )
     }
 
@@ -2576,7 +2576,7 @@ def _wrong_rows_under_the_gate(session: Session, agg: dict[int, tuple[int, int]]
     fixes = []
     for i in range(0, len(suspects), _RECHECK_CHUNK):
         part = suspects[i : i + _RECHECK_CHUNK]
-        fresh = _exact_counts(session, KeywordMention.keyword_id.in_(part))
+        fresh = _exact_counts(session, KeywordMentionRead.keyword_id.in_(part))
         for kid in part:
             want = fresh.get(kid, (0, 0))
             if want == (0, 0):
@@ -2628,6 +2628,7 @@ def reconcile_keyword_counters(
     from datetime import UTC, datetime
 
 
+    require_mentions_view(session)  # the GROUP BYs read the view (R96); made here, before any slice takes the gate
     stamp = now or datetime.now(UTC)
     budget = budget_s if budget_s is not None else _maint_budget_s("OO_RECONCILE_BUDGET_S")
     scan_chunk = _RECONCILE_SCAN_CHUNK
@@ -2690,7 +2691,7 @@ def reconcile_keyword_counters(
         # runs before the gate (it is the long part), and every row it disagrees with is read again under the gate before
         # anything is written (_wrong_rows_under_the_gate). Every keyword id in (lo, hi] is in `ids` (consecutive ordered
         # ids), so the range filter is exactly this slice.
-        agg = _exact_counts(session, (KeywordMention.keyword_id > lo) & (KeywordMention.keyword_id <= hi))
+        agg = _exact_counts(session, (KeywordMentionRead.keyword_id > lo) & (KeywordMentionRead.keyword_id <= hi))
         connection_first(session)
         with write_lock():
             fixes = _wrong_rows_under_the_gate(session, agg, (Keyword.id > lo) & (Keyword.id <= hi))
@@ -2833,11 +2834,12 @@ def reconcile_keyword_counters_for_articles(
     # which SQLite answers from a covering (article_id, keyword_id) index in one pass; an IN list of the same ids took it
     # to the non-covering index and a row lookup per mention (measured: 6.6 s against 1.6 s for 122,000 articles). The
     # ids outside a long run still go in IN lists.
+    require_mentions_view(session)  # the gathering and the GROUP BYs read the view (R96), before any gate is taken
     kid_set: set[int] = set()
     loose: list[int] = []
 
     def _gather(cond) -> None:
-        kid_set.update(int(k) for (k,) in session.query(KeywordMention.keyword_id).filter(cond).distinct())
+        kid_set.update(int(k) for (k,) in session.query(KeywordMentionRead.keyword_id).filter(cond).distinct())
 
     i = 0
     while i < len(aids):
@@ -2845,12 +2847,12 @@ def reconcile_keyword_counters_for_articles(
         while j + 1 < len(aids) and aids[j + 1] == aids[j] + 1 and j + 1 - i < _SCOPED_ARTICLE_CHUNK:
             j += 1
         if j - i + 1 >= _SCOPED_RUN_MIN:
-            _gather(KeywordMention.article_id.between(aids[i], aids[j]))
+            _gather(KeywordMentionRead.article_id.between(aids[i], aids[j]))
         else:
             loose.extend(aids[i : j + 1])
         i = j + 1
     for i in range(0, len(loose), _SCOPED_ARTICLE_CHUNK):
-        _gather(KeywordMention.article_id.in_(loose[i : i + _SCOPED_ARTICLE_CHUNK]))
+        _gather(KeywordMentionRead.article_id.in_(loose[i : i + _SCOPED_ARTICLE_CHUNK]))
     kids = sorted(kid_set)
 
     reconciled = 0
@@ -2865,7 +2867,7 @@ def reconcile_keyword_counters_for_articles(
         # One gated unit, as in the sweep: the stamp fires do_orm_execute but bulk_update_mappings is invisible to both
         # write-gate hooks (C8). The GROUP BY runs before the gate and every row it disagrees with is read again under it,
         # so an ingest landing in between is never undone. Only the wrong rows are rewritten. The connection, then the gate.
-        agg = _exact_counts(session, KeywordMention.keyword_id.in_(part))
+        agg = _exact_counts(session, KeywordMentionRead.keyword_id.in_(part))
         connection_first(session)
         with write_lock():
             fixes = _wrong_rows_under_the_gate(session, agg, Keyword.id.in_(part))

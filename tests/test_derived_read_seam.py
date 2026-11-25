@@ -173,7 +173,9 @@ _CEILING: dict[str, int] = {
     # aggregate already groups by). It is a WRITER that reads the mentions to repair the counters it writes, so it stays on the write model.
     # 24 since 2026-11-14 (R101): the reconcile and the backfill leave a quarantined article's mentions out of the counters they
     # write, one ``not_quarantined(KeywordMention.article_id)`` each on the GROUP BY they already run on the write model.
-    "src/analytics/store.py": 24,
+    # 17 since 2026-11-25 (row 424): the reconcile's GROUP BYs (``_exact_counts``) and the scoped pass's keyword gathering read
+    # the view; only the backfill still reads the write model.
+    "src/analytics/store.py": 17,
     # A user-facing sentence, keyed by its exact English text in the 11 bulletin catalogs
     # (configs/bulletin_i18n); renaming the model in it would orphan every translation.
     "src/bulletin/sections.py": 1,
