@@ -135,6 +135,8 @@
       // The Library's figures are status totals over every stored article (R831(2)), so its line is a
       // breakdown of what they hold, as on Home, never a "left out".
       const status = name === "library";
+      const all = s && s.counts && typeof s.counts.articles === "number" ? s.counts.articles : null;
+      if (status && all == null) return;   // a breakdown with no total to break down says nothing
       if (status && typeof nc.quarantined === "number" && nc.quarantined > 0)
         parts.push(F("of which quarantined: {n}", {n: num(nc.quarantined)}));
       if (typeof nc.not_screened === "number" && nc.not_screened > 0) {
@@ -153,7 +155,7 @@
         el.setAttribute("data-i18n-dyn", "");
         page.insertBefore(el, page.firstChild);
       }
-      el.textContent = parts.join(" · ");
+      el.textContent = (status ? F("{n} articles", {n: num(all)}) + " · " : "") + parts.join(" · ");
       el.title = hovers.join(" ");
     }
     function showTab(name, push = true) {

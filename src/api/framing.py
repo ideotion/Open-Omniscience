@@ -86,6 +86,7 @@ def framing(
                         # a consumer learns to write `|| 0` and stop noticing gaps.
                         "tone_measured_articles": 0,
                         "tone_unmeasured_articles": 0,
+                        "not_counted_yet": 0,
                     }
                 # R830 group D: a search-fed figure leaves queued results out and says how many.
                 ids, not_yet = split_not_screened(db, ids)

@@ -172,3 +172,8 @@ def test_the_late_review_sites_say_what_they_left_out():
     assert "split_not_screened(db, list(ids or []))" in co and "SELECT article_id FROM screening_pending" in co
     shell = (ROOT / "src/static/app-shell.js").read_text(encoding="utf-8")
     assert 'const status = name === "library";' in shell
+    ai = (ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")
+    assert ai.count("notYet + ") == 2, "the framing table and its empty state both say what they left out"
+    mk = (ROOT / "src/static/app-markets.js").read_text(encoding="utf-8")
+    assert 'anNotCountedYetHtml(d) : "")' in mk
+    assert 'F("{n} articles", {n: num(all)})' in shell, "the Library breakdown follows its total"

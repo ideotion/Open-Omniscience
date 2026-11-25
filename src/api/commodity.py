@@ -207,7 +207,7 @@ def correlation(
     )
     # R830/R831: a count drawn against the price curve is a figure, so quarantined articles and
     # articles still queued for screening are left out of it, and the query path says how many.
-    not_yet = 0
+    not_yet: int | None = None  # the whole-corpus series says nothing it did not measure (the Home breakdown says it)
     if query:
         try:
             # These ids become the article-count series drawn against the price
@@ -240,4 +240,7 @@ def correlation(
         }
 
     result = correlate_price_with_counts(price_points, article_counts, method=method)
-    return {"symbol": symbol, "query": query, **result.to_dict(), "not_counted_yet": not_yet}
+    out = {"symbol": symbol, "query": query, **result.to_dict()}
+    if not_yet is not None:
+        out["not_counted_yet"] = not_yet
+    return out

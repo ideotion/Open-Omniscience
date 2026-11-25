@@ -2635,8 +2635,10 @@
       el.innerHTML = "<span class='muted'>Comparing how outlets frame this…</span>";
       try {
         const d = await api("/api/framing?query=" + encodeURIComponent(term));
+        // R830 group D: the comparison leaves results still queued for screening out, and says how many.
+        const notYet = (typeof anNotCountedYetHtml === "function") ? anNotCountedYetHtml(d) : "";
         if (!d.framing || !d.framing.length) {
-          el.innerHTML = "<span class='muted'>Not enough coverage to compare framing for this term.</span>"; return;
+          el.innerHTML = notYet + "<span class='muted'>Not enough coverage to compare framing for this term.</span>"; return;
         }
         const tLoc = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const rows = d.framing.map(f => {
@@ -2658,7 +2660,7 @@
         // on a language switch, like the headers beside it. The table scrolls in its own box:
         // four columns of translated headers do not fit a 375 px phone in de or ru, and it
         // pushed the whole page sideways instead (the re-walk review of M-8).
-        el.innerHTML = `<div style="overflow-x:auto"><table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table></div>
+        el.innerHTML = notYet + `<div style="overflow-x:auto"><table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table></div>
           <div class="hint">${ooSaidHtml(d, "caveat")}</div>`;
       } catch (e) {
         el.innerHTML = "<span class='muted'>Framing unavailable (needs the [analysis] extra installed).</span>";
