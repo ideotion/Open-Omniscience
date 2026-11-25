@@ -34,6 +34,8 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func
 
+from src.analytics.quarantine_scope import not_counted
+
 RECYCLED_CAVEAT = (
     "Near-identical text that has resurfaced long after it first appeared. The innocent "
     "explanations are many — an anniversary piece, an evergreen explainer re-run, a wire "
@@ -74,7 +76,7 @@ def find_recycled_claims(
         q = (
             session.query(Article, Source.name, Source.domain)
             .outerjoin(Source, Source.id == Article.source_id)
-            .filter(observed >= lo)
+            .filter(observed >= lo, not_counted(Article.id))  # R831
         )
         if hi is not None:
             q = q.filter(observed < hi)

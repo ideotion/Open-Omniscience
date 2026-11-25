@@ -149,6 +149,7 @@ def outlet_repeated_shingles(db: Session, source_id: int | None, *, now: float |
     Cached for half an hour: a template changes rarely, and the reader asks on every page view."""
     if source_id is None:
         return frozenset()
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article
 
     t = time.monotonic() if now is None else now
@@ -157,7 +158,7 @@ def outlet_repeated_shingles(db: Session, source_id: int | None, *, now: float |
         return hit
     rows = (
         db.query(Article)
-        .filter(Article.source_id == int(source_id))
+        .filter(Article.source_id == int(source_id), not_counted(Article.id))  # R831: learned from the source's articles only
         .order_by(Article.id.desc())
         .limit(SAMPLE_BODIES)
         .all()
@@ -210,6 +211,7 @@ def outlet_furniture_keywords(
     all of them, so during an import fewer keywords qualify, never more."""
     if source_id is None:
         return set()
+    from src.analytics.quarantine_scope import not_counted
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Article
 
@@ -219,7 +221,7 @@ def outlet_furniture_keywords(
         newest = [
             int(i)
             for (i,) in db.query(Article.id)
-            .filter(Article.source_id == int(source_id))
+            .filter(Article.source_id == int(source_id), not_counted(Article.id))  # R831
             .order_by(Article.id.desc())
             .limit(KEYWORD_SAMPLE_ARTICLES)
         ]

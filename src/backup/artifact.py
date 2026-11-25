@@ -944,6 +944,9 @@ def read_volume_backup(
     corpus_passphrase: str | None = None,
     include_merge_budget: bool = True,
     should_stop: Callable[[], bool] | None = None,
+    reserve_bytes: int = 0,
+    reserve_what: str = "",
+    repair: bool = True,
 ) -> StagedArtifact:
     """Verify + (parity-)recover + reassemble a volume-set backup from the server-side
     directory ``src_dir``, then stage it like any oo-backup-2 artifact. Streams the
@@ -966,7 +969,15 @@ def read_volume_backup(
             staging_root,
             corpus_passphrase=corpus_passphrase,
             include_merge_budget=include_merge_budget,
+            should_stop=should_stop,
+            reserve_bytes=reserve_bytes,
+            reserve_what=reserve_what,
+            repair=repair,
         )
+    if reserve_bytes:
+        # Row 422 P1 stages only oo-volumes-2 sets under another item's merge: this legacy path has no preflight to
+        # count a reservation in, so it is refused rather than run without one.
+        raise ArtifactError("an oo-volumes-1 set is not staged ahead of another import")
 
     import time
 

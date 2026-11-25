@@ -307,6 +307,9 @@ def legacy(monkeypatch, tmp_path):
     monkeypatch.setattr(v2, "cleanup_staging", lambda staged: None)
     monkeypatch.setattr("src.backup.runlog.run", lambda *a, **k: contextlib.nullcontext())
     monkeypatch.setattr(v2, "exclusive_window_open", lambda: False)
+    # Row 436's fix, here too: the restore's closing restart would start the index heal on the suite's shared store,
+    # whose running writer job then refuses the next test's import or restore in the same worker.
+    monkeypatch.setattr(v2, "start_jobs_stopped_for_restore", lambda: None)
     return path
 
 

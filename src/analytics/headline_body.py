@@ -40,6 +40,8 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func
 
+from src.analytics.quarantine_scope import not_counted
+
 HEADLINE_BODY_CAVEAT = (
     "The headline leads with content the article body does not substantiate. A "
     "summarising or metaphorical headline does exactly this without deceiving — and "
@@ -93,7 +95,7 @@ def find_headline_body_mismatch(
     rows = (
         session.query(Article, Source.name, Source.domain)
         .outerjoin(Source, Source.id == Article.source_id)
-        .filter(observed >= cutoff)
+        .filter(observed >= cutoff, not_counted(Article.id))  # R831
         .order_by(Article.id.desc())
         .limit(recent_limit)
         .all()
