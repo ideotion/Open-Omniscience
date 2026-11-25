@@ -701,6 +701,7 @@ def test_a_fresh_encryption_binds_the_file_marked_before_its_read_back(tmp_path,
 
     monkeypatch.setattr(encrypt_tool, "_table_counts_safe", counts)
     encrypt_tool.encrypt_database(p, _PW, marks=marks)
+    assert p.read_bytes()[:16] != b"SQLite format 3\x00", "the file was encrypted"
     mark = marks["before_read"]
     assert mark is not None and (mark[0], mark[1]) == _ident(p)
 
@@ -728,7 +729,7 @@ def test_a_vanished_write_copy_is_absent_never_destroyed(tmp_path, monkeypatch):
 
 
 @sqlcipher_only
-def test_encrypt_store_binds_nothing_when_the_file_changes_after_the_mark(tmp_path, monkeypatch):
+def test_encrypt_store_passes_the_mark_taken_before_the_read_back(tmp_path, monkeypatch):
     import sqlite3
 
     from src.database import encrypt_tool
@@ -750,3 +751,18 @@ def test_encrypt_store_binds_nothing_when_the_file_changes_after_the_mark(tmp_pa
     encrypt_tool.encrypt_store("custody", p, _PW)
     assert seen.get("expect") is not None and (seen["expect"][0], seen["expect"][1]) == _ident(p), \
         "encrypt_store hands record_encrypted the mark taken before the keyed read-back"
+
+
+def test_a_write_copy_whose_name_could_not_be_removed_is_left(tmp_path, monkeypatch):
+    folder = tmp_path / "f"
+    folder.mkdir()
+    (folder / (at_rest_state.RECORD_NAME + ".tmp.1.2")).write_bytes(b"{}")
+    real_unlink = os.unlink
+
+    def refuse(path, *a, **k):
+        if ".tmp." in str(path):
+            raise PermissionError("busy")
+        return real_unlink(path, *a, **k)
+
+    monkeypatch.setattr(os, "unlink", refuse)
+    assert crypto_erase._drop_record_temps(folder) == "left", "overwritten, but its name remains: never destroyed"

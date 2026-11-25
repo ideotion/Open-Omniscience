@@ -1024,7 +1024,14 @@ def _drop_one_temp(name: str, dfd: int | None, flags: int, max_bytes: int) -> st
             os.close(fd)
     if same:
         _unlink_if_same(name, dfd, lst)  # its name, only while it still holds that file; a copy not overwritten in full is said left
-    return "destroyed" if ok else "left"
+    try:
+        os.lstat(name, dir_fd=dfd)
+        gone = False  # still at its name (a refused unlink, or another file since): never said as destroyed (security read)
+    except FileNotFoundError:
+        gone = True
+    except OSError:
+        gone = False
+    return "destroyed" if ok and gone else "left"
 
 
 def _drop_record_lock(folder: Path, dfd: int | None = None) -> str:
