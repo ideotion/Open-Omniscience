@@ -891,8 +891,13 @@ imply a protection we cannot deliver.
   (an empty mount point stays "not present"); the drive's identity (resolved folder's device and inode, a directory descriptor
   held on POSIX, and its marker id) is re-checked before the first write on it and before each later drive step, and on any
   change or unreadable identity nothing more on it is touched ("could not be identified" before the first write, "disconnected
-  ... partially erased" after). THE WINDOW THAT REMAINS: the walks go by path, so a drive swapped between a re-check and the
-  writes after it is reached by its path (row 387 makes the POSIX walk handle-relative). An id the erase forgot is never
+  ... partially erased" after). Row 387: on POSIX the walks of 5b and step 6, the top-level listings and the removal go from
+  the folder's handle held from the probe (every folder opened by name from it with `O_NOFOLLOW | O_DIRECTORY`, every file looked
+  at, written and unlinked by name through its folder's handle; the folder itself is removed only while its path still leads to
+  that very folder), so a drive or folder swapped mid-walk is never reached by its path; a folder on no marked drive gets the same
+  handle. THE WINDOW THAT REMAINS: on Windows (no folder handle here) the walks go by path, so a drive swapped between a re-check
+  and the writes after it is reached by its path; on every platform the keys step still looks up its named files by path, and a folder of
+  database copies is opened by its path (then used through that handle), each right after a re-check. An id the erase forgot is never
   restored, and a lost drive's result says the app no longer remembers it. When the drive is absent, unidentified, changed or
   lost, the database connections on it are NEVER closed in this process (`src/database/drive_pin.py`): SQLite deletes
   `<db>-wal` and `<db>-shm` BY PATH when the last connection closes, which with another drive at the path are that drive's
