@@ -8781,6 +8781,7 @@
   "{n} of the {total} verticals and lanes listed have a first slice in ({names}); ": "তালিকাভুক্ত {total}টি ভার্টিকাল ও লেনের মধ্যে {n}টির প্রথম স্লাইস এসেছে ({names}); ",
   "{n} of them are in force here": "এর মধ্যে {n}টি এখানে কার্যকর",
   "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "এর মধ্যে {n}টি প্রায় অভিন্ন কপি — সংখ্যা যা বোঝায় তার চেয়ে কম স্বাধীন কণ্ঠস্বর (সম্পর্কিত দেখুন)।",
+  "{n} of these results not analysed yet": "এর মধ্যে {n}টি ফলাফল এখনও বিশ্লেষণ হয়নি",
   "{n} of these results not counted yet": "এর মধ্যে {n}টি ফলাফল এখনও গোনা হয়নি",
   "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "আপনার {total}টি উৎসের মধ্যে {n}টি: আবিষ্কৃত প্রার্থী, সক্রিয় নয়, পর্যালোচনার অপেক্ষায়। সংগ্রহ এগুলোতে পৌঁছায় না।",
   "{n} of {m}": "{m}টির মধ্যে {n}টি",

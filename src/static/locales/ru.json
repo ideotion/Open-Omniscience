@@ -8781,6 +8781,7 @@
   "{n} of the {total} verticals and lanes listed have a first slice in ({names}); ": "{n} из {total} перечисленных вертикалей и полос имеют первый срез ({names}); ",
   "{n} of them are in force here": "[one]{n} из них действует здесь[few]{n} из них действуют здесь[many]{n} из них действуют здесь[other]{n} из них действуют здесь",
   "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "[one]{n} из них — почти идентичная копия: независимых голосов меньше, чем кажется по числу (см. «Связанные»).[few]{n} из них — почти идентичные копии: независимых голосов меньше, чем кажется по числу (см. «Связанные»).[many]{n} из них — почти идентичные копии: независимых голосов меньше, чем кажется по числу (см. «Связанные»).[other]{n} из них — почти идентичные копии: независимых голосов меньше, чем кажется по числу (см. «Связанные»).",
+  "{n} of these results not analysed yet": "Из этих результатов ещё не проанализировано: {n}",
   "{n} of these results not counted yet": "Из этих результатов ещё не учтено: {n}",
   "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} из {total} ваших источников: найденные кандидаты, не включены, ожидают проверки. Сбор до них не доходит.",
   "{n} of {m}": "{n} из {m}",

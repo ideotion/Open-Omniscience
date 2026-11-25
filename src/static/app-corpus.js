@@ -1125,8 +1125,13 @@
       const notYet = (typeof d.not_counted_yet === "number" && d.not_counted_yet > 0)
         ? `<div class="hint" title="${esc(t("These results were imported and the junk screening has not reached them yet. The list shows them; this figure leaves them out until they are screened, which happens in the background after an import."))}">${esc(tf("{n} of these results not counted yet", {n: fmtNum(d.not_counted_yet)}))}</div>`
         : "";
+      // R832 (row 421): of the results the counts DO take, those the re-index has not finished (per-term counts may miss them).
+      const notAnalysed = (typeof d.not_analysed_yet === "number" && d.not_analysed_yet > 0)
+        ? `<div class="hint" title="${esc(t("Imported articles the re-index has not finished yet. They are readable and searchable, but some or all of their keywords, dates, places and people may not be there yet, so the analyses may leave them out or count them only in part until it does."))}">${esc(tf("{n} of these results not analysed yet", {n: fmtNum(d.not_analysed_yet)}))}</div>`
+        : "";
       return `<div class="hint" style="margin-top:0"><b>${esc(expr)}</b> · ${esc(tf("{n} article(s)", {n: d.n_combined}))}</div>`
         + notYet
+        + notAnalysed
         + scopeLine
         + `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${perTerm}</div>`
         + `<div style="margin-top:6px">${open}${near}</div>${bounded}`

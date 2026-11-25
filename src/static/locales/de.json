@@ -8781,6 +8781,7 @@
   "{n} of the {total} verticals and lanes listed have a first slice in ({names}); ": "{n} der {total} gelisteten Vertikalen und Spuren haben einen ersten Ausschnitt ({names}); ",
   "{n} of them are in force here": "{n} davon gelten hier",
   "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} davon sind nahezu identische Kopien — weniger unabhängige Stimmen, als die Zahl vermuten lässt (siehe Verwandt).",
+  "{n} of these results not analysed yet": "{n} dieser Ergebnisse noch nicht analysiert",
   "{n} of these results not counted yet": "{n} dieser Ergebnisse noch nicht gezählt",
   "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{n} Ihrer {total} Quellen: entdeckte Kandidaten, nicht aktiviert, warten auf Prüfung. Die Erfassung erreicht sie nicht.",
   "{n} of {m}": "{n} von {m}",

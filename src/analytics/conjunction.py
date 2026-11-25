@@ -38,7 +38,7 @@ from typing import Any
 
 from sqlalchemy import func
 
-from src.analytics.quarantine_scope import not_counted, split_not_screened
+from src.analytics.quarantine_scope import count_not_analysed, not_counted, split_not_screened
 from src.analytics.queries import (
     Keyword,
     _bucket_key,
@@ -230,6 +230,7 @@ def corpus_algebra(
         # R831: a count, so it takes the slice; the set above is a list and keeps every article
         per_term_n[n] = int(_scoped(cq, scope).filter(not_counted(KeywordMentionRead.article_id)).scalar() or 0)
     _counted_ids, not_yet = split_not_screened(session, sorted(combined))
+    not_analysed = count_not_analysed(session, _counted_ids)  # R832: the per-term counts read the re-index's mentions
 
     caveat = "Co-occurrence in your corpus, never causation. Counts only, no score."
     if bounded:
@@ -245,6 +246,7 @@ def corpus_algebra(
         "n_combined": len(combined),
         # R831: of the set, the articles still queued for the junk screening; the figures over it leave them out
         "not_counted_yet": not_yet,
+        **({"not_analysed_yet": not_analysed} if not_analysed is not None else {}),
         "n_terms": nterms,
         "bounded": bounded,
         "result_bounded": bounded,  # when True the set may be incomplete (a subset), never wrong.
