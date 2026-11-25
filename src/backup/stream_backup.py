@@ -96,7 +96,7 @@ if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
 
 from src.backup.hf_layout import HF_LAYOUT
 from src.backup.manifest_file import read_manifest_json
-from src.backup.regular_file import create_new, replace_with
+from src.backup.regular_file import _NAME_SURROGATE, create_new, replace_with
 from src.backup.volumes import (
     MANIFEST_MAX_BYTES as VOLUMES_MANIFEST_MAX_BYTES,
 )
@@ -193,6 +193,79 @@ def is_active_staging(path: Path | str) -> bool:
 #: whose ``_BACKUP_DIR_PREFIX`` must stay in this tuple: a test pins it). It is swept here as well as by the route, because the route
 #: sweeps only when someone asks for the next backup, and a snapshot a KILL left (SIGKILL, power; an exit hook runs nothing then)
 #: is a full plaintext copy of the corpus that would otherwise stay until then (0.5.1 item 40).
+#: R829 (B): the name start of every restore's private staging folder, and of an import group's (``import_queue``).
+RESTORE_STAGING_PREFIX = ".restore-"
+#: R829 (B): the mode every file a restore writes into its staging is created with (owner read and write only).
+STAGING_FILE_MODE = 0o600
+
+
+def make_restore_staging(root: Path | str, prefix: str = RESTORE_STAGING_PREFIX) -> Path:
+    """A fresh private folder for a restore's staging, inside ``root`` (R829 B, R799's treatment).
+
+    ``mkdtemp`` makes it atomically under a new, unpredictable name, mode 0700 (owner only) on POSIX, and on Windows with
+    the Python this app requires, an owner-only folder as well. It never reuses or enters a folder that is already there.
+    The staging holds the decrypted members and, until the keyed staging of R829 (A) lands, a plaintext copy of the
+    incoming corpus, so no other local user may list or read it, whatever the data folder's own mode is."""
+    import tempfile
+
+    Path(root).mkdir(parents=True, exist_ok=True)  # as the named staging's ``mkdir(parents=True)`` did for a given root
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=str(root)))
+
+
+def private_mkdirs(path: Path) -> None:
+    """``path.mkdir(parents=True, exist_ok=True)`` for a folder INSIDE a private staging: each folder it makes is 0700
+    (R829 B). ``Path.mkdir(parents=True)`` gives the mode to the last folder only, so the missing parents are made one by
+    one, outermost first. ``mkdir``'s mode is filtered by the umask, which can only remove bits, so 0700 stays 0700 or
+    less."""
+    missing: list[Path] = []
+    p = path
+    while not p.exists():
+        missing.append(p)
+        if p.parent == p:
+            break
+        p = p.parent
+    for d in reversed(missing):
+        d.mkdir(mode=0o700, exist_ok=True)
+
+
+def _sweepable_restore_staging(p: Path) -> bool:
+    """R829 (B): may the boot sweep remove ``p``, a ``.restore-*`` entry of the folder it sweeps?
+
+    Only a REAL folder (looked at without following a link: a link or a junction named like ours is never followed, and
+    never removed by this sweep) owned by the user the app runs as. On a system without numeric owners (Windows) the
+    owner cannot be compared; the folder is then the app's own by its private ACL and its place in the data folder, and
+    a reparse point is still never followed. Never raises."""
+    try:
+        st = os.lstat(p)
+    except OSError:
+        return False
+    if not stat.S_ISDIR(st.st_mode):
+        return False
+    if int(getattr(st, "st_reparse_tag", 0) or 0) & _NAME_SURROGATE:
+        return False  # a junction, a mount point or a link (Windows ``lstat`` reports a junction as a folder)
+    getuid = getattr(os, "getuid", None)
+    if getuid is not None and st.st_uid != getuid():
+        _LOG.warning("backup: a restore staging folder owned by another user was left as it is")
+        return False
+    return True
+
+
+def _remove_staging_tree(p: Path) -> bool:
+    """Remove a staging folder without following any link inside it or at its own name, and say whether it is gone.
+
+    On Linux and macOS ``shutil.rmtree`` walks by descriptor and refuses a link at the top
+    (``rmtree.avoids_symlink_attacks``); a POSIX Python without it removes nothing here, and the folder is left for a
+    later sweep. On Windows the flag is False and the walk is by name: it refuses a link or a junction at the top and
+    removes a link or a junction inside as an entry, never entering it. What it cannot rule out there is the top name
+    being swapped for a junction during the walk, which needs write access to the data folder, so the same user or an
+    administrator: accepted. Never raises."""
+    if not getattr(shutil.rmtree, "avoids_symlink_attacks", False) and os.name != "nt":
+        _LOG.warning("backup: a restore staging folder was left for a later start (no link-safe removal on this system)")
+        return False
+    shutil.rmtree(p, ignore_errors=True)
+    return not os.path.lexists(p)
+
+
 _TEMP_DIR_PREFIXES = (".bak-build-", ".restore-", ".oo-backup-")
 #: The dirs whose owner writes a marker (:func:`write_owner_marker`), so a dead owner's leftover is told from a live job's at once.
 #: A restore's ``.restore-*`` staging holds decrypted volumes and the plaintext corpus, so a crash's leftover goes at the next start, not
@@ -364,11 +437,17 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
         try:
             if is_active_staging(p):
                 continue
+            restore = p.name.startswith(RESTORE_STAGING_PREFIX)
+            if restore and not _sweepable_restore_staging(p):
+                continue  # R829 (B): a link, a junction, a file or another user's folder is never removed here
             if p.is_dir() and p.name.startswith(_TEMP_DIR_PREFIXES):
                 owner = _owner_state(p) if p.name.startswith(_OWNER_MARKED_PREFIXES) else "unknown"
                 if owner == "alive":
                     continue
                 if owner == "dead":
+                    if restore:
+                        removed += 1 if _remove_staging_tree(p) else 0
+                        continue
                     shutil.rmtree(p, ignore_errors=True)
                     removed += 0 if p.exists() else 1  # a read-only drive removes nothing
                     continue
@@ -377,10 +456,14 @@ def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -
                 newest = p.stat().st_mtime
                 for sub in p.rglob("*"):
                     try:
-                        newest = max(newest, sub.stat().st_mtime)
+                        # a restore staging's entries are dated as themselves: a link inside is never followed (R829 B)
+                        newest = max(newest, (sub.lstat() if restore else sub.stat()).st_mtime)
                     except OSError:  # pragma: no cover
                         continue
                 if newest < cutoff:
+                    if restore:
+                        removed += 1 if _remove_staging_tree(p) else 0
+                        continue
                     shutil.rmtree(p, ignore_errors=True)
                     removed += 0 if p.exists() else 1
             elif p.is_file() and p.name.endswith(_TEMP_FILE_SUFFIXES) and p.stat().st_mtime < cutoff:
@@ -2505,8 +2588,7 @@ def read_stream_backup(
 
     root = staging_root or data_dir()
     _preflight_staging(root, m, include_merge_budget=include_merge_budget)
-    staging = root / f".restore-{secrets.token_hex(8)}"
-    staging.mkdir(parents=True, exist_ok=False)
+    staging = make_restore_staging(root)  # R829 (B): private, 0700, a new name
     with active_staging(staging):
         try:
             write_owner_marker(staging)
@@ -2518,12 +2600,13 @@ def read_stream_backup(
                 out_path = member_path(staging, mm["name"])
                 if out_path is None:  # verify refused it already; never joined
                     raise VolumeError(f"unsafe member path in the volume manifest: {mm['name']!r}")
-                out_path.parent.mkdir(parents=True, exist_ok=True)
+                private_mkdirs(out_path.parent)
                 h = hashlib.sha256()
                 # What a member may write is the plaintext size its manifest declares, the size the staging preflight
                 # counted: a member whose volumes decrypt to more is refused at that size, never let fill the disk (R686).
                 budget = [int(mm.get("plaintext_bytes") or 0)]
-                with create_new(out_path) as fout:  # never through a link at a member's name (row 313)
+                # never through a link at a member's name (row 313); owner read and write only (R829 B)
+                with create_new(out_path, mode=STAGING_FILE_MODE) as fout:
                     for vname in mm.get("volumes") or []:
                         if vname not in vol_by_name:
                             raise VolumeError(
@@ -2771,6 +2854,9 @@ def _export_plaintext_with_keys(src: Path, dest: Path, keys: list[str]) -> None:
             continue
         try:
             dest.unlink(missing_ok=True)
+            # R829 (B): the plaintext copy is made owner-only before a byte goes in, and SQLite gives its journal the
+            # database file's own mode. An empty file is an empty database to the ATTACH.
+            create_new(dest, mode=STAGING_FILE_MODE).close()
             conn.execute("ATTACH DATABASE ? AS snap KEY ''", (str(dest),))
             cur = conn.cursor()
             try:

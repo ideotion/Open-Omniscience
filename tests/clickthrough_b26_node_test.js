@@ -32,7 +32,9 @@ function extract(name) {
 }
 
 const ESC = "function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g," +
-  "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n";
+  "c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}\n" +
+  // Row 366: the backup screens' lines are kept renders; each harness draws one once, as ooLive draws it first.
+  "function ooLive(el, r){ if (el) el.textContent = r(); }\nfunction ooLiveHtml(el, r){ if (el) el.innerHTML = r(); }\n";
 const mark = (s) => "«" + s + "»";
 const tfMark = (s, v) => mark(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m));
 const plainT = (s) => s;
@@ -44,8 +46,11 @@ function test(name, fn) {
   pending.push((async () => { await fn(); n++; console.log("ok  - " + name); })());
 }
 
-const el = () => ({ innerHTML: "", textContent: "", value: "", style: {}, dataset: {}, disabled: false,
-                    removeAttribute() {}, setAttribute() {} });
+const el = () => ({ innerHTML: "", textContent: "", value: "", style: {}, dataset: {}, disabled: false, children: [],
+                    removeAttribute() {}, setAttribute() {},
+                    replaceChildren() { this.children = []; this.innerHTML = ""; this.textContent = ""; },
+                    append(...n) { this.children.push(...n); },
+                    querySelectorAll() { return []; }, querySelector() { return null; } });
 
 // ------------------------------------------------------------------------------ //
 //  J-1: the completion panel names what the export asked for and does not hold    //
@@ -319,7 +324,11 @@ test("J-3: every bracket on the import checklist is the keyed frame, and the lar
     // 2026-09-28 walk: a scan clears a FINISHED run's rows, so it reads the chain's state.
     "var _uxImSummaryArgs = null, _uxImLastStatus = null, _uxImWatch = null;\n" +
     "function _uxImStopChain(){} function _uxImResetRunView(){}\n" +
-    "var document = { getElementById: function(id){ return DOM[id] || null; } };\n" +
+    "var document = { getElementById: function(id){ return DOM[id] || null; }, createElement: function(){ return ELEMENT(); } };\n" +
+    // Row 366: the scan draws its checklist through _uxImPaintChecklist into a node of its own.
+    "var _uxImChecklistArgs = null; var CSS = { escape: function(x){ return x; } };\n" +
+    "function _uxImLeftoverPlaintext(){}\nfunction _uxImKeyRows(){}\n" +
+    extract("_uxImPaintChecklist") + "\n" +
     extract("ooLabelText") + "\n" +
     // Row 293 moved the large-data row and the unread-folders note out of _uxImScan into helpers.
     extract("_uxImBlobRow") + "\n" + extract("_uxImUnreadNote") + "\n" +
@@ -329,10 +338,10 @@ test("J-3: every bracket on the import checklist is the keyed frame, and the lar
     extract("_uxImArtifactHfRow") + "\n" + extract("_uxImHfTick") + "\n" +
     "async " + extract("_uxImScan") + "\n" +
     "return { run: _uxImScan };";
-  const mod = new Function("window", "OOI18N", "DOM", "api", src)(
-    { OOI18N: I18N }, I18N, dom, async () => ({ found }));
+  const mod = new Function("window", "OOI18N", "DOM", "api", "ELEMENT", src)(
+    { OOI18N: I18N }, I18N, dom, async () => ({ found }), el);
   await mod.run(el());
-  const html = dom["ux-imp-checklist"].innerHTML;
+  const html = dom["ux-imp-checklist"].children[0].innerHTML;
   assert.ok(!html.replace(/（[^）]*）/g, "").includes("("), "an ASCII bracket is still welded in code: " + html);
   assert.strictEqual((html.match(/（/g) || []).length, 5, "corpus, legacy, large data, newsletters and the CSV note: " + html);
   assert.ok(html.includes("（«encrypted volumes — additive, nothing you already have is overwritten» · «5 volumes» · «2 sets»）"), html);

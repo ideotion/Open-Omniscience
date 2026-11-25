@@ -100,6 +100,7 @@ const src = [
   extract("function _uxImReindexBits("),
   extract("function _uxImStatements("),
   extract("function _uxImAnalyticsStatement("),
+  extract("function _uxImStageLines("),
   extract("function _uxImNothingMerged("),
   extract("function _uxImRenderStatements("),
   extract("function _uxImRenderStages("),

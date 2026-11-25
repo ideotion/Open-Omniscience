@@ -1,0 +1,66 @@
+{
+  "kw": {
+    "version": 3,
+    "output_digest": "77c6016f66494e925a16cf4f17a5610d026dff0ac04fa19fa8371c84057faab7",
+    "environment": {
+      "distributions": {
+        "simplemma": "1.2.0",
+        "vaderSentiment": "3.3.2",
+        "py3langid": "0.3.0",
+        "jieba": "0.42.1",
+        "janome": null,
+        "pythainlp": null,
+        "spacy": null
+      },
+      "switches": {
+        "lemma": true,
+        "segmentation": true,
+        "code_token_filter": true
+      },
+      "python": "3.13",
+      "unicode": "15.1.0",
+      "generated_gazetteers": null
+    },
+    "articles": 207,
+    "rows": {
+      "keyword_mentions": 2855,
+      "keywords": 2651,
+      "articles": 207,
+      "article_mentioned_dates": 240
+    },
+    "scripts_covered": [
+      "Arabic",
+      "Bengali",
+      "Cyrillic",
+      "Devanagari",
+      "Han",
+      "Hiragana",
+      "Katakana",
+      "Latin"
+    ]
+  },
+  "www": {
+    "version": 1,
+    "output_digest": "aaa973d6d42f46f98055d649d80f50abb151052a406792d885b83e48bc1a4a54",
+    "environment": {
+      "python": "3.13",
+      "unicode": "15.1.0",
+      "generated_gazetteers": null
+    },
+    "articles": 207,
+    "rows": {
+      "article_mentioned_places": 72,
+      "article_entities": 35
+    },
+    "scripts_covered": [
+      "Arabic",
+      "Bengali",
+      "Cyrillic",
+      "Devanagari",
+      "Han",
+      "Hiragana",
+      "Katakana",
+      "Latin"
+    ]
+  }
+}

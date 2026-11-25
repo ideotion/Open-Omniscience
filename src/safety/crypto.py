@@ -440,13 +440,15 @@ def decrypt_file(
     follow_links: bool = True,
     expect_sha256: str | None = None,
     expect_bytes: int | None = None,
+    mode: int = 0o666,
 ) -> None:
     """Stream-decrypt an OOENC2 file written by :func:`encrypt_file`.
 
     Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
     extended stream -- never silently yields a partial archive. ``follow_links`` and
-    ``expect_sha256`` and ``expect_bytes``: see :func:`decrypt_stream`; on a raise the caller discards ``dst``."""
-    with create_new(dst) as fout:  # never through a link at its name (row 313)
+    ``expect_sha256`` and ``expect_bytes``: see :func:`decrypt_stream`; on a raise the caller discards ``dst``.
+    ``mode``: the new file's mode before the umask (0o600 for a plaintext temp in a restore staging, R829 B)."""
+    with create_new(dst, mode=mode) as fout:  # never through a link at its name (row 313)
         decrypt_stream(
             src, fout.write, passphrase, follow_links=follow_links, expect_sha256=expect_sha256, expect_bytes=expect_bytes
         )
