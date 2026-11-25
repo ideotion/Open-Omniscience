@@ -131,8 +131,8 @@ def test_the_drain_hands_the_pass_the_newest_articles_first(monkeypatch, tmp_pat
         seen = _spy(monkeypatch, real=False)
         merge_mod.reindex_imported_articles(batch_id, workers=0)
         i = ids
-        assert seen == [[i[4], i[1], i[6], i[3], i[0], gone, i[5], i[2]]], (
-            "newest date first, the id breaking a tie newest-inserted first; undated last (an id naming no article among them)"
+        assert seen == [[i[4], i[1], i[6], i[3], i[0], i[5], i[2], gone]], (
+            "newest date first, the id breaking a tie newest-inserted first; undated after them; an id naming no article last"
         )
     finally:
         _cleanup(batch_id, ids or [])
@@ -183,16 +183,40 @@ def test_a_resume_redoes_nothing_the_stamps_say_is_done_and_skips_nothing_else(m
         _cleanup(batch_id, ids or [])
 
 
-def test_the_drain_no_longer_reads_an_id_watermark_as_a_cursor():
-    """Source guard: ``_ids_after`` (the ``i > last_id`` filter) is gone; a watermark is a cursor only in ascending id order."""
-    import inspect
+def test_without_an_engine_identity_the_drain_keeps_the_ascending_order_and_its_exact_watermark(monkeypatch, tmp_path):
+    """When an engine identity cannot be computed nothing is ever stamped, so the stamps cannot be the cursor: a newest-first resume would
+    start again from the top every time (and the storage guard's one-window re-runs would never advance). The batch then goes in ascending
+    id order and resumes from the id watermark, which is exact in that order. A newest-first cursor left on disk is not read as one."""
+    from src.backup import merge as merge_mod
+    from src.database.session import init_db, session_scope
 
+    monkeypatch.setattr(merge_mod, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(merge_mod, "_backlog_www_engine", lambda: "<unknown>")
+    init_db()
+    batch_id = ids = None
+    try:
+        with session_scope() as s:
+            batch_id, ids = _batch(s, "fallback", [datetime(2020 + k, 1, 1, tzinfo=UTC) for k in range(6)])
+        merge_mod._save_reindex_cursor(batch_id, last_id=ids[-1], done=1, total=6, order="newest")  # another order's cursor
+        first = _spy(monkeypatch, real=True, cut=3)
+        merge_mod.reindex_imported_articles(batch_id, workers=0, commit_batch=1)
+        assert first == [ids], "ascending id order, and the other order's watermark is not a cursor here"
+        assert merge_mod.peek_reindex_cursor()["order"] == "id"
+        second = _spy(monkeypatch, real=True)
+        out = merge_mod.reindex_imported_articles(batch_id, workers=0, commit_batch=1)
+        assert second == [ids[3:]], "the resume skips exactly what the watermark says is finished, though nothing is certified"
+        assert out.get("resumed_already_done") == 3 and "already_certified" not in out
+    finally:
+        _cleanup(batch_id, ids or [])
+
+
+def test_the_newest_first_order_reads_the_date_index_not_the_article_rows():
+    """``published_at`` sits after ``content`` in the table: reading it row by row walks every article's overflow pages."""
     from src.backup import merge as merge_mod
 
-    src = inspect.getsource(merge_mod.reindex_imported_articles)
-    assert not hasattr(merge_mod, "_ids_after")
-    assert "_BATCH_NEWEST_FIRST_SQL" in src and "sorted(" not in src
-    assert "published_at IS NULL, a.published_at DESC" in merge_mod._BATCH_NEWEST_FIRST_SQL
+    assert "INDEXED BY idx_article_published_at" in merge_mod._BATCH_NEWEST_FIRST_SQL
+    assert "published_at IS NULL, a.published_at DESC, a.id DESC" in merge_mod._BATCH_NEWEST_FIRST_SQL
+    assert "sorted(" not in __import__("inspect").getsource(merge_mod.reindex_imported_articles)
 
 
 # --------------------------------------------------------------------------------------------------------------------- #
@@ -321,3 +345,30 @@ def test_draining_newest_first_writes_the_same_rows_as_draining_in_id_order(tmp_
             f"only by id:        {sorted(set(a[key]) - set(b[key]))[:5]}\n"
             f"only newest first: {sorted(set(b[key]) - set(a[key]))[:5]}"
         )
+
+
+def test_a_store_without_the_date_index_gets_the_same_order(tmp_path):
+    from src.backup.merge import _batch_in_drain_order
+    from src.database.models import MergeBatch, MergedRow
+
+    path = tmp_path / "c.db"
+    _corpus(path)
+    engine = app_sqlite_engine(path, future=True)
+    s = sessionmaker(bind=engine, future=True)()
+    try:
+        b = MergeBatch(artifact_kind="oo-backup-2", origin_fingerprint="unsigned", status="merged")
+        s.add(b)
+        s.flush()
+        ids = [r[0] for r in s.execute(text("SELECT id FROM articles"))]
+        for aid in [*ids, max(ids) + 50]:  # and one id naming no article
+            s.add(MergedRow(batch_id=b.id, table_name="articles", row_id=aid))
+        s.commit()
+        with_index = _batch_in_drain_order(s, b.id, newest_first=True)
+        s.execute(text("DROP INDEX idx_article_published_at"))
+        s.commit()
+        without = _batch_in_drain_order(s, b.id, newest_first=True)
+        assert with_index == without and with_index[-1] == max(ids) + 50 and len(with_index) == len(ids) + 1
+        assert _batch_in_drain_order(s, b.id, newest_first=False) == sorted([*ids, max(ids) + 50])
+    finally:
+        s.close()
+        engine.dispose()
