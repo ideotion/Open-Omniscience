@@ -22,6 +22,7 @@ WHAT IT GUARANTEES, and how:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import threading
@@ -61,6 +62,19 @@ def pending_ids(session: Any, limit: int) -> list[int]:
     ]
 
 
+#: A chunk that raised (a lock held too long, a store that went away) is tried again this many times, after a pause that doubles
+#: from _RETRY_FIRST_S, before the worker stops and says why. The queue keeps every article either way.
+_RETRIES = 4
+_RETRY_FIRST_S = 5.0
+
+#: The epoch bumps the worker owes (see ``defer_epoch_bump``) are paid at the end of a drain, and at most this often during a
+#: long one, so the rollups catch up while it runs without rebuilding once per chunk.
+_BUMP_EVERY_S = 60.0
+
+#: ``_one_chunk``'s answer when an import owned the machine once the lease was held: nothing was judged, wait and ask again.
+_YIELDED = -1
+
+
 class ScreeningDrain:
     """The one worker that empties ``screening_pending``. Status is in memory only: the queue itself is the durable state."""
 
@@ -68,16 +82,24 @@ class ScreeningDrain:
         self._session_factory = session_factory
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
+        self._running = False  # set by kick(), cleared by the thread itself under the lock as its very last act
+        self._again = False  # a kick that came while the thread was running: it looks at the queue once more before it ends
         self._stop = threading.Event()
         self._tally = {"screened": 0, "quarantined": 0, "chunks": 0}
         self._state = "idle"
         self._error: str | None = None
+        self._bump_owed = False
+        self._last_bump = 0.0
 
     def kick(self) -> bool:
-        """Start the worker if it is not running. Returns whether this call started it."""
+        """Start the worker if it is not running. Returns whether this call started it. A kick while it runs makes it read
+        the queue once more before it ends, so rows queued just as it found the queue empty are never left waiting."""
         with self._lock:
-            if self._thread is not None and self._thread.is_alive():
+            if self._running:
+                self._again = True
                 return False
+            self._running = True
+            self._again = False
             self._stop.clear()
             self._error = None
             self._state = "running"
@@ -99,16 +121,22 @@ class ScreeningDrain:
             return out
 
     def _one_chunk(self) -> int:
-        """Judge the next chunk; how many articles left the queue (0 when it is empty)."""
+        """Judge the next chunk; how many articles left the queue (0 when it is empty, ``_YIELDED`` when an import took the
+        machine). The import check runs AFTER the lease is taken (``storage_guard``'s order): an import that opens its window
+        first finds the lease and waits for this chunk, and one that already holds the machine makes this chunk step back."""
         from src.analytics.quarantine_job import default_quarantine_candidates_batch
 
         session = (self._session_factory or _default_session)()
         try:
             with corpus_lease("screening"):
+                if _import_owns_the_machine():
+                    return _YIELDED
                 ids = pending_ids(session, CHUNK)
                 if not ids:
                     return 0
-                r = default_quarantine_candidates_batch(session, article_ids=ids, write=True, release_pending=True)
+                r = default_quarantine_candidates_batch(
+                    session, article_ids=ids, write=True, release_pending=True, defer_epoch_bump=True
+                )
         finally:
             try:
                 session.close()
@@ -118,26 +146,77 @@ class ScreeningDrain:
             self._tally["screened"] += int(r.get("scanned", 0))
             self._tally["quarantined"] += int(r.get("newly_written", 0))
             self._tally["chunks"] += 1
+        if r.get("epoch_bump_owed"):
+            self._bump_owed = True
         # A chunk whose rows could not leave the queue (a store without the table, say) would come back forever: stop.
         return int(r.get("released", 0))
 
+    def _pay_bump(self, *, force: bool) -> None:
+        """Bump the corpus epoch once for the chunks that left it owed (best effort: a missed bump only leaves a rollup one
+        mutation behind, as ``bump_corpus_epoch`` says)."""
+        import time
+
+        if not self._bump_owed or (not force and time.monotonic() - self._last_bump < _BUMP_EVERY_S):
+            return
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+
+        session = (self._session_factory or _default_session)()
+        try:
+            bump_corpus_epoch(session, reason="screening")
+            self._bump_owed = False
+            self._last_bump = time.monotonic()
+        finally:
+            with contextlib.suppress(Exception):
+                session.close()
+
+    def _chunk_with_retries(self) -> int:
+        delay = _RETRY_FIRST_S
+        for attempt in range(_RETRIES + 1):
+            try:
+                return self._one_chunk()
+            except Exception as exc:  # noqa: BLE001 - the chunk rolled back whole; the queue keeps its rows
+                if attempt == _RETRIES or self._stop.is_set():
+                    raise
+                log_failure(_LOG, "a screening chunk failed; trying it again", exc, level=logging.WARNING)
+                if self._stop.wait(delay):
+                    raise
+                delay *= 2
+        return 0  # not reached
+
     def _run(self) -> None:
+        import time
+
+        self._last_bump = time.monotonic()
         try:
             while not self._stop.is_set():
                 if _import_owns_the_machine():
                     self._stop.wait(_POLL_S)
                     continue
-                if self._one_chunk() == 0:
-                    break
+                n = self._chunk_with_retries()
+                if n == _YIELDED:
+                    self._stop.wait(_POLL_S)
+                    continue
+                self._pay_bump(force=False)
+                if n == 0:
+                    with self._lock:
+                        if not self._again:
+                            break
+                        self._again = False
+            self._pay_bump(force=True)
             with self._lock:
                 self._state = "stopped" if self._stop.is_set() else "idle"
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread; the queue keeps every article
             from src.monitoring.engine_text import engine_text
 
             log_failure(_LOG, "the background screening of imported articles stopped", exc, level=logging.WARNING)
+            with contextlib.suppress(Exception):
+                self._pay_bump(force=True)
             with self._lock:
                 self._state = "error"
                 self._error = engine_text(exc)
+        finally:
+            with self._lock:
+                self._running = False
 
 
 _DRAIN: ScreeningDrain | None = None

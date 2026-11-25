@@ -891,9 +891,11 @@ def build_keyword_read_model(con, session, *, batch_size: int | None = None) -> 
         total += _bulk_insert(
             con, "keyword_agg", _AGG_TYPES,
             [
-                (r[1], r[2], kind_from(r[3], r[4]), m, max(0, int(r[6] or 0) - pend.get(int(r[0]), (0, 0))[1]), r[7])
+                (r[1], r[2], kind_from(r[3], r[4]), max(0, m), max(0, int(r[6] or 0) - pend.get(int(r[0]), (0, 0))[1]), r[7])
                 for r in chunk
-                if (m := int(r[5] or 0) - pend.get(int(r[0]), (0, 0))[0]) > 0
+                # a keyword whose every counted mention is in a queued article leaves the projection, as it leaves the
+                # live counter path; any other row is kept exactly as before
+                if (m := int(r[5] or 0) - pend.get(int(r[0]), (0, 0))[0]) > 0 or int(r[0]) not in pend
             ],
         )
         cursor_id = int(chunk[-1][0])

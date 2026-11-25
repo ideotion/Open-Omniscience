@@ -21,9 +21,9 @@ from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 
-from src.analytics.quarantine_scope import not_counted
+from src.analytics.quarantine_scope import not_counted, pending_ids_select
 from src.analytics.source_article_counts import unquarantined_counts_by_source
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
@@ -33,6 +33,7 @@ from src.database.models import (
     ArticleMentionedPlace,
     Keyword,
     KeywordFamilyOverride,
+    ScreeningPending,
     Source,
 )
 from src.database.outlet import FEEDS_NOT_OUTLETS
@@ -1245,6 +1246,9 @@ def trend_range_article_ids(
             .all()
         )
         held = {r[0] for r in rows}
+        # R830: an article still queued for screening is out of the bars' total (``not_counted`` above), so it is out of
+        # the selection too; it is counted with the excluded ones.
+        held |= {int(r[0]) for r in session.execute(pending_ids_select().where(ScreeningPending.article_id.in_(chunk)))}
         openable.extend(aid for aid in chunk if aid not in held)
 
     excluded = len(ids) - len(openable)
@@ -1280,31 +1284,43 @@ _BRUSH_CAVEAT = (
 )
 
 
-def _counter_rows_without_pending(session, ordered, want: int) -> list:
-    """The first ``want`` rows of ``ordered`` (``(Keyword, mentions, articles)`` by ``mention_count`` descending), with
-    the articles still queued for screening taken out of the counters at query time (R830). The counters include such an
-    article until it is judged, so a keyword's figure can only go DOWN here; rows are read in pages until the smallest
-    kept figure is at least the next unread row's raw figure, which no row further down can beat. With nothing queued
-    this is the one read it always was."""
-    from src.analytics.quarantine_scope import any_pending, pending_keyword_contributions
+def _counter_rows_without_pending(session, q, want: int) -> list:
+    """The first ``want`` ``(Keyword, mentions, articles)`` rows of ``q`` by mentions, descending, with the articles still
+    queued for screening taken out of the counters at query time (R830). The counters include such an article until it is
+    judged. With nothing queued this is the index-only read it always was; while anything is queued, the queued articles'
+    share is summed once per keyword (their own mention rows, through the ``article_id`` index) and the counters are
+    ordered by what is left: one pass over the keywords, never a page walk that a queue covering the top of the list
+    would stretch to the whole table."""
+    from sqlalchemy import func as _f
+
+    from src.analytics.quarantine_scope import any_pending, quarantined_ids_select
 
     if not any_pending(session):
-        return ordered.limit(want).all()
-    pend = pending_keyword_contributions(session)
-    kept: list = []
-    offset = 0
-    while True:
-        page = ordered.offset(offset).limit(want).all()
-        offset += len(page)
-        for k, m, a in page:
-            dm, da = pend.get(int(k.id), (0, 0))
-            m2, a2 = int(m or 0) - dm, int(a or 0) - da
-            if m2 > 0:
-                kept.append((k, m2, max(0, a2)))
-        kept.sort(key=lambda r: -r[1])
-        kept = kept[:want]
-        if len(page) < want or (len(kept) >= want and kept[-1][1] >= int(page[-1][1] or 0)):
-            return kept
+        return q.order_by(Keyword.mention_count.desc()).limit(want).all()
+    p = (
+        select(
+            KeywordMentionRead.keyword_id.label("kid"),
+            _f.sum(KeywordMentionRead.count).label("pm"),
+            _f.count(_f.distinct(KeywordMentionRead.article_id)).label("pa"),
+        )
+        .where(
+            KeywordMentionRead.article_id.in_(pending_ids_select()),
+            KeywordMentionRead.article_id.not_in(quarantined_ids_select()),
+        )
+        .group_by(KeywordMentionRead.keyword_id)
+        .subquery()
+    )
+    m = Keyword.mention_count - _f.coalesce(p.c.pm, 0)
+    a = Keyword.article_count - _f.coalesce(p.c.pa, 0)
+    rows = (
+        q.outerjoin(p, p.c.kid == Keyword.id)
+        .with_entities(Keyword, m.label("m"), a.label("arts"))
+        .filter(m > 0)
+        .order_by(m.desc())
+        .limit(want)
+        .all()
+    )
+    return [(k, int(mm or 0), max(0, int(aa or 0))) for k, mm, aa in rows]
 
 
 def top_terms(
@@ -1359,7 +1375,7 @@ def top_terms(
             Keyword.article_count.label("arts"),
         ).filter(Keyword.mention_count > 0)
         q = _apply_kind(q, kind)
-        rows = _counter_rows_without_pending(session, q.order_by(Keyword.mention_count.desc()), limit * 4)
+        rows = _counter_rows_without_pending(session, q, limit * 4)
     else:
         # Windowed / per-country: the corpus-wide counters cannot serve a scoped
         # SUM, so this path aggregates the mention table (filtered, then grouped) — UNLESS

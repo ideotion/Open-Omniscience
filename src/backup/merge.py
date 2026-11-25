@@ -6184,27 +6184,48 @@ def _alt_fields(table: str) -> dict:
     return {"differs": spec["differs"], "shown": spec["shown"]}
 
 
-def _queued_for_screening(session: Any, batches: list[int]) -> int | None:
-    """How many of the articles these batches added are queued for the background screening (R830), or None when the corpus
-    has no queue (a store never migrated), in which case the restore screens them in its own window as before. Never raises
-    into the restore: an unreadable queue is None too, so the old path runs."""
+def _queued_for_screening(session: Any, batches: list[int]) -> set[int] | None:
+    """The ids of the articles these batches added that are queued for the background screening (R830), or None when the
+    corpus has no queue (a store never migrated), in which case the restore screens them in its own window as before. Never
+    raises into the restore: an unreadable queue is None too, so the old path runs."""
     from sqlalchemy import bindparam
     from sqlalchemy import text as _text
 
     try:
-        return int(
-            session.execute(
+        return {
+            int(r[0])
+            for r in session.execute(
                 _text(
-                    "SELECT COUNT(*) FROM screening_pending WHERE article_id IN"
+                    "SELECT article_id FROM screening_pending WHERE article_id IN"
                     " (SELECT row_id FROM merged_rows WHERE batch_id IN :bs AND table_name = 'articles')"
                 ).bindparams(bindparam("bs", expanding=True)),
                 {"bs": batches},
-            ).scalar()
-            or 0
-        )
+            )
+        }
     except Exception:  # noqa: BLE001 - no queue: the restore screens in its own window
         session.rollback()
         return None
+
+
+def _not_stamped(ids: list[int], session: Any) -> list[int]:
+    """Those of ``ids`` not already quarantined (the ones an import stamps on the way in need no screening)."""
+    from sqlalchemy import bindparam
+    from sqlalchemy import text as _text
+
+    if not ids:
+        return []
+    stamped: set[int] = set()
+    for i in range(0, len(ids), 900):
+        stamped.update(
+            int(r[0])
+            for r in session.execute(
+                _text("SELECT id FROM articles WHERE quarantined IS 1 AND id IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                ),
+                {"ids": ids[i : i + 900]},
+            )
+        )
+    return [i for i in ids if i not in stamped]
 
 
 def _local_has_table(con: sqlite3.Connection, name: str) -> bool:
@@ -11582,7 +11603,15 @@ def run_restore(
                         from src.analytics.quarantine_scope import not_counted_tally
                         from src.analytics.screening_drain import kick_if_allowed
 
-                        report["screening"] = {"queued": queued, "batches": q_batches, **not_counted_tally(_q_sess)}
+                        # An article this swap brought in that is neither queued nor stamped (a working copy that had no queue
+                        # when it merged, say) would otherwise never be judged: it is screened here, as before.
+                        unqueued = _not_stamped([i for i in new_article_ids if i not in queued], _q_sess)
+                        if unqueued:
+                            report["quarantine_summary"] = default_quarantine_candidates_batch(
+                                _q_sess, article_ids=unqueued, write=True
+                            )
+                            report["quarantine_summary"]["batches"] = q_batches
+                        report["screening"] = {"queued": len(queued), "batches": q_batches, **not_counted_tally(_q_sess)}
                         kick_if_allowed()
                     elif new_article_ids:
                         report["quarantine_summary"] = default_quarantine_candidates_batch(

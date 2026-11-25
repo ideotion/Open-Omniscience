@@ -108,8 +108,15 @@ def _sqlite_file_bytes() -> dict | None:
 
 def _not_counted(db: Session) -> dict:
     from src.analytics.quarantine_scope import not_counted_tally
+    from src.analytics.screening_drain import get_screening_drain, kick_if_allowed
 
-    return not_counted_tally(db)
+    out: dict = dict(not_counted_tally(db))
+    if out.get("not_screened"):
+        # R830: while anything waits, the worker is running or is started here (idempotent), so a worker that stopped on an
+        # error is retried by the next read rather than left stopped until a restart; its state rides along.
+        kick_if_allowed()
+        out["screening"] = get_screening_drain().status()
+    return out
 
 
 @router.get("/stats")

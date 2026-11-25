@@ -118,6 +118,23 @@ def _stamp_chunk(session, ids: list[int], signal: str, criteria_version, now) ->
     return [int(r[0]) for r in session.execute(stmt)]
 
 
+def _queued_among(session, ids: list[int]) -> set[int]:
+    """Which of ``ids`` are in the screening queue, read in the caller's transaction (R830)."""
+    from sqlalchemy import select
+
+    from src.database.models import ScreeningPending
+
+    out: set[int] = set()
+    for i in range(0, len(ids), _ID_SET_CHUNK):
+        out.update(
+            int(r[0])
+            for r in session.execute(
+                select(ScreeningPending.article_id).where(ScreeningPending.article_id.in_(ids[i : i + _ID_SET_CHUNK]))
+            )
+        )
+    return out
+
+
 def _release_pending(session, ids: list[int]) -> int:
     """Remove ``ids`` from the screening queue (R830), in the caller's transaction; how many rows left it."""
     from sqlalchemy import delete
@@ -149,6 +166,7 @@ def default_quarantine_candidates_batch(
     index_page_tiers: frozenset[int] | set[int] | None = None,
     collect_ids: bool = False,
     release_pending: bool = False,
+    defer_epoch_bump: bool = False,
 ) -> dict[str, Any]:
     """The default per-batch WORK FUNCTION: DETECT already-flagged non-article candidates (the
     #659 URL-shape rules via ``classify_non_article``, plus the opt-in NAV-SOUP PROSE GATE for
@@ -203,7 +221,13 @@ def default_quarantine_candidates_batch(
     ``release_pending`` (R830, row 408 PR 3; needs ``article_ids`` and ``write=True``): the screening worker's call. In the SAME
     commit as the stamps, the ids judged here leave ``screening_pending``, so the aggregates count the articles that passed and
     the queue never says "not screened" of one that was. The corpus epoch is bumped whenever a row leaves the queue, so the
-    rollups built without those articles rebuild with them. ``released`` in the result says how many left."""
+    rollups built without those articles rebuild with them. ``released`` in the result says how many left.
+
+    ``defer_epoch_bump`` (with ``release_pending``): the worker's chunks would otherwise bump the epoch once each, and every bump
+    makes the rollups rebuild. A chunk whose stamps all fell on articles that were still queued changes nothing a rollup counts
+    until the release is seen (a queued article is already out of every build), so its bump is left to the caller, which bumps
+    once for the whole drain; ``epoch_bump_owed`` in the result says so. A stamp on an article that was NOT queued still bumps
+    here, strictly, in the same commit."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
     from src.database.models import Article, HostMismatchConfirmed, Source
     from src.ingest.furniture import stub_verdict
@@ -327,6 +351,7 @@ def default_quarantine_candidates_batch(
 
     newly_written = 0
     released = 0
+    bump_owed = False
     release = release_pending and write and article_ids is not None
     if write and (to_write or release):
         from src.analytics.corpus_epoch import bump_corpus_epoch
@@ -348,6 +373,7 @@ def default_quarantine_candidates_batch(
                 # same guard, ``quarantined IS NOT 1`` under the gate, and the counters move only for the ids the UPDATE itself
                 # RETURNS as changed -- never for the ids it was asked to change -- so a row another path stamped in between
                 # leaves them alone, as the per-row form's rowcount did (Plan 2026-11-24).
+                queued_before = _queued_among(session, article_ids or []) if release and defer_epoch_bump else set()
                 for signal, chunk in _stamp_chunks(to_write):
                     stamped.extend(_stamp_chunk(session, chunk, signal, criteria_version, now))
                 shift_keyword_counters_for_quarantine(session, stamped, quarantined=True)
@@ -356,7 +382,10 @@ def default_quarantine_candidates_batch(
             except BaseException:
                 session.rollback()
                 raise
-            if stamped or released:
+            if (stamped or released) and defer_epoch_bump and release and set(stamped) <= queued_before:
+                session.commit()  # every stamp fell on a queued article: no build counted it, so the caller bumps once
+                bump_owed = True
+            elif stamped or released:
                 bump_corpus_epoch(session, reason="quarantine", strict=True)  # commits the batch with the bump
             else:
                 session.commit()  # nothing changed under the gate: nothing to subtract, no rebuild to force
@@ -374,7 +403,7 @@ def default_quarantine_candidates_batch(
         "write": write,
         "read_s": round(read_s, 3),
         "classify_s": round(classify_s, 3),
-    } | ({"released": released} if release else {}) | ({"ids_by_reason": ids_by_reason} if collect_ids else {}) | (
+    } | ({"released": released, "epoch_bump_owed": bump_owed} if release else {}) | ({"ids_by_reason": ids_by_reason} if collect_ids else {}) | (
         {"host_mismatch": host_counts} if include_host_mismatch else {}
     )
 

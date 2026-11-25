@@ -48,6 +48,8 @@ def _corpus(*, created_at=True):
     # The quarantine flag the build and the live side read (R101); no article is quarantined unless a test says so.
     s.execute(text("CREATE TABLE articles (id INTEGER PRIMARY KEY, quarantined BOOLEAN)"))
     s.execute(text("CREATE INDEX idx_article_quarantined ON articles (quarantined)"))
+    # R830: the screening queue the same filters read (empty: every article here has been screened).
+    s.execute(text("CREATE TABLE screening_pending (article_id INTEGER PRIMARY KEY, queued_at TEXT)"))
     s.execute(text(
         "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100) INSERT INTO articles (id) SELECT i FROM n"
     ))
