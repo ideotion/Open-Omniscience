@@ -42,7 +42,7 @@ class _MergingVolumes:
     def status(self):
         if self._left > 0:
             self._left -= 1
-            return {"state": "running", "progress": {"phase": "merging"}}
+            return {"state": "running", "progress": {"phase": "merging", "merge_step": 1}}
         return {"state": "done", "summary": {"report": {"plan": {}}}, "progress": {"phase": "done"}}
 
     def cancel(self):
@@ -76,7 +76,7 @@ def env(tmp_path, monkeypatch):
 
     monkeypatch.setattr(A, "read_volume_backup", _read)
     monkeypatch.setattr(A, "cleanup_staging", lambda staged: cleaned.append(Path(staged.staging_dir)))
-    monkeypatch.setattr(ImportQueueManager, "_merge_in_flight_reserve", staticmethod(lambda: 123 << 20))
+    monkeypatch.setattr(ImportQueueManager, "_merge_in_flight_reserve", staticmethod(lambda src: 123 << 20))
     mgr = ImportQueueManager(state_path=tmp_path / "q.json")
     mgr._checkpoint_k = 1
     return SimpleNamespace(mgr=mgr, vols=vols, reads=reads, cleaned=cleaned, tmp=tmp_path)
@@ -183,13 +183,14 @@ def test_the_switch_turns_it_off(env, monkeypatch):
     assert "prestage" not in env.mgr._items[1]["summary"]
 
 
-def test_nothing_is_staged_before_the_item_in_flight_reaches_its_merge(env):
-    phase = {"now": "reassembling"}
+@pytest.mark.parametrize("before", [{"phase": "reassembling"}, {"phase": "merging"}, {"phase": "prepare_staged"}])
+def test_nothing_is_staged_before_the_item_in_flight_is_inside_its_merge(env, before):
+    phase = {"now": before}
 
     def _status():
         if phase["now"] == "done":
             return {"state": "done", "summary": {"report": {}}, "progress": {"phase": "done"}}
-        return {"state": "running", "progress": {"phase": phase["now"]}}
+        return {"state": "running", "progress": dict(phase["now"])}
 
     env.vols.status = _status  # type: ignore[method-assign]
     env.mgr.start(_items("1", "2"), passphrase="pw")
@@ -282,16 +283,22 @@ def test_the_restore_job_removes_a_staging_it_was_handed_and_did_not_use(tmp_pat
     assert removed == [staged]
 
 
-def test_the_reserve_is_the_working_copy_and_safety_copy_of_the_live_corpus(tmp_path, monkeypatch):
+def test_the_reserve_is_the_safety_copy_and_the_merges_growth(tmp_path, monkeypatch):
     import src.backup.sqlite_backup as SQ
+    import src.backup.volumes as V
 
     live = tmp_path / "live.db"
     live.write_bytes(b"\0" * 4096)
     monkeypatch.setattr(SQ, "live_db_path", lambda: live)
-    assert ImportQueueManager._merge_in_flight_reserve() == 2 * 4096
+    monkeypatch.setattr(V, "load_manifest", lambda p: {"members": [
+        {"role": "corpus", "plaintext_bytes": 10_000}, {"role": "state", "plaintext_bytes": 7}]})
+    assert ImportQueueManager._merge_in_flight_reserve(tmp_path) == 4096 + 10_000
+
+    monkeypatch.setattr(V, "load_manifest", lambda p: {"members": []})
+    assert ImportQueueManager._merge_in_flight_reserve(tmp_path) >= 1 << 60, "no corpus size known: nothing ahead"
 
     def _boom():
         raise OSError("unreadable")
 
     monkeypatch.setattr(SQ, "live_db_path", _boom)
-    assert ImportQueueManager._merge_in_flight_reserve() >= 1 << 60, "an unknown size stages nothing ahead"
+    assert ImportQueueManager._merge_in_flight_reserve(tmp_path) >= 1 << 60, "an unknown size stages nothing ahead"

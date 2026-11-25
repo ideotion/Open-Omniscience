@@ -1691,9 +1691,6 @@ class ImportQueueManager:
         return out
 
     # -- row 422 P1: the next item's staging under this item's merge ---------- #
-    #: The phases of the volume job before its merge starts: the next item is staged only once this one is past them,
-    #: so the two stagings never compete for the disk.
-    _PRE_MERGE_PHASES = frozenset({"", "verifying", "reassembling", "skipped-already-merged"})
 
     def _next_corpus_item(self, item: dict) -> dict | None:
         """The item right after ``item`` when it is a corpus backup still waiting its turn, else None."""
@@ -1716,7 +1713,9 @@ class ImportQueueManager:
         if str(live.get("state") or "") != "running":
             return
         prog = live.get("progress") if isinstance(live.get("progress"), dict) else live
-        if str((prog or {}).get("phase") or "") in self._PRE_MERGE_PHASES:
+        # Inside the merge proper (its step pings carry ``merge_step``): this item's staging is done and its working
+        # copy is made, so the two stagings never compete for the disk and the space the merge still needs is known.
+        if str((prog or {}).get("phase") or "") != "merging" or (prog or {}).get("merge_step") is None:
             return
         nxt = self._next_corpus_item(item)
         if nxt is None:
@@ -1729,14 +1728,15 @@ class ImportQueueManager:
             this_digest = artifact_source_digest(Path(item["path"]))
         except Exception:  # noqa: BLE001 - unknown never matches; the next item's own skip still runs
             this_digest = None
+        reserve = self._merge_in_flight_reserve(Path(item["path"]))
         pre.thread = threading.Thread(
-            target=self._prestage_worker, args=(pre, nxt, this_digest), daemon=True, name="import-prestage"
+            target=self._prestage_worker, args=(pre, nxt, this_digest, reserve), daemon=True, name="import-prestage"
         )
         with self._lock:
             self._prestage = pre
         pre.thread.start()
 
-    def _prestage_worker(self, pre: _Prestage, nxt: dict, this_digest: str | None) -> None:
+    def _prestage_worker(self, pre: _Prestage, nxt: dict, this_digest: str | None, reserve: int) -> None:
         """Stage ``nxt`` with the restore's own reader, counting the merge in flight in the free-space preflight.
 
         Nothing here can fail the import: a decline or a failure leaves the item to stage at its own turn, where the
@@ -1767,7 +1767,7 @@ class ImportQueueManager:
                 backup_key,
                 corpus_passphrase=corpus_key or None,
                 should_stop=lambda: pre.cancel.is_set() or self._stop.is_set(),
-                reserve_bytes=self._merge_in_flight_reserve(),
+                reserve_bytes=reserve,
                 reserve_what=PRESTAGE_WHAT,
             )
             if pre.cancel.is_set():
@@ -1787,15 +1787,22 @@ class ImportQueueManager:
                         *self._secrets(), level=logging.INFO)
 
     @staticmethod
-    def _merge_in_flight_reserve() -> int:
-        """Space the merge in flight may still write on the data drive: its working copy and its safety copy, each up
-        to the live corpus's size. Counted in full even when either already exists (a staging declined for a few GB
-        stages at its turn; one that filled the drive under a merge would cost that merge)."""
+    def _merge_in_flight_reserve(src: Path) -> int:
+        """Space the merge in flight may still write on the data drive once its working copy exists: the safety copy
+        it takes before the swap (up to the live corpus's size) and the working copy's growth (up to the size of the
+        corpus it is merging, from its own manifest). Bounds, never estimates: a staging declined for a few GB stages
+        at its turn, and one that filled the drive under a merge would cost that merge. Unknown sizes stage nothing."""
         try:
             from src.backup.sqlite_backup import live_db_path
+            from src.backup.volumes import load_manifest
 
             p = live_db_path()
-            return 2 * (p.stat().st_size if p.exists() else 0)
+            live = p.stat().st_size if p.exists() else 0
+            members = load_manifest(src).get("members") or []
+            incoming = sum(int(m.get("plaintext_bytes") or 0) for m in members if m.get("role") == "corpus")
+            if not any(m.get("role") == "corpus" for m in members):
+                return 1 << 62
+            return live + incoming
         except Exception:  # noqa: BLE001 - unknown size: the reserve cannot be counted, so nothing is staged ahead
             return 1 << 62
 
