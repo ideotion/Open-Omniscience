@@ -9,7 +9,7 @@ pending column is declared additive, is the audit's judgement and is not written
 
 ## 1. Main database: the migration chain
 
-Head: `e4c1a7f3b9d2` (87 migrations, base first).
+Head: `e4c1a7f3b9d2` (88 migrations, base first).
 
 | # | revision | after | file |
 |---|---|---|---|
@@ -99,9 +99,10 @@ Head: `e4c1a7f3b9d2` (87 migrations, base first).
 | 84 | `c2a6e8f1d4b7` | `f61a2b3c4d5e` | `c2a6e8f1d4b7_ipcc_predictions.py` |
 | 85 | `d7e3a9b2c5f1` | `c2a6e8f1d4b7` | `d7e3a9b2c5f1_law_format_changes.py` |
 | 86 | `e4b7c1d9a2f6` | `d7e3a9b2c5f1` | `e4b7c1d9a2f6_stage_versions_and_engine_registry.py` |
-| 87 | `e4c1a7f3b9d2` | `e4b7c1d9a2f6` | `e4c1a7f3b9d2_corpus_segments.py` |
+| 87 | `a7c2e9d4b1f3` | `e4b7c1d9a2f6` | `a7c2e9d4b1f3_screening_pending.py` |
+| 88 | `e4c1a7f3b9d2` | `a7c2e9d4b1f3` | `e4c1a7f3b9d2_corpus_segments.py` |
 
-## 2. Main database: tables (65, from `src/database/models.py`)
+## 2. Main database: tables (66, from `src/database/models.py`)
 
 ### `ai_custom_prompt`
 
@@ -784,6 +785,13 @@ Head: `e4c1a7f3b9d2` (87 migrations, base first).
 | `gazetteer_vintage` | VARCHAR(32) | yes |  |
 | `article_id` | INTEGER | yes | foreign |
 | `as_of` | DATETIME | yes |  |
+
+### `screening_pending`
+
+| column | type | null | key |
+|---|---|---|---|
+| `article_id` | INTEGER | no | primary |
+| `queued_at` | DATETIME | yes |  |
 
 ### `source_admission_events`
 

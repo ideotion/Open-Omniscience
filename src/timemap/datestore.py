@@ -14,7 +14,9 @@ nor clobbers a human decision.
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 
+from sqlalchemy import Table, delete, insert, select, update
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, ArticleMentionedDate
@@ -23,6 +25,8 @@ from src.database.stand_in import not_a_stand_in_article
 from src.timemap.dateextract import extract_dates
 
 VALID_STATUS = ("candidate", "confirmed", "rejected")
+#: Ids per statement, far under SQLite's bound-variable limit (999 on older builds).
+_ID_CHUNK = 500
 _CONFIDENCE = {"day": 0.9, "month": 0.7}  # regex extractor: explicit day is firmer than month
 #: R697: a tag found with no article language used only the language-neutral patterns (ISO,
 #: unambiguous numeric, ungated month names). The row says so in its provenance, so "language
@@ -65,11 +69,12 @@ def store_for_article(
     """
     if article is None or not (article.content or "").strip():
         return 0
-    tags = (
-        db.query(ArticleMentionedDate)
-        .filter(ArticleMentionedDate.article_id == article.id)
-        .all()
-    )
+    article_id = article.id
+    # Row 418: plain rows, not ORM objects -- the diff below writes through statements, so nothing needs tracking.
+    _amd = ArticleMentionedDate
+    tags = db.execute(
+        select(_amd.id, _amd.mentioned_on, _amd.precision, _amd.status, _amd.extractor).where(_amd.article_id == article_id)
+    ).all()
     existing = {(t.mentioned_on.isoformat(), t.precision) for t in tags}
     # Feed the extractor the article's OWN date + language so it can resolve the
     # commonest news forms it otherwise skips: day+month with no year ("11
@@ -80,7 +85,6 @@ def store_for_article(
     # map already passed them — this aligns the source-of-truth store with them).
     observed = article.published_at or article.created_at
     anchor = observed.date() if observed else None
-    added = 0
     # ``precomputed`` is the SAME list ``extract_dates`` returns, computed in a worker
     # process (the re-index's pooled precompute, 2026-07-30 -- date extraction measured
     # ~280 ms on a 50 KB body, which is what capped a field import at ~2 articles/sec
@@ -92,35 +96,45 @@ def store_for_article(
     )
     extractor = EXTRACTOR_KNOWN_LANGUAGE if (article.language or "").strip() else EXTRACTOR_NO_LANGUAGE
     found_keys = {(c["date"], c["precision"]) for c in found}
-    changed = False
+    gone: list[int] = []
+    relabel: list[int] = []
     for t in tags:
         if t.status != "candidate" or t.extractor not in _OWN_EXTRACTORS:
             continue
         key = (t.mentioned_on.isoformat(), t.precision)
         if key not in found_keys:
-            db.delete(t)
+            gone.append(t.id)
             existing.discard(key)
-            changed = True
         elif t.extractor != extractor:
-            t.extractor = extractor
-            changed = True
+            relabel.append(t.id)
+    rows: list[dict] = []
     for c in found:
         key = (c["date"], c["precision"])
         if key in existing:
             continue
-        db.add(
-            ArticleMentionedDate(
-                article_id=article.id,
-                mentioned_on=date.fromisoformat(c["date"]),
-                precision=c["precision"],
-                snippet=c["text"][:300],
-                confidence=_CONFIDENCE.get(c["precision"], 0.5),
-                extractor=extractor,
-                status="candidate",
-            )
+        rows.append(
+            {
+                "article_id": article_id,
+                "mentioned_on": date.fromisoformat(c["date"]),
+                "precision": c["precision"],
+                "snippet": c["text"][:300],
+                "confidence": _CONFIDENCE.get(c["precision"], 0.5),
+                "extractor": extractor,
+                "status": "candidate",
+            }
         )
         existing.add(key)
-        added += 1
+    added = len(rows)
+    changed = bool(gone or relabel)
+    # Row 418: the same three writes the unit of work made from db.add / attribute set / db.delete, in ITS order --
+    # updates and inserts before deletes -- so the new rows take the very ids the flush gave them (SQLite hands out
+    # max(rowid) + 1, and the rows about to go still count). Chunked like every id list in this code base.
+    for i in range(0, len(relabel), _ID_CHUNK):
+        db.execute(update(_amd).where(_amd.id.in_(relabel[i : i + _ID_CHUNK])).values(extractor=extractor))
+    if rows:
+        db.execute(insert(cast(Table, _amd.__table__)), rows)
+    for i in range(0, len(gone), _ID_CHUNK):
+        db.execute(delete(_amd).where(_amd.id.in_(gone[i : i + _ID_CHUNK])))
     if added or changed:
         # SAVEPOINT-AWARE (CI red 2026-07-17, root cause of the #691 regression):
         # index_article's when/where/who pass runs this inside its own

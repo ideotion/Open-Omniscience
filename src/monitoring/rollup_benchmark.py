@@ -49,7 +49,9 @@ def _live_windowed(session: Session, start, *, scan_bound=_UNBOUNDED):
     the scrape is still writing to differs from the rollup by exactly the new rows; bounded, it compares like
     with like (the 2026-10-16 run: 8,814 "mismatches", every one a row newer than the build)."""
     # R101: the rollup leaves quarantined articles out, so the live side it is timed and compared against does too.
-    clause = "observed_on IS NOT NULL AND article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"
+    from src.analytics.quarantine_scope import NOT_COUNTED_SQL
+
+    clause = "observed_on IS NOT NULL" + NOT_COUNTED_SQL  # the build's own slice (R101, R830)
     params: dict = {}
     if scan_bound is not _UNBOUNDED:
         from src.analytics.columnar import live_bound_clause
