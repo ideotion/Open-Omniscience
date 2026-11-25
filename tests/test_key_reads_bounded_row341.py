@@ -79,7 +79,17 @@ def test_the_loader_refuses_a_fifo_and_makes_no_key_over_it(tmp_path):
 
 _DEVICE_PROBE = """
 import resource, sys
-resource.setrlimit(resource.RLIMIT_AS, (1 << 30, 1 << 30))  # a reader that does not stop fails here, not by exhausting the machine
+# A reader that does not stop fails here, not by exhausting the machine, where the platform takes the cap; the proof is the
+# timeout and the exit code below.
+def _cap_memory(limit=1 << 30):  # a safety net only: never raises where the platform refuses it (macOS runners)
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    for want in ((limit, limit), (limit, hard)):
+        try:
+            resource.setrlimit(resource.RLIMIT_AS, want)
+            return
+        except (ValueError, OSError):
+            continue
+_cap_memory()
 from pathlib import Path
 from src.custody import keyfile as kf
 from src.reporting import evidence as ev
