@@ -272,6 +272,12 @@ def _start_segment(shared_con: Any, segs: list[Segment], key: str | None) -> Non
     mark_open(shared_con, r)
 
 
+def _open_segments(segs: list[Segment]) -> list[Segment]:
+    """The registered segment files in the ``open`` state. A function of its own so the filter's loop never runs inside the
+    registry lock's ``with`` (tests/test_database_loop_heads_are_classified.py)."""
+    return [s for s in segs if not s.implicit and s.seg_no >= 1 and s.state == "open"]
+
+
 def open_writer(shared_con: Any, *, key: str | None = None) -> SegmentWriter:
     """The writer of the one open segment, making the first segment when there is none. ``shared_con`` is a DB-API
     connection to the SHARED file in autocommit mode (``isolation_level=None``). Raises :class:`WriterBusy` while this
@@ -281,11 +287,10 @@ def open_writer(shared_con: Any, *, key: str | None = None) -> SegmentWriter:
         if _WRITER_LOCK.locked():
             raise WriterBusy("this process already has the open segment open for writing")
         segs = _settle(shared_con, key)
-        opens = [s for s in segs if not s.implicit and s.seg_no >= 1 and s.state == "open"]
+        opens = _open_segments(segs)
         if not opens:
             _start_segment(shared_con, segs, key)
-            segs = registry(shared_con)
-            opens = [s for s in segs if not s.implicit and s.seg_no >= 1 and s.state == "open"]
+            opens = _open_segments(registry(shared_con))
         if len(opens) != 1:
             raise SegmentError("the registry has no single open segment")
         return SegmentWriter.open(shared_con, opens[0], key=key)
