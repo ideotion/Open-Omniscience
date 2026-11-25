@@ -592,6 +592,30 @@ def shift_keyword_counters_for_quarantine(
     return {"articles": len(ids), "keywords": len(kids), "clamped": clamped}
 
 
+def remove_deleted_articles_from_keyword_counters(session: Session, article_ids: Iterable[int]) -> dict:
+    """Take the articles about to be DELETED out of ``Keyword.mention_count`` / ``article_count`` (row 429).
+
+    Every path that deletes articles calls this in the SAME transaction as the delete, with the write gate held,
+    BEFORE the delete is flushed (the mentions must still be there to be read). A quarantined article's mentions
+    are already out of the counters (R101), so only the articles that are not quarantined are subtracted; the
+    arithmetic is :func:`shift_keyword_counters_for_quarantine`'s. Without it a cascade delete moved the mentions
+    and left the counters counting them until a whole sweep, and a sweep slice whose GROUP BY ran before such a
+    delete could stamp the stale count without reading it again (the second case disclosed in
+    :func:`_wrong_rows_under_the_gate`): with the counters moving inside the delete's transaction, the row
+    disagrees with that GROUP BY and is read again under the gate. Returns the shift's tally."""
+    ids = sorted({int(i) for i in article_ids})
+    live: list[int] = []
+    for i in range(0, len(ids), _MENTION_ID_CHUNK):
+        chunk = ids[i : i + _MENTION_ID_CHUNK]
+        live += [
+            int(a)
+            for (a,) in session.execute(
+                select(Article.id).where(Article.id.in_(chunk), Article.quarantined.is_not(True))
+            )
+        ]
+    return shift_keyword_counters_for_quarantine(session, live, quarantined=True)
+
+
 def _resolve_known_language(article: Article, content: str) -> str | None:
     """The known/deduced language driving extraction + sentiment for one article.
 
@@ -2611,7 +2635,10 @@ def _wrong_rows_under_the_gate(session: Session, agg: dict[int, tuple[int, int]]
     the delta an ingest then committed (stored = truth - c, the ingest adds c to both) agrees with the stale ``agg`` and is
     stamped while still off by that old drift. (2) A write that moves a keyword's mentions WITHOUT moving its counter -- the
     ``ondelete=CASCADE`` delete of an article, the very drift the sweep exists to repair -- leaves the stored counter equal to
-    the stale ``agg``, so the row is stamped over the count from before the delete. Main had both (its GROUP BY also ran
+    the stale ``agg``, so the row is stamped over the count from before the delete. Row 429 closes (2) for the app's own
+    delete paths (source delete, newsletter removal, attach undo): each moves the counters in the delete's own transaction
+    through :func:`remove_deleted_articles_from_keyword_counters`, so the stored counter moves with the mentions and the
+    row disagrees with the stale ``agg`` and is re-read. A cascade from any other path keeps the bound below. Main had both (its GROUP BY also ran
     before the gate), and reading under the gate closes them only by holding ingest for seconds (measured 2.9 s). Nothing is
     lost by either (no count is written), each needs that write to land inside a window of a slice's GROUP BY, and they are
     bounded only because a stamp is never proof beyond the freshness window: :func:`counter_envelope` reads a stamp older than the window as ``estimated``, and the import

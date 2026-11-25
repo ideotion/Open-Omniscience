@@ -297,6 +297,11 @@ _RAW_CEILING: dict[str, int] = {
     "src/monitoring/rollup_benchmark.py": 5,
     "src/monitoring/slowquery.py": 4,
     "src/monitoring/storage.py": 1,
+    # Rows 429/430: the newsletter filter edits a raw sqlite3 COPY of a backup, outside the ORM, deleting rows from the
+    # physical table and recounting the keyword and per-day counters it owns there. The copy may predate the read-seam
+    # view (an older backup), so the writer names its own table: the presence and column checks, the touched-keyword and
+    # touched-day reads taken before its delete, and the two recounts.
+    "src/backup/artifact.py": 9,
     "src/testing/scale_bench.py": 2,
 }
 

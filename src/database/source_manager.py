@@ -269,13 +269,28 @@ class SourceManager:
             return False
 
         name = source.name
-        self.session.delete(source)
-        # The delete cascades to the source's articles and their keyword mentions, which the columnar rollup (merging new
-        # rows by id) would keep counting: the epoch moves IN THE SAME TRANSACTION (the bump commits the delete with it),
-        # strictly, so a failed bump rolls the delete back and raises rather than leave stale sums served (R632 delta).
         from src.analytics.corpus_epoch import bump_corpus_epoch
+        from src.analytics.store import remove_deleted_articles_from_keyword_counters
+        from src.database.models import Article
+        from src.database.writer import connection_first, write_lock
 
-        bump_corpus_epoch(self.session, reason="delete_source", strict=True)
+        # Row 429: the cascade removes the source's articles and their keyword mentions, so the keyword counters move by
+        # exactly those mentions IN THE SAME TRANSACTION, under one hold of the write gate: the ids and the mentions are
+        # read under the gate (no ingest can add a mention between the read and the delete), subtracted before the delete
+        # is flushed, and committed by the strict bump below together with the delete. A failed bump rolls all of it back.
+        connection_first(self.session)
+        with write_lock():
+            try:
+                article_ids = [a for (a,) in self.session.query(Article.id).filter(Article.source_id == source_id)]
+                remove_deleted_articles_from_keyword_counters(self.session, article_ids)
+                self.session.delete(source)
+            except Exception:
+                self.session.rollback()  # nothing of the delete or the counter move is left pending
+                raise
+            # The delete cascades to the source's articles and their keyword mentions, which the columnar rollup (merging new
+            # rows by id) would keep counting: the epoch moves IN THE SAME TRANSACTION (the bump commits the delete with it),
+            # strictly, so a failed bump rolls the delete back and raises rather than leave stale sums served (R632 delta).
+            bump_corpus_epoch(self.session, reason="delete_source", strict=True)
         logger.info(f"Deleted source: {name} (ID: {source_id})")
         return True
 
