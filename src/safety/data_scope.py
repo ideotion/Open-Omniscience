@@ -61,6 +61,8 @@ APP_FILES: frozenset[str] = frozenset({
     "lane_merge_pending.json",
     # R827 R7(a): an import activation whose whole-file check is still owed (src/backup/merge.py)
     "import-unverified-activation.json",
+    # R833 (row 426): which safety copies an import made and whether it reached its swap (src/backup/own_net.py)
+    "import-safety-copies.json",
 })
 
 #: Top-level FOLDERS the app writes into its data folder.

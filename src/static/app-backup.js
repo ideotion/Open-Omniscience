@@ -2473,6 +2473,25 @@
       } else if (cc && cc.state === "unchecked") {
         corpusCheckLine = `<div class="card-caveat">${esc(t("The check of your whole corpus after this import did not finish, so the import is not complete. It runs again the next time the app starts."))}</div>`;
       }
+      // R833 (row 426): the run's own safety copy, removed when no backup reached its swap and your corpus was confirmed
+      // unchanged, or kept with the reason; then every safety copy left in the data folder, by count and total size.
+      const sc = st.safety_copies || null;
+      let safetyLine = "";
+      if (sc && st.state !== "running") {
+        const own = sc.safety_copy || null;
+        const left = sc.leftovers || {};
+        const bits = [];
+        if (own && own.message) bits.push(esc(t(String(own.message))));
+        if (typeof left.count === "number" && left.count > 0) {
+          bits.push(esc(tf("Safety copies in your data folder: {n} ({size}). You can delete them by hand once you no longer need them.",
+            { n: fmtNum(left.count, 0), size: humanBytes(left.bytes || 0) })));
+          // R835: the folder, on screen only, isolated so a right-to-left line cannot reorder it, and selectable to copy.
+          if (sc.folder) bits.push(`<bdi translate="no" dir="ltr" style="user-select:all">${esc(String(sc.folder))}</bdi>`);
+        }
+        if (bits.length) {
+          safetyLine = `<div class="hint" title="${esc(t("A safety copy is a full copy of your corpus taken before an import changes anything. A copy whose import was refused before any change is removed. The others stay: a later import keeps the three newest, copies older than a week are removed by default, and you can delete any of them by hand from this folder once you no longer need them."))}">${bits.join(" · ")}</div>`;
+        }
+      }
       const tail = items.some((i) => i.state === "running") ? "" : _uxImPhaseBits(st.live, t);
       const tailLine = (st.state === "running" && tail) ? `<div>${tail}</div>` : "";
       // The RUN's bar counts STAGES, not items: with every item done the item count is
@@ -2531,6 +2550,7 @@
       const collHtml = collLines.map((line) => `<div title="${collHover}">${esc(line)}</div>`).join("");
       const bodyHtml = stagedLine
         + corpusCheckLine
+        + safetyLine
         + tailLine
         + collHtml
         + (st.state === "interrupted" ? _uxImInterruptedHtml(t) : "");
