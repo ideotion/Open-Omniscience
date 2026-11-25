@@ -575,3 +575,34 @@ def test_a_kept_corpus_folder_keeps_its_count_once_the_keys_are_gone(tmp_path):
               "corpus_segments": {"foreign": 0, "left": 1}}
     crypto_erase.settle_removed(report)
     assert report["folder_kept_foreign"] is True and report["kept_items"] == 1
+
+
+@posix_only
+def test_a_refused_copy_is_known_by_its_real_path_through_a_linked_data_folder(tmp_path, monkeypatch):
+    """The configured store may reach the data folder by another spelling (a link) than the walks use: a refused copy is still
+    never written by path (security read, row 402)."""
+    real = tmp_path / "OOS data"
+    real.mkdir()
+    linked = tmp_path / "OOS link"
+    linked.symlink_to(real, target_is_directory=True)
+    db = real / "open_omniscience.db"
+    _plaintext(db)
+    real_resolve = crypto_erase._resolve
+    monkeypatch.setattr(crypto_erase, "_resolve", lambda d: {**real_resolve(d), "main_db": db})
+    theirs = tmp_path / "operator-file.bin"
+    theirs.write_bytes(b"the operator's own" * 500)
+    os.link(theirs, real / "open_omniscience.salvage-20261114T101010Z.db")
+    report = _erase(linked)
+    assert theirs.read_bytes() == b"the operator's own" * 500
+    assert report["copies_not_overwritten"] == {"salvage": 1}
+    assert "salvage" not in json.dumps(report.get("left", {}), default=str)
+
+
+def test_an_unproven_segment_rewritten_whole_still_gets_its_lock_bytes_late(monkeypatch):
+    """Its lock bytes are taken by the late shut-out pass, after every open and close, as a main file's (Opus read, row 402)."""
+    calls = []
+    monkeypatch.setattr(crypto_erase, "_shut_out", lambda fd, kind: calls.append((fd, kind)))
+    monkeypatch.setitem(crypto_erase._HELD, 987654, [(101, "whole", 0), (102, "whole", 0), (103, "shm", 0)])
+    monkeypatch.setitem(crypto_erase._WHOLE_HEADS, 987654, {101})
+    crypto_erase.shut_out_held(987654)
+    assert calls == [(101, "head"), (103, "shm")]

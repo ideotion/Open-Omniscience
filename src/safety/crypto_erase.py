@@ -1202,6 +1202,9 @@ def finish_plaintext_rewrite(report: dict, generation: int, own_open: int | None
 # late pass then comes its full delay after that second erase.
 _HELD: dict[int, list[tuple[int, str, int]]] = {}
 _HELD_LOCK = threading.Lock()
+#: Per wipe, the kept descriptors of segments without evidence that turned "whole": still main files for :func:`shut_out_held`
+#: (their lock bytes are taken there, after every open and close, never earlier: Opus read, row 402).
+_WHOLE_HEADS: dict[int, set[int]] = {}
 _GENERATIONS = itertools.count(1)
 
 # R792. ANOTHER PROCESS holding the store (a second copy of the app, a tool with the database open). Its own descriptors keep
@@ -1326,9 +1329,12 @@ def _shut_out(fd: int, kind: str) -> None:
 def shut_out_held(generation: int) -> None:
     """Take the lock bytes of every kept main file and log index of one wipe (see :func:`_shut_out`). Called after the erase has
     finished opening and closing those paths, and on the panic path after its pool is closed, or the close would undo it."""
+    whole_heads = _WHOLE_HEADS.get(generation, set())
     for fd, kind, _cap in list(_HELD.get(generation, ())):
         if kind in ("head", "shm"):
             _shut_out(fd, kind)
+        elif kind == "whole" and fd in whole_heads:
+            _shut_out(fd, "head")  # a segment's main file rewritten whole (no evidence): its lock bytes are a main file's
 
 
 def _holder_state(entries: list[tuple[int, str, int]]) -> str:
@@ -1421,6 +1427,7 @@ def _forget_held(taken: dict[int, int]) -> None:
         del kept[:n]
         if not kept:
             _HELD.pop(g, None)
+            _WHOLE_HEADS.pop(g, None)
 
 
 def held_count(generation: int | None = None) -> int:
@@ -2130,8 +2137,8 @@ def _corpus_settle(sweep: dict, raws: list[bytes]) -> None:
         # this rewrite, so the late pass rewrites it WHOLE, never its page 1 only (as the plaintext main store's body, R817/R818).
         for i, (fd, kind, cap) in enumerate(held):
             if fd == f["fd"] and kind == "head":
-                # its lock bytes taken now, as a main file's: once "whole", the late shut-out pass no longer reaches it (Opus read)
-                _shut_out(fd, "head")
+                # still a main file for the late shut-out pass, which takes its lock bytes after every open and close (Opus read)
+                _WHOLE_HEADS.setdefault(sweep.get("generation", -1), set()).add(fd)
                 held[i] = (fd, "whole", cap)
 
 
@@ -2927,7 +2934,13 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     copies_left: dict = {"_left": set()}
     # Copies the erase refused (another name, or not openable), or rewrote only in part: never written by path AND never unlinked,
     # so a plaintext body is never left in free blocks no later erase can find (security reads, row 402). By name.
-    copies_kept_paths: set[Path] = set()
+    # Held by real path: the configured database may reach the data folder by another spelling (a link, ``..``) than the walks
+    # use (security read, row 402).
+    copies_kept_paths: set[str] = set()
+
+    def _kept(path: Path) -> bool:
+        return bool(copies_kept_paths) and os.path.realpath(path) in copies_kept_paths
+
     # A segment keeps its name until its outcome (:func:`_corpus_settle`): 5b and step 6 never write it by path either.
     copies_left["_left"].update(f["ident"] for f in corpus_sweep.get("files", []))
     copy_dirs: list[int] = []
@@ -2954,7 +2967,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                     overwrite_failures.append(str(p.parent))
                     # by its NAME only: its other name may be the app's own (the rebuild's kept link to a live lane file), which the
                     # later steps still reach under that name (security read, row 402)
-                    copies_kept_paths.add(p)
+                    copies_kept_paths.add(os.path.realpath(p))
                     continue
                 if not took["head_ok"]:
                     overwrite_failures.append(str(p.parent))
@@ -3006,7 +3019,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             continue
         if _left_by_erase(plain_rec, p):
             continue  # a file of the plaintext store the erase left (refused to write, or its unlink failed): step 6 only removes it
-        if _left_by_erase(copies_left, p) or p in copies_kept_paths:
+        if _left_by_erase(copies_left, p) or _kept(p):
             continue  # a database copy the erase refused to write or could not unlink: never written by path
         name = p.name
         whole = name.endswith(("-wal", "-journal"))
@@ -3019,7 +3032,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     if not _off_drive():
         _corpus_settle(corpus_sweep, record_raws)
     # A segment rewritten only in part keeps its name for every later step too: never written by path, never unlinked (row 402).
-    copies_kept_paths.update(base / CORPUS_DIR / f["name"] for f in corpus_sweep.get("files", [])
+    copies_kept_paths.update(os.path.realpath(base / CORPUS_DIR / f["name"]) for f in corpus_sweep.get("files", [])
                              if f["kind"] == "head" and f.get("state") in ("partially_overwritten", "not_overwritten"))
     if corpus_sweep.get("dfd") is not None:
         with contextlib.suppress(OSError):
@@ -3035,7 +3048,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         if not gone and copy_state == "overwritten":
             copies_left["_left"].add(ident)  # rewritten through its handle; step 6 only removes the name
         elif not gone:
-            copies_kept_paths.add(p)  # short of a full rewrite: its name kept
+            copies_kept_paths.add(os.path.realpath(p))  # short of a full rewrite: its name kept
         if side and copy_state == "overwritten":
             continue  # a copy's log: part of its copy, counted only when it falls short
         into = {"overwritten": copies_overwritten, "partially_overwritten": copies_partially_overwritten}.get(
@@ -3095,8 +3108,13 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             with contextlib.suppress(OSError):
                 p.unlink()
             continue
-        if p in copies_kept_paths:
-            continue  # refused (another name, not openable) or rewritten only in part: never written, its name kept (row 402)
+        if _kept(p):
+            # Refused (another name, not openable) or rewritten only in part: never written by path, never counted in "Wiped"; in
+            # the data folder its name goes now, as the folder's removal would take it, so it is never named among the items the
+            # erase could not remove (R823; security read, row 402). Beside a store kept elsewhere no step reaches it: its name stays.
+            with contextlib.suppress(OSError):
+                p.unlink()
+            continue
         if _left_by_erase(copies_left, p):
             # Security reads (row 402): a database copy whose name would not go after its page 1 or its rewrite: its name only is
             # removed with the folder, never written by path, never counted in "Wiped" (R823).
