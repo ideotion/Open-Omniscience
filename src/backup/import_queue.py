@@ -1066,6 +1066,13 @@ class ImportQueueManager:
             self._ended_at = time.time()
             self._drop_keys()  # drop the keys the moment the run ends
             self._save()
+            completed = self._state == "done"
+        if completed:
+            # Row 428 (R835 (b)): a run that completed and was checked frees the copy of the import before it for a removal
+            # by hand. Only "done": a stop, an error or a check that failed or did not finish keeps that copy protected.
+            from src.backup import own_net
+
+            own_net.note_run_verified()
 
     def _check_owed_corpus(self, *, at_start: bool = False) -> dict[str, Any] | None:
         """Run the whole-file check an unverified activation owes (R827 R7(a); R830 stop rules (2) and (3)).

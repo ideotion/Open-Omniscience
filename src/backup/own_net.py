@@ -28,6 +28,20 @@ WHAT IS REMOVED, AND WHEN (R833):
 
 Copies made after an activation, by an earlier run or by another process stay; :func:`leftovers` counts them and their
 total size for the import report and the backups screen.
+
+ROW 428 (R835 (b)): ONE COPY REMOVED BY HAND, BY ONE CLICK. :func:`list_copies` lists every copy with what the app recorded when
+it made it; :func:`remove_copy` deletes one, and only one the record names:
+
+1. Identity is what was recorded when the copy was made: its name in the data folder and the (device, inode, size, modification
+   and change times) of the file, written into the durable record beside its state (never a byte of the file). It is checked
+   through a descriptor held on the file at delete time; a missing record, a missing entry or a mismatch refuses with "could not
+   be identified" and touches nothing. A copy with no record is never offered, only counted.
+2. Refused while an import, restore, backup, snapshot or erase is running (the caller names them, :func:`remove_copy`'s
+   ``busy``), and for the copy of the most recent import that was refused or did not finish until a later import has completed
+   and been checked (:func:`note_run_verified`, :data:`VERIFIED_KEY`).
+3. An ordinary delete: one regular file, never through a link, inside the data folder (R783/R799), worded "deleted", never
+   "erased", "destroyed" or "securely removed" (R797/R815). The freed size is measured from the file's own allocated blocks once
+   its last name is gone, never assumed (R785). Its at-rest record entry goes with it (R828).
 """
 
 from __future__ import annotations
@@ -39,6 +53,7 @@ import os
 import secrets
 import stat
 import threading
+import time
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -52,6 +67,11 @@ from src.paths import data_dir
 RECORD_NAME = "import-safety-copies.json"
 MADE = "made"
 ACTIVATED = "activated"
+#: The record's one key that is not a copy's name: when the last import run completed and was checked
+#: (``{"ns": <time.time_ns()>}``). A copy made before it belongs to a run at or before that one.
+VERIFIED_KEY = "~last-verified-run"
+#: The exact name of a safety copy: ``pre-restore-<UTC stamp>.db``.
+COPY_NAME = r"^pre-restore-\d{8}T\d{6}Z\.db\Z"  # \Z: a name ending in a newline is never one
 
 REMOVED = "safety copy removed: the import was refused before any change"
 
@@ -142,9 +162,10 @@ def read_record() -> dict | None:
     return got if isinstance(got, dict) else None
 
 
-def _set_state(name: str, state: str | None) -> None:
-    """Write ``state`` for ``name`` (None removes the entry), dropping the entries of copies no longer in the folder.
-    Raises ``OSError`` when the record cannot be written."""
+def _set_state(name: str, state: str | None, extra: dict | None = None) -> None:
+    """Write ``state`` for ``name`` (None removes the entry), dropping the entries of copies no longer in the folder. The
+    entry keeps what was recorded when the copy was made (row 428: its identity), plus ``extra``. Raises ``OSError`` when
+    the record cannot be written."""
     from src.safety.file_lock import atomic_replace, file_lock
     from src.utils.interrupts import kept_items
 
@@ -153,9 +174,13 @@ def _set_state(name: str, state: str | None) -> None:
         cur = read_record() or {}
         folder = path.parent
         # kept_items: a filtered comprehension in a frame of its own, never under this file lock's cleanup (src/utils/interrupts.py)
-        out = kept_items(cur, lambda k, v: isinstance(v, dict) and (folder / k).exists() and k != name)
+        out = kept_items(
+            cur, lambda k, v: isinstance(v, dict) and k != name and (k == VERIFIED_KEY or (folder / k).exists())
+        )
         if state is not None:
-            out[name] = {"state": state, "at": datetime.now(UTC).isoformat(timespec="seconds")}
+            old = cur.get(name)
+            out[name] = {**(old if isinstance(old, dict) else {}), **(extra or {}), "state": state,
+                         "at": datetime.now(UTC).isoformat(timespec="seconds")}
         atomic_replace(path, json.dumps(out, sort_keys=True))
 
 
@@ -169,7 +194,8 @@ def note_made(net: Path) -> None:
         if not stat.S_ISREG(st.st_mode):
             return
         live = live_state()
-        _set_state(net.name, MADE)
+        # Row 428: what identifies the copy later, for a removal by hand after a restart (never a byte of it).
+        _set_state(net.name, MADE, {"file": list(_file_id(st)), "made_ns": time.time_ns()})
         with _LOCK:
             _OWN[str(net)] = _Own(str(net), _file_id(st), live)
     except Exception:  # noqa: BLE001 - unrecorded = kept, the safe side
@@ -274,3 +300,192 @@ def leftovers() -> dict:
     except OSError:
         return {"count": None, "bytes": None, "names": []}
     return {"count": count, "bytes": total, "names": sorted(names)}
+
+
+# --------------------------------------------------------------------------------------------------------------------------
+# Row 428 (R835 (b)): one safety copy removed by hand.
+# --------------------------------------------------------------------------------------------------------------------------
+
+DELETED = "Safety copy deleted."
+NOT_IDENTIFIED = "This safety copy could not be identified, so nothing was deleted. You can delete it by hand from your data folder."
+LATEST_UNFINISHED = (
+    "This is the safety copy of the most recent import that was refused or did not finish. It can be deleted once a later "
+    "import has completed and been checked."
+)
+NOT_DELETED = "The safety copy could not be deleted."
+BUSY = "A safety copy cannot be deleted while an import, restore, backup, snapshot or erase is running."
+
+_DELETE_LOCK = threading.Lock()
+
+
+def note_run_verified() -> None:
+    """An import run completed and its corpus was checked: every copy made before now is no longer the copy of the most
+    recent unfinished run. Never raises: an unwritten mark only keeps the newest copy protected."""
+    from src.safety.file_lock import atomic_replace, file_lock
+
+    with suppress(Exception):
+        path = _record_path()
+        with file_lock(path):
+            cur = read_record() or {}
+            cur[VERIFIED_KEY] = {"ns": time.time_ns()}
+            atomic_replace(path, json.dumps(cur, sort_keys=True))
+
+
+def _recorded(entry: Any) -> tuple[tuple[int, ...], int] | None:
+    """``(file identity, made_ns)`` of a record entry made with both, else None."""
+    if not isinstance(entry, dict):
+        return None
+    f, made = entry.get("file"), entry.get("made_ns")
+    if not (isinstance(f, list) and len(f) == 5 and all(isinstance(x, int) and not isinstance(x, bool) for x in f)):
+        return None
+    if not isinstance(made, int) or isinstance(made, bool):
+        return None
+    return tuple(f), made
+
+
+def _protected_name(record: dict) -> str | None:
+    """The copy of the most recent import that was refused or did not finish, when no import completed and was checked after
+    it: the copy made last, unless the last verified run ended after it was made."""
+    newest: tuple[int, str] | None = None
+    for k, v in record.items():
+        got = _recorded(v)
+        if got is not None and (newest is None or got[1] > newest[0]):
+            newest = (got[1], k)
+    if newest is None:
+        return None
+    mark = record.get(VERIFIED_KEY)
+    verified = mark.get("ns") if isinstance(mark, dict) else None
+    if isinstance(verified, int) and not isinstance(verified, bool) and verified > newest[0]:
+        return None
+    return newest[1]
+
+
+def _plaintext(dfd: int, name: str, ident: tuple[int, int]) -> bool | None:
+    """True when the file's first 16 bytes are SQLite's own header (a plaintext copy), False when they are not, None when they
+    could not be read from that very file. Never says "encrypted": a header that is not SQLite's is not evidence (R821)."""
+    try:
+        fd = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0), dir_fd=dfd)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if (st.st_dev, st.st_ino) != ident or not stat.S_ISREG(st.st_mode):
+            return None
+        head = os.pread(fd, 16, 0)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    if len(head) < 16:
+        return None
+    return head == b"SQLite format 3\x00"
+
+
+def _open_folder() -> int:
+    return os.open(data_dir(), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+
+
+def list_copies() -> dict:
+    """Every safety copy in the data folder, for the list with its Delete buttons: ``{"copies": [{"name", "bytes", "made_at",
+    "deletable", "reason", "plaintext"}], "unrecorded": n, "count": n, "bytes": n}``. Only a copy the record identifies is
+    listed; any other is counted in ``unrecorded`` and never offered (R835 (b)). ``reason`` says why one cannot be deleted now
+    (the most recent unfinished import's copy). ``plaintext``: True, False, or None when not read. Never raises."""
+    import re
+
+    shape = re.compile(COPY_NAME)
+    record = read_record() or {}
+    protected = _protected_name(record)
+    out: dict = {"copies": [], "unrecorded": 0, "count": 0, "bytes": 0}
+    try:
+        dfd = _open_folder()
+    except OSError:
+        return {"copies": [], "unrecorded": None, "count": None, "bytes": None}
+    try:
+        for name in sorted(os.listdir(dfd)):
+            if not shape.match(name):
+                continue
+            try:
+                st = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+            except OSError:
+                continue
+            if not stat.S_ISREG(st.st_mode):
+                continue
+            out["count"] += 1
+            out["bytes"] += st.st_size
+            got = _recorded(record.get(name))
+            if got is None or tuple(got[0]) != _file_id(st):
+                out["unrecorded"] += 1
+                continue
+            out["copies"].append({
+                "name": name,
+                "bytes": st.st_size,
+                "made_at": datetime.fromtimestamp(got[1] / 1e9, UTC).isoformat(timespec="seconds"),
+                "deletable": name != protected,
+                "reason": LATEST_UNFINISHED if name == protected else None,
+                "plaintext": _plaintext(dfd, name, (st.st_dev, st.st_ino)),
+            })
+    except OSError:
+        return {"copies": [], "unrecorded": None, "count": None, "bytes": None}
+    finally:
+        os.close(dfd)
+    return out
+
+
+def remove_copy(name: str, busy: list[str] | None = None) -> dict:
+    """Delete the ONE safety copy ``name`` (R835 (b)). ``busy`` names what is running (an import, restore, backup, snapshot
+    or erase); anything named refuses. ``{"removed": True, "name", "bytes_freed": n | None, "message": DELETED}`` or
+    ``{"removed": False, "name", "message": <why>, "reason": <the OS's reason, for a failed delete>}``. Never raises."""
+    import re
+
+    out: dict = {"removed": False, "name": str(name)}
+    if not isinstance(name, str) or not re.match(COPY_NAME, name):
+        return {**out, "message": NOT_IDENTIFIED}
+    if busy:
+        return {**out, "message": BUSY, "busy": list(busy)}
+    with _DELETE_LOCK:
+        record = read_record()
+        got = _recorded((record or {}).get(name))
+        if record is None or got is None:
+            return {**out, "message": NOT_IDENTIFIED}
+        if _protected_name(record) == name:
+            return {**out, "message": LATEST_UNFINISHED}
+        try:
+            dfd = _open_folder()
+        except OSError as exc:
+            return {**out, "message": NOT_DELETED, "reason": exc.strerror or type(exc).__name__}
+        try:
+            try:
+                # The kept handle: the very file the name leads to, never through a link, checked against the record.
+                fd = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0), dir_fd=dfd)
+            except OSError:
+                return {**out, "message": NOT_IDENTIFIED}
+            try:
+                held = os.fstat(fd)
+                if not stat.S_ISREG(held.st_mode) or _file_id(held) != tuple(got[0]):
+                    return {**out, "message": NOT_IDENTIFIED}
+                # The name must still lead to the held file just before the delete; the gap between this and the unlink is
+                # the one R833's removal accepts (there is no unlink by inode, and nothing in the app renames onto this name).
+                at = os.stat(name, dir_fd=dfd, follow_symlinks=False)
+                if (at.st_dev, at.st_ino) != (held.st_dev, held.st_ino):
+                    return {**out, "message": NOT_IDENTIFIED}
+                try:
+                    os.unlink(name, dir_fd=dfd)
+                except OSError as exc:
+                    return {**out, "message": NOT_DELETED, "reason": exc.strerror or type(exc).__name__}
+                after = os.fstat(fd)
+                blocks = getattr(after, "st_blocks", None)
+                # R785: measured, not assumed: the held file's own allocated blocks, freed only once its last name is gone.
+                freed = (int(blocks) * 512 if after.st_nlink == 0 else 0) if blocks is not None else None
+            finally:
+                os.close(fd)
+        finally:
+            os.close(dfd)
+        with _LOCK:
+            _OWN.pop(str(data_dir() / name), None)
+        with suppress(Exception):
+            _set_state(name, None)
+        with suppress(Exception):
+            from src.database import at_rest_state
+
+            at_rest_state.forget_copy(data_dir() / name)  # R828 (4): its at-rest record entry goes with the file
+    return {**out, "removed": True, "bytes_freed": freed, "message": DELETED}
