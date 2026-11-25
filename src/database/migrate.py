@@ -92,17 +92,11 @@ def upgrade_database_file(path: Path, target: str = "head") -> str | None:
 
     from src.backup.staged_key import is_keyed, open_staged
 
-    if is_keyed(path):
-        # An import's staged copy, keyed (R829 A): every connection the migration opens is the keyed one, its key given
-        # to the engine through the C API, never in SQL text or the URL.
-        eng = create_engine(
-            "sqlite://",
-            creator=lambda: open_staged(path, read_only=False, check_same_thread=False),
-            future=True,
-            hide_parameters=True,
-        )
-    else:
-        eng = create_engine(f"sqlite:///{path}", future=True, hide_parameters=True)  # as the corpus engine: no values in an error
+    # An import's staged copy, keyed (R829 A): every connection the migration opens is the keyed one, its key given to
+    # the engine through the C API, never in SQL text or the URL. One engine either way, as the corpus engine: no values
+    # in an error.
+    keyed = {"creator": lambda: open_staged(path, read_only=False, check_same_thread=False)} if is_keyed(path) else {}
+    eng = create_engine("sqlite://" if keyed else f"sqlite:///{path}", future=True, hide_parameters=True, **keyed)
     try:
         with eng.begin() as conn:
             cfg = _alembic_config()
