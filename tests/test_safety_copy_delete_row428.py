@@ -64,7 +64,7 @@ def _two(folder):
 
     data, live, _f = folder
     old = _copy(data, live)
-    own.note_run_verified()
+    own.note_run_verified(own.current_seq())
     return old, _copy(data, live)
 
 
@@ -105,7 +105,7 @@ def test_the_newest_copy_is_freed_only_by_a_run_that_completed_and_was_checked_a
 
     old, new = _two(folder)
     assert own.remove_copy(new.name)["message"] == own.LATEST_UNFINISHED and new.exists()
-    own.note_run_verified()
+    own.note_run_verified(own.current_seq())
     out = own.remove_copy(new.name)
     assert out["removed"] and out["message"] in (own.DELETED, own.DELETED_FREED) and not new.exists()
     assert old.exists(), "one copy per click"
@@ -143,7 +143,7 @@ def test_a_clock_stepped_back_never_frees_a_later_copy(folder, monkeypatch):
 
     data, live, _f = folder
     _copy(data, live)
-    own.note_run_verified()
+    own.note_run_verified(own.current_seq())
     monkeypatch.setattr(own.time, "time_ns", lambda: 1)  # the clock far in the past
     later = _copy(data, live)
     assert own.remove_copy(later.name)["message"] == own.LATEST_UNFINISHED and later.exists()
@@ -167,7 +167,7 @@ def test_an_unreadable_record_is_never_overwritten_by_the_mark_or_a_state(folder
     old, _new = _two(folder)
     rec = data / own.RECORD_NAME
     rec.write_text("{damaged", encoding="utf-8")
-    own.note_run_verified()
+    own.note_run_verified(own.current_seq())
     assert rec.read_text(encoding="utf-8") == "{damaged"
     with pytest.raises(OSError):
         own._set_state(old.name, own.ACTIVATED)
@@ -413,18 +413,21 @@ def test_only_a_completed_run_checked_whole_marks_the_run_verified():
     src = (_ROOT / "src/backup/import_queue.py").read_text(encoding="utf-8")
     body = python_function_source(src, "_drive")
     assert 'completed = self._state == "done"' in body
-    tail = body[body.index('completed = self._state == "done"'):]
-    assert "if _corpus_checked_whole(self._checked_whole_ident) and self._checked_whole_seq is not None:" in tail
-    assert 'self._copy_mark = ("verified", self._checked_whole_seq)' in tail
-    assert 'self._copy_mark = ("unchecked", _current_copy_seq())' in tail
+    end = body[body.index("self._tune_after_run()"):]
+    assert "if _corpus_checked_whole(self._checked_whole_ident) and self._checked_whole_seq is not None:" in end
+    assert 'decided: tuple[str, int | None] = ("verified", self._checked_whole_seq)' in end
+    assert 'decided = ("unchecked", _current_copy_seq())' in end
+    assert end.index('decided = ("unchecked"') < end.index("with self._lock:"), "decided while the run owns its evidence"
+    assert end.rstrip().endswith("return decided if completed else None")
     note = python_function_source(src, "_note_safety_copy_mark")
     assert note.index('if kind == "verified":') < note.index("own_net.note_run_verified(covers)") < note.index(
         "own_net.note_run_unchecked(covers)"
     )
     assert src.count("own_net.note_run_verified(") == 1
     run = python_function_source(src, "_run_with_keys")
-    assert run.count("mark = self._take_copy_mark()") == 2, "taken after each _drive, while the run still owns it"
-    assert run.index("mark = self._take_copy_mark()") < run.index("self._note_safety_copy_mark(mark)")
+    assert run.count("mark = self._drive()") == 2, "the mark is the drive's return, never an attribute a new start() clears"
+    assert run.index("mark = self._drive()") < run.index("self._note_safety_copy_mark(mark)")
+    assert "_copy_mark" not in src.replace("_note_safety_copy_mark", "")
 
 
 def test_the_checked_whole_evidence_is_for_the_same_file_state(monkeypatch):
@@ -507,20 +510,18 @@ def test_a_copy_made_after_the_check_is_never_covered_and_the_mark_never_goes_ba
     assert own.read_record()[own.VERIFIED_KEY] == {"covers": own.current_seq()}, "never above the record's own serial"
 
 
-def test_the_decided_mark_is_taken_once_and_survives_a_new_start(monkeypatch):
+def test_the_decided_mark_is_written_as_decided_and_no_serial_moves_nothing(monkeypatch, folder):
     import src.backup.import_queue as iq
-
-    q = iq.ImportQueueManager.__new__(iq.ImportQueueManager)
-    import threading
-
-    q._lock = threading.RLock()
-    q._copy_mark = ("verified", 3)
-    assert q._take_copy_mark() == ("verified", 3)
-    q._copy_mark = None  # what a new start() does
-    assert q._take_copy_mark() is None
-    wrote = []
     from src.backup import own_net
 
+    _old, new = _two(folder)
+    before = own_net.read_record()[own_net.VERIFIED_KEY]
+    own_net.note_run_verified(None)
+    assert own_net.read_record()[own_net.VERIFIED_KEY] == before, "no serial read at the check is no evidence"
+    assert not {c["name"]: c for c in own_net.list_copies()["copies"]}[new.name]["deletable"]
+
+    q = iq.ImportQueueManager.__new__(iq.ImportQueueManager)
+    wrote = []
     monkeypatch.setattr(own_net, "note_run_verified", lambda c: wrote.append(("v", c)))
     monkeypatch.setattr(own_net, "note_run_unchecked", lambda c: wrote.append(("u", c)))
     q._note_safety_copy_mark(("verified", 3))

@@ -460,8 +460,6 @@ class ImportQueueManager:
         #: The safety copies' last serial (``own_net.current_seq``) read together with ``_checked_whole_ident``: the mark
         #: covers no copy made after the check passed.
         self._checked_whole_seq: int | None = None
-        #: Row 428: the safety-copy mark the run's end decided, ("verified" | "unchecked", serial), written after the window.
-        self._copy_mark: tuple[str, int | None] | None = None
         # R833: the run's own safety copy (removed or kept, and why) and the copies left in the data folder by count and size.
         self._safety_copies: dict[str, Any] | None = None
         # Whether the item in flight is the run's last activation (R7(a)); True = the whole-file check.
@@ -706,7 +704,6 @@ class ImportQueueManager:
             self._corpus_check = None
             self._checked_whole_ident = None
             self._checked_whole_seq = None
-            self._copy_mark = None
             self._safety_copies = None
             self._collection_window_failed = False
             self._run_id = secrets.token_hex(6)
@@ -910,8 +907,7 @@ class ImportQueueManager:
                 with self._lock:
                     self._collection_paused = True
                 drove = True
-                self._drive()
-                mark = self._take_copy_mark()
+                mark = self._drive()
         except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
             log_failure(_LOG, "the exclusive window for the import failed", exc, *self._secrets(), level=logging.WARNING)
             if not drove:
@@ -923,8 +919,7 @@ class ImportQueueManager:
         if not drove:
             # The pause is a throughput courtesy; the import is the point. A scheduler
             # that refused to stop must not cost the user their import.
-            self._drive()
-            mark = self._take_copy_mark()
+            mark = self._drive()
         self._note_safety_copy_mark(mark)
 
         # THE ONLY THING THAT STARTS THE DRAIN FOR A QUEUED RUN. Each item's own
@@ -946,7 +941,7 @@ class ImportQueueManager:
         except Exception as exc:  # noqa: BLE001
             log_failure(_LOG, "could not start the post-import re-index drain", exc, *self._secrets(), level=logging.WARNING)
 
-    def _drive(self) -> None:
+    def _drive(self) -> tuple[str, int | None] | None:
         """Walk the queue. Separated from :meth:`_run` so the exclusive window is a
         plain ``with`` block -- the courtesy pause must never be able to skip the
         import it was only meant to make faster."""
@@ -1105,6 +1100,18 @@ class ImportQueueManager:
         self._settle_safety_copy()
         if corpus_check is None or corpus_check.get("state") == "ok":
             self._tune_after_run()
+        # Row 428 (R835 (b), R843): a run that completes AND whose corpus was checked whole frees the copies made up to the
+        # check for a removal by hand. "done" alone is never taken as "checked": the mark moves only on positive evidence for
+        # THE SAME FILE STATE (_corpus_checked_whole); otherwise the copies stay held and say the corpus has not been checked
+        # whole since they were made. The serial is the one read when the check passed (verified), or now (unchecked): a
+        # copy made later is never covered. Decided HERE, while the state is still "running" so start() cannot reset this
+        # run's evidence, and RETURNED (never left on the instance for a new run to clear); ``_run_with_keys`` writes it
+        # once the exclusive window has closed. (``_tune_after_run`` above writes in place, same (dev, inode): an
+        # optimize, not a change of content, so the evidence stands.)
+        if _corpus_checked_whole(self._checked_whole_ident) and self._checked_whole_seq is not None:
+            decided: tuple[str, int | None] = ("verified", self._checked_whole_seq)
+        else:
+            decided = ("unchecked", _current_copy_seq())
         with self._lock:
             stopped = self._stop.is_set()
             for it in self._items:
@@ -1123,17 +1130,7 @@ class ImportQueueManager:
             self._drop_keys()  # drop the keys the moment the run ends
             self._save()
             completed = self._state == "done"
-        if completed:
-            # Row 428 (R835 (b), R843): a run that completed AND whose corpus was checked whole frees the copies made up to
-            # now for a removal by hand. "done" alone is never taken as "checked": the mark moves only on positive evidence
-            # for THE SAME FILE STATE (_corpus_checked_whole); otherwise the copies stay held and say the corpus has not
-            # been checked whole since they were made. Decided here, written by ``_note_safety_copy_mark`` once the
-            # exclusive window has closed, so nothing between the run's end and collection's return waits on the record.
-            # The serial is the one read when the check passed (verified), or now (unchecked): a copy made later is never covered.
-            if _corpus_checked_whole(self._checked_whole_ident) and self._checked_whole_seq is not None:
-                self._copy_mark = ("verified", self._checked_whole_seq)
-            else:
-                self._copy_mark = ("unchecked", _current_copy_seq())
+        return decided if completed else None
 
     def _note_checked_whole(self) -> None:
         """R843: a whole-file check just passed on the live corpus: keep its file identity and the safety copies' serial
@@ -1142,12 +1139,6 @@ class ImportQueueManager:
         if ident is None or seq is None:
             ident = seq = None
         self._checked_whole_ident, self._checked_whole_seq = ident, seq
-
-    def _take_copy_mark(self) -> tuple[str, int | None] | None:
-        """The mark the run's end decided, taken while the run still owns it (a new start() resets the attribute)."""
-        with self._lock:
-            mark, self._copy_mark = self._copy_mark, None
-        return mark
 
     def _note_safety_copy_mark(self, mark: tuple[str, int | None] | None) -> None:
         """Write the safety-copy mark the run's end decided (row 428, R843). Never raises: an unwritten mark only keeps the

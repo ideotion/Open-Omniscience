@@ -382,10 +382,13 @@ def _mark(key: str, covers: int | None) -> None:
         atomic_replace(path, json.dumps(cur, sort_keys=True))
 
 
-def note_run_verified(covers: int | None = None) -> None:
+def note_run_verified(covers: int | None) -> None:
     """An import run completed and its corpus was checked whole: every copy up to serial ``covers`` -- the serial read
     when that check passed (R843), so a copy made after the check is never covered -- is no longer the copy of the most
-    recent unfinished run. Never raises: an unwritten mark only keeps the newest copies protected."""
+    recent unfinished run. ``covers`` is required and None moves nothing: no serial read at the check is no evidence for
+    any copy. Never raises: an unwritten mark only keeps the newest copies protected."""
+    if covers is None:
+        return
     with suppress(Exception):
         _mark(VERIFIED_KEY, covers)
 
