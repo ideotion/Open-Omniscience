@@ -73,7 +73,7 @@ def _erase(data: Path) -> dict:
 def _app_files(data: Path, marker_id: str | None) -> dict[Path, bytes]:
     data.mkdir(parents=True)
     files = {data / "open_omniscience.db": os.urandom(8192), data / "keys" / "custody_ed25519.pem": b"PRIVATE",
-             data / "wiki_dumps" / "part.xml": b"x" * 100}
+             data / "wiki_dumps" / "enwiki-latest-pages-articles.xml.bz2": b"x" * 100}
     for p, b in files.items():
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(b)
@@ -362,7 +362,7 @@ def test_a_drive_that_changes_before_the_key_step_is_stopped_and_keeps_its_id(ma
     assert out["limit"].startswith(S3) and S6 not in out["limit"] and "permanently unrecoverable" not in out["limit"]
     key = data / "keys" / "custody_ed25519.pem"
     assert key.read_bytes() == files[key], "the key material on a changed drive is never touched"
-    assert (data / "wiki_dumps" / "part.xml").read_bytes() == files[data / "wiki_dumps" / "part.xml"]
+    assert (data / "wiki_dumps" / "enwiki-latest-pages-articles.xml.bz2").read_bytes() == files[data / "wiki_dumps" / "enwiki-latest-pages-articles.xml.bz2"]
 
 
 def test_the_real_cli_says_could_not_be_identified(tmp_path):

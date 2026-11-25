@@ -556,7 +556,11 @@ def _data_folder_scope(folder: str) -> dict:
         return {"broad": False, "reason": None}
     # Never the path: this endpoint answers before unlock, and a path carries the account name
     # (tests/test_data_volume.py::test_the_state_endpoint_never_discloses_the_path).
-    return {"broad": scope["broad"], "reason": scope["reason"]}
+    # R836 S1: the folders an erase removes whole, by the app's own names, from the code's own list (data_scope.WHOLE_DIRS), so the
+    # sentence the notice draws can never drift from what the erase does.
+    from src.safety.data_scope import WHOLE_DIRS
+
+    return {"broad": scope["broad"], "reason": scope["reason"], "whole_folders": list(WHOLE_DIRS)}
 
 
 @router.post("/data-volume/close-now")

@@ -294,14 +294,16 @@ def alternate_country_keys(table: str) -> tuple[tuple[str, ...], tuple[str, ...]
     return (("jurisdiction",) if spec["scope"] == "law" else ()), fields
 
 
-def _law_document_holds(con: sqlite3.Connection, schema: str, jurisdiction: str, url: object) -> bool:
-    """Whether ``schema.law_documents`` holds a document spelled exactly ``jurisdiction`` at ``url`` (the caller has checked that the table
-    and its two columns exist)."""
+def _law_document_holds(
+    con: sqlite3.Connection, schema: str, jurisdiction: str, url: object, table: str = "law_documents"
+) -> bool:
+    """Whether ``schema.table`` (the law documents, or their converted copy) holds a document spelled exactly ``jurisdiction`` at ``url``
+    (the caller has checked that the table and its two columns exist)."""
     if not isinstance(url, str):
         return False
     return (
         con.execute(
-            f"SELECT 1 FROM {schema}.law_documents WHERE jurisdiction = ? AND url = ? LIMIT 1",  # noqa: S608  # nosec B608 # `schema` is a module-internal literal alias; the values are bound
+            f'SELECT 1 FROM {schema}."{table}" WHERE jurisdiction = ? AND url = ? LIMIT 1',  # noqa: S608  # nosec B608 # `schema` and `table` are module-internal literals; the values are bound
             (jurisdiction, url),
         ).fetchone()
         is not None
@@ -310,7 +312,7 @@ def _law_document_holds(con: sqlite3.Connection, schema: str, jurisdiction: str,
 
 def convert_alternate_countries(
     con: sqlite3.Connection, *, schema: str, form: Literal["alpha2", "alpha3"], keep_with_unconverted_document: bool = False,
-    before_write: Callable[[], None] | None = None,
+    before_write: Callable[[], None] | None = None, table: str = "metadata_alternates", law_table: str = "law_documents",
 ) -> dict:
     """Write the country codes inside ``metadata_alternates`` identities and field sets in ``form``.
 
@@ -329,15 +331,19 @@ def convert_alternate_countries(
     store's own spelling (a backup holding ``gbr`` and ``gb`` of one url, in an alpha-2 store: the two rows would become one key), and an
     identity that named that row would, converted alone, name its sibling instead: the alternate would then be placed on, and later shown
     against, the other row. So an identity whose exact spelling and document url the staged copy still holds is left as recorded, and
-    counted under ``kept_with_document`` (the key is absent when none was)."""
+    counted under ``kept_with_document`` (the key is absent when none was).
+
+    ``table`` and ``law_table`` name the two tables in ``schema`` (row 439: the restore converts in-memory copies of them, so the staged
+    file is never written)."""
     out: dict = {"converted": 0, "left_unreadable": 0, "left_as_stored": {}}
-    if not _table_exists(con, schema, "metadata_alternates"):
+    alternates = table
+    if not _table_exists(con, schema, alternates):
         return out
-    present = _columns_of(con, schema, "metadata_alternates")
+    present = _columns_of(con, schema, alternates)
     if not {"id", "table_name", "identity", "fields"} <= present:
         return out
     # Asked once: the table and its columns can be missing from an old backup, which then simply has no document to follow.
-    follow_documents = keep_with_unconverted_document and {"jurisdiction", "url"} <= _columns_of(con, schema, "law_documents")
+    follow_documents = keep_with_unconverted_document and {"jurisdiction", "url"} <= _columns_of(con, schema, law_table)
     kept = 0
     from src.backup.provenance import ALTERNATE_SPECS
 
@@ -347,7 +353,7 @@ def convert_alternate_countries(
             for key in keys:
                 path = f"$.{key}"
                 rows = con.execute(
-                    f'SELECT id, "{column}" FROM {schema}.metadata_alternates '  # noqa: S608  # nosec B608 # `schema` is a module-internal literal alias; `column` is one of two literals
+                    f'SELECT id, "{column}" FROM {schema}."{alternates}" '  # noqa: S608  # nosec B608 # `schema` and `alternates` are module-internal literals; `column` is one of two literals
                     f'WHERE table_name = ? AND CASE WHEN json_valid("{column}") THEN json_type("{column}", ?) END = \'text\'',
                     (table, path),
                 ).fetchall()
@@ -370,24 +376,79 @@ def convert_alternate_countries(
                     if (
                         follow_documents
                         and column == "identity"  # a law identity's jurisdiction is the only identity key that holds a code
-                        and _law_document_holds(con, schema, value, parsed.get("document_url"))
+                        and _law_document_holds(con, schema, value, parsed.get("document_url"), law_table)
                     ):
                         kept += 1
                         continue  # its document kept this spelling (see above): the identity stays with it
                     if before_write is not None:
                         before_write()
                     con.execute(
-                        f'UPDATE {schema}.metadata_alternates SET "{column}" = json_set("{column}", ?, ?) WHERE id = ?',  # noqa: S608  # nosec B608 # as above; the path, the value and the id are bound
+                        f'UPDATE {schema}."{alternates}" SET "{column}" = json_set("{column}", ?, ?) WHERE id = ?',  # noqa: S608  # nosec B608 # as above; the path, the value and the id are bound
                         (path, target, rid),
                     )
                     out["converted"] += 1
     bad = con.execute(
-        f"SELECT COUNT(*) FROM {schema}.metadata_alternates WHERE NOT json_valid(identity) OR NOT json_valid(fields)"  # noqa: S608  # nosec B608 # `schema` is a module-internal literal alias
+        f'SELECT COUNT(*) FROM {schema}."{alternates}" WHERE NOT json_valid(identity) OR NOT json_valid(fields)'  # noqa: S608  # nosec B608 # `schema` and `alternates` are module-internal literals
     ).fetchone()[0]
     out["left_unreadable"] += int(bad)
     if kept:
         out["kept_with_document"] = kept
     return out
+
+
+def _convert_spellings(
+    con: sqlite3.Connection, schema: str, table: str, column: str, form: Literal["alpha2", "alpha3"], *, key: str,
+    before_write: Callable[[], None] | None, converted: dict[str, int], refused: dict[str, list[str]], collisions: list[dict],
+) -> None:
+    """Convert every spelling of ``schema.table.column`` to ``form``, in place, reporting under ``key``.
+
+    The one conversion algorithm, shared by the staged copy's in-place pass (:func:`normalise_staged_country_codes`) and the
+    restore's in-memory copy of a table that can collide (:func:`plan_staged_country_codes`), so the two cannot answer
+    differently: a bulk UPDATE per spelling, and row by row when it hits a unique constraint."""
+    # DISTINCT over the column, not a walk over the rows: every one of these
+    # columns carries an index, and a corpus with a million articles still has
+    # at most a couple of hundred distinct country codes. The work is bounded
+    # by the CODE SET, never by the corpus.
+    rows = con.execute(
+        f'SELECT DISTINCT "{column}" FROM {schema}."{table}" '  # noqa: S608  # nosec B608 # both identifiers come from COUNTRY_COLUMNS (or its in-memory copy's fixed name), and `schema` is a module-internal literal
+        f'WHERE "{column}" IS NOT NULL AND "{column}" <> \'\''
+    ).fetchall()
+    for (value,) in rows:
+        target = canonical_country(value, form)
+        if target is None:
+            # The converter refused it: an aggregate, a non-ISO jurisdiction,
+            # or junk. LEFT EXACTLY AS IT IS -- see the module docstring.
+            refused.setdefault(key, []).append(str(value))
+            continue
+        if target == value:
+            continue  # already canonical: the common case in 0.4
+        # ONE statement for the whole spelling: the fast, overwhelmingly common
+        # path, bounded by the code set rather than the corpus.
+        if before_write is not None:
+            before_write()  # R834: the staged copy's integrity walk has its verdict before anything writes it
+        con.execute("SAVEPOINT oo_country_norm")
+        try:
+            cur = con.execute(
+                f'UPDATE {schema}."{table}" SET "{column}" = ? '  # noqa: S608  # nosec B608 # identifiers from the fixed COUNTRY_COLUMNS map; the VALUES are bound
+                f'WHERE "{column}" = ?',
+                (target, value),
+            )
+        except Exception as exc:  # noqa: BLE001 - a collision must not abort a restore
+            con.execute("ROLLBACK TO oo_country_norm")
+            con.execute("RELEASE oo_country_norm")
+            # AND THEN ROW BY ROW, because SQLite's default ABORT undoes the
+            # WHOLE statement, not the offending row. Measured: with rows A and
+            # B colliding at one url and an unrelated row C sharing A's
+            # spelling at another, the bulk rollback left C unconverted -- and
+            # C then failed its own value-keyed join and landed as a DUPLICATE
+            # document. A collision must cost exactly the rows that collide.
+            n_rows, row_collisions = _convert_row_by_row(con, schema, table, column, value, target)
+            converted[key] = converted.get(key, 0) + n_rows
+            for reason in row_collisions or [record_text(exc)]:
+                collisions.append({"column": key, "from": str(value), "to": target, "reason": reason})
+            continue
+        con.execute("RELEASE oo_country_norm")
+        converted[key] = converted.get(key, 0) + int(cur.rowcount or 0)
 
 
 def normalise_staged_country_codes(
@@ -424,61 +485,315 @@ def normalise_staged_country_codes(
             if column not in present:
                 continue  # an older artifact predating the column
             scanned += 1
-            key = f"{table}.{column}"
-            # DISTINCT over the column, not a walk over the rows: every one of these
-            # columns carries an index, and a corpus with a million articles still has
-            # at most a couple of hundred distinct country codes. The work is bounded
-            # by the CODE SET, never by the corpus.
-            rows = con.execute(
-                f'SELECT DISTINCT "{column}" FROM {schema}."{table}" '  # noqa: S608  # nosec B608 # both identifiers come from COUNTRY_COLUMNS, a fixed module-level map, and `schema` is a module-internal literal
-                f'WHERE "{column}" IS NOT NULL AND "{column}" <> \'\''
-            ).fetchall()
-            for (value,) in rows:
-                target = canonical_country(value, form)
-                if target is None:
-                    # The converter refused it: an aggregate, a non-ISO jurisdiction,
-                    # or junk. LEFT EXACTLY AS IT IS -- see the module docstring.
-                    refused.setdefault(key, []).append(str(value))
-                    continue
-                if target == value:
-                    continue  # already canonical: the common case in 0.4
-                # ONE statement for the whole spelling: the fast, overwhelmingly common
-                # path, bounded by the code set rather than the corpus.
-                if before_write is not None:
-                    before_write()  # R834: the staged copy's integrity walk has its verdict before anything writes it
-                con.execute("SAVEPOINT oo_country_norm")
-                try:
-                    cur = con.execute(
-                        f'UPDATE {schema}."{table}" SET "{column}" = ? '  # noqa: S608  # nosec B608 # identifiers from the fixed COUNTRY_COLUMNS map; the VALUES are bound
-                        f'WHERE "{column}" = ?',
-                        (target, value),
-                    )
-                except Exception as exc:  # noqa: BLE001 - a collision must not abort a restore
-                    con.execute("ROLLBACK TO oo_country_norm")
-                    con.execute("RELEASE oo_country_norm")
-                    # AND THEN ROW BY ROW, because SQLite's default ABORT undoes the
-                    # WHOLE statement, not the offending row. Measured: with rows A and
-                    # B colliding at one url and an unrelated row C sharing A's
-                    # spelling at another, the bulk rollback left C unconverted -- and
-                    # C then failed its own value-keyed join and landed as a DUPLICATE
-                    # document. A collision must cost exactly the rows that collide.
-                    n_rows, row_collisions = _convert_row_by_row(
-                        con, schema, table, column, value, target
-                    )
-                    converted[key] = converted.get(key, 0) + n_rows
-                    for reason in row_collisions or [record_text(exc)]:
-                        collisions.append(
-                            {"column": key, "from": str(value), "to": target,
-                             "reason": reason}
-                        )
-                    continue
-                con.execute("RELEASE oo_country_norm")
-                converted[key] = converted.get(key, 0) + int(cur.rowcount or 0)
+            _convert_spellings(
+                con, schema, table, column, form, key=f"{table}.{column}", before_write=before_write,
+                converted=converted, refused=refused, collisions=collisions,
+            )
 
     alternates = convert_alternate_countries(
         con, schema=schema, form=form, keep_with_unconverted_document=True, before_write=before_write
     )
 
+    return _conversion_report(
+        con, form, scanned, alternates, converted, refused, collisions,
+    )
+
+
+#: Row 439: the temp objects the restore leaves on the merge connection when it converts WITHOUT writing the staged copy.
+#: ``oo_country_plan`` names, per ``table.column`` that has anything to convert, how its converted value is read (``map``: one
+#: spelling at a time through ``oo_country_map``; ``copy``: per row, from an in-memory copy of the table's key columns, for a
+#: table whose conversion can collide on a unique index). :func:`staged_country_sql` turns that into the SQL a copy step reads.
+_PLAN = "oo_country_plan"
+_MAP = "oo_country_map"
+_ALTERNATES_COPY = "oo_country_alternates"
+_SQL_ALIAS = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _copy_name(table: str) -> str:
+    """The in-memory copy of ``table``'s key columns (``table`` is a key of :data:`COUNTRY_COLUMNS`)."""
+    return f"oo_country_{table}"
+
+
+class StagedKeysDiffer(ValueError):
+    """The staged file's unique keys over a country column are not the ones this version makes (row 439)."""
+
+
+#: The restore's words for :class:`StagedKeysDiffer`: fixed, naming no column or index of the file (a backup's text).
+STAGED_KEYS_DIFFER = (
+    "the backup's country-code columns are not keyed the way this version keys them, so the backup was not merged; "
+    "your corpus was not changed"
+)
+
+
+def _app_unique_sets(table: str) -> list[tuple[str, ...]]:
+    """The unique keys THIS VERSION declares on ``table`` (constraints and unique indexes, from the app's own models), as column
+    tuples. The plan builds its copies from these fixed names, never from the staged file's catalogue."""
+    from sqlalchemy import UniqueConstraint
+
+    from src.database.models import Base
+
+    tbl = Base.metadata.tables.get(table)
+    if tbl is None:
+        return []
+    out = [tuple(c.name for c in u.columns) for u in tbl.constraints if isinstance(u, UniqueConstraint)]
+    out += [tuple(c.name for c in ix.columns) for ix in tbl.indexes if ix.unique]
+    return sorted(set(out))
+
+
+def _staged_unique_sets(con: sqlite3.Connection, schema: str, table: str) -> list[tuple[object, ...]]:
+    """The staged file's unique keys on ``table``, read through the table-valued pragmas with every name BOUND, so no name from the
+    file's catalogue is ever part of SQL text. Names are case-folded as SQLite folds them; a column over an expression reads as
+    None and a partial index carries a ``("partial",)`` marker, so either one differs from every key the app declares and the file
+    is refused, never copied as text. A key column compared under any collation but BINARY (declared on the column or on the
+    index) carries a ``("collation",)`` marker for the same reason: the copy decides collisions as BINARY, as the app's store does."""
+    out: list[tuple[object, ...]] = []
+    for name, unique, partial in con.execute(
+        'SELECT name, "unique", partial FROM pragma_index_list(?, ?)', (table, schema)
+    ).fetchall():
+        if not int(unique or 0):
+            continue
+        cols: list[object] = []
+        for col, coll in con.execute(
+            "SELECT name, coll FROM pragma_index_xinfo(?, ?) WHERE key = 1 ORDER BY seqno", (name, schema)
+        ).fetchall():
+            cols.append(col.lower() if isinstance(col, str) else None)
+            if str(coll or "BINARY").upper() != "BINARY":
+                cols.append(("collation",))  # the copy compares BINARY, as the app's own store does
+        if int(partial or 0):
+            cols.append(("partial",))
+        out.append(tuple(cols))
+    return out
+
+
+_ROWID_NAMES = frozenset({"rowid", "_rowid_", "oid"})
+
+
+def _require_rowid(con: sqlite3.Connection, schema: str, table: str) -> None:
+    """Refuse a staged ``table`` whose rows the copy cannot follow by row id: a WITHOUT ROWID table, or one with a column that
+    takes a row id's name (it would shadow the real one). The copies are joined back to the file's rows by ``rowid``; every table
+    the app makes has one. ``table`` is one of the app's own names."""
+    if {c.lower() for c in _columns_of(con, schema, table)} & _ROWID_NAMES:
+        raise StagedKeysDiffer(STAGED_KEYS_DIFFER)
+    try:
+        con.execute(f'SELECT rowid FROM {schema}."{table}" LIMIT 0').fetchall()  # noqa: S608  # nosec B608 # the app's own table name
+    except Exception:  # noqa: BLE001 - sqlite3's or the cipher driver's "no such column": the table has no row id
+        raise StagedKeysDiffer(STAGED_KEYS_DIFFER) from None
+
+
+def _check_staged_keys(con: sqlite3.Connection, schema: str, table: str, columns: list[str]) -> list[tuple[str, ...]]:
+    """The app's unique keys over a country column of ``table``, once the staged file is shown to hold exactly those.
+
+    The conversion's collisions are decided by these keys, so a key the copy did not reproduce would convert a row the file itself
+    would have refused, and one the copy added would refuse a row the file converts. Any difference -- a key more or fewer, a partial
+    one, one over an expression, a key column the table lacks -- raises :class:`StagedKeysDiffer` (the restore's normal refusal).
+    The staged file is at the schema head by now, so a backup the app made always matches."""
+    wanted = {c.lower() for c in columns}
+    app = [u for u in _app_unique_sets(table) if wanted & {c.lower() for c in u}]
+    staged = [u for u in _staged_unique_sets(con, schema, table) if None in u or wanted & {c for c in u if isinstance(c, str)}]
+    if sorted(repr(tuple(c.lower() for c in u)) for u in app) != sorted(repr(u) for u in staged):
+        raise StagedKeysDiffer(STAGED_KEYS_DIFFER)
+    present = {c.lower() for c in _columns_of(con, schema, table)}
+    if any(c.lower() not in present for u in app for c in u):
+        raise StagedKeysDiffer(STAGED_KEYS_DIFFER)
+    return app
+
+
+def _copy_key_columns(
+    con: sqlite3.Connection, schema: str, table: str, columns: list[str], uniques: list[tuple[str, ...]], extra: tuple[str, ...]
+) -> str:
+    """``temp.oo_country_<table>``: the row id, the country columns, and every column of the app's unique keys over them, copied from
+    the staged file, with those same unique indexes. Every name here is the app's own (:data:`COUNTRY_COLUMNS`, the models, ``url``),
+    never one read from the file, and no declared type is copied. The conversion then runs on THIS copy, exactly as on the file."""
+    present = {c.lower() for c in _columns_of(con, schema, table)}
+    cols: list[str] = []
+    for c in [*columns, *(c for u in uniques for c in u), *extra]:
+        if c.lower() in present and c not in cols:
+            cols.append(c)
+    copy = _copy_name(table)
+    names = ", ".join(f'"{c}"' for c in cols)
+    con.execute(f'CREATE TEMP TABLE "{copy}" (rid INTEGER PRIMARY KEY, {names})')  # noqa: S608  # the app's own fixed names
+    con.execute(f'INSERT INTO temp."{copy}" (rid, {names}) SELECT rowid, {names} FROM {schema}."{table}"')  # noqa: S608  # nosec B608 # as above
+    for n, u in enumerate(uniques):
+        con.execute(f'CREATE UNIQUE INDEX temp."{copy}_u{n}" ON "{copy}" ({", ".join(f"{chr(34)}{c}{chr(34)}" for c in u)})')  # noqa: S608  # as above
+    return copy
+
+
+def _drop_plan(con: sqlite3.Connection) -> None:
+    for table in sorted(COUNTRY_COLUMNS):
+        con.execute(f'DROP TABLE IF EXISTS temp."{_copy_name(table)}"')  # noqa: S608  # fixed names
+    for name in (_PLAN, _MAP, _ALTERNATES_COPY):
+        con.execute(f"DROP TABLE IF EXISTS temp.{name}")  # noqa: S608  # fixed names
+
+
+def _refuse_temp_on_disk_for_encrypted(con: sqlite3.Connection) -> None:
+    """Refuse to build the plan's temp tables on an encrypted connection whose temp storage is not MEMORY (R825).
+
+    SQLCipher writes a FILE temp database through the VFS without its codec, so the spelling map, the law_documents copy and the
+    alternates copy (country codes, urls, JSON identities of the user's corpus) would sit in the clear in the temp directory. The
+    merge sets MEMORY on an encrypted working copy (``merge._temp_store_for``); this does not set it itself, because changing
+    ``temp_store`` drops every temp table the connection already holds -- it fails closed instead, naming the reason."""
+    from src.database.connect import _is_sqlcipher_conn
+
+    if not _is_sqlcipher_conn(con):
+        return  # a plain store's rows are plaintext on disk already; FILE is its measured choice
+    mode = con.execute("PRAGMA temp_store").fetchone()
+    if mode is None or int(mode[0]) != 2:
+        raise RuntimeError(
+            "the country-code plan would put the corpus's codes and urls in a temp file outside the encryption "
+            f"(temp_store={mode[0] if mode else 'unknown'}, MEMORY required on an encrypted connection)"
+        )
+
+
+def plan_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -> dict:
+    """Merge step 1 (Q310 = a) WITHOUT writing the staged copy (row 439): decide every conversion, and let the copy steps read it.
+
+    :func:`normalise_staged_country_codes` rewrote the staged file in place, so its first UPDATE had to wait for the file's whole
+    integrity walk (R834: nothing writes ``inc`` before the verdict), and every pre-0.5 backup restored into a new install paid that
+    walk on the critical path. This makes the same decisions and writes only the connection's ``temp`` schema:
+
+    * a column that cannot collide gets one ``(spelling -> canonical)`` row per spelling it converts (``oo_country_map``), read through
+      :func:`staged_country_sql` wherever a step copies or compares the column;
+    * a table whose conversion CAN collide (a unique index over a country column: ``law_documents``' (jurisdiction, url)) is copied to
+      memory with those indexes, and :func:`_convert_spellings` runs on the copy -- the same bulk-then-row-by-row algorithm, in the
+      same order, so the same rows convert and the same rows collide;
+    * the law alternates' JSON is converted on an in-memory copy too, following the in-memory documents.
+
+    The report has the shape :func:`normalise_staged_country_codes` publishes, and counts the same rows. ``before_write`` is never
+    called: nothing here writes the staged copy, so the integrity walk is never waited for."""
+    converted: dict[str, int] = {}
+    refused: dict[str, list[str]] = {}
+    collisions: list[dict] = []
+    scanned = 0
+    form = store_form_of(con)
+    _refuse_temp_on_disk_for_encrypted(con)
+    _drop_plan(con)
+    con.execute(f"CREATE TEMP TABLE {_PLAN} (col TEXT PRIMARY KEY, how TEXT NOT NULL)")  # noqa: S608  # fixed names
+    con.execute(f"CREATE TEMP TABLE {_MAP} (col TEXT NOT NULL, f TEXT NOT NULL, t TEXT NOT NULL, PRIMARY KEY (col, f)) WITHOUT ROWID")  # noqa: S608  # fixed names
+
+    for table in sorted(COUNTRY_COLUMNS):
+        if not _table_exists(con, schema, table):
+            continue
+        present = _columns_of(con, schema, table)
+        columns = [c for c in COUNTRY_COLUMNS[table] if c in present]
+        if not columns:
+            continue
+        scanned += len(columns)
+        uniques = _check_staged_keys(con, schema, table, columns)
+        if uniques or table == "law_documents":
+            _require_rowid(con, schema, table)
+            # law_documents always: the law alternates follow a document by (jurisdiction, url) as converted.
+            copy = _copy_key_columns(con, schema, table, columns, uniques, ("url",) if table == "law_documents" else ())
+            for column in columns:
+                key = f"{table}.{column}"
+                _convert_spellings(
+                    con, "temp", copy, column, form, key=key, before_write=None,
+                    converted=converted, refused=refused, collisions=collisions,
+                )
+                con.execute(f"INSERT INTO temp.{_PLAN} (col, how) VALUES (?, 'copy')", (key,))  # noqa: S608  # nosec B608 # fixed module names; values are bound
+            continue
+        for column in columns:
+            key = f"{table}.{column}"
+            rows = con.execute(
+                f'SELECT DISTINCT "{column}" FROM {schema}."{table}" '  # noqa: S608  # nosec B608 # identifiers from the fixed COUNTRY_COLUMNS map; `schema` is a module-internal literal
+                f'WHERE "{column}" IS NOT NULL AND "{column}" <> \'\''
+            ).fetchall()
+            changes: list[tuple[str, str]] = []
+            for (value,) in rows:
+                target = canonical_country(value, form)
+                if target is None:
+                    refused.setdefault(key, []).append(str(value))
+                elif target != value:
+                    changes.append((value, target))
+            if not changes:
+                continue
+            con.executemany(f"INSERT INTO temp.{_MAP} (col, f, t) VALUES (?, ?, ?)", [(key, f, t) for f, t in changes])  # noqa: S608  # nosec B608 # fixed module names; values are bound
+            con.execute(f"INSERT INTO temp.{_PLAN} (col, how) VALUES (?, 'map')", (key,))  # noqa: S608  # nosec B608 # fixed module names; values are bound
+            # The rows each spelling covers: what the in-place UPDATE's row count was. One pass over the column, read only.
+            counts = dict(
+                con.execute(
+                    f'SELECT "{column}", COUNT(*) FROM {schema}."{table}" WHERE "{column}" IS NOT NULL GROUP BY "{column}"'  # noqa: S608  # nosec B608 # as above
+                ).fetchall()
+            )
+            converted[key] = converted.get(key, 0) + sum(int(counts.get(f, 0)) for f, _t in changes)
+
+    alternates: dict = {"converted": 0, "left_unreadable": 0, "left_as_stored": {}}
+    if _table_exists(con, schema, "metadata_alternates") and {"id", "table_name", "identity", "fields"} <= _columns_of(
+        con, schema, "metadata_alternates"
+    ):
+        # Only the alternates of a table whose identity or field set CAN hold a country code are copied (the others are read as
+        # stored, through the LEFT JOIN in staged_alternates_sql): the copy's memory is bounded by what can convert, not by the table.
+        from src.backup.provenance import ALTERNATE_SPECS
+
+        holders = sorted(t for t in ALTERNATE_SPECS if any(alternate_country_keys(t)))
+        _require_rowid(con, schema, "metadata_alternates")
+        con.execute(f"CREATE TEMP TABLE {_ALTERNATES_COPY} (rid INTEGER PRIMARY KEY, id, table_name, identity, fields)")  # noqa: S608  # fixed names
+        if holders:
+            marks = ", ".join("?" for _ in holders)
+            con.execute(
+                f"INSERT INTO temp.{_ALTERNATES_COPY} (rid, id, table_name, identity, fields)"  # noqa: S608  # nosec B608 # fixed names; `schema` is a module-internal literal; the names are bound
+                f" SELECT rowid, id, table_name, identity, fields FROM {schema}.metadata_alternates WHERE table_name IN ({marks})",
+                holders,
+            )
+        con.execute(f"CREATE INDEX temp.{_ALTERNATES_COPY}_id ON {_ALTERNATES_COPY} (id)")  # noqa: S608  # fixed names
+        alternates = convert_alternate_countries(
+            con, schema="temp", form=form, keep_with_unconverted_document=True,
+            table=_ALTERNATES_COPY, law_table=_copy_name("law_documents"),
+        )
+        # The unreadable count is the whole table's, as the in-place walk published it, not only the copied rows'.
+        bad_copy, bad_all = (
+            con.execute(
+                f"SELECT COUNT(*) FROM {where} WHERE NOT json_valid(identity) OR NOT json_valid(fields)"  # noqa: S608  # nosec B608 # two fixed names
+            ).fetchone()[0]
+            for where in (f"temp.{_ALTERNATES_COPY}", f"{schema}.metadata_alternates")
+        )
+        alternates["left_unreadable"] += int(bad_all) - int(bad_copy)
+
+    return _conversion_report(
+        con, form, scanned, alternates, converted, refused, collisions,
+    )
+
+
+def staged_country_sql(con: sqlite3.Connection, table: str, column: str, alias: str = "i") -> str:
+    """The SQL expression for ``alias.column`` of the staged ``table`` as the restore's conversion left it (row 439).
+
+    ``alias`` must name the staged table itself (the copy is matched on its row id). Without a plan on this connection (a step run on its
+    own), or for a column with nothing to convert, it is the column as stored."""
+    if column not in COUNTRY_COLUMNS.get(table, ()) or not _SQL_ALIAS.fullmatch(alias):
+        raise ValueError(f"not a registered country column: {table}.{column}")
+    raw = f'{alias}."{column}"'
+    key = f"{table}.{column}"
+    if not _table_exists(con, "temp", _PLAN):
+        return raw
+    row = con.execute(f"SELECT how FROM temp.{_PLAN} WHERE col = ?", (key,)).fetchone()  # noqa: S608  # nosec B608 # fixed module names; values are bound
+    if row is None:
+        return raw
+    if row[0] == "map":
+        # `key` is "table.column" from the fixed registry, checked above
+        return f"COALESCE((SELECT m.t FROM temp.{_MAP} m WHERE m.col = '{key}' AND m.f = {raw}), {raw})"  # nosec B608 # `key` is a registry entry checked above, `raw` an alias checked by _SQL_ALIAS; no value is interpolated
+    return f'(SELECT c."{column}" FROM temp."{_copy_name(table)}" c WHERE c.rid = {alias}.rowid)'  # nosec B608 # fixed names, the registry column, and the checked alias
+
+
+def staged_alternates_sql(con: sqlite3.Connection, alias: str = "i") -> tuple[str, str, str]:
+    """``(join, identity, fields)``: what a reader of the staged ``metadata_alternates`` (as ``alias``) appends to its FROM and selects,
+    to read the identity and field set as the restore's conversion left them. Without a converted copy, the columns as stored."""
+    if not _SQL_ALIAS.fullmatch(alias):
+        raise ValueError("bad alias")
+    if not _table_exists(con, "temp", _ALTERNATES_COPY):
+        return "", f"{alias}.identity", f"{alias}.fields"
+    # LEFT: only the rows that can hold a code were copied; every other row is read as stored.
+    join = f" LEFT JOIN temp.{_ALTERNATES_COPY} oo_cc_alt ON oo_cc_alt.rid = {alias}.rowid"
+    return (
+        join,
+        f"CASE WHEN oo_cc_alt.rid IS NULL THEN {alias}.identity ELSE oo_cc_alt.identity END",
+        f"CASE WHEN oo_cc_alt.rid IS NULL THEN {alias}.fields ELSE oo_cc_alt.fields END",
+    )
+
+
+def _conversion_report(
+    con: sqlite3.Connection, form: Literal["alpha2", "alpha3"], scanned: int, alternates: dict, converted: dict[str, int],
+    refused: dict[str, list[str]], collisions: list[dict],
+) -> dict:
+    """The report block both conversions publish (``results["_country_codes"]``): one shape, whichever ran."""
     report: dict = {
         "target_form": form,
         "columns_scanned": scanned,
@@ -498,6 +813,8 @@ def normalise_staged_country_codes(
         # so a threshold would either refuse good restores or miss bad ones. This number
         # is how an operator sees it.
         "live_corpus_in_target_form": _live_corpus_in_target_form(con, form),
+        # One sentence for both conversions (it is true of each: the values the joins compare are in the store's form);
+        # row 439 did not add a second English one.
         "method": (
             "every registered country column of the incoming corpus is converted to "
             f"the store's canonical form ({form}) before the "

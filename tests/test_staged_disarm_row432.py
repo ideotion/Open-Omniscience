@@ -91,8 +91,17 @@ def _names(path: Path, typ: str) -> set[str]:
 
 @pytest.mark.parametrize("sealed", [False, True], ids=["plaintext", "keyed"])
 @pytest.mark.parametrize("disarmed", [True, False], ids=["disarmed", "control"])
-def test_a_planted_trigger_under_a_known_name_never_runs_on_the_merges_write(tmp_path, sealed, disarmed):
+def test_a_planted_trigger_under_a_known_name_never_runs_on_the_merges_write(tmp_path, monkeypatch, sealed, disarmed):
+    from src.backup import merge as merge_mod
+    from src.backup.country_codes import normalise_staged_country_codes
     from src.backup.merge import merge_corpus
+
+    def _writing_step(con, batch_id, results):
+        # Since row 439 the country-code step converts in memory and writes nothing to the staged copy; its old in-place writer
+        # is put back here so the control still has a write to fire the planted body on. Any step that writes ``inc`` is in its place.
+        results["_country_codes"] = normalise_staged_country_codes(con, schema="inc")
+
+    monkeypatch.setattr(merge_mod, "_normalise_country_codes", _writing_step)
 
     work, inc = tmp_path / "work.db", tmp_path / "inc.db"
     _build(work, 0, None)
