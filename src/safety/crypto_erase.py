@@ -3112,6 +3112,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             # Refused (another name, not openable) or rewritten only in part: never written by path, never counted in "Wiped"; in
             # the data folder its name goes now, as the folder's removal would take it, so it is never named among the items the
             # erase could not remove (R823; security read, row 402). Beside a store kept elsewhere no step reaches it: its name stays.
+            # Trade-off, stated: in app-only scope a copy or segment rewritten only in part (the disk reserve, a failed write) loses
+            # its name here too; the report counts it as short, and naming it would break R823 (security read, row 402).
             with contextlib.suppress(OSError):
                 p.unlink()
             continue
