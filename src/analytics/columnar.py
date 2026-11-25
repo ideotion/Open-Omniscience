@@ -2359,7 +2359,8 @@ def build_source_coverage(con, session) -> dict:
     from sqlalchemy import text as _sql
 
     from src.analytics.quarantine_scope import not_counted
-    from src.database.models import Article, KeywordMention, Source
+    from src.database.derived_views import KeywordMentionRead
+    from src.database.models import Article, Source
 
     ensure_store_meta(con)
     slice_sig = _coverage_slice_signature(session)
@@ -2389,10 +2390,11 @@ def build_source_coverage(con, session) -> dict:
 
     # Keyword mentions per denormalised source-country (index scan; no article decrypt).
     kw_by_cc: dict[str, int] = {}
-    for cc, n in session.query(KeywordMention.country, func.count()).filter(
-        not_counted(KeywordMention.article_id)  # R831
+    # The read seam (R96): a reader reads the mentions through KeywordMentionRead, never the write model.
+    for cc, n in session.query(KeywordMentionRead.country, func.count()).filter(
+        not_counted(KeywordMentionRead.article_id)  # R831
     ).group_by(
-        KeywordMention.country
+        KeywordMentionRead.country
     ):
         kw_by_cc[_norm_cc(cc)] = kw_by_cc.get(_norm_cc(cc), 0) + int(n or 0)
 
