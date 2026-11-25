@@ -1858,6 +1858,9 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     ),
     "/source-quality": "whole-corpus decrypt ZIP export — saved by the Field data button (R654; manifest 'excluded')",
     "/source-samples": "one-article-per-source ZIP walk, 4 MB per zip — saved by the Field data button (R654; manifest 'excluded')",
+    "/field-run-journal": "a numbers-only cut of the run journal for the Field data button (row 414); the bundle carries the journal in full as run-journal.json",
+    "/field-import-reports": "a numbers-only cut of the import reports for the Field data button (row 414), not new data",
+    "/field-drain-status": "a numbers-only cut of the re-index drain's job status for the Field data button (row 414), not new data",
     "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
     "/llm-bench": "heavy operator-run benchmark, needs a live model (manifest 'excluded')",
     "/llm-throughput": (
