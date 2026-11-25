@@ -271,6 +271,39 @@ def test_incoming_rows_choose_where_the_groupings_run_and_only_the_maps_can_refu
     assert scratch < base + largest + maps
 
 
+def test_the_law_documents_copy_is_part_of_the_need_on_every_path() -> None:
+    """Row 439: the country-code plan holds a copy of law_documents' key columns in memory for the
+    whole merge, so a machine that cannot hold it is refused before any row moves, on the scratch
+    path too -- never killed part-way."""
+    base = merge_mod._ENCRYPTED_TEMP_NEED_BYTES
+    per = merge_mod._ENCRYPTED_RESIDENT_BYTES_PER_ROW["law_documents"]
+    rows = {"law_documents": 1_000_000}
+    need = base + per * rows["law_documents"]
+    assert check_memory_for_encrypted_merge(available_mb=need / _MB, floor_mb=0.0, incoming_rows=rows) == "memory"
+    with pytest.raises(MergeError):
+        check_memory_for_encrypted_merge(available_mb=need / _MB - 1, floor_mb=0.0, incoming_rows=rows)
+    # with groupings that move to scratch, the copy still counts
+    rows["keywords"] = 50_000_000
+    scratch = need + 16 * rows["keywords"] + merge_mod._SCRATCH_CACHE_KIB * 1024
+    assert check_memory_for_encrypted_merge(available_mb=scratch / _MB, floor_mb=0.0, incoming_rows=rows) == "scratch"
+    with pytest.raises(MergeError):
+        check_memory_for_encrypted_merge(available_mb=scratch / _MB - 1, floor_mb=0.0, incoming_rows=rows)
+
+
+def test_the_law_documents_are_counted_from_the_staged_file(tmp_path) -> None:
+    import sqlite3
+
+    staged = tmp_path / "d" / "staged.db"
+    _staged_with_keywords(staged, 1)
+    con = sqlite3.connect(staged)
+    for k in range(3):
+        con.execute("INSERT INTO law_documents (jurisdiction, title, url, watched) VALUES ('fr', 'Loi', ?, 1)", (f"https://l.example/{k}",))
+    con.commit()
+    con.close()
+    assert merge_mod._incoming_group_rows(_open_plain(), staged)["law_documents"] == 3
+    assert merge_mod._staged_group_rows_or_none(staged)["law_documents"] == 3
+
+
 def test_a_table_with_no_incoming_rows_adds_nothing() -> None:
     need_mb = merge_mod._ENCRYPTED_TEMP_NEED_BYTES / _MB
     check_memory_for_encrypted_merge(available_mb=need_mb, floor_mb=0.0, incoming_rows={})
@@ -312,7 +345,7 @@ def test_incoming_rows_are_counted_through_the_merges_own_attach(tmp_path) -> No
     con = _open_plain()
     got = merge_mod._incoming_group_rows(con, staged)
     assert got["keywords"] == 2
-    assert set(got) <= set(merge_mod._ENCRYPTED_REP_BYTES_PER_ROW)
+    assert set(got) <= set(merge_mod._COUNTED_TABLES)
     # the throwaway alias is gone again, so the merge's own attach of the same file still works
     assert "cnt" not in [r[1] for r in con.execute("PRAGMA database_list")]
     from src.database.connect import attach

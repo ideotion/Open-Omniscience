@@ -1515,10 +1515,21 @@ _ENCRYPTED_REP_BYTES_PER_ROW = {
     "article_links": 150,
     "article_source_relationships": 80,
 }
+#: Row 439: in-memory structures held for the WHOLE merge, sized per incoming row, so they are part of
+#: the need on every path (like the id maps), never a choice between RAM and scratch. The country-code
+#: plan copies ``law_documents``' key columns (row id, codes, url) and its unique index to the temp
+#: schema, which is MEMORY on an encrypted merge: measured at 208 B per document on 100,000 rows with
+#: 82-character urls, rounded up here for longer urls. It grows with the tracked law documents, never
+#: with the articles.
+_ENCRYPTED_RESIDENT_BYTES_PER_ROW = {
+    "law_documents": 300,
+}
+#: Every table whose incoming rows the memory check counts.
+_COUNTED_TABLES = (*_ENCRYPTED_REP_BYTES_PER_ROW, *_ENCRYPTED_RESIDENT_BYTES_PER_ROW)
 
 
 def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> dict[str, int]:
-    """Rows the staged corpus holds in each table :data:`_ENCRYPTED_REP_BYTES_PER_ROW` names.
+    """Rows the staged corpus holds in each table :data:`_COUNTED_TABLES` names.
 
     Counted through the merge's OWN connection and its own ``attach`` (the one the merge uses a
     moment later), under a throwaway alias that is detached again, so the count opens the file by
@@ -1543,13 +1554,13 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
             raise FileNotFoundError("the staged file is missing")
         attach(con, staged_corpus, "cnt")
         try:
-            for table in _ENCRYPTED_REP_BYTES_PER_ROW:
+            for table in _COUNTED_TABLES:
                 try:
                     out[table] = int(
                         con.execute(f'SELECT COUNT(*) FROM "cnt".{_ident(table)}').fetchone()[0]  # noqa: S608  # nosec B608 # fixed table names from this module's own map
                     )
                 except Exception as exc:  # noqa: BLE001 - only the one message that names THIS table is a zero
-                    # the keys of _ENCRYPTED_REP_BYTES_PER_ROW are lowercase, so the table name needs
+                    # the names in _COUNTED_TABLES are lowercase, so the table name needs
                     # no folding; the engine's message is folded once
                     if str(exc).lower() != f"no such table: cnt.{table}":
                         raise
@@ -1587,7 +1598,8 @@ def check_memory_for_encrypted_merge(
     otherwise say WHERE the whole-source groupings run: ``"memory"`` or ``"scratch"``.
 
     The need is :data:`_ENCRYPTED_TEMP_NEED_BYTES` (the windowed steps), plus the id maps the merge
-    keeps (~16 B per incoming row of the tables :data:`_ENCRYPTED_REP_BYTES_PER_ROW` names), plus the
+    keeps (~16 B per incoming row of the tables :data:`_ENCRYPTED_REP_BYTES_PER_ROW` names), plus what
+    stays resident for the whole merge (:data:`_ENCRYPTED_RESIDENT_BYTES_PER_ROW`), plus the
     memory guard's own floor (``memory_guard.avail_floor_mb``), against the memory available now.
     The largest of the three whole-source grouping steps is NOT part of the refusal any more: when
     the memory does not hold it with :data:`_INRAM_GROUPING_HEADROOM` to spare, the groupings run in
@@ -1616,6 +1628,7 @@ def check_memory_for_encrypted_merge(
         default=0,
     )
     maps = 16 * sum(int(rows.get(t, 0)) for t in _ENCRYPTED_REP_BYTES_PER_ROW)
+    maps += sum(int(rows.get(t, 0)) * per_row for t, per_row in _ENCRYPTED_RESIDENT_BYTES_PER_ROW.items())
     need = _ENCRYPTED_TEMP_NEED_BYTES + maps + int(max(0.0, floor_mb) * 1024 * 1024)
     need_scratch = need if grouping == 0 else need + _SCRATCH_CACHE_KIB * 1024
     have = avail * 1024 * 1024
@@ -1678,7 +1691,7 @@ def _staged_group_rows_or_none(staged_corpus: Path | str) -> dict[str, int] | No
             for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
         }
         out: dict[str, int] = {}
-        for table in _ENCRYPTED_REP_BYTES_PER_ROW:
+        for table in _COUNTED_TABLES:
             # a table the artifact does not carry is a measured zero, as in _incoming_group_rows
             out[table] = (
                 int(con.execute(f"SELECT COUNT(*) FROM {_ident(table)}").fetchone()[0])  # noqa: S608  # nosec B608 # fixed table names from this module's own map
