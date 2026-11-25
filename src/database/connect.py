@@ -898,7 +898,9 @@ def _existing_no_follow_target(p: Path) -> str:
     file the connection holds) goes unseen, and a hot journal at the name is rolled into the link's target by the open
     itself. Doing that needs write access to the file's folder, which already lets that writer change the file directly,
     so it gains nothing; the caller's checks on the connection (schema, identity row, generation) still bound what such a
-    file can be."""
+    file can be. The hot-journal case is closed in stage 4, before any write path is on (docket row 409): a read-write open
+    only after a read-only open of the same name has confirmed its segment id and generation, and refused while a
+    ``-journal`` sits beside a file not yet confirmed."""
     uri = _read_only_uri(p.parent.resolve() / p.name)
     if not uri.endswith("?mode=ro"):  # pragma: no cover - the helper above always ends so
         raise ValueError("unexpected database URI form")
