@@ -58,11 +58,11 @@ def find_manufactured_emergence(
     articles cite no datable anchor (no ArticleMentionedDate within ``anchor_lookback_days``
     of the onset). Read-only; counts only; no score.
     """
+    from src.analytics.quarantine_scope import not_counted
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Article, ArticleMentionedDate, Keyword
     from src.database.outlet import OutletMap
     from src.database.stand_in import not_a_stand_in_article_id
-    from src.analytics.quarantine_scope import not_counted
 
     today = date.today()
     r_start = today - timedelta(days=recent_days)

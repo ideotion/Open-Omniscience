@@ -13,6 +13,7 @@ stored article text around the recorded first-occurrence offset.
 
 from __future__ import annotations
 
+import contextlib
 import heapq
 import math
 import os
@@ -23,7 +24,11 @@ from typing import Any
 
 from sqlalchemy import func, select
 
-from src.analytics.quarantine_scope import not_counted, pending_ids_select, pending_keyword_contributions
+from src.analytics.quarantine_scope import (
+    not_counted,
+    pending_ids_select,
+    pending_keyword_contributions,
+)
 from src.analytics.source_article_counts import unquarantined_counts_by_source
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
@@ -3888,10 +3893,9 @@ def status_totals(session) -> dict:
         session.query(func.count(Keyword.id)).filter(Keyword.is_entity.is_(True)).scalar() or 0
     )
     out: dict = {"total_articles": int(total_articles), "keywords": int(keywords), "entities": int(entities)}
-    try:
+    # An unreadable count is not a zero: say nothing.
+    with contextlib.suppress(Exception):
         out["quarantined"] = int(session.query(func.count(Article.id)).filter(Article.quarantined.is_(True)).scalar() or 0)
-    except Exception:  # noqa: BLE001 - an unreadable count is not a zero: say nothing
-        pass
     tally = not_counted_tally(session)
     if "not_screened" in tally:
         out["not_screened"] = int(tally["not_screened"])

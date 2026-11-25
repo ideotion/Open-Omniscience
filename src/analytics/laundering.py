@@ -61,10 +61,10 @@ def find_source_laundering(
     and returns the clusters newest-spread first with their exact article set. Read-only;
     counts only; no score.
     """
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article, ArticleLink, Source
     from src.database.outlet import OutletMap, outlet_expr, outlets_unhealed
     from src.database.stand_in import not_a_stand_in_article_id
-    from src.analytics.quarantine_scope import not_counted
 
     # The links a salvage copy kept for a lost article stay in the table: a stand-in is no article, and its placeholder source is no independent
     # outlet, so the kept links are left out of the counts AND of the member list (the condition is on the child row: no article row is read).

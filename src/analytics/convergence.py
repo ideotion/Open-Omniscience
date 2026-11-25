@@ -70,6 +70,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from src.analytics.quarantine_scope import not_counted
 from src.database.models import (
     Article,
     ArticleLink,
@@ -78,7 +79,6 @@ from src.database.models import (
     Source,
 )
 from src.database.stand_in import not_a_stand_in_article_id
-from src.analytics.quarantine_scope import not_counted
 
 _LOG = logging.getLogger(__name__)
 

@@ -38,12 +38,12 @@ from typing import Any
 
 from sqlalchemy import func
 
+from src.analytics.quarantine_scope import not_counted, split_not_screened
 from src.analytics.queries import (
     Keyword,
     _bucket_key,
     _normalize,
 )
-from src.analytics.quarantine_scope import not_counted, split_not_screened
 from src.database.derived_views import KeywordMentionRead
 from src.database.fts import _HAS_WORD_CHAR, _quote
 from src.database.models import Article
