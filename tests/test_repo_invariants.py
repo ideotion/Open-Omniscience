@@ -5346,7 +5346,7 @@ def test_corpus_window_sources_subtab():
         '"/api/insights/corpus-sources?" + p.toString()',
         why="the EXISTING endpoint, scoped to THIS window's corpus",
     )
-    _assert_js_present(load, '$("an-sources").innerHTML = _anSourcesHtml(d)')
+    _assert_js_present(load, '$("an-sources").innerHTML = anNotCountedYetHtml(d) + _anSourcesHtml(d)')
     assert html.count("function _anSourcesHtml(") == 1, "_anSourcesHtml must not be forked"
     srcs = _js_function_source(html, "_anSourcesHtml")
     cell = _js_function_source(html, "_anSourceCatalogHtml")

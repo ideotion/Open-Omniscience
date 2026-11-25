@@ -460,6 +460,7 @@ def alerts(session, period: Period) -> dict:
     The ruled alert boundary holds: urgent means a provider DECLARED a hazard. This
     section reports those declarations; it never promotes anything else into one.
     """
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article, HazardEventDetail
 
     clock = func.coalesce(Article.published_at, Article.created_at)
@@ -481,7 +482,7 @@ def alerts(session, period: Period) -> dict:
                 Article.title,
             )
             .join(Article, Article.id == HazardEventDetail.article_id)
-            .filter(clock >= lo, clock < hi, Article.quarantined.isnot(True))
+            .filter(clock >= lo, clock < hi, not_counted(Article.id))
             .order_by(HazardEventDetail.event_time.desc())
             .all()
         )
@@ -566,6 +567,7 @@ def through_time(session, period: Period, *, years_back: int = 5) -> dict:
     A shared calendar date is a coincidence, not a connection — the caveat says so,
     because the temptation to read one is exactly why this section is easy to abuse.
     """
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article
 
     if period.days > _ANNIVERSARY_MAX_DAYS:
@@ -596,7 +598,7 @@ def through_time(session, period: Period, *, years_back: int = 5) -> dict:
         rows = (
             session.query(func.strftime("%Y", clock), func.count(Article.id))
             .filter(
-                Article.quarantined.isnot(True),
+                not_counted(Article.id),
                 func.strftime("%m-%d", clock).in_(days),
                 func.strftime("%Y", clock) < str(period.start.year),
                 func.strftime("%Y", clock) >= str(period.start.year - int(years_back)),

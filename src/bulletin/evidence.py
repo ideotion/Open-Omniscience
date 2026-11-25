@@ -43,6 +43,7 @@ from typing import Any
 
 from sqlalchemy import and_, func
 
+from src.analytics.quarantine_scope import not_counted
 from src.backup.attribution import (
     attribution_dicts,
     card_signals_from_edition,
@@ -80,7 +81,7 @@ def _in_period(period: Period):
     """
     lo = datetime.combine(period.start, datetime.min.time())
     hi = datetime.combine(period.end, datetime.min.time())
-    return and_(lo <= _CLOCK, _CLOCK < hi, Article.quarantined.isnot(True))
+    return and_(lo <= _CLOCK, _CLOCK < hi, not_counted(Article.id))
 
 
 def _period_article_ids(session, period: Period) -> list[int]:

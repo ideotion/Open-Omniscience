@@ -107,11 +107,30 @@ def _sqlite_file_bytes() -> dict | None:
 
 
 def _not_counted(db: Session) -> dict:
-    from src.analytics.quarantine_scope import not_counted_tally
+    from src.analytics.quarantine_scope import any_pending, not_counted_tally
     from src.analytics.screening_drain import get_screening_drain, kick_if_allowed
 
     out: dict = dict(not_counted_tally(db))
-    if out.get("not_screened"):
+    # R831(2): the article total on the Home strip is a STATUS total, so it counts every article and says what it holds:
+    # "of which quarantined: x; not screened yet: y". Index-only (idx_article_quarantined); absent when unread, never 0.
+    try:
+        from sqlalchemy import func
+
+        from src.database.models import Article
+
+        out["quarantined"] = int(db.query(func.count(Article.id)).filter(Article.quarantined.is_(True)).scalar() or 0)
+    except Exception:  # noqa: BLE001 - an unreadable count is not a zero: say nothing
+        out.pop("quarantined", None)
+    # R832: the imported articles the re-index has not finished may not carry all their keywords, dates, places or people
+    # yet, so an analysis may leave them out or count them in part; "N articles not analysed yet", from the re-index
+    # backlog read at query time (30 s at most old).
+    from src.api.jobs import reindex_backlog_cached
+
+    bk = reindex_backlog_cached()
+    if bk.get("available"):
+        out["not_analysed"] = int(bk.get("articles_pending") or 0)
+    # Any queued row counts here, a quarantined one too (the tally names it as quarantined): the worker owes it a judgement.
+    if out.get("not_screened") or any_pending(db):
         # R830: while anything waits, the worker is running or is started here (idempotent), so a worker that stopped on an
         # error is retried by the next read rather than left stopped until a restart; its state rides along.
         kick_if_allowed()
