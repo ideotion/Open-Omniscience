@@ -40,6 +40,7 @@ import secrets
 import shutil
 import threading
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -1960,6 +1961,11 @@ class ImportQueueManager:
             if waiting
             else None
         )
+        # R835: the folder the copies are in, for the screen only: added here at read time, never stored with the run (the
+        # queue file can travel in a diagnostic bundle or field data) and never logged.
+        if isinstance(safety_copies, dict) and ((safety_copies.get("leftovers") or {}).get("count") or 0) > 0:
+            with suppress(Exception):
+                safety_copies = {**safety_copies, "folder": str(data_dir())}
         return {
             # R833: the run's own safety copy (removed when no item reached its swap, else kept with the reason) and the
             # safety copies in the data folder by count and total size.

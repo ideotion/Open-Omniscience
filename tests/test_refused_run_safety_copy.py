@@ -227,3 +227,21 @@ def test_the_wiring_marks_activation_before_the_swap_and_settles_before_the_run_
     q = (_ROOT / "src/backup/import_queue.py").read_text(encoding="utf-8")
     drive = python_function_source(q, "_drive")
     assert drive.index("self._settle_safety_copy()") < drive.index("self._tune_after_run()")
+
+
+def test_the_folder_path_is_shown_on_screen_and_never_stored(tmp_path, monkeypatch):
+    """R835: the import report shows the folder as a copyable path; the run's file (which can travel in a diagnostic
+    bundle or field data) holds the names and sizes only."""
+    import src.backup.import_queue as iq
+
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setattr(iq, "data_dir", lambda: data)
+    state = tmp_path / "import_queue.json"
+    q = iq.ImportQueueManager(state_path=state)
+    got = {"safety_copy": None, "leftovers": {"count": 2, "bytes": 10, "names": ["pre-restore-20261125T000001Z.db"]}}
+    monkeypatch.setattr("src.backup.merge.settle_run_safety_copy", lambda: got)
+    q._settle_safety_copy()
+    assert str(data) not in state.read_text(encoding="utf-8")
+    shown = q.status()["safety_copies"]
+    assert shown["folder"] == str(data) and shown["leftovers"]["count"] == 2

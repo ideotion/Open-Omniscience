@@ -2483,13 +2483,13 @@
         const bits = [];
         if (own && own.message) bits.push(esc(t(String(own.message))));
         if (typeof left.count === "number" && left.count > 0) {
-          bits.push(esc(tf("Safety copies in your data folder: {n} ({size})",
+          bits.push(esc(tf("Safety copies in your data folder: {n} ({size}). You can delete them by hand once you no longer need them.",
             { n: fmtNum(left.count, 0), size: humanBytes(left.bytes || 0) })));
-          // The folder, isolated so a right-to-left line cannot reorder it, and selectable so it can be copied.
-          if (left.folder) bits.push(`<bdi translate="no" dir="ltr" style="user-select:all">${esc(String(left.folder))}</bdi>`);
+          // R835: the folder, on screen only, isolated so a right-to-left line cannot reorder it, and selectable to copy.
+          if (sc.folder) bits.push(`<bdi translate="no" dir="ltr" style="user-select:all">${esc(String(sc.folder))}</bdi>`);
         }
         if (bits.length) {
-          safetyLine = `<div class="hint" title="${esc(t("A safety copy is a full copy of your corpus taken before an import changes anything. A copy whose import was refused before any change is removed; every other copy stays until you remove it or it ages out."))}">${bits.join(" · ")}</div>`;
+          safetyLine = `<div class="hint" title="${esc(t("A safety copy is a full copy of your corpus taken before an import changes anything. A copy whose import was refused before any change is removed. The others stay: a later import keeps the three newest, copies older than a week are removed by default, and you can delete any of them by hand from this folder once you no longer need them."))}">${bits.join(" · ")}</div>`;
         }
       }
       const tail = items.some((i) => i.state === "running") ? "" : _uxImPhaseBits(st.live, t);
