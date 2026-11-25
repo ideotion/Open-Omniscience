@@ -7951,7 +7951,11 @@ def _batch_in_drain_order(session, batch_id: int, *, newest_first: bool) -> list
     if not newest_first:
         return [int(r[0]) for r in session.execute(text(_BATCH_BY_ID_SQL), {"b": batch_id}).fetchall()]
     has_index = session.execute(
-        text("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_article_published_at'")
+        # The app's own index (models.py): on articles, not partial. Any other index under that name gets the read through the rows.
+        text(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_article_published_at' AND tbl_name = 'articles'"
+            " AND upper(sql) NOT LIKE '% WHERE %'"
+        )
     ).fetchone()
     sql = _BATCH_NEWEST_FIRST_SQL if has_index else _BATCH_NEWEST_FIRST_NO_INDEX_SQL
     ordered = [int(r[0]) for r in session.execute(text(sql), {"b": batch_id}).fetchall()]
