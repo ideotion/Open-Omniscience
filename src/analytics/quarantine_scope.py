@@ -30,6 +30,7 @@ answered from the table's own primary key, so it costs one small index read like
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from sqlalchemy import select
@@ -81,10 +82,104 @@ def not_counted_article_ids(session: Session) -> frozenset[int]:
     return quarantined_article_ids(session) | frozenset(int(i) for (i,) in session.execute(pending_ids_select()))
 
 
+#: R832 (row 421): the imported articles the re-index has not finished, as ONE reason beside "not screened". An article of a
+#: ``merged`` import (``merged_rows``) still owes the re-index while either analysis stamp of the current engine is missing (the
+#: same test as the backlog, ``src/backup/merge.py`` ``_BACKLOG_SQL``). An article that is quarantined (a stand-in is) or still
+#: queued for screening is counted under that reason, never also here, so the reasons never name one article twice: the
+#: screening wins, because an aggregate leaves a queued article out whatever its analysis holds. Query time only: nothing is
+#: written. The quarantine and queue subqueries are index-only (``idx_article_quarantined``, the queue's primary key).
+_NOT_ANALYSED_FROM = (
+    " FROM merge_batches b"
+    " JOIN merged_rows m ON m.batch_id = b.id AND m.table_name = 'articles'"
+    " LEFT JOIN article_index_stamps st ON st.article_id = m.row_id AND st.engine IN (:engine, :kw_legacy)"
+    " LEFT JOIN article_www_stamps ws ON ws.article_id = m.row_id AND ws.engine = :www_engine"
+    " WHERE b.status = :s AND (st.article_id IS NULL OR ws.article_id IS NULL)"
+    " AND m.row_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"
+    " AND m.row_id NOT IN (SELECT article_id FROM screening_pending)"
+)
+_NOT_ANALYSED_SQL = "SELECT COUNT(DISTINCT m.row_id)" + _NOT_ANALYSED_FROM
+#: Whether any import is still listed as merged: one probe, so a corpus with no import in flight pays nothing more.
+_ANY_MERGED_SQL = "SELECT 1 FROM merge_batches WHERE status = :s LIMIT 1"
+#: How long the whole-store count is reused by the surfaces that poll it (as the backlog's own cache, ``api/jobs.py``).
+_NOT_ANALYSED_TTL_S = 30.0
+_not_analysed_cache: dict[str, Any] = {"at": None, "value": None, "store": None}
+
+
+def _not_analysed_params() -> dict[str, str]:
+    """The stamp identities the backlog reads (an identity that cannot be computed equals no stamp, so every article of a merged
+    import counts as owed: overstated, never hidden), and the ``merged`` status."""
+    from src.backup.merge import _STATUS_MERGED, _backlog_engines, _backlog_www_engine
+
+    engine, legacy = _backlog_engines()
+    return {"engine": engine, "kw_legacy": legacy, "www_engine": _backlog_www_engine(), "s": _STATUS_MERGED}
+
+
+def not_analysed_count(session: Session) -> int:
+    """How many articles of the corpus the re-index has not finished (R832), disjoint from the quarantined and the not-screened
+    ones. Raises when the store cannot be read (the caller says nothing then, never 0). Reused for ``_NOT_ANALYSED_TTL_S``."""
+    import time
+
+    from sqlalchemy import text
+
+    now = time.monotonic()
+    try:  # the store it was read from: a cached count is never served for another one (a swap, a second engine)
+        bind = session.get_bind()
+        store = (id(bind), str(getattr(bind, "url", "")))
+    except Exception:  # noqa: BLE001 - no store to name: never served from the cache
+        store = None
+    at = _not_analysed_cache["at"]
+    if (store is not None and at is not None and now - at <= _NOT_ANALYSED_TTL_S and _not_analysed_cache["store"] == store
+            and _not_analysed_cache["value"] is not None):
+        return int(_not_analysed_cache["value"])
+    params = _not_analysed_params()
+    if session.execute(text(_ANY_MERGED_SQL), {"s": params["s"]}).first() is None:
+        n = 0
+    else:
+        n = int(session.execute(text(_NOT_ANALYSED_SQL), params).scalar() or 0)
+    _not_analysed_cache.update(at=now, value=n, store=store)
+    return n
+
+
+def count_not_analysed(session: Session, ids: Any) -> int | None:
+    """How many of ``ids`` the re-index has not finished (R832), for a figure built over a search's results: the figure counts
+    them, but maybe only in part, so it says how many beside "N of these results not counted yet". Pass the ids the figure
+    COUNTS (after :func:`split_not_screened`); a queued or quarantined id is never counted here either. One probe when no
+    import is in flight; otherwise lookups by ``ix_merged_rows_lookup``, 900 ids at a time. None when it cannot be read."""
+    from sqlalchemy import text
+
+    ids = sorted({int(i) for i in (ids or [])})
+    if not ids:
+        return 0
+    try:
+        params = _not_analysed_params()
+        if session.execute(text(_ANY_MERGED_SQL), {"s": params["s"]}).first() is None:
+            return 0
+        n = 0
+        for i in range(0, len(ids), 900):
+            chunk = ids[i : i + 900]
+            marks = ", ".join(f":i{k}" for k in range(len(chunk)))
+            stmt = _NOT_ANALYSED_SQL + f" AND m.row_id IN ({marks})"  # nosec B608 # bound parameter names only, never input
+            n += int(session.execute(text(stmt), {**params, **{f"i{k}": v for k, v in enumerate(chunk)}}).scalar() or 0)
+        return n
+    except Exception:  # noqa: BLE001 - an unreadable count is not a zero: the figure says nothing
+        return None
+
+
+def with_not_analysed(payload: dict, session: Session, counted_ids: Any) -> dict:
+    """Set ``payload["not_analysed_yet"]`` for a figure built from the analysis (keywords, places, people, dates, sentiment)
+    over ``counted_ids`` (R832): how many of them the re-index has not finished, so the figure may count them only in part.
+    Left out when it cannot be read (never 0 for "unknown"). Returns ``payload``."""
+    n = count_not_analysed(session, counted_ids)
+    if n is not None:
+        payload["not_analysed_yet"] = n
+    return payload
+
+
 def not_counted_tally(session: Session) -> dict[str, int]:
-    """How many articles the aggregates leave out for a reason that will pass: ``not_screened`` (queued for the junk
-    screening, R830). A surface says "N articles not screened yet" while it is above 0 and nothing at 0. Never raises:
-    a store that cannot be read says nothing it cannot back (an empty dict)."""
+    """How many articles the aggregates leave out, or count only in part, for a reason that will pass: ``not_screened``
+    (queued for the junk screening, R830) and ``not_analysed`` (the re-index has not finished them, R832; never also counted
+    as not screened or quarantined). A surface says "N articles not screened yet" / "N articles not analysed yet" while
+    each is above 0 and nothing at 0. Never raises: a count that cannot be read is absent (an empty dict when neither can)."""
     from sqlalchemy import func
 
     from src.database.models import ScreeningPending
@@ -97,7 +192,11 @@ def not_counted_tally(session: Session) -> dict[str, int]:
         ).scalar() or 0)
     except Exception:  # noqa: BLE001 - an unreadable count is not a zero: say nothing
         return {}
-    return {"not_screened": n}
+    out = {"not_screened": n}
+    # R832: the second reason, disjoint from the first (``not_analysed_count``); absent when it cannot be read, never 0.
+    with contextlib.suppress(Exception):
+        out["not_analysed"] = not_analysed_count(session)
+    return out
 
 
 def pending_keyword_contributions(session: Session, keyword_ids: Any = None) -> dict[int, tuple[int, int]]:

@@ -1806,6 +1806,8 @@
         parts.push(tf("of which quarantined: {n}", { n: fmtNum(s.quarantined, 0) }));
       if (s && typeof s.not_screened === "number" && s.not_screened > 0)
         parts.push(tf("of which not screened yet: {n}", { n: fmtNum(s.not_screened, 0) }));
+      if (s && typeof s.not_analysed === "number" && s.not_analysed > 0)   // R832, row 421
+        parts.push(tf("of which not analysed yet: {n}", { n: fmtNum(s.not_analysed, 0) }));
       return parts.length ? "(" + parts.join("; ") + ")" : "";
     }
     function _insRemainingHtml(s) {

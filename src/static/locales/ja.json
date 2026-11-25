@@ -8778,6 +8778,7 @@
   "{n} of them are in force here": "うち {n} 件がここで有効です",
   "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "このうち {n} 件はほぼ同一のコピーです——件数が示すより独立した声は少ないです（「関連」を参照）。",
   "{n} of these results not counted yet": "このうち {n} 件の結果はまだ集計されていません",
+  "{n} of these results not analysed yet": "このうち {n} 件の結果はまだ分析されていません",
   "{n} of your {total} sources: discovered candidates, not enabled, awaiting review. Collection does not reach them.": "{total} 件の情報源のうち {n} 件：発見された候補で、無効のまま審査待ち。収集はこれらに到達しません。",
   "{n} of {m}": "{n} / {m}",
   "{n} of {m} addresses located": "{m} 件中 {n} 件の住所を特定",

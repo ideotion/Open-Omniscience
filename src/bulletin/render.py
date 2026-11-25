@@ -1430,12 +1430,14 @@ def _md_disclosures(edition: dict, T: Translator) -> list[str]:
     if "reindex_backlog" in d:
         backlog = d["reindex_backlog"] if isinstance(d["reindex_backlog"], dict) else {}
         if backlog.get("available"):
-            if backlog.get("articles_pending"):
+            # R832: the count without the articles named above under another reason, where the record carries it
+            pending = backlog.get("not_analysed", backlog.get("articles_pending"))
+            if pending:
                 stated.append(
                     T.f(
                         "- {n} imported article(s) await re-index, so they carry no keywords yet "
                         "and are missing from every keyword figure here.",
-                        n=_fmt(backlog["articles_pending"]),
+                        n=_fmt(pending),
                     )
                 )
         else:
