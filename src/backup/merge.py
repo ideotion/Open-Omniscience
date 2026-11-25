@@ -3711,7 +3711,11 @@ def _normalise_country_codes(con, batch_id, results) -> None:
     report states what was converted, what the converter refused and what collided,
     rather than the merge quietly rewriting values nobody is told about.
     """
-    from src.backup.country_codes import STAGED_KEYS_DIFFER, StagedKeysDiffer, plan_staged_country_codes
+    from src.backup.country_codes import (
+        STAGED_KEYS_DIFFER,
+        StagedKeysDiffer,
+        plan_staged_country_codes,
+    )
 
     # Row 439: decided here, applied by the steps that read the columns (``_cc``); ``inc`` is never written, so this step does
     # not wait for the staged copy's integrity walk (R834) and the walk stays off the critical path.

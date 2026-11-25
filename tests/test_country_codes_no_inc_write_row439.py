@@ -486,7 +486,12 @@ def test_a_backup_brought_through_the_whole_migration_chain_is_accepted(tmp_path
     """The key check runs on a staged file the restore has already brought to the schema head (prepare_staged_corpus upgrades it
     before merge_corpus reads a row). A file made by the migration chain alone, from its first revision, matches the app's keys:
     a genuine older backup, upgraded, is never refused by this check."""
-    from src.backup.country_codes import COUNTRY_COLUMNS, _check_staged_keys, _columns_of, _table_exists
+    from src.backup.country_codes import (
+        COUNTRY_COLUMNS,
+        _check_staged_keys,
+        _columns_of,
+        _table_exists,
+    )
     from src.database.migrate import upgrade_database_file
 
     p = tmp_path / "chain.db"
