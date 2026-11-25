@@ -614,9 +614,14 @@ class VolumeBackupManager:
         already_merged_digests: Collection[str] = (),
         trust_fetch_history: bool | None = None,
         place_hf_models: bool = False,
+        prestaged: Any = None,
         _restore_fn: Callable[..., dict] | None = None,
     ) -> dict:
         """Restore one artifact folder as a background job.
+
+        ``prestaged`` is this folder's staged artifact when the import queue already staged it under the previous
+        item's merge (row 422 P1): the restore takes it in place of its own reassembly, and every check before and
+        after the staging runs as it would. The job owns it from here and removes it on every path, used or not.
 
         ``working_copy`` / ``hold_after_merge`` / ``already_merged_digests`` are the
         CHECKPOINT-GROUP seam (2026-09-07, the 2026-08-08 queue entry's item (b)).
@@ -673,6 +678,7 @@ class VolumeBackupManager:
                     # ticked them, with the target folder shown; False (every caller that does not
                     # ask) leaves them in the artifact, counted.
                     "place_hf_models": place_hf_models is True,
+                    "prestaged": prestaged,
                 },
                 daemon=True,
                 name="volume-restore",
@@ -696,6 +702,7 @@ class VolumeBackupManager:
         hold_after_merge: bool = False,
         final_activation: bool = True,
         already_merged_digests: frozenset[str] = frozenset(),
+        prestaged: Any = None,
     ):
         from src.backup.merge import (
             HalfMigratedStoreRefused,
@@ -710,6 +717,9 @@ class VolumeBackupManager:
         runlog.begin("import", label=srcp.name, dest=str(srcp), force=self._force)
         # Written OPEN to the storage-events journal (a kill in the middle leaves "started, never ended"); see _run_backup.
         note = storage_events.run_started("import", via="volume-set")
+        # Row 422 P1: a staging handed in by the queue is this job's from here; it is removed below unless the restore
+        # took it, which then removes it as it removes its own.
+        prestaged_taken = [False]
         try:
             if restore_fn is not None:
                 summary = restore_fn(srcp, passphrase)
@@ -876,10 +886,15 @@ class VolumeBackupManager:
                 # row 325) first, since the writer check stops the jobs it may stop and starts them again only when it refuses itself.
                 refuse_half_migrated_store()
                 refuse_while_writer_jobs_run()  # (R659)
-                staged = read_volume_backup(
-                    srcp, passphrase, corpus_passphrase=corpus_passphrase,
-                    should_stop=self._stop.is_set,
-                )  # verify + parity-recover + reassemble
+                if prestaged is not None:
+                    # Staged under the previous item's merge by the same reader (row 422 P1): the same checks, earlier.
+                    staged, prestaged_taken[0] = prestaged, True
+                    runlog.milestone("prestaged", stage_a=getattr(staged, "stage_a_timings", None) or {})
+                else:
+                    staged = read_volume_backup(
+                        srcp, passphrase, corpus_passphrase=corpus_passphrase,
+                        should_stop=self._stop.is_set,
+                    )  # verify + parity-recover + reassemble
                 try:
                     self._on_prog({
                         "phase": "merging", "own_the_machine": True,
@@ -1259,6 +1274,11 @@ class VolumeBackupManager:
             with self._lock:
                 self._state, self._error = "error", detail
         finally:
+            if prestaged is not None and not prestaged_taken[0]:
+                # Skipped as already merged, refused before staging, or stopped: the staging handed in goes now.
+                from src.backup.artifact import cleanup_staging as _cleanup_prestaged
+
+                _cleanup_prestaged(prestaged)
             # A net for an exit path not enumerated above. A no-op whenever an
             # outcome WAS recorded (the ambient run is already cleared), so it can
             # never overwrite a real one -- and it names its own ignorance rather

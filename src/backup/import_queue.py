@@ -390,6 +390,30 @@ UNCHECKED_PASSPHRASE = (
 )
 
 
+def prestage_enabled() -> bool:
+    """Row 422 P1: stage the next corpus backup while this one merges. ``OO_IMPORT_PRESTAGE=0`` turns it off (each item
+    then stages at its own turn, as before)."""
+    return os.getenv("OO_IMPORT_PRESTAGE", "1").strip() != "0"
+
+
+#: What the free-space refusal of a staging taken ahead calls it (the preflight's own sentence names the numbers).
+PRESTAGE_WHAT = "staging of the next backup while this one merges"
+
+
+@dataclass
+class _Prestage:
+    """The next corpus item's staging, taken while the item before it merges (row 422 P1).
+
+    Owned by the queue until handed to the restore (``take``) or removed (``drop``); nothing else reads it. ``note`` is
+    what the item's summary says about it: used, declined (with the preflight's words) or not taken."""
+
+    item_id: str
+    thread: threading.Thread | None = None
+    cancel: threading.Event = field(default_factory=threading.Event)
+    staged: Any = None
+    note: dict[str, Any] = field(default_factory=dict)
+
+
 class ImportQueueManager:
     """ONE import run at a time. Items are executed in order; the run owns a single
     exclusive collection window spanning all of them (ruling item 10)."""
@@ -441,6 +465,8 @@ class ImportQueueManager:
         #: The K this RUN resolved, captured once at its start rather than read per
         #: item -- an operator changing the setting mid-run must not split a group.
         self._checkpoint_k: int = CHECKPOINT_K_DEFAULT
+        # Row 422 P1: the next corpus item's staging, taken under this item's merge (None = none in flight).
+        self._prestage: _Prestage | None = None
         self._load_persisted()
 
     # -- persistence -------------------------------------------------------- #
@@ -1021,6 +1047,8 @@ class ImportQueueManager:
                         item["ended_at"] = time.time()
                         self._save()
         finally:
+            # A staging taken ahead for an item that did not run (a Stop, or an error that ended the run) goes first.
+            self._drop_prestage("the run ended before the backup it was staged for ran")
             # A group still open here never reached a checkpoint (a Stop, or a queue
             # whose remaining corpus items all turned out to be already merged). It
             # is discarded rather than committed: committing would mean running the
@@ -1558,7 +1586,7 @@ class ImportQueueManager:
         except Exception as exc:  # noqa: BLE001 - bookkeeping must never cost an import
             log_failure(_LOG, "could not record the import stage", exc, *self._secrets(), level=logging.DEBUG)
 
-    def _await(self, status_fn, cancel_fn, *, poll: float = 0.4) -> dict:
+    def _await(self, status_fn, cancel_fn, *, poll: float = 0.4, on_poll=None) -> dict:
         """Drive one sub-manager to a terminal state, mirroring its live progress.
 
         The queue's own Stop reaches the sub-job through ``cancel_fn`` (once), then
@@ -1571,6 +1599,11 @@ class ImportQueueManager:
             with self._lock:
                 self._live = st
                 self._note_stage(st)
+            if on_poll is not None:
+                try:
+                    on_poll(st)
+                except Exception as exc:  # noqa: BLE001 - a throughput hook never costs the item in flight
+                    log_failure(_LOG, "the import's poll hook failed", exc, *self._secrets(), level=logging.WARNING)
             if state in ("done", "error", "cancelled", "stopped", "paused", "idle"):
                 if state == "error":
                     raise RuntimeError(str(st.get("error") or "the job failed"))
@@ -1611,17 +1644,26 @@ class ImportQueueManager:
                 "use a legacy single-file archive, where it is honoured."
             )
         backup_key, corpus_key = self._keys_for(item)
-        mgr.start_restore(
-            item["path"], backup_key, force=bool(item.get("force")),
-            corpus_passphrase=corpus_key or None,
-            working_copy=working_copy, hold_after_merge=hold,
-            final_activation=self._final_activation,
-            already_merged_digests=already,
-            allow_unverified=bool(item.get("allow_unverified")),
-            trust_fetch_history=item.get("trust_fetch_history"),
-            place_hf_models=item.get("place_hf_models") is True,
-        )
-        st = self._await(mgr.status, mgr.cancel)
+        prestaged, prestage_note = self._take_prestage(item)
+        try:
+            mgr.start_restore(
+                item["path"], backup_key, force=bool(item.get("force")),
+                corpus_passphrase=corpus_key or None,
+                working_copy=working_copy, hold_after_merge=hold,
+                final_activation=self._final_activation,
+                already_merged_digests=already,
+                allow_unverified=bool(item.get("allow_unverified")),
+                trust_fetch_history=item.get("trust_fetch_history"),
+                place_hf_models=item.get("place_hf_models") is True,
+                **({"prestaged": prestaged} if prestaged is not None else {}),
+            )
+        except BaseException:
+            if prestaged is not None:  # the job never started, so the staging is still the queue's
+                from src.backup.artifact import cleanup_staging
+
+                cleanup_staging(prestaged)
+            raise
+        st = self._await(mgr.status, mgr.cancel, on_poll=lambda live: self._maybe_prestage_next(item, live))
         summary = st.get("summary") or {}
         rep = summary.get("report") or {}
         out = {
@@ -1630,6 +1672,8 @@ class ImportQueueManager:
             "held": bool(summary.get("held")),
             "source_digest": summary.get("source_digest"),
         }
+        if prestage_note:
+            out["prestage"] = prestage_note
         if isinstance(summary.get("held_lanes"), dict):
             out["held_lanes"] = summary["held_lanes"]
         # An artifact already merged completes in milliseconds with no report. Say so
@@ -1645,6 +1689,157 @@ class ImportQueueManager:
             # restore sets it; dropping it here left the row unable to say which.
             out["in_open_checkpoint_group"] = bool(summary.get("in_open_checkpoint_group"))
         return out
+
+    # -- row 422 P1: the next item's staging under this item's merge ---------- #
+    #: The phases of the volume job before its merge starts: the next item is staged only once this one is past them,
+    #: so the two stagings never compete for the disk.
+    _PRE_MERGE_PHASES = frozenset({"", "verifying", "reassembling", "skipped-already-merged"})
+
+    def _next_corpus_item(self, item: dict) -> dict | None:
+        """The item right after ``item`` when it is a corpus backup still waiting its turn, else None."""
+        with self._lock:
+            try:
+                idx = next(i for i, it in enumerate(self._items) if it is item)
+            except StopIteration:
+                return None
+            nxt = self._items[idx + 1] if idx + 1 < len(self._items) else None
+            if nxt is None or nxt.get("kind") != "corpus" or nxt.get("state") != "queued":
+                return None
+            if not bool(nxt.get("include_newsletters", True)):
+                return None  # refused at its own turn (``_run_corpus``): nothing to stage for it
+            return nxt
+
+    def _maybe_prestage_next(self, item: dict, live: dict) -> None:
+        """Start staging the next corpus backup once this one's merge has begun (row 422 P1). Once per item."""
+        if self._prestage is not None or self._stop.is_set() or not prestage_enabled():
+            return
+        if str(live.get("state") or "") != "running":
+            return
+        prog = live.get("progress") if isinstance(live.get("progress"), dict) else live
+        if str((prog or {}).get("phase") or "") in self._PRE_MERGE_PHASES:
+            return
+        nxt = self._next_corpus_item(item)
+        if nxt is None:
+            return
+        pre = _Prestage(item_id=str(nxt.get("id")))
+        this_digest = None
+        try:
+            from src.backup.merge import artifact_source_digest
+
+            this_digest = artifact_source_digest(Path(item["path"]))
+        except Exception:  # noqa: BLE001 - unknown never matches; the next item's own skip still runs
+            this_digest = None
+        pre.thread = threading.Thread(
+            target=self._prestage_worker, args=(pre, nxt, this_digest), daemon=True, name="import-prestage"
+        )
+        with self._lock:
+            self._prestage = pre
+        pre.thread.start()
+
+    def _prestage_worker(self, pre: _Prestage, nxt: dict, this_digest: str | None) -> None:
+        """Stage ``nxt`` with the restore's own reader, counting the merge in flight in the free-space preflight.
+
+        Nothing here can fail the import: a decline or a failure leaves the item to stage at its own turn, where the
+        same reader runs again and reports in full. Only a decline for space is said (its words name the numbers)."""
+        from src.backup.artifact import BackupSpaceError, cleanup_staging, read_volume_backup
+        from src.backup.merge import artifact_source_digest, find_completed_import
+        from src.backup.stream_backup import STREAM_KIND, register_active_staging
+        from src.backup.volumes import load_manifest
+
+        t0 = time.monotonic()
+        try:
+            src = Path(nxt["path"])
+            if load_manifest(src).get("kind") != STREAM_KIND:
+                pre.note = {"used": False, "reason": "not-a-streamed-set"}
+                return
+            digest = artifact_source_digest(src)
+            group = self._group
+            if not nxt.get("force") and digest and (
+                digest == this_digest
+                or (group is not None and digest in group.digests)
+                or find_completed_import(digest) is not None
+            ):
+                pre.note = {"used": False, "reason": "already-merged"}  # its own turn says so, in full
+                return
+            backup_key, corpus_key = self._keys_for(nxt)
+            staged = read_volume_backup(
+                src,
+                backup_key,
+                corpus_passphrase=corpus_key or None,
+                should_stop=lambda: pre.cancel.is_set() or self._stop.is_set(),
+                reserve_bytes=self._merge_in_flight_reserve(),
+                reserve_what=PRESTAGE_WHAT,
+            )
+            if pre.cancel.is_set():
+                cleanup_staging(staged)
+                return
+            # Kept out of the stale-staging sweep while it waits for its turn (it can wait a whole merge, past the
+            # sweep's age rule); handed over or removed, it leaves the registry.
+            register_active_staging(staged.staging_dir)
+            pre.staged = staged
+            pre.note = {"used": True, "staged_ahead_s": round(time.monotonic() - t0, 3)}
+        except BackupSpaceError as exc:
+            pre.note = {"used": False, "reason": "space", "detail": record_text(exc, *self._secrets(), typed=False)}
+            _LOG.info("import: the next backup is staged at its own turn: %s", pre.note["detail"])
+        except Exception as exc:  # noqa: BLE001 - its own turn stages it again and reports what goes wrong
+            pre.note = {"used": False, "reason": "failed"}
+            log_failure(_LOG, "staging the next backup ahead failed; it stages at its own turn", exc,
+                        *self._secrets(), level=logging.INFO)
+
+    @staticmethod
+    def _merge_in_flight_reserve() -> int:
+        """Space the merge in flight may still write on the data drive: its working copy and its safety copy, each up
+        to the live corpus's size. Counted in full even when either already exists (a staging declined for a few GB
+        stages at its turn; one that filled the drive under a merge would cost that merge)."""
+        try:
+            from src.backup.sqlite_backup import live_db_path
+
+            p = live_db_path()
+            return 2 * (p.stat().st_size if p.exists() else 0)
+        except Exception:  # noqa: BLE001 - unknown size: the reserve cannot be counted, so nothing is staged ahead
+            return 1 << 62
+
+    def _take_prestage(self, item: dict) -> tuple[Any, dict[str, Any] | None]:
+        """Hand ``item`` its staging if one was taken for it (waiting for it to finish, as its own staging would have
+        taken that long anyway), with the note its summary carries. Any other staging in flight is removed."""
+        with self._lock:
+            pre, self._prestage = self._prestage, None
+        if pre is None:
+            return None, None
+        if pre.item_id != str(item.get("id")):
+            self._finish_and_remove(pre)
+            return None, None
+        if pre.thread is not None:
+            pre.thread.join()
+        note = dict(pre.note) or {"used": False, "reason": "not-taken"}
+        if pre.staged is None:
+            note["used"] = False
+        else:
+            from src.backup.stream_backup import unregister_active_staging
+
+            unregister_active_staging(pre.staged.staging_dir)  # the restore owns it now, as it owns its own staging
+        return pre.staged, note
+
+    def _drop_prestage(self, reason: str) -> None:
+        with self._lock:
+            pre, self._prestage = self._prestage, None
+        if pre is not None:
+            _LOG.info("import: a staging taken ahead was removed: %s", reason)
+            self._finish_and_remove(pre)
+
+    @staticmethod
+    def _finish_and_remove(pre: _Prestage) -> None:
+        from src.backup.artifact import cleanup_staging
+
+        from src.backup.stream_backup import unregister_active_staging
+
+        pre.cancel.set()
+        if pre.thread is not None:
+            pre.thread.join()
+        if pre.staged is not None:
+            cleanup_staging(pre.staged)
+            unregister_active_staging(pre.staged.staging_dir)
+            pre.staged = None
 
     def _run_legacy(self, item: dict) -> dict:
         # The endpoint's own extracted helper -- ONE legacy-restore code path, so the

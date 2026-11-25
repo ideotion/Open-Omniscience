@@ -2539,13 +2539,20 @@ def read_stream_backup(
     *,
     corpus_passphrase: str | None = None,
     include_merge_budget: bool = True,
+    should_stop: Callable[[], bool] | None = None,
+    reserve_bytes: int = 0,
+    reserve_what: str = "",
 ) -> StagedArtifact:
     """Verify + (parity-)recover + reassemble an oo-volumes-2 set into a staged
     artifact the additive merge engine consumes. Streams member by member
     (bounded RAM); an encrypted corpus/custody member is converted to the
     plaintext staged copy the merge requires — the only plaintext materialization,
     inside the transient ``.restore-*`` staging. Raises loudly on anything that
-    cannot be verified."""
+    cannot be verified.
+
+    ``should_stop`` is asked between volumes and raises :class:`VolumeStopped` (the staging goes with it).
+    ``reserve_bytes`` is space another job still needs on the same drive (row 422 P1: the previous item's merge, when
+    this set is staged under it); the free-space preflight counts it, and its refusal names ``reserve_what``."""
     src = Path(src_dir)
     m = load_manifest(src)
     if m.get("kind") != STREAM_KIND:
@@ -2587,7 +2594,9 @@ def read_stream_backup(
     stage_a_timings["verify_and_parity_recover"] = round(time.monotonic() - t0, 3)
 
     root = staging_root or data_dir()
-    _preflight_staging(root, m, include_merge_budget=include_merge_budget)
+    _preflight_staging(
+        root, m, include_merge_budget=include_merge_budget, reserve_bytes=reserve_bytes, reserve_what=reserve_what
+    )
     staging = make_restore_staging(root)  # R829 (B): private, 0700, a new name
     with active_staging(staging):
         try:
@@ -2608,6 +2617,8 @@ def read_stream_backup(
                 # never through a link at a member's name (row 313); owner read and write only (R829 B)
                 with create_new(out_path, mode=STAGING_FILE_MODE) as fout:
                     for vname in mm.get("volumes") or []:
+                        if should_stop is not None and should_stop():
+                            raise VolumeStopped("the restore staging was stopped")
                         if vname not in vol_by_name:
                             raise VolumeError(
                                 f"member {mm['name']} references an unknown volume {vname}"
@@ -2754,7 +2765,7 @@ def backup_manifest_refusal(src_dir: Path | str) -> str | None:
 
 
 def _preflight_staging(
-    root: Path, m: dict[str, Any], *, include_merge_budget: bool = True
+    root: Path, m: dict[str, Any], *, include_merge_budget: bool = True, reserve_bytes: int = 0, reserve_what: str = ""
 ) -> None:
     """Staging needs: every member's plaintext + a plaintext conversion of an
     encrypted corpus/custody member + (in the app's restore flow, where a merge
@@ -2779,7 +2790,9 @@ def _preflight_staging(
             total += p.stat().st_size if p.exists() else 0
         except Exception:  # noqa: BLE001 - no live store (fresh install): staging-only
             pass
-    preflight_free_space(root, total + 64 * 1024 * 1024, what="restore staging")
+    preflight_free_space(
+        root, total + max(0, int(reserve_bytes)) + 64 * 1024 * 1024, what=reserve_what or "restore staging"
+    )
 
 
 def _prepare_staged_corpus_files(
