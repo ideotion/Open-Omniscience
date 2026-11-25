@@ -342,9 +342,12 @@ def _no_failed_open_held_over():
     reason none of them made. The test that left it is the one it is cleared after; what a test does inside itself is unchanged."""
     yield
     connect = sys.modules.get("src.database.connect")
-    if connect is not None:
-        with connect._hdr_lock:
-            connect._audit_pending.clear()
+    # a test may stand a stand-in object in for the module (test_secret_scrub_floor_and_forms): only the real one holds pending opens
+    lock, pending = getattr(connect, "_hdr_lock", None), getattr(connect, "_audit_pending", None)
+    if lock is None or pending is None:
+        return
+    with lock:
+        pending.clear()
 
 
 @pytest.fixture(autouse=True)
