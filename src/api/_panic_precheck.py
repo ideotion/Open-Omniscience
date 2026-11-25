@@ -80,7 +80,7 @@ def precheck(argv: list[str]) -> None:
         from src.safety import crypto_erase, panic_wipe
 
         # off_drive_only: a drive plugged in while the question waited is left whole (the operator agreed to the rest only).
-        crypto_erase.plain_rewrite_notice = lambda: print(crypto_erase.PLAIN_STORE_NOTICE, flush=True)  # R818 (a)
+        crypto_erase.plain_rewrite_notice = lambda: print(crypto_erase.plain_notice_now, flush=True)  # R818 (a)
         report = panic_wipe(confirm=True, off_drive_only=True)
     except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 - said, never a traceback (a Ctrl-C during the erase too)
         print(f"The erase of what the app keeps outside the data drive did not finish ({type(exc).__name__}): it may be partly "
@@ -98,10 +98,12 @@ def precheck(argv: list[str]) -> None:
         print(f"Files erased outside the data drive: {report['files_wiped']} of {report['files_seen']}.")
     else:
         print(NOTHING_OUTSIDE)
+    if report.get("corpus_encryption") in crypto_erase.CORPUS_ENCRYPTION:
+        print(crypto_erase.CORPUS_ENCRYPTION[report["corpus_encryption"]])  # R819 (4): only for a main database it reached
     for line in crypto_erase.plaintext_store_sentences(report):  # R815 (2): apart from the count above, never in it
         print(line)
     if report.get("plaintext_store"):
-        print(crypto_erase._PLAINTEXT_SENTENCE)  # R815 (3): the main database outside the drive is known plaintext
+        print(crypto_erase._plain_sentence(report.get("encrypted_corpus")))  # R815 (3) / R819: plaintext, or not determined
     elif report.get("files_seen") and report.get("encrypted_corpus") is not True:
         print(PLAINTEXT)  # the store's salt is the guarantee only when it is encrypted; otherwise its pages outlive the delete
     holder = report.get("other_holder", "unknown")
