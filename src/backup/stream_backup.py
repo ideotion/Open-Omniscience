@@ -2427,6 +2427,10 @@ REASON_OWN_KEY_UNREADABLE = "this installation's own signing key could not be re
 UNCHECKED_REASONS = (REASON_UNSIGNED, REASON_BAD_SIGNATURE, REASON_OTHER_INSTALLATION, REASON_OWN_KEY_UNREADABLE)
 
 
+class NeedsRepair(VolumeError):
+    """A set with a bad or missing volume, read with ``repair=False`` (row 422 P1): nothing was written to its folder."""
+
+
 class WrongBackupPassphrase(EncryptionError):
     """The first volume is exactly what this installation signed, and it does not open: the passphrase is wrong."""
 
@@ -2527,6 +2531,35 @@ def backup_passphrase_check(src_dir: Path | str, passphrase: str) -> tuple[str, 
         return "none", None
 
 
+def backup_key_opens(src_dir: Path | str, passphrase: str) -> bool:
+    """True only when ``passphrase`` (never empty) opens the first volume of the streamed set at ``src_dir``. It runs the
+    same checks as :func:`backup_passphrase_check` and reads one chunk, and it writes nothing. Row 422 P1 asks this before
+    staging the next backup early: nothing is staged for a backup whose passphrase this run does not hold."""
+    if not passphrase:
+        return False
+    src = Path(src_dir)
+    try:
+        m = load_manifest(src)
+        if m.get("kind") != STREAM_KIND:
+            return False
+        _require_safe_manifest_names(m)
+        _require_each_volume_read_once(m, src)
+        _require_distinct_member_names(m)
+        vol_by_name = {v.get("name"): v for v in m.get("volumes") or []}
+        first = next((v for mm in m.get("members") or [] for v in mm.get("volumes") or [] if v in vol_by_name), None)
+        if first is None:
+            return False
+        path = src / first
+        if path.is_symlink() or not path.is_file():
+            return False
+        opens, _digest = stream_key_opens_or_digest(
+            path, passphrase, follow_links=False, max_bytes=volume_expectation(vol_by_name[first])["expect_bytes"]
+        )
+        return bool(opens)
+    except Exception:  # noqa: BLE001 - no answer is "does not open": the item stages at its own turn, as before
+        return False
+
+
 def backup_passphrase_is_wrong(src_dir: Path | str, passphrase: str) -> bool:
     """True only when ``backup_passphrase_check`` names the passphrase wrong (see there)."""
     return backup_passphrase_check(src_dir, passphrase)[0] == "wrong"
@@ -2539,13 +2572,24 @@ def read_stream_backup(
     *,
     corpus_passphrase: str | None = None,
     include_merge_budget: bool = True,
+    should_stop: Callable[[], bool] | None = None,
+    reserve_bytes: int = 0,
+    reserve_what: str = "",
+    repair: bool = True,
 ) -> StagedArtifact:
     """Verify + (parity-)recover + reassemble an oo-volumes-2 set into a staged
     artifact the additive merge engine consumes. Streams member by member
     (bounded RAM); an encrypted corpus/custody member is converted to the
     plaintext staged copy the merge requires — the only plaintext materialization,
     inside the transient ``.restore-*`` staging. Raises loudly on anything that
-    cannot be verified."""
+    cannot be verified.
+
+    ``should_stop`` is asked between volumes and raises :class:`VolumeStopped` (the staging goes with it).
+    ``reserve_bytes`` is space another job still needs on the same drive (row 422 P1: the previous item's merge, when
+    this set is staged under it); the free-space preflight counts it, and its refusal names ``reserve_what``. With a
+    reserve the free space is asked again before every volume (the other job keeps writing), and a shortfall stops the
+    staging with the same refusal. ``repair=False`` refuses a set with a bad or missing volume (:class:`NeedsRepair`)
+    instead of writing recovered volumes into its folder: a staging taken ahead leaves the repair to the item's turn."""
     src = Path(src_dir)
     m = load_manifest(src)
     if m.get("kind") != STREAM_KIND:
@@ -2572,7 +2616,9 @@ def read_stream_backup(
     _refuse_a_wrong_backup_passphrase(src, m, passphrase)
     stage_a_timings["passphrase_check"] = round(time.monotonic() - t0, 3)
     t0 = time.monotonic()
-    status = verify_volume_set(src)
+    status = verify_volume_set(src, should_stop=should_stop)
+    if status["bad"] and not repair:
+        raise NeedsRepair("a volume of this backup is damaged or missing; it is repaired at its own turn")
     if status["bad"]:
         from src.backup.parity import recover_volumes
 
@@ -2587,7 +2633,9 @@ def read_stream_backup(
     stage_a_timings["verify_and_parity_recover"] = round(time.monotonic() - t0, 3)
 
     root = staging_root or data_dir()
-    _preflight_staging(root, m, include_merge_budget=include_merge_budget)
+    _preflight_staging(
+        root, m, include_merge_budget=include_merge_budget, reserve_bytes=reserve_bytes, reserve_what=reserve_what
+    )
     staging = make_restore_staging(root)  # R829 (B): private, 0700, a new name
     with active_staging(staging):
         try:
@@ -2596,6 +2644,7 @@ def read_stream_backup(
             from src.backup.artifact import member_path
 
             vol_by_name = {v["name"]: v for v in m.get("volumes") or []}
+            left_to_write = [_staging_bytes(m)]
             for mm in m.get("members") or []:
                 out_path = member_path(staging, mm["name"])
                 if out_path is None:  # verify refused it already; never joined
@@ -2608,6 +2657,12 @@ def read_stream_backup(
                 # never through a link at a member's name (row 313); owner read and write only (R829 B)
                 with create_new(out_path, mode=STAGING_FILE_MODE) as fout:
                     for vname in mm.get("volumes") or []:
+                        if should_stop is not None and should_stop():
+                            raise VolumeStopped("the restore staging was stopped")
+                        if reserve_bytes > 0:
+                            from src.backup.artifact import preflight_free_space
+
+                            preflight_free_space(root, left_to_write[0] + int(reserve_bytes), what=reserve_what or "restore staging")
                         if vname not in vol_by_name:
                             raise VolumeError(
                                 f"member {mm['name']} references an unknown volume {vname}"
@@ -2617,6 +2672,7 @@ def read_stream_backup(
                             b: bytes, _f: Any = fout, _h: Any = h, _left: list[int] = budget, _n: str = mm["name"]
                         ) -> None:
                             _left[0] -= len(b)
+                            left_to_write[0] -= len(b)
                             if _left[0] < 0:
                                 raise VolumeError(
                                     f"member {_n} holds more data than the backup's manifest declares; refusing to go on"
@@ -2636,6 +2692,8 @@ def read_stream_backup(
                 )
             stage_a_timings["reassemble"] = round(time.monotonic() - t1, 3)
 
+            if should_stop is not None and should_stop():
+                raise VolumeStopped("the restore staging was stopped")
             t2 = time.monotonic()
             verified_absent = _prepare_staged_corpus_files(
                 staging, m, passphrase, corpus_passphrase
@@ -2650,6 +2708,8 @@ def read_stream_backup(
             stage_a_timings["finalize"] = round(time.monotonic() - t3, 3)
             from src.backup.artifact import seal_staged_members
 
+            if should_stop is not None and should_stop():
+                raise VolumeStopped("the restore staging was stopped")
             seal_staged_members(staged, stage_a_timings)  # R829 A2: a corpus not encrypted in its backup; A1 already keyed
             staged.stage_a_timings = stage_a_timings
             from src.backup.artifact import give_key_passphrases
@@ -2754,7 +2814,7 @@ def backup_manifest_refusal(src_dir: Path | str) -> str | None:
 
 
 def _preflight_staging(
-    root: Path, m: dict[str, Any], *, include_merge_budget: bool = True
+    root: Path, m: dict[str, Any], *, include_merge_budget: bool = True, reserve_bytes: int = 0, reserve_what: str = ""
 ) -> None:
     """Staging needs: every member's plaintext + a plaintext conversion of an
     encrypted corpus/custody member + (in the app's restore flow, where a merge
@@ -2763,14 +2823,7 @@ def _preflight_staging(
     each step preflights what it will actually do, never less."""
     from src.backup.artifact import preflight_free_space
 
-    members = m.get("members") or []
-    total = sum(int(mm.get("plaintext_bytes", 0)) for mm in members)
-    if not m.get("corpus_encrypted"):
-        # R829 A2: a plaintext corpus is sealed into a keyed copy beside it before the plaintext goes. An encrypted one
-        # is read as it is (A1), with no second copy.
-        corpus = next((mm for mm in members if mm.get("role") == "corpus"), None)
-        if corpus:
-            total += int(corpus.get("plaintext_bytes", 0))
+    total = _staging_bytes(m)
     if include_merge_budget:
         try:
             from src.backup.sqlite_backup import live_db_path
@@ -2779,7 +2832,22 @@ def _preflight_staging(
             total += p.stat().st_size if p.exists() else 0
         except Exception:  # noqa: BLE001 - no live store (fresh install): staging-only
             pass
-    preflight_free_space(root, total + 64 * 1024 * 1024, what="restore staging")
+    preflight_free_space(
+        root, total + max(0, int(reserve_bytes)) + 64 * 1024 * 1024, what=reserve_what or "restore staging"
+    )
+
+
+def _staging_bytes(m: dict[str, Any]) -> int:
+    """What staging the set writes: every member's plaintext, plus the keyed copy a plaintext corpus is sealed into."""
+    members = m.get("members") or []
+    total = sum(int(mm.get("plaintext_bytes", 0)) for mm in members)
+    if not m.get("corpus_encrypted"):
+        # R829 A2: a plaintext corpus is sealed into a keyed copy beside it before the plaintext goes. An encrypted one
+        # is read as it is (A1), with no second copy.
+        corpus = next((mm for mm in members if mm.get("role") == "corpus"), None)
+        if corpus:
+            total += int(corpus.get("plaintext_bytes", 0))
+    return total
 
 
 def _prepare_staged_corpus_files(
