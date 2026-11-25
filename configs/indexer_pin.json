@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "e96db328f2644adbcf5067cc2f4b2415021b1275890e8bcfda608e9859bae970",
+  "digest": "b2b4fb39f46d80984df44b3784d6e7ac2f5a0cbf34c933bb7b2c75d164372260",
   "log": [
     {
       "version": 1,
@@ -133,6 +133,12 @@
       "digest": "e96db328f2644adbcf5067cc2f4b2415021b1275890e8bcfda608e9859bae970",
       "kind": "same",
       "note": "Row 416 changes only reindex_parallel.py's pool lifetime and worker count (one kept pool per drain, recycled, memory-bounded); every task is computed by the same _worker_compute in a worker built by the same _worker_init, and index_article is untouched"
+    },
+    {
+      "version": 3,
+      "digest": "b2b4fb39f46d80984df44b3784d6e7ac2f5a0cbf34c933bb7b2c75d164372260",
+      "kind": "same",
+      "note": "Row 425 changes only which flag the re-index drain's finally reads to decide whether to wait for or kill a window computed ahead (a stop-path change); no task, derivation or apply is touched, so index_article writes the same rows"
     }
   ]
 }
