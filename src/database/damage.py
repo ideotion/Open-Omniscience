@@ -1549,6 +1549,17 @@ class DamageRegistry:
                 left.add(PAGES_ENTRY)
         return sorted(left - damaged)
 
+    def note_import_check_damage(self, file_key: str, tables: list[str], *, path: Path | None = None) -> None:
+        """R827 R7(a), Plan 2026-11-24: the whole-file check an import owed after an activation checked only on the tables it
+        wrote found damage in the LIVE file. The same fact as any other integrity finding, so it latches the file the same
+        way (writers paused, the repair and restore offers): ``tables`` are the schema names a per-table read found damaged,
+        or ``(pages)`` when the damage is in no one table. Never raises."""
+        try:
+            at = datetime.fromtimestamp(self._clock(), UTC).isoformat(timespec="seconds")
+            self._note_verified_damage(file_key, list(tables), path=path, at=at)
+        except Exception as exc:  # noqa: BLE001 - the report still says the check failed; this is the latch only
+            _LOG.warning("database damage: could not latch the import check's finding (%s)", type(exc).__name__)
+
     def _note_verified_damage(
         self,
         file_key: str,
