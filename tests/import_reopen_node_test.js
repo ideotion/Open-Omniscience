@@ -60,7 +60,7 @@ function load(dom) {
     "var _uxImSummaryArgs = 1, _uxImFound = {corpus: []}, _uxImSrc = '/x', _uxImRx = {}, _uxImRxAt = 5;\n" +
     "var api = async function () { return {}; };\n" +
     // collaborators that are not what is under test
-    "function _uxImResetRunView() {} function _uxImLastLine() {}\n" +
+    "function _uxImResetRunView() {} function _uxImLastLine() {} function _uxSafetyCopiesReset() {}\n" +
     "function _uxImCheckpointNote() {} function _uxImReattach() {} function _uxImKeyRows() {}\n" +
     extract("_uxImTrustRow") + "\n" +
     extract("_uxImTrust") + "\n" +
