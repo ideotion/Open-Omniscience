@@ -264,8 +264,11 @@ def test_an_install_that_hit_the_old_failure_has_no_record_and_is_still_found_an
     encrypt_tool.encrypt_database(stores, _KEY, library=True)
     assert not (stores.parent / at_rest_state.RECORD_NAME).exists()
     st = at_rest_state.status(stores)
-    assert st["corpus_encrypted"] and set(st["pending"]) == {n for n, _p in at_rest_state.stores(stores)} - {"corpus"}
+    # R821: its header alone only LOOKS encrypted, so the status claims nothing and names nothing pending...
+    assert st["stores"][0]["state"] == "looks_encrypted" and not st["corpus_encrypted"] and st["pending"] == []
+    # ...until the finish proves it with the key it holds, records it, and finishes the others under it
     out = at_rest_state.finish_pending(_KEY, stores)
+    assert _record(stores)["corpus"]["read_back_with_key"] is True
     assert out["still_pending"] == [] and at_rest_state.status(stores)["complete"] is True
 
 
@@ -294,7 +297,8 @@ def test_a_crash_after_a_swap_before_the_record_is_found_from_the_file_and_recor
         encrypt_tool.encrypt_store("corpus", stores, _KEY, main=stores, library=True)
     monkeypatch.setattr(at_rest_state, "record_encrypted", _REAL_RECORD)
     assert is_encrypted_file(stores) is True and not (stores.parent / at_rest_state.RECORD_NAME).exists()
-    assert at_rest_state.status(stores)["corpus_encrypted"] is True, "the file, not the record, says it is encrypted"
+    # R821: with no record and no keyed open held, the file's header only LOOKS encrypted: never "encrypted"
+    assert at_rest_state.status(stores)["stores"][0]["state"] == "looks_encrypted"
     encrypt_tool.encrypt_store("corpus", stores, _KEY, main=stores, library=True)
     assert _record(stores)["corpus"]["read_back_with_key"] is True
 
@@ -313,10 +317,21 @@ def test_the_record_holds_names_and_times_only(stores):
     encrypt_tool.encrypt_all(_KEY)
     raw = (stores.parent / at_rest_state.RECORD_NAME).read_text(encoding="utf-8")
     assert _KEY not in raw and str(stores.parent) not in raw
-    for entry in json.loads(raw)["stores"].values():
+    doc = json.loads(raw)
+    # R828 (1): the record's own random binding key, at the top level, and nothing else beside the entries
+    assert set(doc) <= {"version", "stores", "binding_key"}
+    assert "binding_key" not in doc or len(bytes.fromhex(doc["binding_key"])) == 32
+    for entry in doc["stores"].values():
         # R820 (4): plus the store's (device, inode) when it was read back with the key; numbers, never a path or a secret
-        assert set(entry) - {"dev", "ino"} == {"encrypted_at", "read_back_with_key"}
+        # R828 (1): plus a MAC of the file's first 16 bytes, never the bytes themselves
+        assert set(entry) - {"dev", "ino", "mac"} == {"encrypted_at", "read_back_with_key"}
         assert all(type(entry[k]) is int for k in ("dev", "ino") if k in entry)
+        assert "mac" not in entry or (isinstance(entry["mac"], str) and len(bytes.fromhex(entry["mac"])) == 32)
+    assert any("mac" in e for e in doc["stores"].values()) and "binding_key" in doc
+    for path in [p for _, p in at_rest_state.stores(stores)]:
+        if path.exists():
+            head = path.read_bytes()[:16]
+            assert head.hex() not in raw.lower() and head.hex().upper() not in raw  # R828 (1): no byte of page 1 is kept
 
 
 def test_an_unreadable_record_reads_as_empty_and_the_state_still_comes_from_the_files(stores):
