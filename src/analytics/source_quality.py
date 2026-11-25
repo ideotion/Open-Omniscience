@@ -43,6 +43,7 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.analytics.quarantine_scope import not_counted
 from src.analytics import queries as q
 from src.analytics.managed import UNSEGMENTED
 from src.catalog.provenance import HAZARD, LAW, NEWSLETTER, STATISTICS, WIKIPEDIA, provenance_of
@@ -320,7 +321,7 @@ def collect_article_stats(
     art_q = session.query(
         Article.id, Article.word_count, Article.language, Article.source_id, Article.url,
         Article.detected_language,
-    ).filter(Article.quarantined.isnot(True))
+    ).filter(not_counted(Article.id))
     if since is not None:
         art_q = art_q.filter(Article.created_at >= since)
     if scope is not None:

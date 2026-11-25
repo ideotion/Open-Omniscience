@@ -25,6 +25,7 @@ from typing import Any
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
+from src.analytics.quarantine_scope import not_counted
 from src.analytics.managed import normalize_lang
 from src.database.models import Article, Source
 from src.database.stand_in import not_a_stand_in_article
@@ -117,7 +118,7 @@ def sentiment_measurability(session: Session, *, limit: int = 24) -> dict:
             func.count(Article.id).label("n"),
             func.sum(case((Article.sentiment_score.isnot(None), 1), else_=0)).label("scored"),
         )
-        .filter(Article.quarantined.isnot(True))
+        .filter(not_counted(Article.id))
         .group_by(lang_col)
         .order_by(func.count(Article.id).desc())
     )
@@ -198,7 +199,7 @@ def source_concentration(session: Session, *, limit: int = 400) -> dict:
     live: dict[int, int] = {
         int(sid): int(cnt)
         for sid, cnt in session.query(Article.source_id, func.count(Article.id))
-        .filter(Article.quarantined.isnot(True))
+        .filter(not_counted(Article.id))
         .group_by(Article.source_id)
         .all()
     }

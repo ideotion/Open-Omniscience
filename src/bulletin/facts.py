@@ -48,6 +48,7 @@ from typing import Any
 
 from sqlalchemy import and_, func
 
+from src.analytics.quarantine_scope import not_counted
 from src.bulletin.period import Period, baseline_coverage, top_share
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import Article, Source
@@ -80,7 +81,7 @@ def _bounds(period: Period) -> tuple[datetime, datetime]:
 
 def _in_period(period: Period):
     lo, hi = _bounds(period)
-    return and_(_CLOCK >= lo, _CLOCK < hi, Article.quarantined.isnot(True))
+    return and_(_CLOCK >= lo, _CLOCK < hi, not_counted(Article.id))
 
 
 def _source_directory(session, source_ids: list[int]) -> dict[int, dict]:
@@ -220,7 +221,7 @@ def masthead(session, period: Period) -> dict:
 
     days = _by_day(session, period)
     corpus_total = int(
-        session.query(func.count(Article.id)).filter(Article.quarantined.isnot(True)).scalar() or 0
+        session.query(func.count(Article.id)).filter(not_counted(Article.id)).scalar() or 0
     )
 
     return {
