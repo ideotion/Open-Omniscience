@@ -116,7 +116,9 @@
         // as complete, as it always was.
         ids_complete: e.ids_complete !== false,
         note: _tfn("Deduced from {n} articles ({s} sources), never confirmed.",
-          { n: e.n_articles, s: e.n_sources }),
+          { n: e.n_articles, s: e.n_sources })
+          // R831: a count the aggregate slice cannot reach yet says so
+          + (e.may_include_unscreened ? " " + t("These counts may include quarantined articles and articles not screened yet.") : ""),
       };
     }
     // Row 399 (invariant 13b): open a deduced date's EXACT article set. Its inline ids stop at

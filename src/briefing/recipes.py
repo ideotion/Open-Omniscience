@@ -288,6 +288,7 @@ def region_gone_quiet(session) -> list[Card]:
         return []
     from sqlalchemy import func
 
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article
 
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -301,13 +302,14 @@ def region_gone_quiet(session) -> list[Card]:
             Article.created_at < recent_start,
             Article.country.isnot(None),
             Article.country != "",
+            not_counted(Article.id),  # R831
         )
         .group_by(Article.country)
         .all()
     )
     recent = dict(
         session.query(Article.country, func.count(Article.id))
-        .filter(Article.created_at >= recent_start, Article.country.isnot(None))
+        .filter(Article.created_at >= recent_start, Article.country.isnot(None), not_counted(Article.id))  # R831
         .group_by(Article.country)
         .all()
     )

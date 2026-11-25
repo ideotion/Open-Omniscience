@@ -23,7 +23,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
-from src.analytics.quarantine_scope import not_counted, pending_ids_select
+from src.analytics.quarantine_scope import not_counted, pending_ids_select, pending_keyword_contributions
 from src.analytics.source_article_counts import unquarantined_counts_by_source
 from src.database.derived_views import KeywordMentionRead
 from src.database.models import (
@@ -333,7 +333,12 @@ def keyword_frequency(session) -> Callable[[Sequence[str]], dict[str, int]]:
                     Keyword.normalized_term,
                     func.coalesce(func.sum(KeywordMentionRead.count), 0),
                 )
-                .outerjoin(KeywordMentionRead, KeywordMentionRead.keyword_id == Keyword.id)
+                # R831: the slice is in the join's ON, so a form whose only mentions are left out still reads as 0, never
+                # as unmeasured.
+                .outerjoin(
+                    KeywordMentionRead,
+                    (KeywordMentionRead.keyword_id == Keyword.id) & not_counted(KeywordMentionRead.article_id),
+                )
                 .filter(Keyword.normalized_term.in_(chunk))
                 .group_by(Keyword.normalized_term)
                 .all()
@@ -1773,7 +1778,11 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
         )
         .join(Article, Article.id == KeywordMentionRead.article_id)
         .join(Source, Source.id == Article.source_id)
-        .filter(KeywordMentionRead.keyword_id.in_(kw_ids), not_a_stand_in_article_id(KeywordMentionRead.article_id))
+        .filter(
+            KeywordMentionRead.keyword_id.in_(kw_ids),
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            not_counted(KeywordMentionRead.article_id),  # R831
+        )
     )
     if days and days > 0:
         cutoff = date.today() - timedelta(days=days)
@@ -2265,7 +2274,7 @@ def unlocated_language_breakdown(session) -> dict[str, int]:
     rows = (
         session.query(Article.language, func.count(Article.id))
         .join(Source, Article.source_id == Source.id)
-        .filter((Source.country.is_(None)) | (func.trim(Source.country) == ""))
+        .filter((Source.country.is_(None)) | (func.trim(Source.country) == ""), not_counted(Article.id))  # R831
         .group_by(Article.language)
         .all()
     )
@@ -2304,6 +2313,7 @@ def source_country_counts(session) -> dict:
             func.count(Article.sentiment_score),
         )
         .join(Article, Article.source_id == Source.id)
+        .filter(not_counted(Article.id))  # R831: sources are counted whole; their articles and mentions take the slice
         .group_by(Source.country)
         .all()
     )
@@ -2312,6 +2322,7 @@ def source_country_counts(session) -> dict:
     # avoiding the keyword_mentions->articles row-decrypt cost).
     kw_rows = (
         session.query(KeywordMentionRead.country, func.count())
+        .filter(not_counted(KeywordMentionRead.article_id))  # R831: two index-only subqueries, no article row
         .group_by(KeywordMentionRead.country)
         .all()
     )
@@ -2399,6 +2410,7 @@ def server_locations(session) -> dict:
             Article.source_id,
             func.count(Article.id),
         )
+        .filter(not_counted(Article.id))  # R831
         .group_by(Article.server_ip, Article.server_ip_reason, Article.source_id)
         .all()
     )
@@ -3296,7 +3308,8 @@ def associations(
         else (
             _window_filter(
                 session.query(func.count(func.distinct(KeywordMentionRead.article_id))).filter(
-                    not_a_stand_in_article_id(KeywordMentionRead.article_id)
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                    not_counted(KeywordMentionRead.article_id),  # R831
                 ),
                 start,
                 end,
@@ -3321,6 +3334,7 @@ def associations(
                 # by log2((n_b + k) / n_b), n_b being the count over real articles (always
                 # downward), and no floor reads n_b (its callers only display it).
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                not_counted(KeywordMentionRead.article_id),  # R831
             ),
             start,
             end,
@@ -3413,11 +3427,14 @@ def associations(
                         start,
                         end,
                     )
-                    .filter(KeywordMentionRead.keyword_id.in_(chunk))
+                    .filter(KeywordMentionRead.keyword_id.in_(chunk), not_counted(KeywordMentionRead.article_id))  # R831
                     .group_by(KeywordMentionRead.keyword_id)
                     .all()
                 }
             )
+    # R831: the corpus-wide counter still holds the articles queued for screening (the screening keeps it as it always has),
+    # so their share is taken off at query time, as every reader of the counters does (quarantine_scope).
+    queued_share = pending_keyword_contributions(session, kids) if kids and not (start or end) else {}
     pairs = []
     stored_lang: dict[str, str | None] = {}
     for kid, co in co_rows:
@@ -3429,7 +3446,7 @@ def associations(
             n_b = nb_by_id.get(int(kid), 0) or 1
         else:
             # corpus-wide: the maintained counter == COUNT(DISTINCT article_id) for kid.
-            n_b = int(k2.article_count or 0) or 1
+            n_b = max(0, int(k2.article_count or 0) - queued_share.get(int(kid), (0, 0))[1]) or 1
         pmi = math.log2((co * total) / (n_a * n_b)) if co > 0 else 0.0
         stored_lang[k2.normalized_term] = k2.language
         pairs.append(
@@ -3774,7 +3791,7 @@ def map_data(
                 func.sum(KeywordMentionRead.count).label("m"),
             )
             .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
-            .filter(area_col.isnot(None))
+            .filter(area_col.isnot(None), not_counted(KeywordMentionRead.article_id))  # R831
         )
         if days:
             q = q.filter(KeywordMentionRead.observed_on >= date.today() - timedelta(days=days))
@@ -3805,7 +3822,7 @@ def map_data(
                 func.sum(KeywordMentionRead.count).label("m"),
             )
             .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
-            .filter(KeywordMentionRead.city.isnot(None))
+            .filter(KeywordMentionRead.city.isnot(None), not_counted(KeywordMentionRead.article_id))  # R831
         )
         if days:
             q = q.filter(KeywordMentionRead.observed_on >= date.today() - timedelta(days=days))
@@ -3851,13 +3868,27 @@ def map_data(
 
 
 def status_totals(session) -> dict:
-    """The index-backed part of :func:`status`: article, keyword and entity totals. No scan of ``keyword_mentions``."""
+    """The index-backed part of :func:`status`: article, keyword and entity totals. No scan of ``keyword_mentions``.
+
+    R831(2): these are STATUS totals (what is stored and how far the index has got), not analyses, so they count every
+    article and say what they hold: ``quarantined`` (index-only, idx_article_quarantined) and ``not_screened`` (the queue's
+    own primary key). Either is absent, never 0, when it could not be read."""
+    from src.analytics.quarantine_scope import not_counted_tally
+
     total_articles = session.query(func.count(Article.id)).scalar() or 0
     keywords = session.query(func.count(Keyword.id)).scalar() or 0
     entities = (
         session.query(func.count(Keyword.id)).filter(Keyword.is_entity.is_(True)).scalar() or 0
     )
-    return {"total_articles": int(total_articles), "keywords": int(keywords), "entities": int(entities)}
+    out: dict = {"total_articles": int(total_articles), "keywords": int(keywords), "entities": int(entities)}
+    try:
+        out["quarantined"] = int(session.query(func.count(Article.id)).filter(Article.quarantined.is_(True)).scalar() or 0)
+    except Exception:  # noqa: BLE001 - an unreadable count is not a zero: say nothing
+        pass
+    tally = not_counted_tally(session)
+    if "not_screened" in tally:
+        out["not_screened"] = int(tally["not_screened"])
+    return out
 
 
 def status_indexed_articles(session) -> int:
@@ -3922,6 +3953,7 @@ def who_aggregate(
     cc = country.lower() if country else None
 
     def _scoped(query):
+        query = query.filter(not_counted(ArticleEntity.article_id))  # R831: the figures and the coverage denominator alike
         if cls:
             query = query.filter(ArticleEntity.entity_class == cls)
         if since is not None or cc is not None:
@@ -4013,6 +4045,7 @@ def where_aggregate(
     cc = country.lower() if country else None
 
     def _scoped(query):
+        query = query.filter(not_counted(ArticleMentionedPlace.article_id))  # R831: the figures and the coverage denominator alike
         if k:
             query = query.filter(ArticleMentionedPlace.kind == k)
         if cc is not None:
@@ -4108,7 +4141,11 @@ def _article_set(session, normalized_terms: list[str], *, cap: int = 4000) -> se
     rows = (
         session.query(KeywordMentionRead.article_id)
         .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
-        .filter(Keyword.normalized_term.in_(normalized_terms), not_a_stand_in_article_id(KeywordMentionRead.article_id))
+        .filter(
+            Keyword.normalized_term.in_(normalized_terms),
+            not_a_stand_in_article_id(KeywordMentionRead.article_id),
+            not_counted(KeywordMentionRead.article_id),  # R831: the graph's overlap edges are counts
+        )
         .distinct()
         .limit(cap)
         .all()
@@ -4265,7 +4302,8 @@ def layered_graph(
         corpus_total = (
             _window_filter(
                 session.query(func.count(func.distinct(KeywordMentionRead.article_id))).filter(
-                    not_a_stand_in_article_id(KeywordMentionRead.article_id)
+                    not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                    not_counted(KeywordMentionRead.article_id),  # R831
                 ),
                 start,
                 end,

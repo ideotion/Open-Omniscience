@@ -6239,6 +6239,7 @@
   "These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.": "这些文章将加入您无法恢复的加密语料库。请保留原始 .eml 文件作为重新导入的途径。",
   "These contextual keys are always available and are not rebindable.": "这些上下文按键始终可用，且不可重新绑定。",
   "These counts come from the Wikidata election snapshot only.": "这些计数仅来自 Wikidata 选举快照。",
+  "These counts may include quarantined articles and articles not screened yet.": "这些计数可能包含已隔离的文章和尚未筛查的文章。",
   "These days": "这些日子",
   "These days fall inside 1991-2020, so they are part of the average they are compared with.": "这些日子位于 1991-2020 之内，因此它们本身就是所比较的平均值的一部分。",
   "These downloads go over the clear internet — not through your configured proxy or Tor.": "这些下载走明网——不经过你配置的代理，也不经过 Tor。",

@@ -111,6 +111,7 @@ def mentioned_qids(session, *, stats: dict | None = None) -> list[str]:
     """
     from sqlalchemy import func, select
 
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import ArticleEntity, Place
 
     out: list[str] = []
@@ -129,6 +130,9 @@ def mentioned_qids(session, *, stats: dict | None = None) -> list[str]:
     arts = func.count(func.distinct(ArticleEntity.article_id))
     rows = session.execute(
         select(ArticleEntity.name, arts.label("a"))
+        # R831: the order is a count, so a page judged not an article, or one the screening has not reached, moves no
+        # name up the fetch list (it joins once screened)
+        .where(not_counted(ArticleEntity.article_id))
         .group_by(ArticleEntity.name)
         .order_by(arts.desc(), ArticleEntity.name)
         .limit(_ENTITY_SCAN_CAP)

@@ -78,6 +78,7 @@ from src.database.models import (
     Source,
 )
 from src.database.stand_in import not_a_stand_in_article_id
+from src.analytics.quarantine_scope import not_counted
 
 _LOG = logging.getLogger(__name__)
 
@@ -305,7 +306,8 @@ def find_convergences(
     ).filter(
         # The place rows a salvage copy kept for a lost article stay in the table: the stand-in is no article and its placeholder source is no
         # independent outlet, so it never reaches the independence gate (it would have passed one real source plus a stand-in).
-        not_a_stand_in_article_id(ArticleMentionedPlace.article_id)
+        not_a_stand_in_article_id(ArticleMentionedPlace.article_id),
+        not_counted(ArticleMentionedPlace.article_id),  # R831
     ).all()
     if not place_rows:
         return _empty(window_days, min_articles, min_sources)

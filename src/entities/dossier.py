@@ -309,9 +309,16 @@ def _rail_items(session, ids_sub, source_ids: list[int], routes: dict) -> list[d
     ]
 
 
-def _count(session, sel) -> int:
+def _count(session, sel, *, counted: bool = False) -> int:
+    """How many distinct article ids ``sel`` yields; ``counted`` takes the aggregate slice (R831: quarantined articles and
+    those still queued for screening are left out of a count, never out of a list)."""
+    from src.analytics.quarantine_scope import not_counted
+
     sub = sel.distinct().subquery()
-    return int(session.execute(select(func.count()).select_from(sub)).scalar() or 0)
+    q = select(func.count()).select_from(sub)
+    if counted:
+        q = q.where(not_counted(sub.c[0]))
+    return int(session.execute(q).scalar() or 0)
 
 
 def _map_objects(qid: str) -> dict:
@@ -502,6 +509,7 @@ def rail_has_rows(rail: dict) -> bool:
 def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
     """The dossier of ``qid``, or None when ``qid`` is not a QID. Local reads only."""
     from src.analytics.passport import corpus_passport
+    from src.analytics.quarantine_scope import not_counted, pending_ids_select
     from src.catalog.provenance import LAW, WIKIPEDIA, provenance_of
     from src.database.models import Article, Source
     from src.entities.places import mention_count, wiki_pages_for_qid
@@ -512,19 +520,26 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
     routes, places = _route_selects(session, qid)
 
     route_counts = {
-        key: {"articles": _count(session, routes[key][0]) if key in routes else 0,
+        key: {"articles": _count(session, routes[key][0], counted=True) if key in routes else 0,
               "matched_on": routes[key][1] if key in routes else []}
         for key in ("entities", "keywords", "places")
     }
 
     if routes:
         ids_sel = union(*[r[0] for r in routes.values()])
-        ids_sub = select(ids_sel.subquery().c[0])
-        passport = corpus_passport(session, ids_sub)
+        u = ids_sel.subquery()
+        ids_sub = select(u.c[0])
+        # R831: the counts (routes, passport, rails) take the slice; the evidence lists and the ids for the analysis
+        # window keep every article, and the articles still queued for screening are named beside them.
+        passport = corpus_passport(session, select(u.c[0]).where(not_counted(u.c[0])))
+        articles_all = _count(session, ids_sub)
+        not_yet = int(session.execute(
+            select(func.count()).select_from(select(u.c[0]).where(u.c[0].in_(pending_ids_select())).distinct().subquery())
+        ).scalar() or 0)
         by_source = session.execute(
             select(Source.id, Source.domain, Source.source_type, func.count(Article.id))
             .join(Article, Article.source_id == Source.id)
-            .where(Article.id.in_(ids_sub.scalar_subquery()))
+            .where(Article.id.in_(ids_sub.scalar_subquery()), not_counted(Article.id))
             .group_by(Source.id)
         ).all()
         ids = [int(i) for i in session.execute(
@@ -533,6 +548,8 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
         ).scalars()]
     else:
         passport = corpus_passport(session, select(Article.id).where(Article.id.is_(None)))
+        articles_all = 0
+        not_yet = 0
         by_source = []
         ids = []
 
@@ -578,7 +595,10 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
                          "rails_with_rows": with_rows,
                          "rails_without_rows": [r["key"] for r in rails if r["key"] not in with_rows]},
         "article_ids": ids,
-        "article_ids_bounded": passport["articles"] > len(ids),
+        # every article the routes reach, the ones the counts leave out included: what the list and the analysis open
+        "articles_all": articles_all,
+        "article_ids_bounded": articles_all > len(ids),
+        "not_counted_yet": not_yet,
         "method": METHOD,
         "method_country": COUNTRY_METHOD if country else None,
         "caveat": CAVEAT,

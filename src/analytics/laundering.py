@@ -64,10 +64,11 @@ def find_source_laundering(
     from src.database.models import Article, ArticleLink, Source
     from src.database.outlet import OutletMap, outlet_expr, outlets_unhealed
     from src.database.stand_in import not_a_stand_in_article_id
+    from src.analytics.quarantine_scope import not_counted
 
     # The links a salvage copy kept for a lost article stay in the table: a stand-in is no article, and its placeholder source is no independent
     # outlet, so the kept links are left out of the counts AND of the member list (the condition is on the child row: no article row is read).
-    kept = not_a_stand_in_article_id(ArticleLink.article_id)
+    kept = not_a_stand_in_article_id(ArticleLink.article_id) & not_counted(ArticleLink.article_id)  # R831: counts and members alike
     arts = func.count(func.distinct(ArticleLink.article_id))
     # Independence is counted in OUTLETS (a domain), not feeds: two feeds of one site citing one origin are one voice.
     srcs = func.count(func.distinct(outlet_expr(Article.source_id, Source.outlet_id, unhealed=outlets_unhealed(session))))

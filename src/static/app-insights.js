@@ -1790,7 +1790,20 @@
         { keywords: n("ins-n-keywords", "keywords"), entities: n("ins-n-entities", "entities") });
       const men = fill("{mentions} mentions", { mentions: n("ins-n-mentions", "mentions") });
       return `<span data-i18n-dyn><span class="pill" id="ins-pill">${pill}</span> · ${kw} · ${men} ` +
-        `<span id="ins-remaining" class="muted"></span></span>`;
+        `<span id="ins-remaining" class="muted"></span> <span id="ins-held" class="muted"></span></span>`;
+    }
+    // R831(2): the article total is a STATUS total (how far the index has got over everything stored), so it counts every
+    // article and says what it holds, with the Home strip's words. Each part only above 0; a part the server could not read
+    // is absent, never a 0.
+    function _insHeldText(s) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
+        : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const parts = [];
+      if (s && typeof s.quarantined === "number" && s.quarantined > 0)
+        parts.push(tf("of which quarantined: {n}", { n: fmtNum(s.quarantined, 0) }));
+      if (s && typeof s.not_screened === "number" && s.not_screened > 0)
+        parts.push(tf("of which not screened yet: {n}", { n: fmtNum(s.not_screened, 0) }));
+      return parts.length ? "(" + parts.join("; ") + ")" : "";
     }
     function _insRemainingHtml(s) {
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf
@@ -1840,6 +1853,7 @@
       known("ins-n-mentions", s.mentions);
       $("ins-pill").className = "pill " + (s.remaining === 0 ? "ok" : "warn");
       $("ins-remaining").innerHTML = _insRemainingHtml(s);
+      { const held = $("ins-held"); if (held) held.textContent = _insHeldText(s); }
       const note = _insCountsNote(s);
       for (const id of ["ins-pill", "ins-n-mentions"]) { const el = $(id); if (el) { if (note) el.title = note; else el.removeAttribute("title"); } }
     }

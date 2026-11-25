@@ -2326,6 +2326,23 @@ def _norm_cc(cc) -> str:
     return (cc or "").strip().lower()
 
 
+def _coverage_slice_signature(session) -> str:
+    """R831: what the aggregate slice leaves out, as two index-only counts (quarantined articles; articles queued for
+    screening). A build records it and a refresh rebuilds when it moved, so a screening that judges an import's articles
+    brings them into the map without waiting for new ingest."""
+    from sqlalchemy import func, select
+
+    from src.analytics.quarantine_scope import pending_ids_select
+    from src.database.models import Article
+
+    q = session.execute(select(func.count(Article.id)).where(Article.quarantined.is_(True))).scalar() or 0
+    try:
+        p = session.execute(select(func.count()).select_from(pending_ids_select().subquery())).scalar() or 0
+    except Exception:  # noqa: BLE001 - a store without the queue has nothing queued
+        p = 0
+    return f"{int(q)}:{int(p)}"
+
+
 def build_source_coverage(con, session) -> dict:
     """(Re)build the per-country ``source_coverage`` rollup — the FULL build (D4).
 
@@ -2341,9 +2358,11 @@ def build_source_coverage(con, session) -> dict:
     from sqlalchemy import func
     from sqlalchemy import text as _sql
 
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article, KeywordMention, Source
 
     ensure_store_meta(con)
+    slice_sig = _coverage_slice_signature(session)
 
     # Sources per catalogued country (tiny table).
     src_by_cc: dict[str, int] = {}
@@ -2359,7 +2378,7 @@ def build_source_coverage(con, session) -> dict:
         func.count(Article.id),
         func.sum(Article.sentiment_score),
         func.count(Article.sentiment_score),
-    ).join(Article, Article.source_id == Source.id).group_by(Source.country):
+    ).join(Article, Article.source_id == Source.id).filter(not_counted(Article.id)).group_by(Source.country):  # R831
         key = _norm_cc(cc)
         cur = art_by_cc.get(key, (0, 0.0, 0))
         art_by_cc[key] = (
@@ -2370,7 +2389,9 @@ def build_source_coverage(con, session) -> dict:
 
     # Keyword mentions per denormalised source-country (index scan; no article decrypt).
     kw_by_cc: dict[str, int] = {}
-    for cc, n in session.query(KeywordMention.country, func.count()).group_by(
+    for cc, n in session.query(KeywordMention.country, func.count()).filter(
+        not_counted(KeywordMention.article_id)  # R831
+    ).group_by(
         KeywordMention.country
     ):
         kw_by_cc[_norm_cc(cc)] = kw_by_cc.get(_norm_cc(cc), 0) + int(n or 0)
@@ -2392,6 +2413,7 @@ def build_source_coverage(con, session) -> dict:
     _set_meta(con, "source_coverage.last_article_id", int(max_art or 0))
     _set_meta(con, "source_coverage.last_mention_id", int(max_men or 0))
     _set_meta(con, "source_coverage.as_of", as_of)
+    _set_meta(con, "source_coverage.slice", slice_sig)
     return {
         "rows": len(rows),
         "countries": len([r for r in rows if r[0]]),  # excludes the '' unlocated bucket
@@ -2424,6 +2446,7 @@ def refresh_source_coverage(con, session, *, corpus_epoch: int) -> dict:
         or int(built_epoch) != int(corpus_epoch)
         or cur_art != last_art
         or cur_men != last_men
+        or _get_meta(con, "source_coverage.slice") != _coverage_slice_signature(session)  # R831
     )
     if not needs_full:
         return {"mode": "fresh", "corpus_epoch": int(corpus_epoch)}

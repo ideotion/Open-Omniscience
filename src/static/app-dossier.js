@@ -280,6 +280,11 @@
       if (!d) return "";
       const item = d.item || {};
       let html = passportLine(d.passport, t, tf);
+      // R831: the counts leave out the articles still queued for the junk screening; the lists and the analysis keep them.
+      if (typeof d.not_counted_yet === "number" && d.not_counted_yet > 0) {
+        html += `<div class="hint dossier-not-counted" title="${esc(t("These results were imported and the junk screening has not reached them yet. The list shows them; this figure leaves them out until they are screened, which happens in the background after an import."))}">`
+          + `${esc(tf("{n} of these results not counted yet", {n: (typeof fmtNum === "function" ? fmtNum(d.not_counted_yet, 0) : String(d.not_counted_yet))}))}</div>`;
+      }
       if (item.description) {
         html += `<p class="dossier-desc" dir="auto">${esc(item.description)} <span class="muted small">— ${esc(t("Wikidata"))}</span></p>`;
       } else {
@@ -321,7 +326,7 @@
       html += `<div class="dossier-panel" data-panel="overview">${overview}</div>`
         + (d.rails || []).map((r) => _dossierRailPanel(r, d, t, tf)).join("");
       // Below the panels, whatever subtab is open: the actions, the method and the caveat.
-      const n = (d.passport || {}).articles || 0;
+      const n = (typeof d.articles_all === "number" ? d.articles_all : (d.passport || {}).articles) || 0;
       if (n) {
         const k = (d.article_ids || []).length;
         html += `<div style="margin-top:8px"><button type="button" class="secondary dossier-open">`

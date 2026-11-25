@@ -6239,6 +6239,7 @@
   "These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.": "Эти статьи добавляются в ваш зашифрованный корпус без восстановления. Сохраните исходные файлы .eml как путь для повторного импорта.",
   "These contextual keys are always available and are not rebindable.": "Эти контекстные клавиши всегда доступны и не переназначаются.",
   "These counts come from the Wikidata election snapshot only.": "Эти подсчёты взяты только из снимка выборов Wikidata.",
+  "These counts may include quarantined articles and articles not screened yet.": "Эти числа могут включать статьи в карантине и ещё не проверенные статьи.",
   "These days": "Эти дни",
   "These days fall inside 1991-2020, so they are part of the average they are compared with.": "Эти дни входят в период 1991-2020, поэтому они сами являются частью среднего, с которым сравниваются.",
   "These downloads go over the clear internet — not through your configured proxy or Tor.": "Эти загрузки идут по открытому интернету — не через настроенный вами прокси и не через Tor.",

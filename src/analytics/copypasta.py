@@ -36,6 +36,8 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func
 
+from src.analytics.quarantine_scope import not_counted
+
 COPYPASTA_CAVEAT = (
     "Identical wording copied verbatim across articles from several DIFFERENT sources, where "
     "the articles themselves are not whole duplicates of one another. Shared verbatim text is "
@@ -73,7 +75,7 @@ def find_copypasta(
     rows = (
         session.query(Article, Source.name, Source.domain)
         .outerjoin(Source, Source.id == Article.source_id)
-        .filter(observed >= recent_cutoff)
+        .filter(observed >= recent_cutoff, not_counted(Article.id))  # R831
         .order_by(Article.id.desc())
         .limit(recent_limit)
         .all()

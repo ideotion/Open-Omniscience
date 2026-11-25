@@ -28,6 +28,7 @@ import logging
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
+from src.analytics.quarantine_scope import not_counted
 from src.database.models import (
     Article,
     ArticleMentionedDate,
@@ -151,7 +152,8 @@ def find_disputed_chronology(
         .filter(
             (Article.published_at.is_(None))
             | (Article.published_at >= cutoff_naive)
-            | (Article.created_at >= cutoff_naive)
+            | (Article.created_at >= cutoff_naive),
+            not_counted(Article.id),  # R831
         )
         .order_by(Article.id.desc())
         .limit(max_articles)

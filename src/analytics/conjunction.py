@@ -43,6 +43,7 @@ from src.analytics.queries import (
     _bucket_key,
     _normalize,
 )
+from src.analytics.quarantine_scope import not_counted, split_not_screened
 from src.database.derived_views import KeywordMentionRead
 from src.database.fts import _HAS_WORD_CHAR, _quote
 from src.database.models import Article
@@ -226,7 +227,9 @@ def corpus_algebra(
             .join(Keyword, Keyword.id == KeywordMentionRead.keyword_id)
             .filter(Keyword.normalized_term == n)
         )
-        per_term_n[n] = int(_scoped(cq, scope).scalar() or 0)
+        # R831: a count, so it takes the slice; the set above is a list and keeps every article
+        per_term_n[n] = int(_scoped(cq, scope).filter(not_counted(KeywordMentionRead.article_id)).scalar() or 0)
+    _counted_ids, not_yet = split_not_screened(session, sorted(combined))
 
     caveat = "Co-occurrence in your corpus, never causation. Counts only, no score."
     if bounded:
@@ -240,6 +243,8 @@ def corpus_algebra(
         "terms": [{"term": raw, "normalized": n, "n": per_term_n[n]} for raw, n in pairs],
         "article_ids": sorted(combined),
         "n_combined": len(combined),
+        # R831: of the set, the articles still queued for the junk screening; the figures over it leave them out
+        "not_counted_yet": not_yet,
         "n_terms": nterms,
         "bounded": bounded,
         "result_bounded": bounded,  # when True the set may be incomplete (a subset), never wrong.
@@ -321,6 +326,7 @@ def conditional_trend(session, article_ids: list[int], *, bucket: str = "week") 
         .filter(
             KeywordMentionRead.article_id.in_(article_ids),
             KeywordMentionRead.observed_on.isnot(None),
+            not_counted(KeywordMentionRead.article_id),  # R831: a figure over the set, so it takes the slice
         )
         .group_by(KeywordMentionRead.observed_on)
         .all()

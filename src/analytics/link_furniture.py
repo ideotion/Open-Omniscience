@@ -46,6 +46,7 @@ def is_furniture(carried: int, source_articles: int) -> bool:
 
 def source_article_totals(session: Session, source_ids: Iterable[int]) -> dict[int, int]:
     """Stored articles per source, stand-ins left out (the denominator of the share). One grouped query per chunk."""
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article
     from src.database.stand_in import not_a_stand_in_article
 
@@ -57,6 +58,7 @@ def source_article_totals(session: Session, source_ids: Iterable[int]) -> dict[i
             session.query(Article.source_id, func.count(Article.id))
             .filter(Article.source_id.in_(part))
             .filter(not_a_stand_in_article())
+            .filter(not_counted(Article.id))  # R831: the share's denominator and numerator take one slice
             .group_by(Article.source_id)
             .all()
         ):
@@ -75,6 +77,7 @@ def source_furniture(session: Session, source_id: int, source_articles: int) -> 
     """
     from math import ceil
 
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article, ArticleLink
 
     if source_articles < FURNITURE_MIN_ARTICLES:
@@ -85,7 +88,7 @@ def source_furniture(session: Session, source_id: int, source_articles: int) -> 
         str(u): int(c)
         for u, c in session.query(ArticleLink.normalized_url, n)
         .join(Article, Article.id == ArticleLink.article_id)
-        .filter(Article.source_id == source_id, ArticleLink.normalized_url.isnot(None))
+        .filter(Article.source_id == source_id, ArticleLink.normalized_url.isnot(None), not_counted(ArticleLink.article_id))
         .group_by(ArticleLink.normalized_url)
         .having(n >= need)
         .all()
@@ -124,6 +127,7 @@ def outlet_link_shares(session: Session, source_id: int | None, normalized_urls:
     Returns ``{"source_articles": n | None, "carried_by": {url: count}, "furniture": set_of_urls, "method": str}``.
     With no source, or fewer than :data:`FURNITURE_MIN_ARTICLES` articles, nothing is furniture.
     """
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article, ArticleLink
 
     out: dict[str, Any] = {"source_articles": None, "carried_by": {}, "furniture": set(), "method": METHOD}
@@ -138,7 +142,7 @@ def outlet_link_shares(session: Session, source_id: int | None, normalized_urls:
         session.query(ArticleLink.normalized_url, func.count(func.distinct(ArticleLink.article_id)))
         .join(Article, Article.id == ArticleLink.article_id)
         .filter(Article.source_id == source_id)
-        .filter(ArticleLink.normalized_url.in_(urls))
+        .filter(ArticleLink.normalized_url.in_(urls), not_counted(ArticleLink.article_id))  # R831
         .group_by(ArticleLink.normalized_url)
         .all()
     )
