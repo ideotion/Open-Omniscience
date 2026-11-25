@@ -6109,7 +6109,7 @@
   "The rest was not overwritten.": "O restante não foi sobrescrito.",
   "The revisions this machine stored for this page, from the Wikipedia lane and from the page tracker, one row per edit, dated by each edit's own timestamp. Two revisions are compared line by line on this machine from their stored texts; only revisions whose full text is stored can be compared.": "As revisões que esta máquina armazenou para esta página, da faixa da Wikipédia e do rastreador de páginas, uma linha por edição, datadas pelo carimbo temporal de cada edição. Duas revisões são comparadas linha a linha nesta máquina a partir dos seus textos armazenados; só podem ser comparadas as revisões cujo texto completo está armazenado.",
   "The row this differs from is gone.": "A linha da qual difere já não existe.",
-  "The run at a glance, with every warning": "A importação num relance, com cada aviso",
+  "The run at a glance, with every warning": "A importação em resumo, com todos os avisos",
   "The run journal cannot be downloaded while the server is not answering.": "O registo de execução não pode ser transferido enquanto o servidor não responder.",
   "The running summary or translation run pauses first; the model is freed then. Resume it in the task manager.": "A execução de resumos ou traduções em andamento é pausada primeiro; então o modelo é liberado. Retome-a no gerenciador de tarefas.",
   "The safe range. Outside it the value is corrected AND reported — never silently.": "O intervalo seguro. Fora dele o valor é corrigido E comunicado — nunca em silêncio.",

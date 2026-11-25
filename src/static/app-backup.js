@@ -3039,14 +3039,19 @@
       if (m.tally.staged) chips.push(chip("warn", t("Merged — not yet saved"), m.tally.staged));
       if (m.tally.stopped) chips.push(chip("warn", t("Stopped"), m.tally.stopped));
       if (m.tally.failed) chips.push(chip("err", t("Failed"), m.tally.failed));
-      const elapsed = m.elapsed != null
-        ? `<span class="imp-hero-time">${ooLabelHtml(esc(t("Elapsed")), esc(_uxImDur(m.elapsed)))}</span>` : "";
+      // The elapsed time is filled in apart (_uxImRenderHero): it changes every tick, and
+      // in this HTML it would rewrite the whole card once a second.
+      const elapsed = `<span class="imp-hero-time"></span>`;
       return `<div class="imp-hero-ring imp-tone-${tone}" title="${hover}">${_uxImRingSvg(m.pct, "imp-ring")}`
         + `<span class="imp-ring-pct">${pctTxt}</span></div>`
         + `<div class="imp-hero-body"><div class="imp-hero-top"><b class="imp-hero-title">${esc(_uxImRunTitle(m, t))}</b>${elapsed}</div>`
         + `<div class="imp-hero-steps muted" title="${hover}">${steps}</div>`
         + now + phase
         + `<div class="imp-chips">${chips.join("")}</div></div>`;
+    }
+
+    function _uxImElapsedHtml(m, t) {
+      return m.elapsed != null ? ooLabelHtml(esc(t("Elapsed")), esc(_uxImDur(m.elapsed))) : "";
     }
 
     function _uxImRenderHero(st) {
@@ -3057,10 +3062,16 @@
         ? OOI18N.tf
         : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
       if (!st || !(st.items || []).length) { host.hidden = true; host.innerHTML = ""; delete host.dataset.sig; _uxImHeroDialogClass(false); return; }
-      const html = _uxImHeroHtml(_uxImRunModel(st), t, tf);
+      const model = _uxImRunModel(st);
+      const html = _uxImHeroHtml(model, t, tf);
       host.hidden = false;
       _uxImHeroDialogClass(true, st.state === "running");
-      if (host.dataset.sig === html) return;
+      const paintTime = () => {
+        const el = host.querySelector(".imp-hero-time");
+        const h = _uxImElapsedHtml(model, t);
+        if (el && el.innerHTML !== h) el.innerHTML = h;
+      };
+      if (host.dataset.sig === html) { paintTime(); return; }
       // The ring animates from its old value: patch the arc rather than replace it.
       const oldFg = host.querySelector(".imp-ring-fg");
       const oldDash = oldFg ? oldFg.getAttribute("stroke-dasharray") : null;
@@ -3072,6 +3083,7 @@
         fg.setAttribute("stroke-dasharray", oldDash);
         requestAnimationFrame(() => fg.setAttribute("stroke-dasharray", want));
       }
+      paintTime();
     }
 
     // While the hero shows, the native bar it replaces is hidden by CSS (its own logic
@@ -3117,7 +3129,9 @@
       if (st.items_committed != null) rows.push([t("Written to your corpus"), n(st.items_committed)]);
       if (st.items_staged) rows.push([t("Merged — not yet saved"), n(st.items_staged)]);
       if (st.checkpoint && st.checkpoint.k) rows.push([t("Backups written to your corpus at a time"), n(st.checkpoint.k)]);
-      const p = (st.live && (st.live.progress || st.live)) || {};
+      // The current backup's own figures, only while the run runs: an ended run can keep its
+      // last sub-job's status, and "phase 3 of 3" under a stopped run is not a current fact.
+      const p = (st.state === "running" && st.live && (st.live.progress || st.live)) || {};
       if (p.phase_index && p.phase_total && p.phase_index <= p.phase_total) {
         rows.push([t("Phase of the current backup"), tf("{done} of {total}", { done: n(p.phase_index), total: n(p.phase_total) })]);
       }
@@ -3177,7 +3191,8 @@
       pill.hidden = false;
       const pctTxt = m.pct == null ? "—" : _uxImPctText(m.pct, tf);
       if (pctEl) pctEl.textContent = m.running ? pctTxt : (tone === "ok" ? "✓" : tone === "warn" ? "■" : "!");
-      if (ringHost) ringHost.innerHTML = _uxImRingSvg(m.running ? m.pct : 100, "imp-pill-svg");
+      // A clean finish is a full ring; any other ending keeps the share it reached.
+      if (ringHost) ringHost.innerHTML = _uxImRingSvg(tone === "ok" ? 100 : m.pct, "imp-pill-svg");
       const lines = [_uxImRunTitle(m, t)];
       if (m.stepsTotal != null) lines.push(ooLabelText(t("Import steps finished"), tf("{done} of {total}", { done: fmtNum(m.stepsDone, 0), total: fmtNum(m.stepsTotal, 0) }) + " · " + pctTxt));
       else lines.push(t("steps not reported"));

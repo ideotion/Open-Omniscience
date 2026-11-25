@@ -50,6 +50,7 @@ const src = [
   extract("function _uxImRingSvg("),
   extract("function _uxImHeroHtml("),
   extract("function _uxImFactsRows("),
+  extract("function _uxImElapsedHtml("),
   "let _ooImpPillHideT = null;",
   extract("function _ooImportPillPaint("),
 ].join("\n");
@@ -82,7 +83,7 @@ const sandbox = {
 };
 const fn = new Function("tf", "t", "esc", "fmtNum", "ooLabelHtml", "ooLabelText", "_uxImDur", "_uxImPhaseBits",
   "_uxVolPhase", "fmtDateTime", "window", "document", "setTimeout", "clearTimeout",
-  src + "\nreturn { _uxImRunModel, _uxImRunTitle, _uxImHeroHtml, _uxImFactsRows, _ooImportPillPaint, _uxImPctText };");
+  src + "\nreturn { _uxImRunModel, _uxImRunTitle, _uxImHeroHtml, _uxImFactsRows, _ooImportPillPaint, _uxImPctText, _uxImElapsedHtml };");
 const M = fn(tf, t, esc, fmtNum, ooLabelHtml, ooLabelText, _uxImDur, _uxImPhaseBits, _uxVolPhase, fmtDateTime,
   sandbox.window, sandbox.document, sandbox.setTimeout, sandbox.clearTimeout);
 
@@ -169,6 +170,19 @@ test("the run's figures leave out what the server did not send", () => {
   for (const k of ["Started", "Import steps finished", "Written to your corpus", "Merged — not yet saved", "Merge steps"]) {
     assert(fk.indexOf(k) !== -1, "row " + k);
   }
+});
+
+test("the elapsed time is not part of the card's HTML, so a tick does not rewrite it", () => {
+  const a = M._uxImHeroHtml(M._uxImRunModel(run({ elapsed_s: 60 })), t, tf);
+  const b = M._uxImHeroHtml(M._uxImRunModel(run({ elapsed_s: 61 })), t, tf);
+  assert(a === b, "same card one second later");
+  assert(M._uxImElapsedHtml(M._uxImRunModel(run({ elapsed_s: 61 })), t) === "Elapsed: 61 s", "filled in apart");
+  assert(M._uxImElapsedHtml(M._uxImRunModel(run({ elapsed_s: null })), t) === "", "nothing when unsent");
+});
+
+test("an ended run shows no current-backup figures", () => {
+  const keys = M._uxImFactsRows(run({ state: "stopped", live: { progress: { phase: "merging", merge_step: 14, merge_steps: 14, phase_index: 3, phase_total: 3 } } }), t, tf).map((r) => r[0]);
+  assert(keys.indexOf("Merge steps") === -1 && keys.indexOf("Phase of the current backup") === -1, keys.join(","));
 });
 
 test("the pill shows the step percentage while a run runs", () => {
