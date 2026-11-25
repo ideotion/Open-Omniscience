@@ -181,6 +181,48 @@ def _prefetch_keywords(
     return out
 
 
+
+class _KeywordRef:
+    """The three columns of a stored keyword the writer needs (row 434): its id for the mention rows, its term for the
+    write-back, and ``is_entity`` for the upgrade. :func:`_prefetch_keyword_rows` reads these as plain values, so the
+    writer never builds (and the next commit never expires) an ORM object per term."""
+
+    __slots__ = ("id", "normalized_term", "is_entity")
+
+    def __init__(self, id: int, normalized_term: str, is_entity: bool) -> None:
+        self.id = id
+        self.normalized_term = normalized_term
+        self.is_entity = is_entity
+
+
+def _prefetch_keyword_rows(
+    session: Session, normalized: Iterable[str], *, language: str | None = None
+) -> dict[str, _KeywordRef]:
+    """:func:`_prefetch_keywords` read as columns instead of ``Keyword`` objects (row 434), for ``index_article``.
+
+    THE COST: on the drain writer the ORM version built and tracked one ``Keyword`` per kept term (about 100 an article)
+    and the batch commit then expired every one of them; lane F's row 433 profile put it at 34% of the writer on a young
+    corpus. The SAME query, the SAME language rule (:func:`keyword_language_takes` on the row's stored language) and the
+    SAME lowest-id choice; only the shape of the answer changes. An entity upgrade of a row found here is written by
+    :func:`_get_or_create_keyword_impl` as one ORM-enabled UPDATE instead of a dirty attribute, so the database holds it
+    at once and the next article's read sees it, as the next article's ORM read used to see the in-memory object.
+    """
+    out: dict[str, _KeywordRef] = {}
+    uniq = list(dict.fromkeys(n for n in normalized if n))
+    for i in range(0, len(uniq), _KEYWORD_PREFETCH_CHUNK):
+        chunk = uniq[i : i + _KEYWORD_PREFETCH_CHUNK]
+        for kid, term, row_lang, is_ent in session.execute(
+            select(Keyword.id, Keyword.normalized_term, Keyword.language, Keyword.is_entity).where(
+                Keyword.normalized_term.in_(chunk)
+            )
+        ):
+            if not keyword_language_takes(row_lang, language):
+                continue
+            held = out.get(term)
+            if held is None or kid < held.id:
+                out[term] = _KeywordRef(int(kid), term, bool(is_ent))
+    return out
+
 def _keyword_takes_language(kw: Keyword, language: str | None) -> bool:
     """May a mention in ``language`` be filed under ``kw``? (R698 = RN2 (a), M11.)
 
@@ -332,8 +374,11 @@ def _get_or_create_keyword(
     would have given it."""
     if created is not None and prefetched is None:
         raise ValueError("created needs prefetched: a deferred keyword must be found again by the next term")
-    return _get_or_create_keyword_impl(
-        session, t, language=language, extractor=extractor, prefetched=prefetched, created=created
+    return cast(
+        Keyword,
+        _get_or_create_keyword_impl(
+            session, t, language=language, extractor=extractor, prefetched=prefetched, created=created
+        ),
     )
 
 
@@ -343,10 +388,13 @@ def _get_or_create_keyword_impl(
     *,
     language: str | None,
     extractor: str,
-    prefetched: dict[str, Keyword] | None,
+    prefetched: dict[str, Any] | None,
     created: list[Keyword] | None,
-) -> Keyword:
+) -> Keyword | _KeywordRef:
     """The body of :func:`_get_or_create_keyword`, whose docstring it follows.
+
+    ``prefetched`` may hold ``Keyword`` objects (:func:`_prefetch_keywords`) or :class:`_KeywordRef` values
+    (:func:`_prefetch_keyword_rows`, row 434), and a keyword created here is written back as the ``Keyword`` it is.
 
     ``prefetched=None`` (the default) keeps the original per-term query verbatim, so
     every caller that does not pass it is byte-identical. When a caller HAS already
@@ -405,9 +453,18 @@ def _get_or_create_keyword_impl(
             prefetched[t.normalized] = kw
     elif is_entity and not kw.is_entity:
         # A term first seen lowercase, later recognised as an entity -> upgrade.
+        if isinstance(kw, _KeywordRef):
+            # Row 434: the same three columns, written now by one ORM-enabled UPDATE (the write gate's do_orm_execute
+            # listener covers it, and its default synchronisation sets them on a Keyword this session already holds).
+            session.execute(
+                update(Keyword)
+                .where(Keyword.id == kw.id)
+                .values(is_entity=True, entity_type=t.kind, extractor=extractor)
+            )
+        else:
+            kw.entity_type = t.kind
+            kw.extractor = extractor
         kw.is_entity = True
-        kw.entity_type = t.kind
-        kw.extractor = extractor
     return kw
 
 
@@ -1081,7 +1138,8 @@ def index_article(
     # self-name never reaches the IN (...) -- the prefetch must ask for exactly the
     # terms the loop will keep, or it would both widen the query and warm rows the
     # article has no business touching.
-    prefetched = _prefetch_keywords(
+    # Row 434: read as columns, not Keyword objects (:func:`_prefetch_keyword_rows`); the same rows are chosen.
+    prefetched: dict[str, Any] = _prefetch_keyword_rows(
         session,
         (t.normalized for t in terms if t.normalized.casefold() not in self_forms),
         language=known_lang,
@@ -1092,7 +1150,7 @@ def index_article(
     # per-keyword flushes used, and an entity upgrade of a keyword created earlier in this article is applied to the
     # same pending object either way. The baseline tags follow in the same order once the ids exist.
     created: list[Keyword] = []
-    resolved: list[tuple[ExtractedTerm, Keyword]] = []
+    resolved: list[tuple[ExtractedTerm, Keyword | _KeywordRef]] = []
     for t in terms:
         # Case-insensitive: _self_name_forms is casefolded, but the entity
         # detector keeps acronyms UPPERCASE (2026-06-16 ruling), so a source
@@ -1102,7 +1160,7 @@ def index_article(
         if t.normalized.casefold() in self_forms:
             self_suppressed += 1
             continue
-        kw = _get_or_create_keyword(
+        kw = _get_or_create_keyword_impl(
             session, t, language=known_lang, extractor=extractor.name, prefetched=prefetched, created=created
         )
         resolved.append((t, kw))

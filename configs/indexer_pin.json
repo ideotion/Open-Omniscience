@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "e8076d9af32726c650289089ea46180c56ea896321646c82fe7db634d02434ec",
+  "digest": "1fe18fa23a7f236836a7875047a6c5b072fd9f11834767a07adef0a6c3338e93",
   "log": [
     {
       "version": 1,
@@ -157,6 +157,12 @@
       "digest": "e8076d9af32726c650289089ea46180c56ea896321646c82fe7db634d02434ec",
       "kind": "same",
       "note": "Row 433: index_article reads the store's country form once per article instead of once per bound country value; the conversion of every value is unchanged (identical-rows test in tests/test_country_form_pin_row433.py)."
+    },
+    {
+      "version": 3,
+      "digest": "1fe18fa23a7f236836a7875047a6c5b072fd9f11834767a07adef0a6c3338e93",
+      "kind": "same",
+      "note": "Row 434: index_article reads an article's stored keywords as columns (_prefetch_keyword_rows) instead of Keyword objects, choosing the same row by the same lowest-id and language rules, and writes an entity upgrade of a row it read that way as one UPDATE of the same three columns; the rows an article gets are identical (golden output digest equal, tests/test_keyword_prefetch_core_row434.py)"
     }
   ]
 }
