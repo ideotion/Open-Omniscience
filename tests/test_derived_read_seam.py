@@ -166,7 +166,8 @@ def test_the_prune_pilot_still_prunes_only_true_orphans(db):
 _CEILING: dict[str, int] = {
     "src/ai_layer/triage.py": 1,
     "src/analytics/article_lang_map.py": 1,
-    "src/analytics/columnar.py": 7,
+    # 4 since 2026-11-25 (row 415): the source-coverage rollup's per-country mention count reads through KeywordMentionRead.
+    "src/analytics/columnar.py": 4,
     "src/analytics/keyword_fold.py": 17,
     # 22 since 2026-10-16: ``backfill_keyword_counters`` walks the keywords in id slices so the write gate is held for one slice and not for
     # the table, and each slice's GROUP BY filters the mentions by the slice's id range (two more references to the columns the existing

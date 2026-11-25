@@ -207,10 +207,12 @@ def _article_count(session) -> int:
     """Cheap indexed COUNT of articles (the corpus size; no score, no scan)."""
     from sqlalchemy import func
 
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import Article
 
     try:
-        return int(session.query(func.count(Article.id)).scalar() or 0)
+        # R831: the articles the cards count, so a cache goes stale when the screening lets an import's articles in
+        return int(session.query(func.count(Article.id)).filter(not_counted(Article.id)).scalar() or 0)
     except Exception:  # noqa: BLE001 - a count failure must never break the feed
         return 0
 
