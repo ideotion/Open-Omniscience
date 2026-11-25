@@ -668,3 +668,69 @@ def test_a_merge_that_takes_a_lane_over_its_budget_merges_and_says_so(machines, 
     assert "over its budget" in md and f"{gb:,} GB" in md and "Nothing was removed" in md
     monkeypatch.setattr(budget, "lane_bytes", lambda kind: 1024)
     assert lane_merge.merge_lane_file("wiki", snap, [None])["budget"]["over"] is False
+
+
+# --------------------------------------------------------------------------- row 432: the member is never written
+
+def _staged_432(tmp_path: Path, snap: Path, edit) -> Path:
+    staging = tmp_path / f"st-{edit.__name__}"
+    (staging / "lanes").mkdir(parents=True)
+    dest = staging / "lanes" / "wiki.db"
+    shutil.copy2(snap, dest)
+    con = sqlite3.connect(dest)
+    edit(con)
+    con.commit()
+    con.close()
+    return staging
+
+
+def test_a_members_triggers_never_fire_and_its_bytes_are_unchanged(machines, tmp_path):
+    """Row 432: the member is only read, so a trigger it carries on every table the merge reads never fires (the
+    source guard is tests/test_lane_member_never_written_row432.py)."""
+    import hashlib
+
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    entry = {"name": "lanes/wiki.db", "kind": "wiki"}
+
+    def armed(con):
+        con.execute("CREATE TABLE fired (n INTEGER)")
+        tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        for t in tables:
+            if t not in lane_merge._READ_TABLES:
+                continue
+            for ev in ("INSERT", "UPDATE", "DELETE"):
+                con.execute(f'CREATE TRIGGER "planted_{t}_{ev.lower()}" AFTER {ev} ON "{t}" BEGIN INSERT INTO fired VALUES (1); END')
+
+    staging = _staged_432(tmp_path, snap, armed)
+    member = staging / "lanes" / "wiki.db"
+    before = hashlib.sha256(member.read_bytes()).hexdigest()
+    rep = lane_merge.merge_staged_lanes(staging, [entry], [None])
+    assert rep["lanes"][0]["state"] == "merged", rep
+    assert hashlib.sha256(member.read_bytes()).hexdigest() == before  # nothing wrote to the member
+    con = sqlite3.connect(member)
+    try:
+        assert con.execute("SELECT count(*) FROM fired").fetchone() == (0,)
+    finally:
+        con.close()
+
+
+def test_a_view_under_a_name_in_another_case_is_refused(machines, tmp_path):
+    a, b, use = machines
+    snap = _seed_b(b, use, tmp_path)
+    _seed_a(a, use)
+    before = _snapshot_state()
+    entry = {"name": "lanes/wiki.db", "kind": "wiki"}
+
+    def cased_view(con):
+        con.execute("DROP TABLE wiki_walk_pages")
+        con.execute("CREATE VIEW WIKI_WALK_PAGES AS SELECT 1 AS page_id")
+
+    def other_view(con):
+        con.execute("CREATE VIEW anything AS SELECT 1")
+
+    for edit in (cased_view, other_view):
+        (lane,) = lane_merge.merge_staged_lanes(_staged_432(tmp_path, snap, edit), [entry], [None])["lanes"]
+        assert lane["state"] == "failed" and "view" in lane["reason"], (edit.__name__, lane)
+    assert _snapshot_state() == before

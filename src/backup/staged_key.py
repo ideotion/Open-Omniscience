@@ -25,7 +25,8 @@ connection that opens the file as its main database (the C API's ``sqlite3_key``
 trigger, view or virtual table the app does not make itself, before any row of it is read. A name is no evidence of a
 body, so :func:`disarm_staged` then drops every trigger and view from the staged copy before anything writes to it
 (row 432): no SQL a backup carries in a trigger or a view of its corpus or custody log runs. Lane members are not
-disarmed here (a stated residual).
+disarmed here: the lane merge only reads them, so their triggers never fire, and refuses one holding a view
+(``lane_merge._refuse_unsafe_inc``).
 
 The registry is per process and in memory only: a staged file the registry does not name is a plaintext file, read
 the way it always was.
