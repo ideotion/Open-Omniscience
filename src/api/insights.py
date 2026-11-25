@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
 from src.analytics import readmodel as rm
+from src.analytics.quarantine_scope import split_not_screened
 from src.analytics.convergence import find_convergences
 from src.api import served_cache
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
@@ -1406,6 +1407,8 @@ def insights_corpus_keywords(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit, target_lang=_tlang(target_lang))
         res["total_matched"] = total
         _xl = _cross_language_block(
@@ -1414,7 +1417,7 @@ def insights_corpus_keywords(
         )
         if _xl is not None:
             res["cross_language"] = _xl
-        res["capped"] = total > len(ids)
+        res["capped"] = total > resolved
         res["method"] = "Keyword counts across the matched articles, ordered by how many mention each term."
         res["caveat"] = (
             f"Counts only, never a score — scoped to the top {len(ids)} matched "
@@ -1440,6 +1443,7 @@ def insights_corpus_keywords(
             hits = sg_by_term.get(t["normalized"], [])
             if hits:
                 t["supergroups"] = hits
+        res["not_counted_yet"] = not_yet
         return res
 
     return _deadlined(db, key, _compute)
@@ -1496,13 +1500,16 @@ def insights_corpus_www(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         out = {
             "who": q.corpus_who(db, article_ids=ids, limit=limit),
             "where": q.corpus_where(db, article_ids=ids, limit=limit),
             "when": q.corpus_when(db, article_ids=ids, limit=limit),
             "n_articles": len(ids),
             "total_matched": total,
-            "capped": total > len(ids),
+            "capped": total > resolved,
+            "not_counted_yet": not_yet,
             "caveat": "Deduced from article text, never confirmed; counts only.",
         }
         # S05-03: people and places on the entity spine (Q415, Q818, Q827) -- additive
@@ -1629,6 +1636,7 @@ def insights_corpus_source_language_facets(
         end_date=end_date, language=language, tags=tags, cap=cap,
         expand=expand, ui_lang=ui_lang, sense=sense,
         literal_cap=-1 if literal_cap else None, adv=adv)
+    # The filter options of the LIST, which shows every result, queued for screening or not (R830 group D).
     facets = q.corpus_source_language_facets(db, article_ids=ids)
     return {
         "sources": facets["sources"],
@@ -1858,6 +1866,8 @@ def insights_corpus_sentiment(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_sentiment(db, article_ids=ids)
         res["total_matched"] = total
         _xl = _cross_language_block(
@@ -1866,7 +1876,8 @@ def insights_corpus_sentiment(
         )
         if _xl is not None:
             res["cross_language"] = _xl
-        res["capped"] = total > len(ids)
+        res["capped"] = total > resolved
+        res["not_counted_yet"] = not_yet
         return res
 
     return _deadlined(db, key, _compute)
@@ -1922,6 +1933,8 @@ def insights_corpus_sources(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_sources(db, article_ids=ids, limit=limit)
         res["n_articles"] = len(ids)
         _xl = _cross_language_block(
@@ -1931,7 +1944,8 @@ def insights_corpus_sources(
         if _xl is not None:
             res["cross_language"] = _xl
         res["total_matched"] = total
-        res["capped"] = total > len(ids)
+        res["capped"] = total > resolved
+        res["not_counted_yet"] = not_yet
         return res
 
     return _deadlined(db, key, _compute)
@@ -1988,6 +2002,8 @@ def insights_corpus_coordination(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_coordination(db, article_ids=ids)
         res["total_matched"] = total
         _xl = _cross_language_block(
@@ -1996,7 +2012,8 @@ def insights_corpus_coordination(
         )
         if _xl is not None:
             res["cross_language"] = _xl
-        res["capped"] = total > len(ids)
+        res["capped"] = total > resolved
+        res["not_counted_yet"] = not_yet
         return res
 
     return _deadlined(db, key, _compute)
@@ -4289,6 +4306,7 @@ def insights_graph(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        ids, _not_yet = split_not_screened(db, ids)  # R830 group D: the mind map is a figure, queued results stay out
         # Cache by the exact id set so re-opening the same analysis mindmap is instant --
         # and by the label language, whose translations the nodes now carry (M7).
         _tl = _tlang(target_lang)

@@ -138,3 +138,26 @@ def any_pending(session: Session) -> bool:
         return session.execute(pending_ids_select().limit(1)).first() is not None
     except Exception:  # noqa: BLE001 - a store without the table has nothing queued
         return False
+
+
+def split_not_screened(session: Session, ids: list[int]) -> tuple[list[int], int]:
+    """``(counted, n)`` for a search-fed aggregate (R830 group D): the ids an aggregate counts, in their order, and how
+    many of ``ids`` are still queued for screening. The list of results keeps every id; only the figure built over
+    them leaves the queued ones out and says how many with "N of these results not counted yet". One primary-key read
+    of the queue for the ids given (they are already bounded to the safe IN size by the caller); nothing queued, or a
+    store without the queue, costs one probe and returns ``ids`` whole."""
+    if not ids or not any_pending(session):
+        return list(ids), 0
+    from src.database.models import ScreeningPending
+
+    queued: set[int] = set()
+    for i in range(0, len(ids), 900):
+        queued.update(
+            int(a)
+            for (a,) in session.execute(
+                select(ScreeningPending.article_id).where(ScreeningPending.article_id.in_(ids[i : i + 900]))
+            )
+        )
+    if not queued:
+        return list(ids), 0
+    return [i for i in ids if i not in queued], len({i for i in ids if i in queued})

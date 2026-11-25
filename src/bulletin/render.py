@@ -1405,6 +1405,16 @@ def _md_disclosures(edition: dict, T: Translator) -> list[str]:
         # None is "the count could not be read" (facts.disclosures), which is a different fact from 0: say so, so the
         # closing "Nothing excluded" line cannot be printed over an unread count.
         stated.append("- " + T.t("The count of quarantined articles could not be read — unknown, not zero."))
+    ns = d.get("not_screened_in_period")
+    if ns:
+        stated.append(
+            T.f(
+                "- {n} imported article(s) in the period are not screened for junk yet and are left out until they are.",
+                n=_fmt(ns),
+            )
+        )
+    elif "not_screened_in_period" in d and ns is None:
+        stated.append("- " + T.t("The count of articles not screened yet could not be read — unknown, not zero."))
     u = d.get("mentions_without_a_date")
     if u:
         stated.append(

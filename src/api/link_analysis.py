@@ -167,6 +167,10 @@ def corpus_links(
     ids, total = _resolve_corpus(
         db, article_ids, query=query, source=source, start_date=start_date,
         end_date=end_date, language=language, tags=tags, cap=cap, adv=adv)
+    from src.analytics.quarantine_scope import split_not_screened
+
+    resolved = len(ids)
+    ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
     items: list[dict] = []
     furniture_items: list[dict] = []
     totals = {"items": 0, "furniture": 0}
@@ -179,7 +183,8 @@ def corpus_links(
         "furniture_total": totals["furniture"],
         "truncated": totals["items"] > len(items) or totals["furniture"] > len(furniture_items),
         "total_matched": total,
-        "capped": total > len(ids),
+        "capped": total > resolved,
+        "not_counted_yet": not_yet,
         "min_citations": min_citations,
         "items": items,
         # Row 99: a link an outlet carries on most of its pages is its footer, not a citation; listed apart, never dropped.
