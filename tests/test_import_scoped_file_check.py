@@ -54,6 +54,18 @@ def _schema(path: Path) -> Path:
     return path
 
 
+@pytest.fixture
+def holders_told(monkeypatch):
+    """Where /proc/locks is absent (macOS, Windows) the recorder cannot tell whether another process holds the file and
+    rightly makes every set unknown (pinned by test_a_system_where_holders_cannot_be_told_never_scopes). The tests that
+    check what the recorder sees within this process take "no other holder" as told, so they pin the same thing on every
+    system; on Linux the real reader runs."""
+    if not Path("/proc/locks").exists():
+        import src.database.connect as c
+
+        monkeypatch.setattr(c, "_another_process_holds", lambda _p: False)
+
+
 def _open_watched(path: Path):
     from src.database.connect import connect
 
@@ -63,7 +75,7 @@ def _open_watched(path: Path):
 # --------------------------------------------------------------------------- the write recorder
 
 
-def test_row_writes_are_recorded_per_table_and_reads_are_not(tmp_path, monkeypatch):
+def test_row_writes_are_recorded_per_table_and_reads_are_not(tmp_path, monkeypatch, holders_told):
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
     from src.database.connect import unwatch_writes, watch_writes, watched_writes
 
@@ -83,7 +95,7 @@ def test_row_writes_are_recorded_per_table_and_reads_are_not(tmp_path, monkeypat
     assert watched_writes(db) is None
 
 
-def test_trigger_ddl_is_the_schema_and_table_or_index_ddl_is_unknown(tmp_path, monkeypatch):
+def test_trigger_ddl_is_the_schema_and_table_or_index_ddl_is_unknown(tmp_path, monkeypatch, holders_told):
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
     from src.database.connect import WRITE_SET_UNKNOWN, unwatch_writes, watch_writes, watched_writes
 
@@ -103,7 +115,7 @@ def test_trigger_ddl_is_the_schema_and_table_or_index_ddl_is_unknown(tmp_path, m
         unwatch_writes(db)
 
 
-def test_a_connection_to_another_file_records_nothing(tmp_path, monkeypatch):
+def test_a_connection_to_another_file_records_nothing(tmp_path, monkeypatch, holders_told):
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
     from src.database.connect import unwatch_writes, watch_writes, watched_writes
 
@@ -317,7 +329,7 @@ def test_only_an_activation_another_merge_follows_is_intermediate(tmp_path, monk
 # --------------------------------------------------------------------------- Plan 2026-11-24: prove every writer was recorded
 
 
-def test_an_uninstrumented_second_connection_makes_the_check_whole(tmp_path, monkeypatch):
+def test_an_uninstrumented_second_connection_makes_the_check_whole(tmp_path, monkeypatch, holders_told):
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
     from src.backup.merge import verify_file
     from src.database.connect import WRITE_SET_UNKNOWN, unwatch_writes, watch_writes, watched_writes
@@ -341,7 +353,7 @@ def test_an_uninstrumented_second_connection_makes_the_check_whole(tmp_path, mon
         unwatch_writes(db)
 
 
-def test_a_read_only_open_elsewhere_keeps_the_scope(tmp_path, monkeypatch):
+def test_a_read_only_open_elsewhere_keeps_the_scope(tmp_path, monkeypatch, holders_told):
     monkeypatch.setenv("OO_DB_PLAINTEXT", "1")
     from src.database.connect import unwatch_writes, watch_writes, watched_writes
 
