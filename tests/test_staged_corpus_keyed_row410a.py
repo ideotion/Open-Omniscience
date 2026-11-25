@@ -349,7 +349,9 @@ def test_the_walk_beside_the_merge_never_holds_the_merges_commits(tmp_path):
         assert commit_beside(locked) == -1.0  # control: a walk that holds a lock does hold the COMMIT
         walk = staged_key.open_staged(p, unlocked=True)
         walk.isolation_level = None
-        assert 0.0 <= commit_beside(walk) < 0.2
+        # A held lock shows as -1.0 (the COMMIT waits out the 0.2 s busy timeout and fails); a COMMIT that went through
+        # was not held, however long its own fsync took on a loaded runner (CI once measured 0.208 s here).
+        assert commit_beside(walk) >= 0.0
     finally:
         staged_key.forget(p)
 
