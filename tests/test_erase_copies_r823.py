@@ -253,7 +253,7 @@ def test_items_in_corpus_that_are_not_segments_are_left_counted_and_never_named(
     assert not s1.exists()
     seg = report["corpus_segments"]
     assert seg["foreign"] == 3 and seg["destroyed"] == 1 and seg["corpus"] == "destroyed"
-    assert report["folder_kept_foreign"] is True and report["kept_items"] >= 3
+    assert report["folder_kept_foreign"] is True and report["kept_items"] == 3
     flat = json.dumps(report, default=str)
     assert "my-notes" not in flat
     assert sorted(p.name for p in data.iterdir()) == ["corpus"], "every other entry of the data folder goes"
@@ -316,11 +316,11 @@ def test_a_copy_swapped_after_the_evidence_read_is_never_head_only(tmp_path, mon
     real = crypto_erase._copy_take
     swapped = tmp_path.parent / f"{tmp_path.name}-swapped.db"
 
-    def take(p, raws, generation, *, side=False):
+    def take(p, raws, generation, **kw):
         if p.name == _SNAP:
             _plaintext(swapped)
             os.replace(swapped, p)  # a plaintext file takes the name before the erase opens it
-        return real(p, raws, generation, side=side)
+        return real(p, raws, generation, **kw)
 
     monkeypatch.setattr(crypto_erase, "_copy_take", take)
     report = _erase(tmp_path)
@@ -339,8 +339,9 @@ def test_a_plaintext_copy_s_log_is_rewritten_whole_and_said_overwritten(tmp_path
         after = kept.read()
     finally:
         kept.close()
-    assert report["copies_overwritten"] == {"pre-restore": 2} and not report["copies_destroyed"]
-    assert b"plaintext-row" not in after
+    # the log is part of its copy: one copy, rewritten whole with its log, counted once (Opus read, row 402)
+    assert report["copies_overwritten"] == {"pre-restore": 1} and not report["copies_destroyed"]
+    assert b"plaintext-row" not in after and not wal.exists()
 
 
 @posix_only
@@ -454,3 +455,104 @@ def test_the_kept_handle_reads_and_writes_without_pread_or_pwrite(tmp_path, monk
     finally:
         os.close(fd)
     assert p.read_bytes() == b"B" * 16 + b"A" * 48
+
+
+# ---------------------------------------------------------------- the reads of 5ebcd14a9 (row 402)
+
+
+@posix_only
+def test_a_copy_with_a_second_name_is_never_written_and_keeps_its_name(tmp_path):
+    """A copy whose file has another name (a hard link to the operator's own file) is refused: never written by 5a, 5b or step 6,
+    never counted in "Wiped n/n", said as not overwritten."""
+    data = tmp_path / "data"
+    data.mkdir()
+    _plaintext(data / "open_omniscience.db")
+    theirs = tmp_path / "operator-file.bin"
+    theirs.write_bytes(b"the operator's own" * 500)
+    os.link(theirs, data / _SNAP)
+    report = _erase(data)
+    assert theirs.read_bytes() == b"the operator's own" * 500
+    assert report["copies_not_overwritten"] == {"pre-restore": 1} and not report["copies_destroyed"]
+
+
+@posix_only
+def test_copies_are_listed_and_written_through_the_folder_handle(tmp_path):
+    """A folder swapped for a link after it was opened never sends a write elsewhere (security reads, row 402)."""
+    folder, other = tmp_path / "db-here", tmp_path / "elsewhere"
+    folder.mkdir()
+    other.mkdir()
+    db = folder / "open_omniscience.db"
+    _plaintext(db)
+    copy = folder / "open_omniscience.salvage-20261114T101010Z.db"
+    _plaintext(copy)
+    decoy = other / copy.name
+    decoy.write_bytes(b"not the app's" * 400)
+    dfd = crypto_erase._copy_folder(folder)
+    assert dfd is not None
+    try:
+        moved = tmp_path / "db-moved"
+        folder.rename(moved)
+        folder.symlink_to(other, target_is_directory=True)  # the name now leads elsewhere
+        found = crypto_erase._db_copies(folder, tmp_path / "base", [db], dfd=dfd)
+        assert [p.name for p in found] == [copy.name]
+        took = crypto_erase._copy_take(found[0], [], 0, dfd=dfd)
+        assert took["state"] == "plain"
+        state, gone = crypto_erase._rewrite_copy(found[0], took["fd"], took["ident"], dfd)
+        assert state == "overwritten" and gone
+        assert decoy.read_bytes() == b"not the app's" * 400
+        assert not (moved / copy.name).exists()
+    finally:
+        os.close(dfd)
+        for fd, _k, _c in crypto_erase._HELD.pop(0, []):
+            os.close(fd)
+
+
+def test_on_windows_a_copy_handle_is_let_go_before_its_unlink(tmp_path, monkeypatch):
+    """Windows has no share-delete open here: a kept handle would block the unlink, so it is closed first; there are no POSIX
+    locks to drop. Elsewhere it stays kept (R789). Windows has no folder handle either: copies go by path."""
+    p = tmp_path / "f.bin"
+    p.write_bytes(b"x")
+    fd = os.open(p, os.O_RDONLY)
+    crypto_erase._let_go(fd)
+    os.fstat(fd)  # still open on POSIX
+    scope_os(monkeypatch, crypto_erase, name="nt")
+    crypto_erase._let_go(fd)
+    with pytest.raises(OSError):
+        os.fstat(fd)
+    assert crypto_erase._copy_folder(tmp_path) is None
+
+
+def test_a_name_with_a_trailing_newline_is_never_a_segment():
+    assert crypto_erase._SEGMENT_RE.match("seg-1.db\n") is None and crypto_erase._SEGMENT_RE.match("seg-1.db-wal\n") is None
+    assert crypto_erase._SEGMENT_RE.match("seg-1.db") is not None
+    assert at_rest_state._SEGMENT_NAME.match("seg-1.db\n") is None
+
+
+@posix_only
+def test_a_segment_without_evidence_keeps_its_name_until_its_body_is_rewritten(tmp_path, monkeypatch):
+    """A stop between the record and the late rewrite never leaves an unlinked plaintext body (security reads, row 402)."""
+    data = tmp_path / "OOS data"
+    s1 = data / "corpus" / "seg-1.db"
+    s1.parent.mkdir(parents=True)
+    _plaintext(s1)
+    seen = {}
+    real = crypto_erase._corpus_settle
+
+    def settle(sweep, raws):
+        seen["named"] = s1.exists()
+        return real(sweep, raws)
+
+    monkeypatch.setattr(crypto_erase, "_corpus_settle", settle)
+    report = _erase(data)
+    assert seen["named"] is True and not s1.exists()
+    assert report["corpus_segments"]["overwritten"] == 1
+
+
+def test_a_kept_corpus_folder_keeps_its_count_once_the_keys_are_gone(tmp_path):
+    """The settled count is the erase's own: items not the app's AND segments it left (Opus read, row 402)."""
+    data = tmp_path / "data"
+    (data / "corpus").mkdir(parents=True)
+    report = {"scope": "data-folder", "data_dir": str(data), "folder_kept_foreign": True, "kept_items": 1,
+              "corpus_segments": {"foreign": 0, "left": 1}}
+    crypto_erase.settle_removed(report)
+    assert report["folder_kept_foreign"] is True and report["kept_items"] == 1

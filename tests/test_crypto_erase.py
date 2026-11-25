@@ -686,9 +686,9 @@ def test_copies_beside_a_corpus_kept_outside_the_data_folder_are_destroyed(tmp_p
     assert b"plaintext-row" not in after[plain]
     assert mine.exists() and mine.read_bytes() == b"not the app's" * 10
     # R823: no record names these copies, so none is head-only: each is rewritten in full and said "overwritten", by count and
-    # kind, never by name; the sidecar (a side file, no salt) is destroyed whole as before
+    # kind, never by name; the sidecar (a side file, no salt) is destroyed whole as before, part of its copy, never counted as one
     assert report["copies_overwritten"] == {"salvage": 1, "damaged": 1, "pre-encrypt": 1}
-    assert report["copies_destroyed"] == {"salvage": 1}
+    assert report["copies_destroyed"] == {}
     flat = json.dumps(report["copies_overwritten"]) + json.dumps(report["copies_destroyed"])
     assert all(p.name not in flat for p in (salvage, damaged, sidecar, plain))
     assert "overwritten in full rather than crypto-erased (count: 3)" in report["limit"]

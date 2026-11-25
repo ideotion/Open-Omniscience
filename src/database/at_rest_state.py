@@ -435,7 +435,7 @@ def forget_copy(copy: Path) -> None:
 #: R826: the one folder of the split corpus inside the data folder, and the only file name a segment may have there
 #: (``src/safety/crypto_erase.py`` sweeps exactly these names).
 SEGMENT_DIR = "corpus"
-_SEGMENT_NAME = re.compile(r"^(seg-[1-9][0-9]{0,3})\.db$")
+_SEGMENT_NAME = re.compile(r"^(seg-[1-9][0-9]{0,3})\.db\Z")  # \Z: "seg-1.db\n" is never a segment's name
 
 
 def _segment_entry(path: Path | str, *, must_exist: bool) -> str | None:
