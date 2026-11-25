@@ -50,19 +50,27 @@ def test_worker_count_default_leaves_one_core_and_caps(monkeypatch):
 
 def test_all_cores_worker_count_ignores_the_conservative_cap(monkeypatch):
     """'import owns the machine' (field-feedback Session A §4): unlike
-    worker_count()'s default, this NEVER reserves a core for a writer
-    process and NEVER clamps to _MAX_WORKERS_CAP -- an explicit override for
-    when collection is genuinely paused and nothing else needs a core. It
-    IS still bounded at _MAX_EXCLUSIVE_WORKERS_CAP, a HIGHER but still finite
-    ceiling (a data-loss-lens skeptic finding, 2026-07-24, MEDIUM: the first
-    cut had no ceiling at all -- a huge box would spawn an equally huge
-    process pool, stacking with the concurrently-enlarged SQLite cache)."""
+    worker_count()'s default, this NEVER clamps to _MAX_WORKERS_CAP -- an
+    explicit override for when collection is genuinely paused. It IS still
+    bounded at _MAX_EXCLUSIVE_WORKERS_CAP, a HIGHER but still finite ceiling
+    (a data-loss-lens skeptic finding, 2026-07-24, MEDIUM: the first cut had no
+    ceiling at all -- a huge box would spawn an equally huge process pool,
+    stacking with the concurrently-enlarged SQLite cache).
+
+    ROW 416 (2026-11-24): above two cores it leaves one core to the drain's own
+    writer, which applies every article in the parent -- measured, W=4 on 4 cores
+    drained no faster than W=3. At two cores it keeps two workers, because one
+    worker is the serial path, which measured slower than two."""
     scope_os(monkeypatch, rp, cpu_count=lambda: 6)
-    assert rp.all_cores_worker_count() == 6  # not 5 (worker_count's cpu-1)
+    assert rp.all_cores_worker_count() == 5  # one core left to the writer
+    scope_os(monkeypatch, rp, cpu_count=lambda: 4)
+    assert rp.all_cores_worker_count() == 3
+    scope_os(monkeypatch, rp, cpu_count=lambda: 2)
+    assert rp.all_cores_worker_count() == 2  # max(2, cores - 1): never the serial path on two cores
     scope_os(monkeypatch, rp, cpu_count=lambda: 20)
-    assert rp.all_cores_worker_count() == 20  # well above worker_count's cap of 8
+    assert rp.all_cores_worker_count() == 19  # well above worker_count's cap of 8
     scope_os(monkeypatch, rp, cpu_count=lambda: 64)
-    assert rp.all_cores_worker_count() == rp._MAX_EXCLUSIVE_WORKERS_CAP  # capped, not 64
+    assert rp.all_cores_worker_count() == rp._MAX_EXCLUSIVE_WORKERS_CAP  # capped, not 63
     assert rp._MAX_EXCLUSIVE_WORKERS_CAP > rp._MAX_WORKERS_CAP  # a HIGHER ceiling than the default
     scope_os(monkeypatch, rp, cpu_count=lambda: 1)
     assert rp.all_cores_worker_count() == 1  # never 0 -- always at least one worker

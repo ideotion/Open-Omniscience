@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "0a8696975a751aaf5e7e9d6ee6c37b0b7fb68224b272f9009689b8a0f41e065e",
+  "digest": "e96db328f2644adbcf5067cc2f4b2415021b1275890e8bcfda608e9859bae970",
   "log": [
     {
       "version": 1,
@@ -130,9 +130,9 @@
     },
     {
       "version": 3,
-      "digest": "0a8696975a751aaf5e7e9d6ee6c37b0b7fb68224b272f9009689b8a0f41e065e",
+      "digest": "e96db328f2644adbcf5067cc2f4b2415021b1275890e8bcfda608e9859bae970",
       "kind": "same",
-      "note": "Row 418: the apply path writes the same rows through Core statements instead of the ORM unit of work (date tags, places, entities, the article's derived columns, the stamps); rows, ids and stored values are identical, pinned by tests/test_apply_core_row418.py and the golden output digest"
+      "note": "Row 416 changes only reindex_parallel.py's pool lifetime and worker count (one kept pool per drain, recycled, memory-bounded); every task is computed by the same _worker_compute in a worker built by the same _worker_init, and index_article is untouched"
     }
   ]
 }

@@ -33,7 +33,7 @@ from pathlib import Path
 APP_FILES: frozenset[str] = frozenset({
     "open_omniscience.db", "custody_log.db", "anchors.db",
     "analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb",
-    "activity_ledger.jsonl", "app_errors.jsonl", "app_settings.json", "archive_backfill.json",
+    "activity_ledger.jsonl", "app_errors.jsonl", "app_settings.json", "archive_backfill.json", "at_rest_encryption.json",
     "article-indexes-attempt.json", "backup-temp-dests.json", "bench-anchors.json", "bench_progress_state.json",
     "briefing_cache.json", "briefing_dismiss_reasons.json", "briefing_dismissed.json", "briefing_draft.json",
     "collect_capacity.json", "collect_perf.jsonl", "criteria_calibration_cursor.json", "custody_pending.jsonl",

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "b5c1237ac41075f2d46e4fc867629371a9567ef0a8bbcc9a9f0550577ad4aab5",
+  "digest": "c37249c71f10e3dab309b91ef0d9c0321540b13c819a01942e348d9d3e662d52",
   "log": [
     {
       "version": 1,
@@ -64,9 +64,9 @@
     },
     {
       "version": 1,
-      "digest": "b5c1237ac41075f2d46e4fc867629371a9567ef0a8bbcc9a9f0550577ad4aab5",
+      "digest": "c37249c71f10e3dab309b91ef0d9c0321540b13c819a01942e348d9d3e662d52",
       "kind": "same",
-      "note": "Row 418: places and entities are written by one executemany each and the www stamp by a statement compiled once, instead of the ORM unit of work; rows, ids and stored values are identical, pinned by tests/test_apply_core_row418.py and the golden output digest"
+      "note": "Row 416 changes only reindex_parallel.py's pool lifetime and worker count (one kept pool per drain, recycled, memory-bounded); the www extraction a worker runs is the same function in the same worker, and the store half is untouched"
     }
   ]
 }
