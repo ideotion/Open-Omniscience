@@ -461,7 +461,7 @@ def test_the_kept_handle_reads_and_writes_without_pread_or_pwrite(tmp_path, monk
 
 
 @posix_only
-def test_a_copy_with_a_second_name_is_never_written_and_keeps_its_name(tmp_path):
+def test_a_copy_with_a_second_name_is_never_written(tmp_path):
     """A copy whose file has another name (a hard link to the operator's own file) is refused: never written by 5a, 5b or step 6,
     never counted in "Wiped n/n", said as not overwritten."""
     data = tmp_path / "data"
@@ -473,6 +473,25 @@ def test_a_copy_with_a_second_name_is_never_written_and_keeps_its_name(tmp_path)
     report = _erase(data)
     assert theirs.read_bytes() == b"the operator's own" * 500
     assert report["copies_not_overwritten"] == {"pre-restore": 1} and not report["copies_destroyed"]
+
+
+@posix_only
+def test_a_refused_copy_beside_a_store_kept_elsewhere_keeps_its_name(tmp_path, monkeypatch):
+    """Outside the data folder no folder removal follows: a copy the erase refused keeps its name, so the operator can reach it."""
+    data, elsewhere = tmp_path / "OOS data", tmp_path / "db-elsewhere"
+    data.mkdir()
+    elsewhere.mkdir()
+    db = elsewhere / "open_omniscience.db"
+    _plaintext(db)
+    real_resolve = crypto_erase._resolve
+    monkeypatch.setattr(crypto_erase, "_resolve", lambda d: {**real_resolve(d), "main_db": db})
+    theirs = tmp_path / "operator-file.bin"
+    theirs.write_bytes(b"the operator's own" * 500)
+    copy = elsewhere / "open_omniscience.salvage-20261114T101010Z.db"
+    os.link(theirs, copy)
+    report = _erase(data)
+    assert copy.exists() and theirs.read_bytes() == b"the operator's own" * 500
+    assert report["copies_not_overwritten"] == {"salvage": 1}
 
 
 @posix_only
