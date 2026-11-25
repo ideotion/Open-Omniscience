@@ -659,6 +659,7 @@ class ImportQueueManager:
             before = (
                 self._state, self._items, self._cursor, self._started_at, self._ended_at,
                 self._tuning_done, self._tuned, self._collection_window_failed, self._run_id, self._corpus_check,
+                self._safety_copies,
             )
             self._stop.clear()
             self._items = queued
@@ -692,6 +693,7 @@ class ImportQueueManager:
                 (
                     self._state, self._items, self._cursor, self._started_at, self._ended_at,
                     self._tuning_done, self._tuned, self._collection_window_failed, self._run_id, self._corpus_check,
+                    self._safety_copies,
                 ) = before
                 self._drop_keys()
                 self._save()
