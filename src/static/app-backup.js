@@ -4453,6 +4453,10 @@
         // R806: a folder kept ON PURPOSE (it holds items the app did not create) is said as kept, never as "could not be removed".
         const keptForeign = r.folder_kept_foreign === true;
         const keptCount = Number(r.kept_items) || 0;  // 0 when keys could not be listed: then the "could not list" notice speaks
+        // Row 378 (R836 Q2): the shaped folders that still hold items the erase left (the app's own folder names, with a count each).
+        const shapedLeft = (r.shaped_left && typeof r.shaped_left === "object") ? r.shaped_left : {};
+        const shapedFolders = Object.keys(shapedLeft).filter((f) => Number(shapedLeft[f]) > 0).sort();
+        const shapedN = shapedFolders.reduce((a, f) => a + (Number(shapedLeft[f]) || 0), 0);
         // ...but anything ELSE left at its top is a removal that failed, and "kept" never hides it (R806 / R807).
         const notRemoved = !back && r.scope === "data-folder" && r.removed === false && r.drive_absent !== true && r.drive_lost !== true && (!keptForeign || (r.not_removed || []).length > 0);
         // R806 (5) never follows a keys folder that is a link; the app's own keys may be where it points, so the result is never clean.
@@ -4581,6 +4585,9 @@
           (keptForeign
             ? (keptCount ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds items the app did not create (count: {n}).", { n: fmtNum(keptCount, 0) }))}</div>` : "")
             : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
+          // R836 Q2 (row 378): items left in the app's shaped folders may be the operator's or the app's own under an older name,
+          // so the erase of the data folder is said to be not complete; the folders by the app's own names, a count only.
+          (shapedN ? `<div class="card-caveat">${esc(tfw("Items were left in the app’s {folders} folders, because the app did not create them or wrote them under an older name: the erase of the data folder is not complete (count: {n}).", { folders: "\u0001folders\u0002", n: fmtNum(shapedN, 0) })).replace("\u0001folders\u0002", `<bdi translate="no" dir="ltr">${esc(shapedFolders.join(", "))}</bdi>`)}</div>` : "") +
           (segShort ? `<div class="card-caveat">${esc(tfw("Some corpus files could not be overwritten, or only partially, so the erase may be incomplete (count: {n}).", { n: fmtNum(segShort, 0) }))}</div>` : "") +
           (segOver ? `<div class="hint">${esc(tfw("Corpus files that could not be shown to be encrypted were overwritten in full instead of being crypto-erased (count: {n}).", { n: fmtNum(segOver, 0) }))}</div>` : "") +
           (copiesShort ? `<div class="card-caveat">${esc(tfw("Database copies that could not be shown to be encrypted were only partially overwritten, or not at all, so the erase may be incomplete (count: {n}).", { n: fmtNum(copiesShort, 0) }))}</div>` : "") +

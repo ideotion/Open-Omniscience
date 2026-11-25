@@ -1039,16 +1039,26 @@ imply a protection we cannot deliver.
   holds any entry the app does not own (system clutter such as `.DS_Store` aside; the check stops at the first such entry).
   There every step above still runs by name, and the rest reaches only the app's own entries (`src/safety/data_scope.py`:
   its file and folder names, its databases' side files, its copy and staging patterns, an atomic write's temp and a lock
-  beside one of them; kept complete by a test over the names the code joins onto `data_dir()`). The app's COMMON names
-  whose contents are re-downloadable or say nothing about the corpus (`models`, `cache`, `leases`, `runtime`) are left
-  there, because an operator's own folder may carry one (`annotations`, `triage`, `bench`, `bulletin` and `diagnostics`
-  always go, so an operator's own entry under one of those names there goes too); a
+  beside one of them; kept complete by a test over the names the code joins onto `data_dir()`). **Ten folders are judged entry
+  by entry, in either scope and by both erasers (row 378, R836/R837):** `models`, `cache`, `runtime`, `leases`, `wiki_dumps`,
+  `osm_regions`, `osm_work`, `ip_geo`, `weather_context` and `osm_borders` (`data_scope.SHAPED_DIRS`). Only their first-level
+  entries that fit a shape the app writes go (each shape cited where the app writes it); anything else, a link or an entry that is
+  not a plain file or folder is left and counted, never followed and never named, and a folder still holding one stays, with the
+  data folder, the result saying the erase of the data folder is not complete (what is left may be the app's own under an older
+  name). `models/ollama` and `models/huggingface` are the app's only while their own first level holds nothing but Ollama's
+  `blobs` and `manifests`, or Hugging Face's `hub`, `xet`, `token` and `stored_tokens`, checked again through the handle that
+  walks and removes them; Hugging Face's two token files are credentials and go in the early pass, right after the keys. In a
+  shared folder the bare cache names (`triton`, `inductor`, `nv`, `vllm`, `huggingface`) are left and counted; `vllm-config` goes.
+  Every other app folder is removed whole (`data_scope.WHOLE_DIRS`, which the shared-folder notice lists by name);
+  `annotations`, `triage`, `bench`, `bulletin` and `diagnostics`
+  always go, so an operator's own entry under one of those names there goes too; a
   `keys` folder loses the app's key files, every file named like one of its key forms (`*_ed25519.pem`, `*_ml_dsa_65.key`)
   and its `.pending` folder, and keeps the rest. Stated limit: the databases (the corpus, the custody log, the lane files
   `wiki.db`, `law.db`, `osm.db`) are erased by name in either scope, so an operator's own file under one of those names in
   that folder (which the app would have opened as its own) is erased too. The folder is kept, and the report says
   `scope: "app-only"` and names, without reading them, the entries left (`left_untouched`), the common names left
-  (`left_common_names`) and any of the app's own a removal failed on (`not_removed`). A scope that cannot be read counts as
+  (`left_common_names`), any of the app's own a removal failed on (`not_removed`) and, per shaped folder still there, how many
+  entries in it were left (`shaped_left`, a count each). A scope that cannot be read counts as
   shared. A secure uninstall's watcher applies the same names and writes only a count of what it left to its audit log. That watcher (R792 part B) also keeps a descriptor on each SQLite file of an encrypted database through its
   unlink and, after its walk, does what the panic wipe does about another process holding the store (the lock bytes, one
   `F_GETLK` per kept file, a rewrite every 100 ms for about 2 s while a holder is seen, then always one more rewrite bounded

@@ -154,6 +154,107 @@ def keys_folder_state(keys_dir: Path) -> str:
         return "unlisted"
 
 
+#: Row 378 (R836, R837 amends Q1): folders the app owns by the SHAPE of each first-level entry, never by the folder's name alone.
+#: An erase (both scopes) and the uninstall watcher remove only the first-level entries that fit one of these shapes; anything
+#: else, a link, or an entry that is not a plain file or folder, is left and counted (never followed, never matched by shape:
+#: R783/R791), the folder stays, and so does the data folder (as R806 keeps ``keys``). Each shape is a full match on the name,
+#: ``kind`` is what the entry must be (``file`` or ``dir``, by ``lstat``), and ``second`` (a folder only) lists the ONLY names its
+#: own first level may hold, each a real folder (``dirs``) or a regular file (``files``): anything else there leaves the whole entry.
+#: ``own`` is a shape that is the app's only in a folder of the app's own: a bare generic name an operator's folder can carry too
+#: (R837: "generic cache names stay owned by name in the app's own folder and are left and counted in a shared folder").
+#: Every shape also takes the app's two temp endings (``file_lock.temp_name``'s ``.tmp.<pid>.<thread>``, the folder backup's
+#: ``.oopart``). Each shape is cited where the app writes it; the PR for row 378 lists each one and which side it fell on.
+#: R837 (and the coordinator's word on "xet"): the ONLY names the app's Hugging Face home may hold at its first level, an explicit
+#: list, never a pattern: the hub cache, Hugging Face's xet cache, and its two sign-in token files (credentials: the erase destroys
+#: them in its early pass with the other secrets, crypto_erase.py step 2b).
+HF_HOME_DIRS: tuple[str, ...] = ("hub", "xet")
+HF_TOKEN_FILES: tuple[str, ...] = ("token", "stored_tokens")
+_TEMP_ENDING = r"(?:\.tmp\.[0-9]+\.[0-9]+|\.oopart)?"
+SHAPED_DIRS: dict[str, tuple[dict, ...]] = {
+    # src/llm/model_store.py:90-112: Ollama's store and Hugging Face's home. Below them are third-party trees, judged at their own
+    # first level (R837): Ollama writes only blobs and manifests there; HF_HOME holds hub, HF's xet cache and its token files.
+    "models": (
+        {"re": "ollama", "kind": "dir", "second": {"dirs": ("blobs", "manifests"), "files": ()}},
+        {"re": "huggingface", "kind": "dir", "second": {"dirs": HF_HOME_DIRS, "files": HF_TOKEN_FILES}},
+    ),
+    # src/llm/vllm_lifecycle.py:2262-2268 (XDG_CACHE_HOME is the folder itself, so Hugging Face's default home lands here too):
+    # "vllm-config" is the app's by its shape; the bare names only in a folder of the app's own (R837).
+    "cache": (
+        {"re": "vllm-config", "kind": "dir"},
+        *({"re": n, "kind": "dir", "own": True} for n in ("triton", "inductor", "nv", "vllm", "huggingface")),
+    ),
+    # src/llm/installer.py:318-333: the installer's staged script, a 16-hex token in its name
+    "runtime": ({"re": r"ollama-install-[0-9a-f]{16}\.sh", "kind": "file"},),
+    # src/*/corpus_lease.py:74-117: <lease name>.<uuid4 hex>.lease
+    "leases": ({"re": r"[a-z]+(?:-[a-z]+)*\.[0-9a-f]{32}\.lease", "kind": "file"},),
+    # src/wiki/dumps.py:115-136, :214, :293 and src/wiki/dump_index.py:43
+    "wiki_dumps": (
+        {"re": r"downloads\.json(?:\.tmp)?", "kind": "file"},
+        {"re": r"(?=[a-z0-9-]{1,32}wiki-)[a-z0-9]+(?:-[a-z0-9]+)*wiki-latest-pages-articles(?:-multistream(?:-index)?)?"
+               r"\.(?:xml|txt)\.bz2", "kind": "file"},
+        {"re": r"dump_index\.sqlite(?:-wal|-shm|-journal)?", "kind": "file"},
+    ),
+    # src/geo/osm_downloads.py:83-85 (codes by src/geo/osm_regions.is_valid_code), :189, :312
+    "osm_regions": (
+        {"re": r"downloads\.json(?:\.tmp)?", "kind": "file"},
+        {"re": r"(?=[a-z-]{1,64}-latest\.)[a-z]+(?:-[a-z]+)*-latest\.osm\.pbf", "kind": "file"},
+    ),
+    # src/osm/apply.py:676 and src/osm/reader.py:304, :528
+    "osm_work": (
+        {"re": r"[A-Z]{3}-[0-9]+\.osc\.gz", "kind": "file"},
+        {"re": r"osm-locations\.sqlite(?:-wal|-shm|-journal)?", "kind": "file"},
+        {"re": r"osm-locations\.idx", "kind": "file"},
+    ),
+    # src/geo/ip_geo.py:85: the names it reads (no writer exists)
+    "ip_geo": ({"re": r"dbip_city_lite\.csv(?:\.gz)?", "kind": "file"},),
+    # src/weather/openmeteo.py:102-124: the old writer's cache files (the app now removes the folder at start)
+    "weather_context": ({"re": r"[0-9a-f]{24}\.json", "kind": "file"},),
+    # src/timemap/admin_split.py:58-63: the two world files (no writer under the data folder; "detail/" is left and counted)
+    "osm_borders": ({"re": r"admin[01]\.world\.json", "kind": "file"},),
+}
+
+
+def shaped_spec(*, shared: bool) -> dict[str, list[dict]]:
+    """:data:`SHAPED_DIRS` as plain lists for the uninstall watcher (stdlib only), with the ``own`` shapes left out in a shared
+    folder and the temp endings joined to each pattern: both erasers apply ONE definition."""
+    out: dict[str, list[dict]] = {}
+    for folder, shapes in SHAPED_DIRS.items():
+        out[folder] = [
+            {"re": f"(?:{s['re']}){_TEMP_ENDING if s['kind'] == 'file' else ''}", "kind": s["kind"],
+             **({"second": {"dirs": list(s["second"]["dirs"]), "files": list(s["second"]["files"])}} if s.get("second") else {})}
+            for s in shapes if not (shared and s.get("own"))
+        ]
+    return out
+
+
+def shaped_match(spec: list[dict], name: str, kind: str) -> dict | None:
+    """The shape a first-level entry of a shaped folder fits (by its name and its ``lstat`` kind: ``file`` or ``dir``; a link or
+    any other kind fits none), or None: then it is left and counted."""
+    if kind not in ("file", "dir"):
+        return None
+    for shape in spec:
+        if shape["kind"] == kind and re.fullmatch(shape["re"], name, flags=re.ASCII):
+            return shape
+    return None
+
+
+def second_level_ok(shape: dict, entries: list[tuple[str, str]]) -> bool:
+    """R837: whether a folder fitting ``shape`` holds, at its own first level, only the names the shape allows, each of the
+    kind it allows (``entries`` as ``(name, lstat kind)``). A shape without ``second`` is the app's whole."""
+    second = shape.get("second")
+    if not second:
+        return True
+    for name, kind in entries:
+        if not (name in second["dirs"] and kind == "dir" or name in second["files"] and kind == "file"):
+            return False
+    return True
+
+
+#: Folders the app owns by NAME and that an erase removes whole, whatever they hold: every app folder that is neither judged by
+#: shape (:data:`SHAPED_DIRS`) nor by content (``keys``, R806). The shared-folder notice lists exactly these (R836 S1).
+WHOLE_DIRS: tuple[str, ...] = tuple(sorted(APP_DIRS - set(SHAPED_DIRS) - {"keys"}))
+
+
 #: Endings the app adds to one of its names: an atomic write's temp (``<name>.tmp`` and ``file_lock.temp_name``'s
 #: ``<name>.tmp.<pid>.<thread>``), a lock sidecar (``file_lock._SIDECAR``), a damaged or partial copy. Stripped before the
 #: name is looked up, so ``app_settings.json.tmp`` is the app's because ``app_settings.json`` is.
