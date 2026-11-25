@@ -2446,7 +2446,7 @@ def _files_under(roots: list[Path], base: Path, onerror, skip: Path | set[Path] 
             if kind == "unreached":
                 continue
             if kind != "dir":
-                yield root
+                yield root, None
                 continue
         if root in skips:
             continue
@@ -2498,31 +2498,45 @@ def _remove_app_folders(roots: list[Path], dfd: int | None = None, *, files: boo
 
 def _rmtree_at(dfd: int, name: str) -> None:
     """Row 387 (security reads): ``shutil.rmtree(name, dir_fd=dfd)`` that never crosses into another device: a folder below on
-    another device (a drive mounted there) is left whole, never emptied. A link is removed, never followed. Never raises."""
-    try:
-        dev = os.fstat(dfd).st_dev
-        fd = os.open(name, _DIR_FLAGS, dir_fd=dfd)
-    except OSError:
+    another device (a drive mounted there) is left whole, never emptied. A link is removed, never followed. Iterative, each folder
+    reopened from ``dfd`` by :func:`_open_below` (one handle at a time, any depth). Never raises."""
+    stack: list[tuple[tuple[str, ...], bool]] = [((name,), False)]
+    while stack:
+        parts, emptied = stack.pop()
+        if emptied:
+            _rmdir_below(dfd, parts)
+            continue
+        fd, _err = _open_below(dfd, parts)
+        if fd is None:
+            continue  # a link, another device, or not openable: left
+        stack.append((parts, True))
+        try:
+            for entry in os.listdir(fd):
+                try:
+                    st = os.stat(entry, dir_fd=fd, follow_symlinks=False)
+                except OSError:
+                    continue
+                if stat.S_ISDIR(st.st_mode):
+                    stack.append(((*parts, entry), False))
+                    continue
+                with contextlib.suppress(OSError):
+                    os.unlink(entry, dir_fd=fd)
+        except OSError:
+            pass  # a listing that failed: the folder's rmdir then fails, and it is said as not removed
+        finally:
+            _close_quietly(fd)
+
+
+def _rmdir_below(dfd: int, parts: tuple[str, ...]) -> None:
+    parent, _err = _open_below(dfd, parts[:-1])
+    if parent is None:
         return
     try:
-        if os.fstat(fd).st_dev != dev:
-            return
-        for entry in os.listdir(fd):
-            try:
-                st = os.stat(entry, dir_fd=fd, follow_symlinks=False)
-            except OSError:
-                continue
-            if stat.S_ISDIR(st.st_mode):
-                _rmtree_at(fd, entry)
-                continue
-            with contextlib.suppress(OSError):
-                os.unlink(entry, dir_fd=fd)
+        os.rmdir(parts[-1], dir_fd=parent)
     except OSError:
-        return
+        pass
     finally:
-        _close_quietly(fd)
-    with contextlib.suppress(OSError):
-        os.rmdir(name, dir_fd=dfd)
+        _close_quietly(parent)
 
 
 def _same_folder(base: Path, dfd: int) -> bool:

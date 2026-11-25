@@ -254,3 +254,30 @@ def test_a_data_folder_swapped_for_a_link_is_never_said_removed(tmp_path, monkey
     assert not (aside / "sub").exists(), "the held folder is emptied through its handle"
     assert report.get("removed") is False and report.get("folder_moved") is True
     assert elsewhere.is_dir()
+
+
+def test_a_very_deep_tree_is_removed_without_recursion(tmp_path):
+    """Security read: the removal keeps its own stack, so a tree deeper than Python's recursion limit never aborts the erase."""
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    fd = os.open(data, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        cur = os.open(".", os.O_RDONLY | os.O_DIRECTORY, dir_fd=fd)
+        for _ in range(sys.getrecursionlimit() + 200):
+            os.mkdir("d", dir_fd=cur)
+            nxt = os.open("d", os.O_RDONLY | os.O_DIRECTORY, dir_fd=cur)
+            os.close(cur)
+            cur = nxt
+        os.close(os.open("secret", os.O_WRONLY | os.O_CREAT, 0o600, dir_fd=cur))
+        os.close(cur)
+        crypto_erase._rmtree_at(fd, "d")
+        assert "d" not in os.listdir(fd)
+    finally:
+        os.close(fd)
+
+
+def test_the_walk_by_path_yields_a_top_level_file_with_no_handle(tmp_path):
+    """Security read: the by-path walk (Windows, or no hold) gives every item as (path, None), a top-level file of app-only scope too."""
+    data = _folder(tmp_path)
+    got = list(crypto_erase._files_under([data / "app_settings.json", data / "sub"], data, lambda e: None))
+    assert (data / "app_settings.json", None) in got and (data / "sub" / "notes.json", None) in got
