@@ -1907,6 +1907,10 @@ def _reindex_articles_impl(
     # The next window's tasks and text, its precompute in flight, that precompute's own stats, and the seconds its read took.
     _ahead: tuple[list[Task], dict[int, str], Future, dict, float] | None = None
     _ahead_pool: ThreadPoolExecutor | None = None
+    # ROW 425: the window computed ahead whose result has not been taken yet. ``_ahead`` is emptied when its turn
+    # STARTS, before the article read and the wait for its result; this stays set until that result is taken, so a
+    # stop or an exception in between (Ctrl-C during the read or the wait) still kills that window rather than waits.
+    _pending_fut: Future | None = None
     _pipelined_windows = 0
     # ROW 416: ONE worker pool for the whole drain rather than one per window -- a fresh worker reloads every dictionary
     # it meets (about 4.4 s of CPU per worker on a mixed-language window), and a long drain paid that once per window.
@@ -1942,6 +1946,7 @@ def _reindex_articles_impl(
                     # full-width pools never run together. Its result is not used and its figures are not counted.
                     with contextlib.suppress(Exception):
                         _fut.result()
+                    _pending_fut = None
                 continue
 
             # Precompute (parallel when it's worth it; falls back to serial in-process on any pool trouble -- see
@@ -1952,8 +1957,10 @@ def _reindex_articles_impl(
             if _fut is not None:
                 try:
                     derivs, _secs = _fut.result()
+                    _pending_fut = None
                     _pipelined_windows += 1
                 except PoolUnavailable:
+                    _pending_fut = None
                     # Straight to serial, here: asking the pool again would wait out a second pool timeout on a wedged pool
                     # before the same serial redo. Counted once, as the fallback it is.
                     _ts = time.monotonic()
@@ -1983,11 +1990,8 @@ def _reindex_articles_impl(
                         if _ahead_pool is None:
                             _ahead_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="oo-reindex-ahead")
                         n_stats: dict = {}
-                        _ahead = (
-                            n_tasks, n_content,
-                            _ahead_pool.submit(_precompute, n_tasks, n_stats, serial_fallback=False),
-                            n_stats, n_secs,
-                        )
+                        _pending_fut = _ahead_pool.submit(_precompute, n_tasks, n_stats, serial_fallback=False)
+                        _ahead = (n_tasks, n_content, _pending_fut, n_stats, n_secs)
                     del _n_art  # applied from a fresh read in its own turn
 
             _t0 = time.monotonic()
@@ -1995,12 +1999,12 @@ def _reindex_articles_impl(
             _apply_s += time.monotonic() - _t0
     finally:
         if _ahead_pool is not None:
-            # Nothing left ahead: the helper is idle and this returns at once. A window still ahead (a stop, or an exception in the
+            # Nothing left ahead: the helper is idle and this returns at once. A window still ahead (a stop, or an exception or Ctrl-C in the
             # apply) is not waited for: a Stop is answered now, and the pool it runs in ends at the pool timeout at the latest.
-            _ahead_pool.shutdown(wait=_ahead is None, cancel_futures=True)
+            _ahead_pool.shutdown(wait=_pending_fut is None, cancel_futures=True)
         # A window still ahead (a stop, or an exception in the apply) is running in the kept pool: its workers are killed
         # rather than waited for, which also ends that window's helper thread at once instead of at the pool timeout.
-        _drain_pool.close(abandon=_ahead is not None)
+        _drain_pool.close(abandon=_pending_fut is not None)
         _pre_stats["pools_started"] = _drain_pool.started
         _pre_stats["pools_recycled"] = _drain_pool.recycled
         _pre_stats["pools_broken"] = _drain_pool.broken
