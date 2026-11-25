@@ -4129,6 +4129,15 @@ def _panic_cli(*, force: bool) -> None:
     elif holder != "none":
         print("The erase could not check whether another program had the database open. If one did, the erase may be "
               "incomplete: close such a program or restart the computer.")
+    if report.get("partially_overwritten"):
+        # R797 (row 332): a rewrite that stopped short (disk reserve, error) is "partially overwritten", never destroyed.
+        print("THE ERASE MAY BE INCOMPLETE: some files were only partially overwritten before they were deleted "
+              f"(files: {report['partially_overwritten']}; {report.get('partial_bytes_done', 0)} of "
+              f"{report.get('partial_bytes_known', 0)} bytes): the rewrite stopped to keep free disk space, or on an error.")
+    if report.get("not_overwritten"):
+        # Row 332, Revision 3: files it could not overwrite at all, apart from the partial ones and those in unlisted folders.
+        print(f"THE ERASE MAY BE INCOMPLETE: some files could not be overwritten before they were deleted (files: "
+              f"{report['not_overwritten']}; the app log names them).")
     if report.get("unlisted_folders"):
         # R798: the files in a folder the erase could not list were never checked.
         print(f"THE ERASE MAY BE INCOMPLETE: it could not list {report['unlisted_folders']} of the folders it was to erase, so it "

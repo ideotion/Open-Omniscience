@@ -436,6 +436,8 @@ def test_a_stop_during_the_body_rewrite_is_partially_overwritten(tmp_path, monke
     try:
         rec = crypto_erase._open_and_unlink_plain(db, crypto_erase._pin_file(db), generation, [])
 
+        real = crypto_erase._rewrite_fd
+
         def killed(fd, **kw):  # the operator closes the app partway (a Ctrl-C on the CLI)
             os.lseek(fd, 0, os.SEEK_SET)
             os.write(fd, os.urandom(8192))
@@ -443,6 +445,8 @@ def test_a_stop_during_the_body_rewrite_is_partially_overwritten(tmp_path, monke
 
         monkeypatch.setattr(crypto_erase, "_rewrite_fd", killed)
         crypto_erase._rewrite_plain(rec, may_write=True)
+        # the held files' late rewrite goes through the same helper since row 332: the stop was the body rewrite's, not its
+        monkeypatch.setattr(crypto_erase, "_rewrite_fd", real)
     finally:
         crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
     assert rec["state"] == "partially_overwritten" and rec["reason"] == "stopped", rec

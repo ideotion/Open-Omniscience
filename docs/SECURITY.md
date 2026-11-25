@@ -1069,6 +1069,17 @@ imply a protection we cannot deliver.
   names, a plaintext log not tied by its header) is left whole and said so. The at-rest record with another name stays refused.
   Any of these keeps the result from being clean (`linked_files`). The keys folder is opened once, no-follow, and walked by
   that handle (row 380); a link or special file in it is never written.
+  **A whole-file rewrite is sparse-aware and disk-safe (row 332, R797)** in both erase paths: it writes only the regions of a
+  file that hold data (`SEEK_DATA`/`SEEK_HOLE`), never a hole, so a sparse file (a virtual disk, a dump) never grows; where the
+  file system cannot say, it writes the logical size; and before every chunk it checks the drive's free space and stops rather
+  than leave less than 64 MiB free (every chunk, since a copy-on-write file system takes new blocks even for a rewrite in
+  place). A rewrite that stops there, or on an error, is logged and reported as "partially overwritten" (bytes done of bytes
+  known, never "destroyed"), the result is "may be incomplete", and the file is still deleted. Salt pages are written first and
+  are never held to that reserve; nor are key files or the logs that hold copies of a salt page (a store's, a copy's, a
+  segment's, or one rewritten again in the late pass), which still skip holes. There is no time limit on a rewrite apart from
+  the existing bound on the late rewrite of held files (R792). A file either erase could not overwrite at all (a read-only key
+  file, a salt page whose write failed) makes the result "may be incomplete" too (`not_overwritten` in the panic report, a
+  visible caveat ×12), counted once: a partial rewrite and a file it could not look at are said only under their own reason.
   Every other app folder is removed whole (`data_scope.WHOLE_DIRS`, which the shared-folder notice lists by name);
   `annotations`, `triage`, `bench`, `bulletin` and `diagnostics`
   always go, so an operator's own entry under one of those names there goes too; a

@@ -56,7 +56,7 @@ AUDIT_LOG = Path.home() / ".open-omniscience-uninstall.log"
 # absolute paths + flags — the detached process computes NO paths itself (so it can only
 # ever remove exactly what plan_uninstall decided in-process).
 _WATCHER_SRC = r"""
-import os, re, sys, json, time, shutil, datetime, stat, struct, tempfile
+import os, re, sys, json, time, shutil, datetime, stat, struct, tempfile, errno
 pid = int(sys.argv[1]); plan = json.loads(sys.argv[2])
 os.chdir(os.path.expanduser("~"))          # never sit inside a folder we may delete
 __PID_PROBE__
@@ -139,6 +139,53 @@ def key_names(ident):   # R841: how many names the file has in keys and keys/.pe
 def segment_path(p):
     r = os.path.relpath(p, wd).replace("\\", "/").split("/") if wd else []
     return len(r) == 2 and r[0] == "corpus" and SEG.fullmatch(r[1]) is not None
+# R797 (row 332), the panic erase's rule (src/safety/crypto_erase.py _rewrite_fd): a whole rewrite writes only the regions that
+# hold data (SEEK_DATA/SEEK_HOLE), never a hole, and stops before the drive's free space would fall under RESERVE; a stop (the
+# reserve, an error) is logged as "partially overwritten" with bytes done of bytes known, never "destroyed", and the delete goes on.
+# Salt pages are head-only; key files and the logs (which hold copies of the salt page) are never held to the reserve.
+partials = []
+def data_regions(fd, limit):
+    sd, sh = getattr(os, "SEEK_DATA", None), getattr(os, "SEEK_HOLE", None)
+    if sd is None or sh is None: return None
+    out = []; off = 0
+    try:
+        while off < limit:
+            try: start = os.lseek(fd, off, sd)
+            except OSError as e:
+                if e.errno == errno.ENXIO: break   # no data past off: the rest is a hole
+                raise
+            if start >= limit: break
+            end = min(os.lseek(fd, start, sh), limit)
+            if end > start: out.append((start, end))
+            off = max(end, start + 1)
+    except (OSError, ValueError): return None
+    return out
+def free_bytes(fd):
+    try: st = os.fstatvfs(fd); return st.f_bavail * st.f_frsize
+    except (AttributeError, OSError): return None
+def write_regions(fd, limit, capped, deadline=None):
+    regs = data_regions(fd, limit)
+    if regs is None: regs = [(0, limit)] if limit > 0 else []
+    known = sum(e - s for s, e in regs); w = 0; stop = None
+    try:
+        for s, e in regs:
+            os.lseek(fd, s, os.SEEK_SET); pos = s
+            while pos < e:
+                if deadline is not None and time.monotonic() >= deadline: stop = "deadline"; break
+                n = min(CHUNK, e - pos)
+                if capped:   # every chunk: the logical size may reach holes, and a copy-on-write file system takes new blocks
+                    fr = free_bytes(fd)
+                    if fr is None or fr - n < RESERVE: stop = "disk"; break
+                d = os.write(fd, os.urandom(n))
+                if d <= 0: raise OSError("nothing written")
+                w += d; pos += d
+            if stop: break
+        os.fsync(fd)
+    except OSError as ex:
+        stop = stop or ("disk" if ex.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)) else "error")
+    return w, known, stop
+def uncapped(p):   # R797 (a): key material and the logs that hold copies of the salt page are written whole
+    return key_path(p) or os.path.basename(p).endswith(("-wal", "-journal"))
 def overwrite(p, head_only, keyed=False):   # True once every byte it was to write is written and synced (R798: nothing else is "destroyed")
     # "left" / "refused": another name holds the file and it is not the app's own by what it is (R839/R840): never written
     pend = None
@@ -163,12 +210,20 @@ def overwrite(p, head_only, keyed=False):   # True once every byte it was to wri
                 os.close(fd); linked["key"].add(ident); return "key"
             pend = ident   # said as overwritten all the same only once it is (Opus read of row 438)
         n = fs.st_size
-        limit = min(n, PAGE1) if head_only else n
-        with os.fdopen(fd, "r+b", buffering=0) as f:
-            w = 0
-            while w < limit:
-                c = os.urandom(min(CHUNK, limit - w)); f.write(c); w += len(c)
-            f.flush(); os.fsync(f.fileno())
+        if not head_only:
+            try: w, known, stop = write_regions(fd, n, not uncapped(p))
+            finally: os.close(fd)
+            if stop:
+                partials.append((w, known))
+                rec("partially overwritten %s (%d of %d bytes; stopped: %s)" % (tok(p), w, known, stop))
+                raise OSError("partially overwritten")   # never said as overwritten (below), and the delete goes on
+        else:
+            limit = min(n, PAGE1)
+            with os.fdopen(fd, "r+b", buffering=0) as f:
+                w = 0
+                while w < limit:
+                    c = os.urandom(min(CHUNK, limit - w)); f.write(c); w += len(c)
+                f.flush(); os.fsync(f.fileno())
         linked["written"].add((fs.st_dev, fs.st_ino))   # overwritten after all (through another of its names): never counted as left
         if pend is not None: linked["keyed"].add(pend)
         return True
@@ -247,7 +302,12 @@ def rewrite_kept(deadline):
     for fd, kind, cap in sorted(kept, key=lambda e: e[1] == "whole"):
         try:
             size = min(os.fstat(fd).st_size, cap)
-            limit = size if kind == "whole" else min(size, PAGE1)
+            if kind == "whole":   # a log: only what holds data, never a hole, never held to the reserve (R797)
+                _w, _k, stop = write_regions(fd, size, False, deadline)
+                if stop == "deadline": return
+                if stop: rec("partially overwritten a held file (%d of %d bytes; stopped: %s)" % (_w, _k, stop))
+                continue
+            limit = min(size, PAGE1)
             os.lseek(fd, 0, os.SEEK_SET); w = 0
             while w < limit:
                 if time.monotonic() >= deadline: break
@@ -647,6 +707,10 @@ if wd and os.path.isdir(wd):
             "it afterwards. Restart the computer, then remove that folder." % tok(wd))
     elif kept:
         rec("the data folder %s itself could not be removed, so something may be left in it: check it and remove it by hand" % tok(wd))
+    if partials:
+        rec("THE ERASE MAY BE INCOMPLETE: some files were only partially overwritten before they were deleted (files: %d; %d of %d "
+            "bytes): the rewrite stopped to keep free disk space, or on an error" % (len(partials), sum(x[0] for x in partials),
+                                                                                    sum(x[1] for x in partials)))
     if gone or not_overwritten or back or kept or keys_link or keys_left or pending_link or shaped_kept or hf_left or lk["left"] or lk["refused"] or lk["key"] or not server_gone:
         rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
             % (tok(wd), wiped, seen, not_overwritten, scrubbed))

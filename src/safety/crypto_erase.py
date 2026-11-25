@@ -194,6 +194,22 @@ _LINKED_REFUSED_SENTENCE = (
     "Some copies that may hold articles and the salt of their key were left, because they also had another name elsewhere on the "
     "disk and could not be shown to be the app's own: the erase is not complete (count: {n})."
 )
+# R797 (c), row 332: a whole rewrite stopped short (to keep the disk reserve, or on an error): "partially overwritten", never destroyed.
+_PARTIAL_SENTENCE = (
+    "Some files were only partially overwritten (the rewrite stopped to keep free disk space, or on an error) before they were "
+    "deleted: the erase may be incomplete."
+)
+# Row 332, Revision 3: a file the erase could not overwrite (a read-only key file, a salt page whose write failed), other than a
+# partial rewrite and a file in a folder it could not check (each said under its own reason).
+_FAILED_SENTENCE = "Some files could not be overwritten before they were deleted: the erase may be incomplete."
+
+
+def _incomplete_sentences(report: dict) -> str:
+    """R797 (c) and Revision 3 (row 332): the two sentences, each followed by a space, for the counts the report carries."""
+    return ((_PARTIAL_SENTENCE + " " if report.get("partially_overwritten") else "")
+            + (_FAILED_SENTENCE + " " if report.get("not_overwritten") else ""))
+
+
 _SEGMENTS_SHORT_SENTENCE = "Some corpus files could not be overwritten, or only partially, so the erase may be incomplete (count: {n})."
 _DEFENCE_TAIL = (
     " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
@@ -432,6 +448,21 @@ def _note_link(st: os.stat_result | None, *, keyed: bool = False, refused: bool 
         notes["key" if key else "refused" if refused else "keyed" if keyed else "left"].add((st.st_dev, st.st_ino))
 
 
+#: Row 332 (R797 (c)): each whole rewrite of this erase that stopped short (the disk reserve, an error), as (path, bytes written,
+#: bytes it was to write); set by :func:`_quick_crypto_erase` for the length of one erase, None elsewhere.
+_PARTIALS: contextvars.ContextVar[list[tuple[str, int, int]] | None] = contextvars.ContextVar("_PARTIALS", default=None)
+
+
+def _note_partial(path: Path | None, written: int, total: int, stop: str) -> None:
+    """R797 (c): a whole rewrite that stopped short is "partially overwritten" (bytes done of bytes known), logged with the path as
+    its role (R734/R736), never "destroyed"; noted for the report when an erase is collecting."""
+    _LOG.warning("crypto-erase: partially overwritten %s (%d of %d bytes; stopped: %s)",
+                 _masked([str(path)])[0] if path is not None else "a held file", written, total, stop)
+    partials = _PARTIALS.get()
+    if partials is not None and path is not None:
+        partials.append((str(path), written, total))
+
+
 def _link_counts(notes: dict[str, set]) -> dict[str, int]:
     """The report's counts (R839/R840), each file once: one overwritten in any pass is never also said as left or refused."""
     keyed = notes["keyed"]
@@ -454,7 +485,7 @@ def _masked(paths: list[str], root: Path | None = None) -> list[str]:
         return ["(path withheld)"] * len(paths)
 
 
-def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], refused: bool = False, head_bytes: int | None = None, zeros: bool = False, at: _At | None = None, unverified: str = "key") -> bool | None:
+def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], refused: bool = False, head_bytes: int | None = None, zeros: bool = False, at: _At | None = None, unverified: str = "key", capped: bool = True) -> bool | None:
     """Overwrite ``path`` in place with random data, then fsync. When ``head_bytes``
     is given only that prefix is overwritten (the crypto-erase salt-page case);
     otherwise the whole file is overwritten in bounded chunks (small files only —
@@ -473,7 +504,12 @@ def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], re
     R839 (row 438): a regular file with more than one name (``st_nlink`` read by ``fstat`` on the handle about to be written, at
     the moment of the decision) is written only when ``keyed`` (key material, a salt page, the corpus: the erase guarantee first),
     and noted as such; otherwise it is NOT written and ``None`` is returned (neither done nor failed: its contents may remain
-    under its other name, which the report says), noted too. Every caller says which it is: there is no default."""
+    under its other name, which the report says), noted too. Every caller says which it is: there is no default.
+
+    R797 (row 332): a whole rewrite (no ``head_bytes``) writes only the regions that hold data, never a hole, and stops before the
+    drive's free space would fall under :data:`_DISK_RESERVE`; a stop is "partially overwritten" (:func:`_note_partial`) and
+    returns False, never True. ``capped`` False (key files, and the logs that hold copies of the salt page, R797 (a)) is never
+    held to the reserve. A salt page (``head_bytes``) is written whole, never held to it."""
     flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_BINARY", 0)
     linked: os.stat_result | None = None  # a file with another name about to be written: noted as written only once it is (Opus read)
     try:
@@ -507,8 +543,9 @@ def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], re
             if not keyed:
                 os.close(fd)
                 return None  # R839: another name holds this file; never written through this one
-        size = st.st_size
-        limit = size if head_bytes is None else min(size, head_bytes)
+        if head_bytes is None:
+            return _overwrite_whole(path, fd, linked=linked, refused=refused, zeros=zeros, capped=capped)
+        limit = min(st.st_size, head_bytes)
         with os.fdopen(fd, "r+b", buffering=0) as f:
             written = 0
             # ``while True: if not <wanted>: break``, not ``while <wanted>:``: the back-edge of the second sits outside the ``with``'s exception table
@@ -529,6 +566,22 @@ def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], re
         _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", _masked([str(path)])[0])
         return False
 
+
+
+def _overwrite_whole(path: Path, fd: int, *, linked: os.stat_result | None, refused: bool, zeros: bool, capped: bool) -> bool:
+    """:func:`_overwrite`'s whole rewrite (R797, row 332): the data regions of ``fd`` only, the disk reserve kept unless
+    ``capped`` is False, then fsync. Closes ``fd``. A file with another name is noted as written only once every byte of it is
+    (Opus read, row 438); a stop is "partially overwritten" and False."""
+    try:
+        written, total, stop = _rewrite_fd(fd, zeros=zeros, capped=capped)
+    finally:
+        os.close(fd)
+    if stop:
+        _note_link(linked, refused=refused)  # never said as overwritten, so its other name may still hold it
+        _note_partial(path, written, total, stop)
+        return False
+    _note_link(linked, keyed=True)  # None (one name): nothing to note
+    return True
 
 
 def _verified_on(fd: int, st: os.stat_result, check: Callable[[os.stat_result], bool]) -> bool:
@@ -576,20 +629,27 @@ def _fd_free_bytes(fd: int) -> int | None:
     return st.f_bavail * st.f_frsize
 
 
-def _rewrite_fd(fd: int, *, zeros: bool = False) -> tuple[int, int, str | None]:
+def _rewrite_fd(fd: int, *, zeros: bool = False, capped: bool = True, limit: int | None = None,
+                deadline: float | None = None) -> tuple[int, int, str | None]:
     """R815 / R797: rewrite in place every byte of the open regular file ``fd`` that holds data, then fsync; every other name of
     the same file is covered by the same write. The regions come from :func:`_data_regions`; where they cannot be read, the logical
     size is rewritten; either way the rewrite stops before the drive's free space would fall under :data:`_DISK_RESERVE`. Returns
-    ``(written, total, stop)``: ``stop`` is None when every byte was written, else ``"reserve"`` or ``"write_failed"``. Never
-    closes ``fd`` (R789: the caller keeps it until the app's own connections are closed). Never raises."""
+    ``(written, total, stop)``: ``stop`` is None when every byte was written, else ``"reserve"``, ``"deadline"`` or
+    ``"write_failed"``. Never closes ``fd`` (R789: the caller keeps it until the app's own connections are closed). Never raises.
+
+    Row 332 (R797 (a)): ``capped`` False (key material, and the logs that hold copies of the salt page) is never held to the
+    reserve, though it too skips holes. ``limit`` stops at that many bytes from the start (a held file's size when it was kept);
+    ``deadline`` (time.monotonic) stops a held file's rewrite at its bound, said as ``"deadline"``."""
     written = total = 0
     stop: str | None = None
     try:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
             return 0, 0, "write_failed"
-        regions = _data_regions(fd, st.st_size)
-        regions = [(0, st.st_size)] if regions is None else regions
+        size = st.st_size if limit is None else min(st.st_size, limit)
+        regions = _data_regions(fd, size)
+        regions = [(0, size)] if regions is None else regions
+        regions = [(start, min(end, size)) for start, end in regions if start < size]
         total = sum(end - start for start, end in regions)
         for start, end in regions:
             os.lseek(fd, start, os.SEEK_SET)
@@ -597,11 +657,14 @@ def _rewrite_fd(fd: int, *, zeros: bool = False) -> tuple[int, int, str | None]:
             while True:
                 if pos >= end:
                     break
+                if deadline is not None and time.monotonic() >= deadline:
+                    stop = "deadline"
+                    break
                 n = min(_CHUNK, end - pos)
                 # Every chunk, both ways: the logical size may reach holes, and on a copy-on-write file system (APFS, btrfs, ZFS)
                 # even a rewrite in place takes new blocks.
-                free = _fd_free_bytes(fd)
-                if free is None or free - n < _DISK_RESERVE:
+                free = _fd_free_bytes(fd) if capped else None
+                if capped and (free is None or free - n < _DISK_RESERVE):
                     stop = "reserve"
                     break
                 done = os.write(fd, bytes(n) if zeros else os.urandom(n))
@@ -614,7 +677,8 @@ def _rewrite_fd(fd: int, *, zeros: bool = False) -> tuple[int, int, str | None]:
         os.fsync(fd)
     except OSError:
         stop = stop or "write_failed"
-        _LOG.warning("crypto-erase: the rewrite of an unencrypted store stopped (only partially overwritten)")
+    if stop and stop != "deadline":
+        _LOG.warning("crypto-erase: a rewrite stopped (only partially overwritten: %d of %d bytes; stopped: %s)", written, total, stop)
     return written, total, stop
 
 
@@ -1610,8 +1674,19 @@ def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: fl
                 continue  # a descriptor kept only so that closing it never drops the pool's locks (R789): never written, let go below
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError  # not rewritten this pass; a closing pass still closes it below
-            size = min(os.fstat(fd).st_size, cap)
-            limit = size if kind == "whole" else min(size, _SQLCIPHER_PAGE1)
+            if kind == "whole":
+                # R797 (row 332): only what holds data, never a hole; a log holds copies of the salt page, so it is never held to the
+                # disk reserve (a); a segment's body rewritten whole (no evidence) is data, held to it like any other (b)
+                bodies = set().union(*list(_WHOLE_HEADS.values()))
+                w_done, w_total, w_stop = _rewrite_fd(fd, capped=fd in bodies, limit=cap, deadline=deadline)
+                if w_stop == "deadline":
+                    raise TimeoutError
+                if w_stop:
+                    _note_partial(None, w_done, w_total, w_stop)
+                else:
+                    done += 1
+                continue
+            limit = min(os.fstat(fd).st_size, cap, _SQLCIPHER_PAGE1)
             os.lseek(fd, 0, os.SEEK_SET)
             written = 0
             while True:
@@ -2098,7 +2173,7 @@ def _kept_in_keys(keys_dir: Path) -> int:
 
 
 def _shred(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], head_bytes: int | None = None, zeros: bool = False, unreached=None,
-           at: _At | None = None, refused: bool = False) -> tuple[bool, bool | None, bool]:
+           at: _At | None = None, refused: bool = False, capped: bool = True) -> tuple[bool, bool | None, bool]:
     """Overwrite then unlink ``path``. Returns ``(seen, overwritten, unlinked)``:
     ``seen`` is whether the file existed, ``overwritten`` whether the destructive
     write actually completed, ``unlinked`` whether the directory entry was removed.
@@ -2112,9 +2187,9 @@ def _shred(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], head_b
         return (False, False, False)
     if at is not None and _kind(path, unreached, at) == "absent":
         return (False, False, False)
-    overwritten = _overwrite(path, keyed=keyed, refused=refused, head_bytes=head_bytes, zeros=zeros) if at is None else _overwrite(
-        path, keyed=keyed, refused=refused, head_bytes=head_bytes, zeros=zeros, at=at)
-    try:
+    overwritten = _overwrite(path, keyed=keyed, refused=refused, head_bytes=head_bytes, zeros=zeros, capped=capped) if at is None \
+        else _overwrite(path, keyed=keyed, refused=refused, head_bytes=head_bytes, zeros=zeros, at=at, capped=capped)
+    try:  # R797 (d): a partial overwrite never holds the delete back
         if at is None:
             path.unlink()
         else:
@@ -2423,7 +2498,7 @@ def _corpus_logs(sweep: dict) -> None:
         return
     for f in sweep["files"]:
         if f["kind"] == "whole":
-            written, _total, stop = _rewrite_fd(f["fd"])
+            written, _total, stop = _rewrite_fd(f["fd"], capped=False)  # R797 (a): a log holds copies of the salt page
             f["state"] = "destroyed" if stop is None else ("partially_overwritten" if written else "not_overwritten")
         if f["kind"] != "head":
             _corpus_unlink(f, dfd)
@@ -3343,6 +3418,7 @@ def quick_crypto_erase(
     missed: list[str] = []
     root_token = _ERASE_ROOT.set(None)  # the erase sets its data folder; put back as it was when it ends
     links_token = _LINK_NOTES.set(None)
+    partials_token = _PARTIALS.set(None)
     drive_fds: list[int] = []
     from src.paths import erase_owned
 
@@ -3366,6 +3442,7 @@ def quick_crypto_erase(
                 os.close(fd)
         _ERASE_ROOT.reset(root_token)
         _LINK_NOTES.reset(links_token)
+        _PARTIALS.reset(partials_token)
         if own:
             rescrub_held(close=True, generation=generation, settle=False)
 
@@ -3397,6 +3474,7 @@ def finish_holder_check(report: dict, generation: int) -> str:
             + (_LIMIT_NOTE_NOT_CLEAN if _guarantee_state(report) is True
                else _NOT_CLEAN_PLAIN_SENTENCE + " " + _clean_note(_guarantee_state(report)))
             + (" " + _UNLISTED_SENTENCE if report.get("unlisted_folders") else "")
+            + (" " + _incomplete_sentences(report).rstrip() if _incomplete_sentences(report) else "")
         )
         _LOG.warning("CRYPTO-ERASE: %s", "another program had the database open during the erase; the erase may be "
                      "incomplete" if state == HOLDER_HELD else "could not check whether another program had the database open")
@@ -3525,6 +3603,10 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     own_open = _close_own_pool() if close_own_pool else 0  # R805 (a): after the latch, so no new connection opens on the store
     links: dict[str, set] = {"keyed": set(), "left": set(), "refused": set(), "key": set()}
     _LINK_NOTES.set(links)  # R839/R840: put back by quick_crypto_erase when the erase ends
+    # R797 (c), row 332: every whole rewrite that stopped short (disk reserve, error), as (path, bytes written, bytes known); never
+    # "destroyed", and any one makes the result "may be incomplete". Put back by quick_crypto_erase when the erase ends.
+    partials: list[tuple[str, int, int]] = []
+    _PARTIALS.set(partials)
     _ERASE_ROOT.set(base)  # every log line of this erase is masked against its own data folder, never src.paths.data_dir
     # R711. Is the data folder the app's own? One the app did not choose that also holds other files (the operator's home folder, a
     # drive root, a mount point, a projects folder) is never walked whole or removed: steps 5b and 6 reach only the entries the app
@@ -3575,9 +3657,16 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         overwrite_failures.append(name)
         unlisted_folders.append(name)
 
+    unreached_files: set[str] = set()
+
     def _unreached(p: Path) -> None:  # an entry that cannot be looked at: its folder could be listed, not searched (mode r--)
         overwrite_failures.append(str(p))
+        unreached_files.add(str(p))
         unlisted_folders.append(str(p.parent))
+
+    # Row 332, Revision 3 (R797 (c)): the regular files whose overwrite failed (a read-only key file, a salt page whose write
+    # failed). Counted in the report apart from a partial rewrite and a file it could not look at, each said under its own reason.
+    failed_writes: list[str] = []
 
     def _off_drive(*, marker: bool = False) -> bool:
         """R812 (c): True when nothing more may be written on the drive: it was never reached, or it changed (or its identity could
@@ -3591,12 +3680,17 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             _LOG.error("CRYPTO-ERASE: the data drive changed during the erase; nothing more on it was erased")
         return drive_stopped
 
-    def _track(p: Path, *, keyed: bool | Callable[[os.stat_result], bool], head_bytes: int | None = None, at: _At | None = None) -> tuple[bool, bool | None, bool]:
-        s, overwritten, w = (_shred(p, keyed=keyed, head_bytes=head_bytes, unreached=_unreached) if at is None
-                             else _shred(p, keyed=keyed, head_bytes=head_bytes, unreached=_unreached, at=at))
+    def _track(p: Path, *, keyed: bool | Callable[[os.stat_result], bool], head_bytes: int | None = None, at: _At | None = None,
+               capped: bool = True) -> tuple[bool, bool | None, bool]:
+        s, overwritten, w = (_shred(p, keyed=keyed, head_bytes=head_bytes, unreached=_unreached, capped=capped) if at is None
+                             else _shred(p, keyed=keyed, head_bytes=head_bytes, unreached=_unreached, at=at, capped=capped))
         if s and overwritten is False:  # None: not written because another name holds it (R839), said on its own line
             overwrite_failures.append(str(p))
+            failed_writes.append(str(p))
         return s, overwritten, w
+
+    def _track_key(p: Path, *, keyed: bool | Callable[[os.stat_result], bool], at: _At | None = None) -> tuple[bool, bool | None, bool]:
+        return _track(p, keyed=keyed, at=at, capped=False)  # R797 (a): key material is written whole, never held to the reserve
 
     # R812 (c): the first write on the drive, and the serves' close, are next. Changed (or unreadable) since the probe: nothing on it is touched, the (a) case.
     if drive == "ok" and not _drive_same(hold, want_id, marker=True):
@@ -3755,11 +3849,12 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             p = plain_main.with_name(plain_main.name + suffix)
             # R840: not tied to the store (its file is not the pinned one), so one with another name is never written; a log is left
             s, overwritten, w = _shred(p, keyed=False, refused=suffix != "-shm", head_bytes=_SQLCIPHER_PAGE1 if suffix == "-shm" else None,
-                                       zeros=suffix == "-shm", unreached=_unreached)
+                                       zeros=suffix == "-shm", unreached=_unreached, capped=False)  # R797 (a): a log holds salt copies
             seen += s
             wiped += w
             if s and overwritten is False:  # None: another name holds it (R839), said on its own line
                 overwrite_failures.append(str(p))
+                failed_writes.append(str(p))
         if _under(plain_main, base):
             plain_rec = None  # in the data folder, whatever is at the path is erased by step 6 like any other file
     # Each -shm head zeroed now (no page data, see above), after the record.
@@ -3779,11 +3874,12 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                 missed.append(p.name)
             # R840 (security read of row 438): a log is the store's only when tied to it, which a log of an encrypted store cannot be
             # by its header here: one with another name is never written, and said as a possible copy left
-            s, overwritten, w = _shred(p, keyed=False, refused=True, unreached=_unreached)
+            s, overwritten, w = _shred(p, keyed=False, refused=True, unreached=_unreached, capped=False)  # R797 (a): never held to the reserve
             seen += s
             wiped += w
             if s and overwritten is False:
                 overwrite_failures.append(str(p))
+                failed_writes.append(str(p))
     for db in dbs:
         for p in (db, db.with_name(db.name + "-shm")):
             if p in plain_parts:
@@ -3796,6 +3892,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             wiped += w
             if s and overwritten is False:
                 overwrite_failures.append(str(p))
+                failed_writes.append(str(p))  # a salt page whose write failed (Revision 3)
             if s and overwritten and p == db:
                 headers.append(db.name)
                 head_reals.add(str(db))
@@ -3843,7 +3940,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         elif keys_foreign or app_only:  # R807 (3): in shared scope the app's key files are matched by exact name, never by suffix
             _s, _w = _destroy_app_keys_in_foreign(keys_dir, _track, keys_destroyed, _unlisted, _unreached)
         else:
-            _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, unreached=_unreached)
+            _s, _w = _destroy_keys_folder(keys_dir, _track_key, keys_destroyed, _unlisted, unreached=_unreached)
     seen += _s
     wiped += _w
     # 2b) Row 378 (coordinator on R837): Hugging Face's sign-in token files in the app's own Hugging Face homes are credentials,
@@ -3991,7 +4088,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             mode = _copy_mode(p)
             # Known by its name only, never positively (R839 as amended): another name keeps it unwritten, its own name removed.
             s, overwritten, w = _shred(
-                p, keyed=False, head_bytes=None if mode == "whole" else _SQLCIPHER_PAGE1, zeros=mode == "zeros", unreached=_unreached
+                p, keyed=False, head_bytes=None if mode == "whole" else _SQLCIPHER_PAGE1, zeros=mode == "zeros", unreached=_unreached,
+                capped=mode != "whole",  # R797 (a): a copy's log holds salt pages, written whole, never held to the reserve
             )
             seen += s
             wiped += w
@@ -4031,12 +4129,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         name = p.name
         whole = name.endswith(("-wal", "-journal"))
         head = None if whole else _SQLCIPHER_PAGE1
-        done = (_overwrite(p, keyed=False, head_bytes=head, zeros=name.endswith("-shm")) if at is None
-                else _overwrite(p, keyed=False, head_bytes=head, zeros=name.endswith("-shm"), at=at))
+        # R797 (a): a log, written whole here, holds copies of the salt page: never held to the disk reserve
+        done = (_overwrite(p, keyed=False, head_bytes=head, zeros=name.endswith("-shm"), capped=not whole) if at is None
+                else _overwrite(p, keyed=False, head_bytes=head, zeros=name.endswith("-shm"), at=at, capped=not whole))
         if done:
             heads_elsewhere += 1
         elif done is False:
             overwrite_failures.append(str(p))  # None: another name holds it (R839), never written; step 6 removes this name
+            failed_writes.append(str(p))
 
     # R826: each segment settled now, after 5b: with evidence its page 1 was enough; without, its whole file is rewritten here.
     if not _off_drive():
@@ -4111,6 +4211,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             if not (_overwrite(p, keyed=True, head_bytes=_SQLCIPHER_PAGE1) if at is None
                     else _overwrite(p, keyed=True, head_bytes=_SQLCIPHER_PAGE1, at=at)):
                 overwrite_failures.append(str(p))
+                failed_writes.append(str(p))
             _unlink_at(p, at)
             continue
         if _left_by_erase(plain_rec, p, at):
@@ -4244,6 +4345,11 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         len(overwrite_failures),
     )
     link_counts = _link_counts(links)
+    # R797 (c) / Revision 3 (row 332): each file said once, under its own reason: a partial rewrite, a file it could not look at
+    # (an unlisted folder's), or one it could not overwrite at all.
+    partial_paths = {p for p, _w, _t in partials}
+    failed_only = [f for f in dict.fromkeys(failed_writes) if f not in partial_paths and f not in unreached_files]
+    shorts = {"partially_overwritten": len(partial_paths), "not_overwritten": len(failed_only)}
     return {
         "phase": "crypto-erase",
         "data_dir": str(base),
@@ -4312,6 +4418,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "keys_left_names": [n.removeprefix("keys/") for n in keys_left],
         # R798: a count, the paths stay in overwrite_failures (this report, never a log); any one makes the result not clean.
         "unlisted_folders": len(unlisted_folders),
+        # R797 (c), row 332: the files a whole rewrite stopped short on (disk reserve, error), as bytes done of bytes known; each
+        # is in overwrite_failures too, and any one makes the result "may be incomplete".
+        "partially_overwritten": shorts["partially_overwritten"],
+        "partial_bytes_done": sum(w for _p, w, _t in partials),
+        "partial_bytes_known": sum(t for _p, _w, t in partials),
+        # Revision 3: the files it could not overwrite, other than a partial rewrite or a file it could not look at; any one makes
+        # the result "may be incomplete".
+        "not_overwritten": shorts["not_overwritten"],
         # R805 (a): this process's own connections on the store still open when the erase ran (None: could not tell).
         "own_connections_open": own_open,
         # R809: no reassurance at all for a drive that was not there (its keys are on it: nothing erased here makes it unreadable),
@@ -4326,6 +4440,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         + (_COPIES_OVERWRITTEN_SENTENCE.format(n=sum(copies_overwritten.values())) + " " if copies_overwritten else "")
         + (_SEGMENTS_SHORT_SENTENCE.format(n=segments_short) + " " if segments_short else "")
         + (_SEGMENTS_OVERWRITTEN_SENTENCE.format(n=segments["overwritten"]) + " " if segments["overwritten"] else "")
+        + _incomplete_sentences(shorts)
         + (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
         + (_HF_TOKEN_LEFT_SENTENCE.format(folders=", ".join(hf_token_left)) + " " if hf_token_left else "")
         + (_LINKED_REFUSED_SENTENCE.format(n=link_counts["refused"]) + " " if link_counts["refused"] else "")
@@ -4339,7 +4454,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
            # R828 (2): with the record left, the clean guarantee is never said beside "key material may remain"; row 378: nor beside
            # "the erase of the data folder is not complete" or a sign-in token that may remain
            else _DEFENCE_TAIL.lstrip() if (record_state == "left" or shaped_items or hf_token_left or link_counts["left"]
-                                           or link_counts["refused"] or link_counts["keys"]) and guaranteed is True
+                                           or link_counts["refused"] or link_counts["keys"] or any(shorts.values()))
+           and guaranteed is True
            else _clean_note(guaranteed)),
     }
 
