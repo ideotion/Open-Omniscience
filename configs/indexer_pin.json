@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "5de6e36c9cde08db25ff77d9359d67fa78ea8ebde8b35b19867faf36f8533e1a",
+  "digest": "b17f68d8a977c419c2bc705ed6c2e22add8e278a70f0734c8540458b028f97e4",
   "log": [
     {
       "version": 1,
@@ -136,7 +136,13 @@
     },
     {
       "version": 3,
-      "digest": "5de6e36c9cde08db25ff77d9359d67fa78ea8ebde8b35b19867faf36f8533e1a",
+      "digest": "b2b4fb39f46d80984df44b3784d6e7ac2f5a0cbf34c933bb7b2c75d164372260",
+      "kind": "same",
+      "note": "Row 425 changes only which flag the re-index drain's finally reads to decide whether to wait for or kill a window computed ahead (a stop-path change); no task, derivation or apply is touched, so index_article writes the same rows"
+    },
+    {
+      "version": 3,
+      "digest": "b17f68d8a977c419c2bc705ed6c2e22add8e278a70f0734c8540458b028f97e4",
       "kind": "same",
       "note": "Row 418: the apply path writes the same rows through Core statements instead of the ORM unit of work (date tags, places, entities, the article's derived columns, the stamps); rows, ids and stored values are identical, pinned by tests/test_apply_core_row418.py and the golden output digest"
     }
