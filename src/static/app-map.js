@@ -4851,7 +4851,7 @@
       const msg = $("statfig-msg"), btn = $("statfig-fetch");
       if (!series) { if (msg) ooLive(msg, () => t("Enter an indicator or dataset id first.")); return; }
       // The fetch egresses over the configured transport -> the ONE consent popup.
-      if (typeof ensureOnline === "function" && !await ensureOnline(t("Fetch official statistics figures"))) return;
+      if (typeof ensureOnline !== "function" || !await ensureOnline(t("Fetch official statistics figures"))) return;
       const body = src === "worldbank"
         ? { source: "worldbank", indicator: series, country }
         : { source: "eurostat", dataset: series };

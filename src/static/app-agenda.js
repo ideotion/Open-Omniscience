@@ -112,9 +112,29 @@
         day: null,
         calendar: "deduced", deduced: true,
         article_ids: e.article_ids || [], n_articles: e.n_articles, n_sources: e.n_sources,
+        // Row 399: the inline ids stop at 200; an older payload without the flag is taken
+        // as complete, as it always was.
+        ids_complete: e.ids_complete !== false,
         note: _tfn("Deduced from {n} articles ({s} sources), never confirmed.",
           { n: e.n_articles, s: e.n_sources }),
       };
+    }
+    // Row 399 (invariant 13b): open a deduced date's EXACT article set. Its inline ids stop at
+    // 200, so the full set (up to the analysis window's own 5000) is read first; past 5000 the
+    // opened analysis says how many of how many it holds.
+    async function agOpenDeduced(day, title) {
+      let d;
+      try {
+        d = await api("/api/events/deduced/ids?date=" + encodeURIComponent(day));
+      } catch (err) {
+        toast(_failMsg("Could not load the list: {error}", err), "err");
+        return;
+      }
+      const ids = (d && Array.isArray(d.article_ids)) ? d.article_ids : [];
+      const label = (d && d.complete === false)
+        ? title + " · " + _tfn("{shown} of {total} shown.", { shown: fmtNum(ids.length, 0), total: fmtNum(d.total, 0) })
+        : title;
+      openAnalysisForIds(ids, label);
     }
     async function loadAgenda() {
       const box = $("agenda-list");
@@ -1147,7 +1167,7 @@
     }
     async function feedAction(id, action) {
       // Both actions fetch from the feed's publisher, so they pass the ONE consent first, like every other fetch button (#14).
-      if (typeof ensureOnline === "function" && !await ensureOnline(_bulT("Fetch one calendar feed from its publisher"))) return;
+      if (typeof ensureOnline !== "function" || !await ensureOnline(_bulT("Fetch one calendar feed from its publisher"))) return;
       try {
         // The two routes are spelled out (never `${action}`), so the consent ratchet can see each one is asked for first.
         const r = action === "import"
@@ -1403,7 +1423,10 @@
       // corpus (maintainer 2026-06-16: agenda content "highly visible and clickable").
       // A DEDUCED event opens its EXACT article set (the dates came from those
       // articles); other events open a search over the title.
-      const openExpr = (e.deduced && Array.isArray(e.article_ids) && e.article_ids.length)
+      // Row 399: a date whose inline ids are not all of them fetches its full set first.
+      const openExpr = (e.deduced && e.ids_complete === false && e.next_occurrence)
+        ? `agOpenDeduced(${esc(JSON.stringify(e.next_occurrence))}, ${esc(JSON.stringify(e.title))})`
+        : (e.deduced && Array.isArray(e.article_ids) && e.article_ids.length)
         ? `openAnalysisForIds(${esc(JSON.stringify(e.article_ids))}, ${esc(JSON.stringify(e.title))})`
         : `openAnalysisFor(${esc(JSON.stringify(e.title))})`;
       const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" data-on-click="ooStop(event);${openExpr}">${esc(e.title)}</b>`;

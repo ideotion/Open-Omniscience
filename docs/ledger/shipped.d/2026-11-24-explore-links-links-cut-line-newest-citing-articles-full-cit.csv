@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-24,explore/links,"Links cut line, newest citing articles, full citing-id open (row 404)",shipped,PR #2372; row 404,src/api/link_analysis.py; src/static/app-analysis.js,"corpus_links returns items_total/furniture_total/truncated and the Links tab says N of M shown; articles-by-link keeps the newest by published date (undated last, id desc) and returns up to 5000 citing ids with ids_complete; branch-from-origin opens every citing id and marks a cut only when ids_complete is false"

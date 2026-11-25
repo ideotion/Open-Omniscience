@@ -8068,7 +8068,10 @@ def test_governments_law_pointer_shows_both_tracked_and_baselined():
     shows BOTH numbers, matching that established wording exactly rather than
     collapsing to one misleading word."""
     js = app_js()
-    fn = js.split("async function loadLawPointer() {", 1)[1].split("\n    }\n", 1)[0]
+    pointer = js.split("async function loadLawPointer() {", 1)[1].split("\n    }\n", 1)[0]
+    # Row 367: the words are drawn by _lawPointerLine inside a hold, so they follow a language switch.
+    assert "_lawPointerLine(host, s, t, tf)" in pointer, "the pointer draws its words through _lawPointerLine"
+    fn = _js_function_body(js, "_lawPointerLine")
 
     # documents (the real tracked-document count) and tracked (the API's own,
     # baseline-only field) are BOTH read and BOTH shown, distinctly labelled.

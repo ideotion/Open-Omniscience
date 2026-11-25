@@ -489,6 +489,7 @@ def init_db() -> None:
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
         ensure_source_qualification_columns,
+        ensure_stamp_provenance_columns,
         ensure_supergroup_ring_column,
         ensure_watch_filters_column,
         ensure_wiki_text_columns,
@@ -551,6 +552,9 @@ def init_db() -> None:
     ensure_article_fetched_host_column(engine)
     _init_step("ensure_source_catalog_baseline_column")
     ensure_source_catalog_baseline_column(engine)
+    # The stamps' stage version and carry provenance (R824, row 405; self-heal, no backfill): index_article writes both.
+    _init_step("ensure_stamp_provenance_columns")
+    ensure_stamp_provenance_columns(engine)
 
     # The read seam over the derived keyword rows (segmented-index step 0, R96): create the
     # view for a database made before it existed, or re-create it if the table's columns
@@ -579,8 +583,13 @@ def init_db() -> None:
     # turning every query that used them into a full scan, silently. The heal is driven
     # by a durable marker and asks sqlite_master what is actually absent, so it is a
     # no-op (one small read, no DDL) on every boot where nothing was interrupted.
+    # R825 (b): the heal no longer BUILDS here. A CREATE INDEX over a corpus-sized table inside the call
+    # that opens the database is minutes with nothing on screen; reads stay correct without the dropped
+    # indexes (the unique ones and ix_mention_article are never dropped), so this only reads the marker and
+    # says what is owed; the re-index drain or the background heal (bulk_build.start_heal, started by the boot
+    # sequence's re-index step and after a restore) rebuilds it.
     _init_step("heal_bulk_build")
-    heal_bulk_build(engine)
+    heal_bulk_build(engine, inline=False)
 
     # Per-feed de-churn backoff columns (field log finding F) for databases that
     # already had feed_fetch_state before these columns existed (create_all never

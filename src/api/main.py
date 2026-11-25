@@ -352,6 +352,23 @@ def _run_startup_upkeep() -> None:
     except Exception as exc:  # noqa: BLE001 - a report must never block startup
         log_failure(logger, "re-index backlog check failed", exc, level=logging.WARNING)
 
+    # R827 R7(a) / R830 stop rule (3): an import activation checked only on the tables it wrote, whose whole-file
+    # check never ran (the process stopped first), is checked once here, read-only, in the background. A failure
+    # names the run's safety copy as the state to return to, in the import dialog's last-run status.
+    try:
+        from src.backup.merge import unverified_activation
+
+        if unverified_activation() is not None:
+            import threading as _owed_threading
+
+            from src.backup.import_queue import get_import_queue
+
+            _owed_threading.Thread(
+                target=get_import_queue().check_owed_at_start, name="oo-import-owed-check", daemon=True
+            ).start()
+    except Exception as exc:  # noqa: BLE001 - a check that cannot start stays owed: the record is kept
+        log_failure(logger, "could not start the owed whole-file check of the corpus", exc, level=logging.WARNING)
+
     # Rolling WARNING+ error log (the debug bundle's heart) — best-effort.
     try:
         from src.monitoring.errorlog import install as _install_errorlog

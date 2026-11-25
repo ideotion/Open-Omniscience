@@ -361,6 +361,7 @@ def _urls(ids: _Ids) -> dict[str, str]:
         "/api/entities/places/search": "/api/entities/places/search?q=paris",
         "/api/events/astronomy": "/api/events/astronomy?year=2026",
         "/api/events/astronomy/lunar-series": "/api/events/astronomy/lunar-series?start=2026-01-01&end=2026-03-01",
+        "/api/events/deduced/ids": "/api/events/deduced/ids?date=2026-03-01",
         "/api/governments/aggregate/{code}": "/api/governments/aggregate/WLD",
         "/api/governments/group-aggregate": "/api/governments/group-aggregate?group=G7&indicator=NY.GDP.MKTP.CD",
         "/api/governments/map": "/api/governments/map?indicator=NY.GDP.MKTP.CD",

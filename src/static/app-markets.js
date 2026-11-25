@@ -463,7 +463,7 @@
     }
     async function retryFailedFeeds(category, keys, elId) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (typeof ensureOnline === "function" &&
+      if (typeof ensureOnline !== "function" ||
           !await ensureOnline(t("Fetch market and index data from the official feeds"))) return;
       const el = $(elId); if (el) ooLive(el, () => t("Retrying failed feeds…"));
       try {
@@ -1833,8 +1833,8 @@
 
     async function runMarketRule(id) {
       // The rule fetches the page it names, so it passes the ONE consent first, like every other fetch button (#14).
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Fetch once and apply the rule"))) return;
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Fetch once and apply the rule"))) return;
       toast("Fetching and applying rule…");
       try {
         const o = await api(`/api/markets/rules/${id}/run`, {method: "POST"});

@@ -131,7 +131,7 @@ for (const [R, row] of [["app-core.js _jobRow", appRow], ["taskmanager.html jobR
   const html = appRow(fold("paused", ["resume", "cancel"]), t);
   assert.ok(/jobResume\([^)]*, true\)/.test(html), "the fold's Resume must pass local=true: " + html);
   const body = extract(APP, "jobResume");
-  assert.ok(/!local && typeof ensureOnline/.test(body), "jobResume must skip the consent popup only for a local job");
+  assert.ok(/!local && \(typeof ensureOnline !== "function" \|\|/.test(body), "jobResume must skip the consent popup only for a local job");
   const dl = appRow({ id: "dump:x", kind: "wiki-dump", state: "paused", label: "d" }, t);
   assert.ok(/jobResume\("dump:x"\)/.test(dl.replace(/&quot;/g, '"')), "a download's Resume must still ask: " + dl);
 }

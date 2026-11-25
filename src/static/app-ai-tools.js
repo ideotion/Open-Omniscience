@@ -880,8 +880,8 @@
           return;
         }
       } catch (e) { /* the job's own decline still names itself */ }
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(t("Qualify the source backlog — a background job that trial-fetches a few articles from each candidate to judge extraction validity")))
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(t("Qualify the source backlog — a background job that trial-fetches a few articles from each candidate to judge extraction validity")))
         return;
       if (btn) btn.disabled = true;
       say(() => t("Starting…"));

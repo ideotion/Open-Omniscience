@@ -222,12 +222,17 @@ _RAW_CEILING: dict[str, int] = {
     "src/ai_layer/source_tags_job.py": 1,
     "src/ai_layer/store.py": 1,
     "src/ai_layer/triage.py": 2,
-    "src/analytics/bulk_build.py": 3,
+    # R825 (row 407): the window measures the table it drops and rebuilds indexes on (MAX(id) of keyword_mentions in this
+    # file, not the view): a writer-side bound, not a read.
+    "src/analytics/bulk_build.py": 4,
     "src/analytics/columnar.py": 14,
     "src/analytics/concentration.py": 3,
     # R625: the two triggers that mark a day stale (a trigger must name its table, never the view) and the install
     # that checks the table and its triggers in sqlite_master; every read goes through the view.
     "src/analytics/day_counts.py": 7,
+    # R824 (row 405): the golden-output pass reads the PHYSICAL rows it just wrote into a throwaway database built by create_all (no read
+    # seam view exists there), to digest exactly what index_article writes: the canonical-rows key and its one SELECT.
+    "src/analytics/golden_output.py": 2,
     "src/analytics/group_stats.py": 1,
     "src/analytics/keyword_fold.py": 1,
     "src/analytics/keyword_growth.py": 3,

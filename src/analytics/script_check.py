@@ -31,6 +31,7 @@ a count cannot separate them); a ``zh`` tag on a text with no Han at all is.
 from __future__ import annotations
 
 import unicodedata
+from collections import Counter
 
 #: The share of a text's letters that must be in the asserted language's own script. Below
 #: it the tag is refuted. Low on purpose: an English article quoting a Russian statement at
@@ -130,12 +131,14 @@ def own_script_share(language: str | None, text: str | None) -> tuple[float, int
     if allowed is None:
         return None
     letters = own = 0
-    for ch in _visible_text(text)[:SAMPLE_CHARS]:
+    # Counted per DISTINCT character (row 406): a 5,000-character sample holds a few dozen distinct letters, so the
+    # Unicode name is looked up a few dozen times instead of once per character. The same sums, in any order.
+    for ch, n in Counter(_visible_text(text)[:SAMPLE_CHARS]).items():
         if not ch.isalpha():
             continue
-        letters += 1
+        letters += n
         if _script_of(ch) in allowed:
-            own += 1
+            own += n
     return (own / letters if letters else 0.0), letters
 
 

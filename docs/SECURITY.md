@@ -774,7 +774,12 @@ imply a protection we cannot deliver.
   page live there under names no list keeps up with (pre-restore snapshots, salvage copies), so a wipe stopped before
   the full rewrite leaves none of those readable. Plaintext staging (backup members, an extracted restore, a
   reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past its head: both are
-  destroyed only by the full rewrite. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
+  destroyed only by the full rewrite. A restore stages in a fresh private folder (`.restore-*`, `mkdtemp`, mode 0700)
+  whose files are created owner-only (0600), so another local user cannot read the decrypted members or the plaintext
+  copy of the incoming corpus whatever the data folder's own mode is; the boot sweep removes only a real folder of ours
+  (never a link, a junction, a file or another user's folder named like one) and never follows a link inside it (R829 B).
+  Until R829 (A) keys that copy, it is plaintext on disk for the life of the import, and the erase treats it as a file
+  with no evidence of its identity: rewritten in full, after the key-material pass. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
   junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a
   data, keys or cache folder that is itself a link; a key file, `anchors.db`, a cache file or a
   sidecar that is itself a link is NOT destroyed: its link is removed and it is named in `overwrite_failures`); a hard-linked

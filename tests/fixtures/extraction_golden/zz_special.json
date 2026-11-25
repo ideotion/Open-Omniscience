@@ -1,0 +1,183 @@
+{
+ "sources": [
+  {
+   "name": "Berliner Tagesbote",
+   "domain": "tagesbote.example",
+   "country": "de",
+   "language": "de"
+  },
+  {
+   "name": "Diario de Madrid Abierto",
+   "domain": "diario-madrid.example",
+   "country": "es",
+   "language": "es"
+  },
+  {
+   "name": "Kabar Jakarta Harian",
+   "domain": "kabar-jakarta.example",
+   "country": "id",
+   "language": "id"
+  },
+  {
+   "name": "Le Courrier de Paris",
+   "domain": "courrier-paris.example",
+   "country": "fr",
+   "language": "fr"
+  },
+  {
+   "name": "The Daily Test",
+   "domain": "dailytest.example",
+   "country": "gb",
+   "language": "en"
+  },
+  {
+   "name": "Московский вестник",
+   "domain": "moskovsky-vestnik.example",
+   "country": "ru",
+   "language": "ru"
+  },
+  {
+   "name": "दिल्ली समाचार पत्रिका",
+   "domain": "delhi-samachar.example",
+   "country": "in",
+   "language": "hi"
+  }
+ ],
+ "articles": [
+  {
+   "id": "x-refuted-en-ru",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Новости экономики",
+   "text": "Вчера в Москве прошло заседание правительства, посвящённое экономике и бюджету. Министр финансов заявил, что окончательное решение примут 3 марта 2024 года. Представители Центрального банка также выступили на заседании и рассказали о росте цен."
+  },
+  {
+   "id": "x-refuted-fr-ja",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "経済ニュース",
+   "text": "日本銀行は2024年3月19日に金融政策決定会合を開き、マイナス金利の解除を決めた。植田和男総裁は記者会見で、物価と賃金の好循環が見えてきたと説明した。市場では円相場が大きく動き、東京の株価も上昇した。政府は今後の経済見通しについて慎重な姿勢を示し、来月にも追加の対策をまとめる方針だ。専門家の多くは、金利の引き上げが家計や中小企業に与える影響を注意深く見守る必要があると指摘している。"
+  },
+  {
+   "id": "x-refuted-de-ar",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "أخبار",
+   "text": "اجتمع وزراء الخارجية العرب في القاهرة أمس لمناقشة الأوضاع الإقليمية والتعاون الاقتصادي. وقال الأمين العام لجامعة الدول العربية إن الاجتماع المقبل سيعقد في 15 مايو 2024 في الرياض. وأكد المشاركون على أهمية الحوار."
+  },
+  {
+   "id": "x-untagged-es",
+   "source": "Diario de Madrid Abierto",
+   "language": null,
+   "country": "es",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Sin etiqueta",
+   "text": "El Gobierno aprobó ayer un nuevo plan de vivienda para los jóvenes de Madrid y Barcelona. La ministra explicó que las primeras ayudas llegarán el 1 de septiembre de 2024 y que el programa durará tres años."
+  },
+  {
+   "id": "x-untagged-hi",
+   "source": "दिल्ली समाचार पत्रिका",
+   "language": null,
+   "country": null,
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "बिना टैग",
+   "text": "सरकार ने कल किसानों के लिए नई योजना की घोषणा की। कृषि मंत्री ने बताया कि पहली किस्त 15 अगस्त 2024 को जारी होगी और योजना पूरे देश में लागू होगी।"
+  },
+  {
+   "id": "x-html-en",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "<b>Markup</b> survives",
+   "text": "<html><head><style>.lead{color:red}</style><script>var tracker = 1; function addClass(el){el.className='x';}</script></head><body><div class=\"lead\"><p>The <strong>European Commission</strong> met in <a href=\"https://example.org/brussels\">Brussels</a> on 10 April 2024.</p><p>Officials from Berlin and Rome attended the meeting.</p><!-- comment: do not index --></div></body></html>"
+  },
+  {
+   "id": "x-code-en",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Software release",
+   "text": "The open-source project released version 2.0 on 2024-05-21.\nimport numpy as np\nfor i in range(10): print(np.mean(data[i]))\nconst handler = document.getElementById('app'); handler.addEventListener('click', onClick);\n$$\\mathcal{L} = \\frac{1}{2}\\sum_i x_i^2$$\nDevelopers in Toronto and Sydney contributed most of the changes."
+  },
+  {
+   "id": "x-html-fr",
+   "source": "Le Courrier de Paris",
+   "language": "fr",
+   "country": "fr",
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Balisage",
+   "text": "<p>Le <em>Conseil d'État</em> a rendu sa décision le 12 février 2024.</p><ul><li>Paris</li><li>Madrid</li></ul><script>window.dataLayer=[];</script>"
+  },
+  {
+   "id": "x-empty",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Untitled",
+   "text": ""
+  },
+  {
+   "id": "x-whitespace",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": null,
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Blank",
+   "text": "   \n\t  "
+  },
+  {
+   "id": "x-tiny",
+   "source": "Московский вестник",
+   "language": "ru",
+   "country": "ru",
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Кратко",
+   "text": "Ок."
+  },
+  {
+   "id": "x-self-name-caps",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "gb",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "THE DAILY TEST",
+   "text": "THE DAILY TEST thanks its readers. Our office in London will be closed on 25 December 2024."
+  },
+  {
+   "id": "x-no-country-mixed",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": null,
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Campuran",
+   "text": "Menteri Luar Negeri bertemu dengan delegasi dari Tokyo, Beijing dan New York pada 2024-06-10. Pertemuan berikutnya dijadwalkan minggu depan di Jakarta."
+  },
+  {
+   "id": "x-weekday-de",
+   "source": "Berliner Tagesbote",
+   "language": "de",
+   "country": "de",
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Wochentag",
+   "text": "Am Montag beginnt in Berlin die Haushaltswoche. Am 11. September wird über den Etat abgestimmt, vorgestern legte das Ministerium Zahlen vor."
+  },
+  {
+   "id": "x-numeric-dates",
+   "source": "The Daily Test",
+   "language": "en",
+   "country": "us",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Numeric dates",
+   "text": "The filing deadline moved from 03/04/2024 to 04/15/2024. A hearing in New York is set for 2024-07-01 and the ruling is due 30.09.2024."
+  }
+ ]
+}
