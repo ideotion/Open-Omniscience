@@ -117,10 +117,11 @@
       // A folder remembered only by this browser is shown ONLY to offer its resume: one the
       // job no longer knows and whose record says nothing is left is not "the last export".
       if (!live && !unfinished) return;
+      // Row 366: every line here is a render kept by ooLiveHtml, drawn again in the language the operator switches to.
       if (live && (s.state === "failed" || s.state === "cancelled")) {
-        prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(_uxExportErrorText(s, t("Cancelled.")))}</span>`;
+        ooLiveHtml(prog, () => `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(_uxExportErrorText(s, t("Cancelled.")))}</span>`);
       } else {
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span> ${esc(tfb("({text})", { text: t("last completed export") }))}`;
+        ooLiveHtml(prog, () => `<b>${esc(t("Backup complete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span> ${esc(tfb("({text})", { text: t("last completed export") }))}`);
       }
       if (!facts) return;
       try {
@@ -140,7 +141,7 @@
         // backup, whatever the job that last wrote into it reported.
         const miss = (facts && facts.missing) || {};
         if ((miss.corpus || (miss.categories || []).length) && !(live && s.state === "failed")) {
-          prog.innerHTML = `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`;
+          ooLiveHtml(prog, () => `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`);
         }
       } catch (e) { /* best-effort: the completion line stands on its own */ }
     }
@@ -374,14 +375,14 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const st = document.getElementById("ux-inv-status");
       const box = document.getElementById("ux-checklist");
-      st.textContent = t("Loading what's available…");
+      ooLive(st, () => t("Loading what's available…"));
       try {
         const inv = await api("/api/backup/inventory");
         _uxPaintInventory(inv, t, false);
         box.addEventListener("change", _uxSyncInside);
-        st.textContent = t("What do you want to back up?");
+        ooLive(st, () => t("What do you want to back up?"));
       } catch (e) {
-        st.textContent = t("Could not load the inventory — see console");
+        ooLive(st, () => t("Could not load the inventory — see console"));
         console.error("ux inventory", e);
       }
     }
@@ -564,7 +565,10 @@
         // one of run_restore's stages: an FTS5 'optimize' that runs once after the
         // last item. It is single-threaded and index-scaled, so on a large corpus it
         // is minutes of 100%-of-one-core work AFTER every item already reads "Done".
-        tuning: t("Merging the search index…") };
+        tuning: t("Merging the search index…"),
+        // R827 R7(a): the run's whole-file check of the live corpus, owed when a checkpoint was checked only on
+        // the tables it wrote (ImportQueueManager._check_owed_corpus). Read-only; a Stop waits for it.
+        checking_corpus: t("Checking the whole corpus file…") };
       // verify + restore share the phase names (verifying/reassembling); only a backup
       // uses the write-side names. Default is mode-aware so a verify never falls back to
       // "Backing up…" or shows a raw untranslated phase.
@@ -688,9 +692,9 @@
       // and the progress (already HTML), so neither is escaped twice or not at all.
       // R701: the export job's prefix follows its phase (ui.prefixOf), read on every tick.
       let prefix = ui.prefix;
-      const withPrefix = (html) => (!prefix ? html
+      const withPrefix = (html, pfx = prefix) => (!pfx ? html
         : esc(tf("{prefix}: {text}", { prefix: "\u0001", text: "\u0002" }))
-          .replace("\u0001", () => esc(prefix)).replace("\u0002", () => html));
+          .replace("\u0001", () => esc(pfx)).replace("\u0002", () => html));
       // PER-PHASE ETA baseline (field report 2026-07-29: a 50,000-article import
       // quoted "~4000 min left"). This used to be ONE startMs for the whole job while
       // `view.frac` resets to ~0 at every phase boundary, so the rule of three computed
@@ -708,6 +712,7 @@
         // single lost /volumes/status poll printed a fatal "Backup failed: NetworkError"
         // over a healthy multi-hour job.
         let fails = 0;                    // consecutive poll-transport failures
+        let lastGood = null;              // the last status a poll returned (row 366: the hiccup line's prefix)
         const MAX_FAILS = 40;             // give up POLLING (not the job) after ~minutes of backoff
         const tick = async () => {
           // R701: a watcher that is no longer THE one (a newer watcher took over, or the
@@ -723,9 +728,11 @@
             if (fails > MAX_FAILS) {
               return reject(new Error(t("Lost contact with the backup job — check the task manager; it may still be running.")));
             }
-            if (ui.label) {
-              ui.label.innerHTML = withPrefix(`<span class="muted">${esc(t("Connection hiccup — retrying…"))}</span>`);
-            }
+            // Row 366: drawn again in the language the operator switches to; the prefix is worked out again from the
+            // last good status too, since `prefix` holds it already translated.
+            const last = lastGood, pinned = prefix;
+            ooLiveHtml(ui.label, () => withPrefix(`<span class="muted">${esc(t("Connection hiccup — retrying…"))}</span>`,
+              ui.prefixOf && last ? ui.prefixOf(last) : pinned));
             setTimeout(tick, Math.min(1200 * Math.pow(1.6, fails - 1), 15000));
             return;
           }
@@ -733,6 +740,7 @@
           const state = s.state || "";
           if (ui.onTick) ui.onTick(s);
           if (ui.prefixOf) prefix = ui.prefixOf(s);
+          lastGood = s;
           const view = _uxProgressView(kind, s, t);
           _uxPaintBar(ui.bar, view);
           // A client-side rule-of-three ETA for byte/fraction-based jobs (folder copy);
@@ -740,8 +748,11 @@
           const key = view.phaseKey || kind;
           if (key !== etaKey) { etaKey = key; etaStart = Date.now(); }
           const etaSec = _uxRuleOfThree(etaStart, view.frac);
-          const etaTxt = etaSec != null ? _uxEta(etaSec, t, true) : "";
-          if (ui.label) ui.label.innerHTML = withPrefix(view.text + esc(etaTxt));
+          // Row 366: the line is a render kept by ooLiveHtml: a language switch draws it again from this status, with no request.
+          const pfx = ui.prefixOf ? () => ui.prefixOf(s) : (() => prefix);
+          const pinned = prefix;
+          ooLiveHtml(ui.label, () => withPrefix(_uxProgressView(kind, s, t).text
+            + esc(etaSec != null ? _uxEta(etaSec, t, true) : ""), ui.prefixOf ? pfx() : pinned));
           if (state === "done" || state === "paused") return resolve(s);  // paused = stopped, not a hang
           if (state === "error" || state === "failed" || state === "cancelled") {
             // Surface the REAL backend error (the volume manifest/checksum message),
@@ -996,7 +1007,7 @@
         // The folder, not this page, has the last word on whether it is complete (J-1).
         const miss = (written.facts && written.facts.missing) || {};
         if (miss.corpus || (miss.categories || []).length) {
-          prog.innerHTML = `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`;
+          ooLiveHtml(prog, () => `<b>${esc(t("Backup incomplete →"))}</b> <span dir="ltr" style="overflow-wrap:anywhere">${esc(dest)}</span>`);
         }
       } catch (e) {
         if (sumHost) sumHost.innerHTML = `<div style="color:var(--err);margin-top:8px">${esc(t("The backup is written, but its summary file could not be:"))} ${esc(e.message || e)}</div>`;
@@ -1041,8 +1052,9 @@
     // and flip the button to Resume so the user continues where it left off.
     function _uxShowPaused(prog, bar, pauseBtn, t) {
       if (bar) bar.style.display = "none";
-      prog.innerHTML = `<b>${esc(t("Backup paused."))}</b> ${esc(t("Resume to continue where it left off."))}`;
-      if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "resume"; pauseBtn.textContent = t("Resume"); }
+      // Row 366: kept renders, drawn again in the language the operator switches to.
+      ooLiveHtml(prog, () => `<b>${esc(t("Backup paused."))}</b> ${esc(t("Resume to continue where it left off."))}`);
+      if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "resume"; ooLive(pauseBtn, () => t("Resume")); }
       // R701: a paused export can be cancelled too (the server takes it), so the button stays.
       const cancelBtn = document.getElementById("ux-cancel");
       if (cancelBtn) { cancelBtn.style.display = ""; cancelBtn.disabled = false; }
@@ -1077,7 +1089,7 @@
         body.passphrase = pass;
         body.verify_after_write = !vBox || vBox.checked;
       }
-      btn.dataset.mode = "pause"; btn.textContent = t("Pause"); btn.disabled = false;
+      btn.dataset.mode = "pause"; ooLive(btn, () => t("Pause")); btn.disabled = false;
       await _uxWatchExport(document.getElementById("ux-run"),
         () => api("/api/backup/export/resume", { method: "POST", body: JSON.stringify(body) }),
         { mode: "backup", dest: _uxExportDir });
@@ -1095,10 +1107,9 @@
       try { await api("/api/backup/export/cancel", { method: "POST", body: JSON.stringify({ dir: dest }) }); }
       catch (e) { toast(t("Could not cancel:") + " " + ooServerText(e.message || e), "err"); if (btn) btn.disabled = false; return; }
       const host = document.getElementById("ux-summary");
-      if (host) host.innerHTML = "";
+      if (host) host.replaceChildren();
       _uxExportFacts = null;
-      const prog = document.getElementById("ux-progress");
-      if (prog) prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(t("Cancelled."))}</span>`;
+      ooLiveHtml(document.getElementById("ux-progress"), () => `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(t("Cancelled."))}</span>`);
     }
 
     // Cancel the running export (R701). A cancelled corpus phase removes its partial volume
@@ -1119,8 +1130,7 @@
         if (bar) bar.style.display = "none";
         if (pauseBtn) pauseBtn.style.display = "none";
         if (btn) btn.style.display = "none";
-        const prog = document.getElementById("ux-progress");
-        if (prog) prog.innerHTML = `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(t("Cancelled."))}</span>`;
+        ooLiveHtml(document.getElementById("ux-progress"), () => `<span style="color:var(--err)">${esc(t("Backup failed:"))} ${esc(t("Cancelled."))}</span>`);
         const run = document.getElementById("ux-run");
         if (run) run.disabled = false;
       }
@@ -1361,7 +1371,7 @@
       }
       // Row 350: the summary now belongs to this verify, so the import half must not redraw its old summary over it on a
       // language switch (its oo:langchange listener runs before the verify panel's).
-      summary.innerHTML = ""; _uxImSummaryArgs = null; st.textContent = t("Verifying…"); btn.disabled = true;
+      summary.replaceChildren(); _uxImSummaryArgs = null; ooLive(st, () => t("Verifying…")); btn.disabled = true;
       try {
         // ONE chain (Q206 = a): the start is still guarded by the same
         // job-state-as-truth check _uxStartThenPoll applies -- a lost START response
@@ -1372,13 +1382,13 @@
           () => api("/api/backup/v2/volumes/verify", { method: "POST", body: JSON.stringify({ src, passphrase: pass }) }),
           "/api/backup/v2/volumes/status", "verify");
         const s = await _uxImWatchVerify();
-        if (bar) bar.style.display = "none"; prog.textContent = "";
+        if (bar) bar.style.display = "none"; prog.replaceChildren();
         _uxRenderVerify(summary, (s && s.summary && s.summary.report) || {}, t);
-        st.textContent = "";
+        st.replaceChildren();
       } catch (e) {
-        if (bar) bar.style.display = "none"; prog.textContent = "";
-        summary.innerHTML = `<span style="color:var(--err)">${esc(t("Verification failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
-        st.textContent = "";
+        if (bar) bar.style.display = "none"; prog.replaceChildren();
+        ooLiveHtml(summary, () => `<span style="color:var(--err)">${esc(t("Verification failed:"))} ${esc(ooServerText(e.message || e))}</span>`);
+        st.replaceChildren();
       }
       btn.disabled = false;
       // The chain was the verify's; hand it back to whatever the dialog was watching
@@ -1658,7 +1668,7 @@
       if (!src) { toast(t("Enter a folder to scan."), "err"); return; }
       const st = document.getElementById("ux-imp-status");
       const box = document.getElementById("ux-imp-checklist");
-      document.getElementById("ux-imp-summary").innerHTML = "";
+      document.getElementById("ux-imp-summary").replaceChildren();
       _uxImSummaryArgs = null;
       // A new scan is a new import in the making, so a FINISHED run's rows and its
       // "Import failed:" line go with the old checklist (2026-09-28 walk): left in place
@@ -1669,51 +1679,25 @@
         if (_uxImWatch !== "verify") {   // a Verify in flight keeps its chain and its line
           _uxImStopChain();
           const pr = document.getElementById("ux-imp-progress");
-          if (pr) pr.textContent = "";
+          if (pr) pr.replaceChildren();
         }
       }
-      st.textContent = t("Scanning…"); box.innerHTML = ""; btn.disabled = true;
+      ooLive(st, () => t("Scanning…")); box.replaceChildren(); _uxImChecklistArgs = null; btn.disabled = true;
       try {
         const r = await api("/api/backup/import-scan?path=" + encodeURIComponent(src));
         const f = r.found || {};
-        const rows = [];
         const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
         const tfs = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
           : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
-        // Every bracket on this checklist is the keyed "({text})" frame, as on the export
-        // side's (J-3): welded ASCII brackets put "(加密卷 …)" around Chinese text, where
-        // the locale writes （…）. The frame is filled with a marker and escaped, then the
-        // marker is swapped for the (already escaped) HTML, so a file name can ride inside
-        // it as an LTR isolate: in Arabic "2 .eml" drew as "eml. 2" (J-2's rule for names).
-        const paren = (html) => esc(tfs("({text})", { text: "\u0001" })).replace("\u0001", () => html);
-        const ltr = (s) => `<bdi dir="ltr" style="overflow-wrap:anywhere">${esc(s)}</bdi>`;
-        if (corpus.length) {
-          const nv = corpus.reduce((a, c) => a + (c.volumes || 0), 0);
-          // Counts as keyed one/many frames through fmtNum (R14).
-          const bits = [t("encrypted volumes — additive, nothing you already have is overwritten")];
-          if (nv) bits.push(nv === 1 ? tfs("{n} volume", { n: fmtNum(1, 0) }) : tfs("{n} volumes", { n: fmtNum(nv, 0) }));
-          if (corpus.length > 1) bits.push(tfs("{n} sets", { n: fmtNum(corpus.length, 0) }));
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">${paren(esc(bits.join(" · ")))}</span></label>`
-            + _uxImArtifactHfRow(corpus, f.hf_target, t, tfs, paren));
-        }
-        if (f.legacy_backup && f.legacy_backup.length) {
-          const n = f.legacy_backup.length;
-          // One key per number (R14): an English "s" was welded onto the TRANSLATED label.
-          const legacy = n === 1 ? t("Restore legacy backup file") : t("Restore legacy backup files");
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(legacy)} <span class="muted">${paren(`${esc(fmtNum(n, 0))} · ${f.legacy_backup.map(x => ltr(x.name)).join(", ")}`)}</span></label>`);
-        }
-        // R787 reads: the models a folder backup carries ask for their own tick too, never by default.
-        if (f.blobs) rows.push(_uxImBlobRow(f.blobs, t, tfs, paren) + _uxImHfTick("ux-i-blobs-hf",
-          (f.blobs.hf_models && f.blobs.hf_models.count) || 0, !!(f.blobs.hf_models && f.blobs.hf_models.layout_unrecorded), f.hf_target, t, tfs, paren));
-        if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">${paren(ltr(`${fmtNum(f.newsletters.count, 0)}${f.newsletters.capped ? "+" : ""} .eml`))}</span></label>`);
-        const notes = [];
-        // Row 293: folders the scan was refused are said on screen; whatever they hold is not listed above.
-        if (f.unread_folders) notes.push(_uxImUnreadNote(f.unread_folders, t, tfs));
-        if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + " " + paren(f.source_csv.map(ltr).join(", ")));
-        box.innerHTML = rows.join("") || `<span class="muted">${esc(t("Nothing importable found in this folder."))}</span>`;
-        if (notes.length) box.innerHTML += `<p class="muted" style="margin:4px 0 0">${notes.join("<br>")}</p>`;
+        // Row 366: the checklist is drawn by _uxImPaintChecklist into its own node, which the language switch draws again
+        // with every tick kept; what follows it in the box (the leftover-copies notes) has live lines of its own.
+        const rowsHost = document.createElement("div");
+        box.append(rowsHost);
+        _uxImChecklistArgs = { f, host: rowsHost };
+        const count = _uxImPaintChecklist();
         _uxImLeftoverPlaintext(box, corpus, tfs);
+        const ltr = (s) => `<bdi dir="ltr" style="overflow-wrap:anywhere">${esc(s)}</bdi>`;
         // A passphrase is needed for the encrypted corpus AND for legacy archives.
         const needsPass = corpus.length > 0 || (f.legacy_backup && f.legacy_backup.length > 0);
         document.getElementById("ux-imp-pass-row").style.display = needsPass ? "block" : "none";
@@ -1723,14 +1707,74 @@
         // reason -- a corpus or legacy archive -- but it is read separately here so a
         // future plaintext backup does not silently hide the toggle with the passphrase.
         await _uxImTrustRow(corpus.length > 0 || (f.legacy_backup && f.legacy_backup.length > 0));
-        document.getElementById("ux-imp-run").disabled = rows.length === 0;
-        st.textContent = rows.length ? t("What do you want to import?") : "";
+        document.getElementById("ux-imp-run").disabled = count === 0;
+        if (count) ooLive(st, () => t("What do you want to import?")); else st.replaceChildren();
         _uxImFound = f; _uxImSrc = src;
       } catch (e) {
-        st.textContent = t("Scan failed:") + " " + (e.message || e);
+        ooLive(st, () => t("Scan failed:") + " " + (e.message || e));
         console.error("ux import scan", e);
       }
       btn.disabled = false;
+    }
+
+    // Row 366: what the import checklist was drawn from (the scan's findings and the node it is drawn in), so the language
+    // switch draws it again in place. Null until a scan has drawn one, and again once a new scan starts.
+    let _uxImChecklistArgs = null;
+
+    // The import checklist, from the scan's findings, in the current language. A redraw keeps every tick and field the
+    // operator has set (read by id before, put back after), so a language switch never changes what will be imported.
+    // Returns how many importable rows it drew.
+    function _uxImPaintChecklist() {
+      const a = _uxImChecklistArgs;
+      if (!a || !a.host) return 0;
+      const f = a.f;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tfs = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const kept = {};
+      for (const el of a.host.querySelectorAll("input[id], select[id]")) {
+        kept[el.id] = el.type === "checkbox" || el.type === "radio" ? { checked: el.checked } : { value: el.value };
+      }
+      const rows = [];
+      const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
+      // Every bracket on this checklist is the keyed "({text})" frame, as on the export
+      // side's (J-3): welded ASCII brackets put "(加密卷 …)" around Chinese text, where
+      // the locale writes （…）. The frame is filled with a marker and escaped, then the
+      // marker is swapped for the (already escaped) HTML, so a file name can ride inside
+      // it as an LTR isolate: in Arabic "2 .eml" drew as "eml. 2" (J-2's rule for names).
+      const paren = (html) => esc(tfs("({text})", { text: "\u0001" })).replace("\u0001", () => html);
+      const ltr = (s) => `<bdi dir="ltr" style="overflow-wrap:anywhere">${esc(s)}</bdi>`;
+      if (corpus.length) {
+        const nv = corpus.reduce((a, c) => a + (c.volumes || 0), 0);
+        // Counts as keyed one/many frames through fmtNum (R14).
+        const bits = [t("encrypted volumes — additive, nothing you already have is overwritten")];
+        if (nv) bits.push(nv === 1 ? tfs("{n} volume", { n: fmtNum(1, 0) }) : tfs("{n} volumes", { n: fmtNum(nv, 0) }));
+        if (corpus.length > 1) bits.push(tfs("{n} sets", { n: fmtNum(corpus.length, 0) }));
+        rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">${paren(esc(bits.join(" · ")))}</span></label>`
+          + _uxImArtifactHfRow(corpus, f.hf_target, t, tfs, paren));
+      }
+      if (f.legacy_backup && f.legacy_backup.length) {
+        const n = f.legacy_backup.length;
+        // One key per number (R14): an English "s" was welded onto the TRANSLATED label.
+        const legacy = n === 1 ? t("Restore legacy backup file") : t("Restore legacy backup files");
+        rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(legacy)} <span class="muted">${paren(`${esc(fmtNum(n, 0))} · ${f.legacy_backup.map(x => ltr(x.name)).join(", ")}`)}</span></label>`);
+      }
+      // R787 reads: the models a folder backup carries ask for their own tick too, never by default.
+      if (f.blobs) rows.push(_uxImBlobRow(f.blobs, t, tfs, paren) + _uxImHfTick("ux-i-blobs-hf",
+        (f.blobs.hf_models && f.blobs.hf_models.count) || 0, !!(f.blobs.hf_models && f.blobs.hf_models.layout_unrecorded), f.hf_target, t, tfs, paren));
+      if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">${paren(ltr(`${fmtNum(f.newsletters.count, 0)}${f.newsletters.capped ? "+" : ""} .eml`))}</span></label>`);
+      const notes = [];
+      // Row 293: folders the scan was refused are said on screen; whatever they hold is not listed above.
+      if (f.unread_folders) notes.push(_uxImUnreadNote(f.unread_folders, t, tfs));
+      if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + " " + paren(f.source_csv.map(ltr).join(", ")));
+      a.host.innerHTML = (rows.join("") || `<span class="muted">${esc(t("Nothing importable found in this folder."))}</span>`)
+        + (notes.length ? `<p class="muted" style="margin:4px 0 0">${notes.join("<br>")}</p>` : "");
+      for (const [id, v] of Object.entries(kept)) {
+        const el = a.host.querySelector("#" + CSS.escape(id));
+        if (el) Object.assign(el, v);
+      }
+      return rows.length;
     }
 
     // R686: an import interrupted before this release decrypted each volume to "<volume>.plain" INSIDE the backup
@@ -1745,14 +1789,15 @@
         p.className = "card-caveat";
         p.style.margin = "6px 0 0";
         const msg = document.createElement("span");
-        msg.textContent = (names.length === 1
+        // Row 366: the note and the button are kept renders, drawn again in the language the operator switches to.
+        ooLive(msg, () => (names.length === 1
           ? t("An earlier import that was interrupted left 1 unencrypted copy of a backup volume in this folder. Anyone with this drive can read it.")
-          : tfs("An earlier import that was interrupted left {n} unencrypted copies of backup volumes in this folder. Anyone with this drive can read them.", { n: fmtNum(names.length, 0) })) + " ";
+          : tfs("An earlier import that was interrupted left {n} unencrypted copies of backup volumes in this folder. Anyone with this drive can read them.", { n: fmtNum(names.length, 0) })) + " ");
         msg.title = names.join(", ");
         const b = document.createElement("button");
         b.type = "button";
         b.className = "btn";
-        b.textContent = t("Remove the unencrypted copies");
+        ooLive(b, () => t("Remove the unencrypted copies"));
         b.addEventListener("click", async (ev) => {
           // the person's own click only (the trust rule of oo-on.js, R692): a script's b.click() removes nothing
           if (!ev || ev.isTrusted !== true) return;
@@ -1766,15 +1811,15 @@
             });
             const n = (r && Array.isArray(r.removed)) ? r.removed.length : 0;
             const failed = (r && Array.isArray(r.failed)) ? r.failed : [];
-            msg.textContent = n === 1 ? t("Removed 1 unencrypted copy.") : tfs("Removed {n} unencrypted copies.", { n: fmtNum(n, 0) });
+            ooLive(msg, () => (n === 1 ? t("Removed 1 unencrypted copy.") : tfs("Removed {n} unencrypted copies.", { n: fmtNum(n, 0) }))
+              + (failed.length ? " " + t("Could not remove these copies, which may be open in another program:") + " " + failed.join(", ") + " " : ""));
             if (failed.length) {
-              msg.textContent += " " + t("Could not remove these copies, which may be open in another program:") + " " + failed.join(", ") + " ";
               b.disabled = false;
             } else {
               b.remove();
             }
           } catch (e) {
-            msg.textContent = t("Could not remove the unencrypted copies:") + " " + (e.message || e) + " ";
+            ooLive(msg, () => t("Could not remove the unencrypted copies:") + " " + (e.message || e) + " ");
             b.disabled = false;
           }
         });
@@ -1794,7 +1839,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const src = _uxImSrc, f = _uxImFound || {};
       const summaryEl = document.getElementById("ux-imp-summary");
-      summaryEl.innerHTML = "";
+      summaryEl.replaceChildren();
       const cb = (id) => { const el = document.getElementById(id); return el && el.checked; };
       const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
       const legacy = f.legacy_backup || [];
@@ -1848,7 +1893,7 @@
       _uxImStopChain();
       _uxImResetRunView();
       const progEl = document.getElementById("ux-imp-progress");
-      if (progEl) progEl.textContent = t("Starting…");
+      ooLive(progEl, () => t("Starting…"));  // row 366: every line of #ux-imp-progress here follows a language switch
       btn.disabled = true;
 
       // ASK before piling onto a running DB writer (2026-08-11). The Collect button
@@ -1864,12 +1909,13 @@
       }
       if (_refusal) {
         btn.disabled = false;
-        if (progEl) progEl.innerHTML = `<span style="color:var(--err)">${esc(ooServerText(_refusal))}</span>`;
+        const refusal = _refusal;
+        ooLiveHtml(progEl, () => `<span style="color:var(--err)">${esc(ooServerText(refusal))}</span>`);
         return;
       }
       if (!await arbitrate(t("Import"), t("A running re-index pauses while the import runs and resumes afterwards — nothing is lost."))) {
         btn.disabled = false;
-        if (progEl) progEl.textContent = "";
+        if (progEl) progEl.replaceChildren();
         return;
       }
       const bgBtn = document.getElementById("ux-imp-bg");
@@ -1879,10 +1925,10 @@
       } catch (e) {
         btn.disabled = false;
         if (bgBtn) bgBtn.style.display = "none";
-        document.getElementById("ux-imp-progress").innerHTML = `<span style="color:var(--err)">${esc(t("Import failed:"))} ${esc(ooServerText(e.message || e))}</span>`;
+        ooLiveHtml(document.getElementById("ux-imp-progress"), () => `<span style="color:var(--err)">${esc(t("Import failed:"))} ${esc(ooServerText(e.message || e))}</span>`);
         return;
       }
-      if (progEl) progEl.textContent = "";
+      if (progEl) progEl.replaceChildren();
       _uxImWatchQueue();
     }
 
@@ -1894,21 +1940,40 @@
       const box = document.getElementById("ux-imp-keys-rows");
       const wrap = document.getElementById("ux-imp-keys-each");
       if (!box || !wrap) return;
-      const all = corpus.map((c) => ({ path: c.path, name: _uxImLabel(c.path, t("Corpus backup")), corpus: true }))
+      // Row 366: the field labels go in as their English keys, in attributes, so the i18n walker translates them and
+      // translates them again on every switch (it reads title, placeholder and aria-label). The typed passphrases in
+      // these fields are never redrawn.
+      const all = corpus.map((c) => ({ path: c.path, name: _uxImLabel(c.path, ""), corpus: true }))
         .concat(legacy.map((lg) => ({ path: lg.path, name: lg.name, corpus: false })));
-      box.innerHTML = "";
+      box.replaceChildren();
       wrap.open = false;
       wrap.style.display = all.length > 1 ? "" : "none";
       if (all.length < 2) return;
       for (const b of all) {
         const row = document.createElement("div");
-        const same = esc(t("Same as above"));
-        const corpusField = b.corpus
-          ? `<input type="password" autocomplete="off" class="ux-imp-own-corpus" placeholder="${same}" aria-label="${esc(t("Corpus passphrase"))}" title="${esc(t("Corpus passphrase"))}" style="flex:1;min-width:8em">`
-          : "";
-        row.innerHTML = `<div>${ltr(b.name)}</div><div style="display:flex;gap:6px;flex-wrap:wrap">`
-          + `<input type="password" autocomplete="off" class="ux-imp-own-pass" placeholder="${same}" aria-label="${esc(t("Backup passphrase"))}" title="${esc(t("Backup passphrase"))}" style="flex:1;min-width:8em">`
-          + corpusField + "</div>";
+        const field = (cls, label) => {
+          const i = document.createElement("input");
+          Object.assign(i, { type: "password", autocomplete: "off", className: cls });
+          i.setAttribute("placeholder", "Same as above");
+          i.setAttribute("aria-label", label);
+          i.setAttribute("title", label);
+          i.style.cssText = "flex:1;min-width:8em";
+          return i;
+        };
+        const name = document.createElement("div");
+        const bdi = document.createElement("bdi");
+        bdi.dir = "ltr";
+        bdi.style.overflowWrap = "anywhere";
+        // A folder name is the operator's data: marked translate="no" so the walker never turns a folder called
+        // "Sources" into a translated word. A backup with no folder name gets the generic label as a kept render.
+        if (b.name) { bdi.setAttribute("translate", "no"); bdi.append(b.name); }
+        else ooLive(bdi, () => t("Corpus backup"));
+        name.append(bdi);
+        const fields = document.createElement("div");
+        fields.style.cssText = "display:flex;gap:6px;flex-wrap:wrap";
+        fields.append(field("ux-imp-own-pass", "Backup passphrase"));
+        if (b.corpus) fields.append(field("ux-imp-own-corpus", "Corpus passphrase"));
+        row.append(name, fields);
         row.dataset.path = b.path;
         box.appendChild(row);
       }
@@ -2156,7 +2221,7 @@
       const view = _uxProgressView("volumes", st, t);
       _uxPaintBar(bar, view);
       // The locale's separator (R2), not an English colon welded after the label.
-      if (prog) prog.innerHTML = ooLabelHtml(esc(t("Verify")), view.text);
+      ooLiveHtml(prog, () => ooLabelHtml(esc(t("Verify")), _uxProgressView("volumes", st, t).text));  // row 366: follows a switch
       if (state === "done" || state === "paused") {
         const settle = _uxImSettle; _uxImSettle = null; _uxImStopChain();
         if (settle) settle.resolve(st);
@@ -2395,6 +2460,19 @@
       // "Done" that phase had nowhere to appear -- the header read "1/1 imported", the
       // item read "Done", collection was still paused and one core sat at 100%. The
       // backend was already publishing it; there was simply no element to put it in.
+      // R827 R7(a) / R830: the whole-file check a scoped checkpoint left owed. A failed or unfinished check is said
+      // in plain words and the run is never called complete; a failure names the safety copy kept before the run.
+      const cc = st.corpus_check || null;
+      let corpusCheckLine = "";
+      if (cc && cc.state === "failed") {
+        // The file name is isolated (<bdi translate="no">) so a right-to-left line cannot reorder it and no translator rewrites it.
+        corpusCheckLine = `<div class="card-caveat">${cc.safety_net
+          ? esc(tf("The check of your whole corpus after this import found a problem, so the import is not complete. The safety copy of your corpus from before the import is kept in your data folder as {name}.", { name: "\u0001name\u0002" }))
+            .replace("\u0001name\u0002", `<bdi translate="no" dir="ltr">${esc(String(cc.safety_net))}</bdi>`)
+          : esc(t("The check of your whole corpus after this import found a problem, so the import is not complete."))}</div>`;
+      } else if (cc && cc.state === "unchecked") {
+        corpusCheckLine = `<div class="card-caveat">${esc(t("The check of your whole corpus after this import did not finish, so the import is not complete. It runs again the next time the app starts."))}</div>`;
+      }
       const tail = items.some((i) => i.state === "running") ? "" : _uxImPhaseBits(st.live, t);
       const tailLine = (st.state === "running" && tail) ? `<div>${tail}</div>` : "";
       // The RUN's bar counts STAGES, not items: with every item done the item count is
@@ -2452,6 +2530,7 @@
       const collHover = esc(t("Paused: the collection loop and the Collect now button. Not paused: the background tasks (markets, calendars, law, hazards, crawling and backfill), Wikipedia updates, other background jobs, AI sweeps, start-up upkeep and anything you change in the app. Some background jobs wait at their next batch and carry on after the import, so a batch that is already running can still save to your corpus. Starting collection again yourself while the import runs (the Collection switch, the Start button, or switching the network back on) is not blocked. The import merges the backup into a copy of your corpus and then replaces your corpus with that copy. Whatever is saved to your corpus after the copy was made and before it is replaced is not in the copy, except your settings, agenda and interface choices, which are carried over. Before it makes each copy, the import waits up to 10 minutes for a collection pass that was still running; if one is still running after that, the import goes on and says so."));
       const collHtml = collLines.map((line) => `<div title="${collHover}">${esc(line)}</div>`).join("");
       const bodyHtml = stagedLine
+        + corpusCheckLine
         + tailLine
         + collHtml
         + (st.state === "interrupted" ? _uxImInterruptedHtml(t) : "");
@@ -2708,7 +2787,7 @@
       if ((bk.articles_pending || 0) > 0) {
         return [{ ok: false, text: tf(
           "Analytics are still catching up: {n} imported article(s) carry no keywords until the re-index finishes.",
-          { n: fmtNum(Number(bk.articles_pending), 0) }) }];
+          { n: fmtNum(Number(bk.articles_pending), 0) }) }].concat(_uxImStageLines(bk, tf));
       }
       if (st.state === "running" || rx.state === "running") {
         // AFTER STAGE 4, and not before (Q203 = a; 2026-09-26, I2). An empty backlog at
@@ -2719,6 +2798,31 @@
         return [{ ok: false, text: t("Analytics are complete once the re-index (stage 4) finishes.") }];
       }
       return [{ ok: true, text: t("Analytics are complete — every imported article is indexed.") }];
+    }
+
+    // R824 (row 405): per stage, the imported articles whose extraction was reused from the
+    // backup, done on this computer, and still to do (and the stamps too old to say) -- counts read from the stamps,
+    // never estimated. A stage the backlog did not report is left out, never drawn as zeros.
+    function _uxImStageLines(bk, tf) {
+      const st = bk && bk.stages;
+      if (!st) return [];
+      const out = [];
+      for (const [key, tpl] of [
+        ["kw", "Keywords and dates, articles reused from the backup: {carried}; extracted on this computer: {here}; still to extract: {awaiting}."],
+        ["www", "Places, people and organisations, articles reused from the backup: {carried}; extracted on this computer: {here}; still to extract: {awaiting}."],
+      ]) {
+        const s = st[key];
+        if (!s) continue;
+        out.push({ ok: Number(s.awaiting) === 0, text: tf(tpl, {
+          carried: fmtNum(Number(s.carried), 0), here: fmtNum(Number(s.extracted_here), 0),
+          awaiting: fmtNum(Number(s.awaiting), 0) }) });
+        // A stamp written before stamps recorded where they came from: carried or extracted here, nobody can say which now.
+        if (Number(s.not_recorded) > 0) {
+          out.push({ ok: true, text: tf("{n} more articles were extracted before this version began recording whether an extraction came from a backup, so for these it is not known.", {
+            n: fmtNum(Number(s.not_recorded), 0) }) });
+        }
+      }
+      return out;
     }
 
     // `only` ("reindex") keeps the analytics statement alone -- the one of the three that
@@ -2992,10 +3096,11 @@
         } else {
           _altRep = await _altFetch(0);
         }
-        host.innerHTML = _altHtml(_altRep, t, tf);
+        const rep = _altRep;  // row 366: drawn again from what was read, in the language the operator switches to
+        ooLiveHtml(host, () => _altHtml(rep, t, tf));
       } catch (e) {
         // A failed read is not "no differences": that would be a claim about the data.
-        host.innerHTML = `<span style="color:var(--err)">${esc(t("The differences could not be read."))}</span>`;
+        ooLiveHtml(host, () => `<span style="color:var(--err)">${esc(t("The differences could not be read."))}</span>`);
       }
     }
 
@@ -3875,10 +3980,11 @@
         const s = await api("/api/backup/v2/volumes/status");
         const p = s.progress || {};
         const phase = p.phase || s.state;
-        const vols = p.volumes_written ? (" · " + p.volumes_written + " " + t("volumes")) : "";
+        // Row 366: each line is a render kept by ooLive, drawn again in the language the operator switches to.
+        const vols = () => (p.volumes_written ? (" · " + p.volumes_written + " " + t("volumes")) : "");
         const cancel = cancelId ? $(cancelId) : null;
         if (s.state === "running") {
-          if (prog) prog.textContent = (s.mode === "restore" ? t("Restoring") : t("Backing up")) + "… " + phase + vols;
+          ooLive(prog, () => (s.mode === "restore" ? t("Restoring") : t("Backing up")) + "… " + phase + vols());
           if (cancel) cancel.style.display = "";
         } else {
           if (_volPollTimer) { clearInterval(_volPollTimer); _volPollTimer = null; }
@@ -3886,26 +3992,26 @@
           if (btn) btn.disabled = false;
           const sum = s.summary || {};
           if (s.state === "done" && s.mode === "restore") {
-            if (prog) prog.textContent = t("Restore complete.");
+            ooLive(prog, () => t("Restore complete."));
           } else if (s.state === "done") {
-            const par = sum.parity_available === false ? (" " + t("(volumes only — parity needs the analysis features)")) : "";
+            const par = () => (sum.parity_available === false ? (" " + t("(volumes only — parity needs the analysis features)")) : "");
             // "How long did this take?" — the export side's own real, measured
             // wall/gate-held numbers (stream_backup.py), same "instrument first"
             // ask as the restore side; gate_held_s is the corpus writes-paused
             // window, always <= wall_s.
-            const timing = (typeof sum.wall_s === "number")
+            const timing = () => ((typeof sum.wall_s === "number")
               ? " (" + tf("took {wall}, {gate} with writes paused", {
                   wall: _uxFmtS(sum.wall_s), gate: _uxFmtS(sum.gate_held_s || 0),
                 }) + ")"
-              : "";
-            if (prog) prog.textContent = t("Backup complete:") + " " + (sum.volumes || "?") + " " + t("volumes") + par + timing;
+              : "");
+            ooLive(prog, () => t("Backup complete:") + " " + (sum.volumes || "?") + " " + t("volumes") + par() + timing());
           } else if (s.state === "cancelled") {
-            if (prog) prog.textContent = t("Cancelled.");
+            ooLive(prog, () => t("Cancelled."));
           } else if (s.state === "error") {
-            if (prog) prog.textContent = t("Failed:") + " " + (s.error ? ooServerText(s.error) : t("unknown error"));
+            ooLive(prog, () => t("Failed:") + " " + (s.error ? ooServerText(s.error) : t("unknown error")));
           }
         }
-      } catch (e) { if (prog) prog.textContent = t("Status check failed."); if (btn) btn.disabled = false; }
+      } catch (e) { ooLive(prog, () => t("Status check failed.")); if (btn) btn.disabled = false; }
     }
     function _volStartPoll(progId, btn, cancelId) {
       if (_volPollTimer) clearInterval(_volPollTimer);
@@ -3919,12 +4025,12 @@
       if (!dest) { toast(t("Choose a destination folder."), "warn"); return; }
       if (!pass) { toast(t("Enter a passphrase."), "warn"); return; }
       btn.disabled = true;
-      const prog = $("vb-progress"); if (prog) prog.textContent = t("Starting…");
+      const prog = $("vb-progress"); ooLive(prog, () => t("Starting…"));
       try {
         await api("/api/backup/v2/volumes/start",
           { method: "POST", body: JSON.stringify({ dest, passphrase: pass, include_newsletters: true, parity_fraction: 0.1 }) });
         _volStartPoll("vb-progress", btn, "vb-cancel");
-      } catch (e) { if (prog) prog.textContent = (e.message || e); btn.disabled = false; }
+      } catch (e) { ooLive(prog, () => ooServerText(e.message || e)); btn.disabled = false; }
     }
     async function volBackupCancel(_btn) {
       try { await api("/api/backup/v2/volumes/cancel", { method: "POST" }); } catch (e) { /* best effort */ }
@@ -3937,12 +4043,12 @@
       if (!pass) { toast(t("Enter the passphrase."), "warn"); return; }
       if (!confirm(t("Restore merges this backup into your corpus (additive — nothing is replaced). Continue?"))) return;
       btn.disabled = true;
-      const prog = $("vb-rprogress"); if (prog) prog.textContent = t("Starting…");
+      const prog = $("vb-rprogress"); ooLive(prog, () => t("Starting…"));
       try {
         await api("/api/backup/v2/volumes/restore",
           { method: "POST", body: JSON.stringify({ src, passphrase: pass }) });
         _volStartPoll("vb-rprogress", btn, null);
-      } catch (e) { if (prog) prog.textContent = (e.message || e); btn.disabled = false; }
+      } catch (e) { ooLive(prog, () => ooServerText(e.message || e)); btn.disabled = false; }
     }
     // What a folder RESTORE turned away, and what it could not check. The restore
     // hashes every file as it streams and discards a member whose bytes do not match
@@ -4722,6 +4828,7 @@
     document.addEventListener("oo:langchange", () => {
       const dlg = document.getElementById("ux-import");
       if (dlg && dlg.open) {
+        try { _uxImPaintChecklist(); } catch (_e) {}  // row 366: the scan's checklist, every tick kept
         try { _uxImCheckpointNote(); } catch (_e) {}
         try { _uxImLastLine(); } catch (_e) {}
         try {

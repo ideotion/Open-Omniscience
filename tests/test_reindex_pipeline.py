@@ -80,7 +80,7 @@ def recorded(monkeypatch):
                     submitted_at[tuple(t[0] for t in args[0])] = n_applied[0]
             return super().submit(fn, *args, **kwargs)
 
-    def _pre(tasks, *, extractor, workers=None, stats=None, serial_fallback=True):
+    def _pre(tasks, *, extractor, workers=None, stats=None, serial_fallback=True, drain_pool=None):
         events.append(("pre", tuple(t[0] for t in tasks), threading.current_thread().name))
         if threading.current_thread().name.startswith("oo-reindex-ahead"):
             # Proof of overlap, without a race: a window started ahead waits (bounded) until an article is applied while it is
@@ -105,7 +105,7 @@ def recorded(monkeypatch):
     monkeypatch.setattr(concurrent.futures, "ThreadPoolExecutor", _RecordingPool)
     monkeypatch.setattr(S, "_PRECOMPUTE_WINDOW", 3)
     monkeypatch.setattr(RP, "precompute_batch", _pre)
-    monkeypatch.setattr(RP, "uses_pool", lambda n, *, extractor, workers=None: True)
+    monkeypatch.setattr(RP, "uses_pool", lambda n, *, extractor, workers=None, drain_pool=None: True)
     monkeypatch.setattr(S, "index_article", _index)
     return events
 
@@ -144,7 +144,7 @@ def test_the_overlap_changes_no_result(db, recorded, monkeypatch):
 
 def test_a_serial_precompute_is_never_started_ahead(db, recorded, monkeypatch):
     """A serial precompute runs in THIS process: beside an apply that holds the write gate it would only take the GIL from it."""
-    monkeypatch.setattr(RP, "uses_pool", lambda n, *, extractor, workers=None: False)
+    monkeypatch.setattr(RP, "uses_pool", lambda n, *, extractor, workers=None, drain_pool=None: False)
     ids = _seed(db, 7)
     stats: dict = {}
     S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=0, stats=stats)
@@ -169,7 +169,7 @@ def test_a_stop_is_answered_without_waiting_for_the_window_computed_ahead(db, re
     release = threading.Event()
     fake = RP.precompute_batch
 
-    def _slow_ahead(tasks, *, extractor, workers=None, stats=None, serial_fallback=True):
+    def _slow_ahead(tasks, *, extractor, workers=None, stats=None, serial_fallback=True, drain_pool=None):
         if threading.current_thread().name.startswith("oo-reindex-ahead") and tasks[0][0] == ids[6]:
             release.wait(30)
         return fake(tasks, extractor=extractor, workers=workers, stats=stats, serial_fallback=serial_fallback)
@@ -201,7 +201,7 @@ def test_a_pool_that_fails_ahead_is_computed_here_and_counted_once(db, recorded,
     ids = _seed(db, 6)
     fake = RP.precompute_batch
 
-    def _fails_ahead(tasks, *, extractor, workers=None, stats=None, serial_fallback=True):
+    def _fails_ahead(tasks, *, extractor, workers=None, stats=None, serial_fallback=True, drain_pool=None):
         if not serial_fallback:
             assert threading.current_thread().name.startswith("oo-reindex-ahead")
             stats.setdefault("by_path", {})["pool_failed"] = 1

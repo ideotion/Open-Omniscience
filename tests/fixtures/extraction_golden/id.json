@@ -1,0 +1,156 @@
+{
+ "sources": [
+  {
+   "name": "Kabar Jakarta Harian",
+   "domain": "kabar-jakarta.example",
+   "country": "id",
+   "language": "id"
+  }
+ ],
+ "articles": [
+  {
+   "id": "id-001",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Rapat anggaran",
+   "text": "Para menteri bertemu di Jakarta pada 3 Maret 2024 untuk membahas anggaran. Pembicaraan dilanjutkan kemarin setelah jeda singkat."
+  },
+  {
+   "id": "id-002",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Kunjungan ke Tokyo",
+   "text": "Presiden Joko Widodo mengunjungi Tokyo pada hari Selasa. Ia membahas perdagangan dan energi."
+  },
+  {
+   "id": "id-003",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Laporan Perserikatan Bangsa-Bangsa",
+   "text": "Perserikatan Bangsa-Bangsa menerbitkan laporan pangan pada 2024-02-14. António Guterres menyebut situasinya mengkhawatirkan."
+  },
+  {
+   "id": "id-004",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Banjir di Jakarta",
+   "text": "Hujan deras membanjiri beberapa wilayah Jakarta kemarin. Sekolah akan dibuka kembali pada 12 Januari 2025."
+  },
+  {
+   "id": "id-005",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": null,
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Pemilihan umum",
+   "text": "Warga Indonesia memberikan suara pada 14 Februari 2024. Prabowo Subianto memenangkan pemilihan presiden."
+  },
+  {
+   "id": "id-006",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Bank Indonesia",
+   "text": "Bank Indonesia menaikkan suku bunga pada 24 April 2024. Gubernur Perry Warjiyo menjelaskan alasannya."
+  },
+  {
+   "id": "id-007",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Kabar Jakarta Harian",
+   "text": "Kabar Jakarta Harian meluncurkan rubrik sains. Kabar Jakarta Harian akan menerbitkannya setiap minggu mulai 4 April 2024."
+  },
+  {
+   "id": "id-008",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Ibu kota baru",
+   "text": "Upacara kemerdekaan diadakan di ibu kota baru pada 17 Agustus 2024. Ribuan tamu hadir."
+  },
+  {
+   "id": "id-009",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2024-06-07T12:30:00+00:00",
+   "title": "Perdagangan dengan Beijing",
+   "text": "Delegasi Indonesia tiba di Beijing pada 5 Desember 2023. Pembicaraan membahas nikel dan kendaraan listrik."
+  },
+  {
+   "id": "id-010",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": null,
+   "published": "2023-11-21T06:15:00+00:00",
+   "title": "Gunung meletus",
+   "text": "Sebuah gunung api di Sulawesi meletus pada hari Senin. Warga di sekitarnya dievakuasi."
+  },
+  {
+   "id": "id-011",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2024-09-10T18:45:00+00:00",
+   "title": "Pameran di Sydney",
+   "text": "Pameran pariwisata dibuka di Sydney pada 9 September 2024. Pengusaha dari Bali ikut serta."
+  },
+  {
+   "id": "id-012",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2025-01-08T09:00:00+00:00",
+   "title": "Mogok sopir",
+   "text": "Para sopir angkutan mogok pada hari Kamis. Mereka menuntut kenaikan tarif."
+  },
+  {
+   "id": "id-013",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2024-02-15T07:20:00+00:00",
+   "title": "Kesehatan",
+   "text": "Organisasi Kesehatan Dunia memuji program vaksinasi Indonesia pada 20 November 2023. Kementerian Kesehatan menyambut baik."
+  },
+  {
+   "id": "id-014",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2023-07-23T16:00:00+00:00",
+   "title": "Kereta cepat",
+   "text": "Kereta cepat Jakarta Bandung mulai beroperasi pada 2 Oktober 2023. Penumpang pertama naik besok paginya."
+  },
+  {
+   "id": "id-015",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": null,
+   "published": "2024-12-02T10:10:00+00:00",
+   "title": "Harga beras",
+   "text": "Harga beras naik tajam pada Februari 2024. Pemerintah mengimpor beras dari Vietnam dan Thailand."
+  },
+  {
+   "id": "id-016",
+   "source": "Kabar Jakarta Harian",
+   "language": "id",
+   "country": "id",
+   "published": "2024-03-05T08:00:00+00:00",
+   "title": "Sepak bola",
+   "text": "Tim nasional bermain di Jakarta pada 21 Maret 2024. Stadion penuh oleh penonton."
+  }
+ ]
+}

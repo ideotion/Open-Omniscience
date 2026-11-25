@@ -44,6 +44,8 @@ def _harness() -> str:
         """
         const _painted = {health: null, crash: 0, removed: 0};
         function esc(s) { return String(s); }
+        // ooLiveHtml (app-core.js) holds the pill's word for a language switch; here it draws once.
+        function ooLiveHtml(el, render) { el.innerHTML = render(); }
         function $(id) {
           if (id === "health") return {set innerHTML(v) { _painted.health = v; }};
           return null;

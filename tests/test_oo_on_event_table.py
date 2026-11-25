@@ -48,6 +48,7 @@ _INTERPOLATED_CLICK = {
     "openCardCorpusQuery": "app-home.js, the same two, when the Lead carries no article ids",
     "openAnalysisForIds": "app-agenda.js, a deduced event's title: data-on-click=\"ooStop(event);${openExpr}\"",
     "openAnalysisFor": "app-agenda.js, the same title when the event carries no article ids",
+    "agOpenDeduced": "app-agenda.js, the same title when its inline ids are not all of them (row 399)",
 }
 
 # A binding whose NAME is an interpolation: the value begins with ``${`` or a ``${...}`` is followed by ``(``.

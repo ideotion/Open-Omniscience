@@ -950,6 +950,43 @@ def _reindex_backlog_rows() -> list[dict]:
     }]
 
 
+_KW_INDEX_TTL_S = 30.0
+_kw_index_cache: dict = {"at": 0.0, "value": None}
+
+
+def _keyword_index_rows() -> list[dict]:
+    """R825 (c): keyword indexes an index window dropped that nothing is rebuilding because memory or disk space is short,
+    as ONE waiting row naming what was short (src/analytics/bulk_build.py ``owed_waiting_line``). The jobs that rebuild
+    them end when they find too little room, and a finished job is not listed, so this row is the one that stays."""
+    import time
+
+    now = time.monotonic()
+    if now - _kw_index_cache["at"] > _KW_INDEX_TTL_S:
+        try:
+            from src.analytics.bulk_build import owed_waiting_line
+
+            _kw_index_cache["value"] = owed_waiting_line()
+        except Exception:  # noqa: BLE001 - the task manager never fails for a row
+            _kw_index_cache["value"] = None
+        _kw_index_cache["at"] = now
+    line = _kw_index_cache["value"]
+    if line is None:
+        return []
+    from src.analytics.bulk_build import HEAL_JOB_KIND, HEAL_LABEL
+
+    return [{
+        "id": f"{HEAL_JOB_KIND}:waiting",
+        "kind": HEAL_JOB_KIND,
+        "label": HEAL_LABEL,
+        "state": "paused",
+        "progress": None,
+        "detail": str(line),
+        "detail_i18n": line.i18n,
+        "detail_vars": dict(line.vars),
+        "actions": [],
+    }]
+
+
 def _llm_queue_jobs() -> list[dict]:
     """The server-side bulk summarize/translate queue (R600's second PR): each run waiting its turn (Cancel), or the queue a
     restart paused (Resume / Cancel). The running run is the ``llm`` task row. Local work: a resume opens no connection."""
@@ -1098,6 +1135,7 @@ def list_jobs() -> dict:
     jobs.extend(_task_jobs())
     jobs.extend(_llm_queue_jobs())
     jobs.extend(_reindex_backlog_rows())
+    jobs.extend(_keyword_index_rows())
     f = _live_fetch()
     if f:
         jobs.append(f)

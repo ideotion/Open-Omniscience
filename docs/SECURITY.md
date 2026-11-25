@@ -774,7 +774,12 @@ imply a protection we cannot deliver.
   page live there under names no list keeps up with (pre-restore snapshots, salvage copies), so a wipe stopped before
   the full rewrite leaves none of those readable. Plaintext staging (backup members, an extracted restore, a
   reassembling archive) has no salt to lose, and an encrypted member inside an archive sits past its head: both are
-  destroyed only by the full rewrite. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
+  destroyed only by the full rewrite. A restore stages in a fresh private folder (`.restore-*`, `mkdtemp`, mode 0700)
+  whose files are created owner-only (0600), so another local user cannot read the decrypted members or the plaintext
+  copy of the incoming corpus whatever the data folder's own mode is; the boot sweep removes only a real folder of ours
+  (never a link, a junction, a file or another user's folder named like one) and never follows a link inside it (R829 B).
+  Until R829 (A) keys that copy, it is plaintext on disk for the life of the import, and the erase treats it as a file
+  with no evidence of its identity: rewritten in full, after the key-material pass. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
   junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a
   data, keys or cache folder that is itself a link; a key file, `anchors.db`, a cache file or a
   sidecar that is itself a link is NOT destroyed: its link is removed and it is named in `overwrite_failures`); a hard-linked
@@ -983,7 +988,10 @@ imply a protection we cannot deliver.
   update rewrites a record that still holds one. Every write of the record replaces its file, so its EARLIER versions sit in
   freed disk blocks that no rewrite or erase reaches: on an install that ran one of those builds, such a block may still hold
   a salt. Full-disk encryption is the remedy, as for every freed block. The erase never writes a record that has a second
-  name (a hard link): that write would land in the other file, and the result says "key material may remain". Outside the
+  name (a hard link): that write would land in the other file, and the result says "key material may remain". LIMIT (security
+  reads, row 400): the MAC's key sits in the record beside it, so the record proves nothing against someone who can WRITE the
+  data folder; such a person can also replace the files themselves. A locked app holds no secret to sign it with. Its
+  leftover write copies (`.tmp.*`) are destroyed with it. Outside the
   data folder, a record written by this process during an erase is not held off by the erase's latch. A header that is not SQLite's, alone,
   is "looks encrypted; not yet checked with your key"; SQLite's own header is "not encrypted", whatever the record says.
   The lock word ("unlocked-encrypted", "locked") stays a control word, never a claim: reports say

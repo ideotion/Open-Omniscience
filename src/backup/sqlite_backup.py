@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 
@@ -115,7 +116,7 @@ def _validate_warm_enabled() -> bool:
     return os.getenv("OO_VALIDATE_WARM", "1") != "0"
 
 
-def _warm_sequentially(path: Path) -> None:
+def _warm_sequentially(path: Path, should_stop: Callable[[], bool] | None = None) -> None:
     """Read ``path`` front to back once, so the page walk that follows finds it in the OS cache.
 
     ``PRAGMA quick_check`` visits a large file in b-tree order, which on disk is close to random: the field run
@@ -137,6 +138,8 @@ def _warm_sequentially(path: Path) -> None:
             with suppress(OSError):
                 os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_SEQUENTIAL)
         while True:  # the guard-clause form keeps the back-edge inside the finally (src/utils/interrupts.py)
+            if should_stop is not None and should_stop():
+                break
             if not os.read(fd, _WARM_CHUNK):
                 break
     except OSError:
@@ -145,12 +148,23 @@ def _warm_sequentially(path: Path) -> None:
         os.close(fd)
 
 
-def validate_sqlite_file(path: Path) -> int:
+def validate_sqlite_file(
+    path: Path,
+    *,
+    quick_check: bool = True,
+    connection_cb: Callable[[sqlite3.Connection], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> int:
     """Validate ``path`` is a healthy Open Omniscience SQLite DB.
 
     Returns the number of tables seen. Raises :class:`BackupError` if the file is
     not a valid SQLite database, fails an integrity quick-check, or is missing the
     required core tables (so we never restore from an unrelated file).
+
+    ``quick_check=False`` keeps the open and the required-tables look and leaves out the page walk: an
+    import runs the walk itself, alongside its merge (R827 R3(a), ``merge._quick_check_alongside``), and
+    refuses before the swap when it fails. ``connection_cb`` receives the open connection, so that caller
+    can interrupt the walk from its own thread; ``should_stop`` is asked before the walk starts.
     """
     path = Path(path)
     if not path.exists() or path.stat().st_size == 0:
@@ -171,14 +185,19 @@ def validate_sqlite_file(path: Path) -> int:
     except sqlite3.Error as exc:  # pragma: no cover - defensive
         raise BackupError(f"cannot open uploaded file as SQLite: {record_text(exc)}") from None
     try:
-        if _validate_warm_enabled():
-            # Same check, read in a cheaper order (P1.3, measured 2026-11-15): see _warm_sequentially.
-            _warm_sequentially(path)
-            with suppress(sqlite3.Error):
-                conn.execute(f"PRAGMA mmap_size={_VALIDATE_MMAP_BYTES}")
-        check = conn.execute("PRAGMA quick_check").fetchone()
-        if not check or check[0] != "ok":
-            raise BackupError(f"integrity check failed: {check[0] if check else 'unknown'}")
+        if connection_cb is not None:
+            connection_cb(conn)
+        if quick_check:
+            if _validate_warm_enabled():
+                # Same check, read in a cheaper order (P1.3, measured 2026-11-15): see _warm_sequentially.
+                _warm_sequentially(path, should_stop)
+                with suppress(sqlite3.Error):
+                    conn.execute(f"PRAGMA mmap_size={_VALIDATE_MMAP_BYTES}")
+            if should_stop is not None and should_stop():
+                raise BackupError("integrity check stopped before it finished")
+            check = conn.execute("PRAGMA quick_check").fetchone()
+            if not check or check[0] != "ok":
+                raise BackupError(f"integrity check failed: {check[0] if check else 'unknown'}")
         names = {
             r[0]
             for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()

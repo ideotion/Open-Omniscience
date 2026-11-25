@@ -875,7 +875,7 @@ def test_the_dialog_renders_the_lanes_when_it_opens():
     js = (_ROOT / "src" / "static" / "app-core.js").read_text(encoding="utf-8")
     from tests.js_source_helper import function_body
 
-    body = function_body(js, "ensureOnline")
+    body = function_body(js, "_ensureOnlineAsk")
     assert "_renderNetLanes" in body, "ensureOnline no longer renders the lane list"
     assert "_netConsentConfig" in body, "ensureOnline no longer reads the lane states"
 

@@ -183,6 +183,7 @@ def _spa_files() -> list[Path]:
 _INTERPOLATED = {
     "openCardCorpus": "app-home.js, the Lead card's and the carousel's Open corpus",
     "openCardCorpusQuery": "app-home.js, the same two, when the Lead carries no article ids",
+    "agOpenDeduced": "app-agenda.js, a deduced event's title when its inline ids are not all of them (row 399)",
 }
 
 

@@ -211,6 +211,17 @@ def test_the_script_cannot_tell_changes_nothing_and_says_the_way_forward(data, m
     assert "already encrypted" not in out and data.read_bytes() == before
 
 
+def test_the_script_never_says_nothing_to_do_while_another_store_is_not_shown_encrypted(data, monkeypatch, capsys):
+    """Security reads (row 400): a run that stopped part-way (R742) leaves the custody log or a lane: the corpus alone is not done."""
+    _record(data)
+    monkeypatch.setattr(sys, "argv", ["encrypt_db.py"])
+    monkeypatch.setattr(at_rest_state, "status", lambda main=None: {"complete": False, "pending": ["custody"],
+                                                                    "looks_encrypted": [], "busy": []})
+    assert _encrypt_db_main()() == 1
+    out = capsys.readouterr().out
+    assert "custody" in out and "nothing to do" not in out
+
+
 def test_the_script_says_encrypted_on_the_record(data, monkeypatch, capsys):
     _record(data)
     monkeypatch.setattr(sys, "argv", ["encrypt_db.py"])

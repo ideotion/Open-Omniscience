@@ -40,8 +40,8 @@
     const t = _tx;
     const st = document.getElementById("ipcc-status");
     // The ONE consent (invariant #14); its answer is USED.
-    if (typeof ensureOnline === "function"
-        && !await ensureOnline(t("Fetch an IPCC report from www.ipcc.ch (one request, over your transport)"))) return;
+    if (typeof ensureOnline !== "function"
+        || !await ensureOnline(t("Fetch an IPCC report from www.ipcc.ch (one request, over your transport)"))) return;
     if (st) st.textContent = t("Fetching in the background…");
     try {
       const started = await api("/api/ipcc/spm/" + encodeURIComponent(key) + "/fetch",

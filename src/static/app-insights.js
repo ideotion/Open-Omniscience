@@ -1095,8 +1095,8 @@
       const limit = Math.max(1, Math.min(500, parseInt(($("ring-limit") || {}).value, 10) || 20));
       // The ONE consent (invariant #14). The result is USED, not discarded -- the recorded
       // app-ai-tools defect where an awaited ensureOnline's answer was thrown away.
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(t("Load keyword translations from Wikidata (one request every 10 seconds, over your transport)"))) return;
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(t("Load keyword translations from Wikidata (one request every 10 seconds, over your transport)"))) return;
       // Row 367: the status line is held in each of its states, so it follows a language switch; a later write by
       // anything else lets it go.
       const say = (render) => { if (st) ooLive(st, render); };
@@ -1243,8 +1243,8 @@
         : ((str, v) => String(str).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m));
       const refusedText = () => t("Refused: airplane mode is on. Turn the network on to fetch Wikidata items.");
       // The ONE consent (invariant #14); its answer is USED.
-      if (typeof ensureOnline === "function"
-          && !await ensureOnline(t("Fetch Wikidata items for the places and people in your corpus (one request every 10 seconds, over your transport)"))) return;
+      if (typeof ensureOnline !== "function"
+          || !await ensureOnline(t("Fetch Wikidata items for the places and people in your corpus (one request every 10 seconds, over your transport)"))) return;
       _esStatus(() => t("Fetching in the background…"));
       try {
         await api("/api/entities/items/fetch", {method: "POST", body: JSON.stringify({consent: true})});
