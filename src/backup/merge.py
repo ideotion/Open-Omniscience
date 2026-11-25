@@ -11605,7 +11605,7 @@ def run_restore(
 
                         # An article this swap brought in that is neither queued nor stamped (a working copy that had no queue
                         # when it merged, say) would otherwise never be judged: it is screened here, as before.
-                        unqueued = _not_stamped([i for i in new_article_ids if i not in queued], _q_sess)
+                        unqueued = _not_stamped(kept(new_article_ids, lambda i: i not in queued), _q_sess)
                         if unqueued:
                             report["quarantine_summary"] = default_quarantine_candidates_batch(
                                 _q_sess, article_ids=unqueued, write=True
