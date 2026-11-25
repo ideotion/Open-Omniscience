@@ -1096,6 +1096,15 @@ def _forget_keyed_reads() -> None:
         logging.getLogger(__name__).debug("keyed-read evidence not cleared (%s)", type(exc).__name__)
 
 
+def _close_segments() -> None:
+    try:
+        from src.database.segment_open import close_all
+
+        close_all()
+    except Exception as exc:  # noqa: BLE001 - a disposal never fails on the segments; their read-only connections write nothing on close
+        logging.getLogger(__name__).debug("corpus segments not closed (%s)", type(exc).__name__)
+
+
 def dispose_engine() -> dict[str, Any]:
     """Dispose the engine's connection pool (call on app shutdown), and say what the pool held when it did.
 
@@ -1113,6 +1122,7 @@ def dispose_engine() -> dict[str, Any]:
     # out now goes back to the replaced pool and is freed with it, a close no patched close sees (src/database/drive_pin.py). It never
     # raises.
     _drive_pin.pin_if_gone()
+    _close_segments()  # R826 stage 2: a lock, an erase or a restore never leaves a segment open under the old key
     global _LEFT_BEHIND
     seen = pool_checkouts()
     engine.dispose()

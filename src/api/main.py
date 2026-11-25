@@ -184,8 +184,20 @@ def run_deferred_startup() -> None:
         # the class; when an earlier call DID complete (``serve``'s, before the server came up), that one is kept instead
         # (``first_record`` wins, as the function's docstring says).
         _note_boot_init_db()
+    _open_corpus_segments()
     _run_startup_upkeep()
     set_startup("ready", "")
+
+
+def _open_corpus_segments() -> None:
+    """R826 stage 2: open the split corpus's segment files in the background, newest first. With no segment registered
+    (every corpus today) nothing starts. Never fails the start-up: a segment that cannot open is "unavailable"."""
+    try:
+        from src.database.segment_open import start_background_open
+
+        start_background_open()
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        logger.debug("corpus segments not opened (%s)", type(exc).__name__)
 
 
 def _resume_reindex_backlog_at_boot(articles_pending: int) -> None:
@@ -1267,6 +1279,16 @@ async def health_check():
         erased = False
     if erased:
         out.update(status="data-erased", data_erased=True, detail=ERASED_WORDS)
+    try:
+        from src.database.segment_open import current_status
+
+        segments = current_status()
+    except Exception:  # noqa: BLE001 - health never fails on this question
+        segments = None
+    if segments and segments.get("total"):
+        # R826 stage 2: "N of M segments" open, and each unavailable one by number and reason code. Absent for a corpus
+        # with no segment file (every corpus today).
+        out["segments"] = segments
     return out
 
 
