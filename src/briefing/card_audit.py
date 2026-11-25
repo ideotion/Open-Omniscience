@@ -86,6 +86,7 @@ import ast
 import logging
 import os
 import time
+import weakref
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -1439,14 +1440,21 @@ def _keyword_facts(session, card) -> dict:
     }
 
 
+_UNSET = object()
+# Keyed weakly by the audit session, so the memo dies with it.
+_COUNTER_BASIS_MEMO: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
 def _counter_basis_once(session) -> dict | None:
     """:func:`_counter_basis`, read once per audit session rather than once per card (it counts the keyword index)."""
-    info = getattr(session, "info", None)
-    if not isinstance(info, dict):
+    try:
+        memo = _COUNTER_BASIS_MEMO.get(session, _UNSET)
+    except TypeError:  # a session that cannot be weakly referenced: read it every time
         return _counter_basis(session)
-    if "oo_counter_basis" not in info:
-        info["oo_counter_basis"] = _counter_basis(session)
-    return info["oo_counter_basis"]
+    if memo is _UNSET:
+        memo = _counter_basis(session)
+        _COUNTER_BASIS_MEMO[session] = memo
+    return memo
 
 
 def _counter_basis(session) -> dict | None:
