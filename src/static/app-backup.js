@@ -2182,6 +2182,8 @@
           return;
         }
         if (_uxImWatch !== subject || _uxImGen !== gen) return;  // superseded while we awaited
+        // The top-bar pill says the read failed rather than keeping a stale figure (R775).
+        if (subject === "queue" && typeof _ooImportPillPaint === "function") _ooImportPillPaint(null, true);
         if (subject === "reindex") {
           // Stage 4 is watched only for someone looking at it: no retries behind a
           // closed dialog.
@@ -2564,6 +2566,13 @@
       _uxImView = "run";
       _uxImRenderStages(st, _uxImRx, t, tf);
       _uxImRenderStatements(st, _uxImRx, t, tf);
+      // Row 440: the run at a glance, the Detailed view's figures and the top-bar pill,
+      // all from this same read. Guarded so a test that extracts this renderer alone
+      // runs without them.
+      if (typeof _uxImPaintView === "function") _uxImPaintView();
+      if (typeof _uxImRenderHero === "function") _uxImRenderHero(st);
+      if (typeof _uxImRenderFacts === "function") _uxImRenderFacts(st);
+      if (typeof _ooImportPillPaint === "function") _ooImportPillPaint(st);
 
       for (const it of items) {
         // ISOLATED (2026-09-26, I12): a folder name is Latin text with a leading digit run,
@@ -2605,7 +2614,11 @@
         // break only at spaces.
         // margin-inline-END (2026-09-27 re-walk, I-4): a physical margin-right sat on the
         // dot's OUTER side in RTL, and the label touched it.
-        const html = `<div style="overflow-wrap:anywhere"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-inline-end:6px"></span>`
+        // Row 440: the Simple view keeps every row that carries a warning (a failure, an
+        // error text, a merge not yet saved) and folds the ones that are going fine.
+        const alertRow = !!(err || it.state === "staged" || it.state === "error" || it.state === "cancelled"
+          || it.state === "discarded" || it.state === "interrupted");
+        const html = `<div class="imp-row${alertRow ? " imp-row-alert" : ""}" style="overflow-wrap:anywhere"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-inline-end:6px"></span>`
           + `<b style="word-break:break-all">${label}</b> <span class="muted">— ${state}${el}</span>${stg}${live}</div>${err}`;
         _uxPatchRow(rows, String(it.id || it.label || it.kind), html, html);
       }
@@ -2906,6 +2919,312 @@
       const m = Math.floor(s / 60);
       if (m < 60) return _uxDurIso(TF("{m} min {s} s", { m, s: s % 60 }));
       return _uxDurIso(TF("{h} h {m} min", { h: Math.floor(m / 60), m: m % 60 }));
+    }
+
+    // ── THE RUN AT A GLANCE (row 440, 2026-11-25) ─────────────────────────────
+    // The user asked for an import screen that is pleasant to watch, can be read
+    // simply or in detail, and whose status and percentage show in the top bar. Every
+    // figure below is one the server already publishes; nothing here is computed from
+    // time or bytes the run did not measure.
+    //
+    // THE PERCENTAGE COUNTS IMPORT STEPS: each item of the run is one step, and the
+    // search-index merge after the last item is one more (`stages_done` /
+    // `stages_total`, the same figure the task manager's import job already shows).
+    // It is not a share of bytes or of time, so it can sit still through a long
+    // backup and then move; the hover says so. An older server without the two
+    // fields gets no percentage at all, never one taken from the item count.
+    //
+    // The current phase's OWN bar is drawn only when that phase publishes a counter
+    // (merge steps, articles re-indexed). Otherwise it is indeterminate and says why.
+    // No time remaining is shown anywhere: the server emits none for a run, because
+    // its items are different kinds of work.
+    const _UX_IM_FAILED_STATES = { error: 1, cancelled: 1, discarded: 1, interrupted: 1 };
+
+    // Pure: the run's measured facts, in the shape the hero and the top-bar pill draw.
+    function _uxImRunModel(st) {
+      const items = (st && st.items) || [];
+      const tally = { done: 0, skipped: 0, running: 0, waiting: 0, failed: 0, staged: 0, stopped: 0 };
+      for (const it of items) {
+        // Apart, as the item rows and the run header count them: "Done" is a backup this
+        // import wrote, "Skipped" one that was already in your corpus.
+        if (it.state === "done") tally.done++;
+        else if (it.state === "skipped") tally.skipped++;
+        else if (it.state === "running") tally.running++;
+        else if (it.state === "queued") tally.waiting++;
+        else if (it.state === "staged") tally.staged++;
+        else if (it.state === "stopped") tally.stopped++;
+        else if (_UX_IM_FAILED_STATES[it.state]) tally.failed++;
+      }
+      const sd = Number(st && st.stages_done), stt = Number(st && st.stages_total);
+      const counted = isFinite(sd) && isFinite(stt) && stt > 0;
+      const pct = counted ? Math.max(0, Math.min(100, Math.floor(100 * Math.min(sd, stt) / stt))) : null;
+      const curIdx = (st && Number.isInteger(st.cursor)) ? st.cursor : -1;
+      const cur = (curIdx >= 0 && curIdx < items.length) ? items[curIdx] : null;
+      const p = (st && st.live && (st.live.progress || st.live)) || {};
+      let phaseFrac = null;
+      if (p.merge_steps) phaseFrac = Math.min(1, (p.merge_step || 0) / p.merge_steps);
+      else if (p.reindex_total) phaseFrac = Math.min(1, (p.reindex_done || 0) / p.reindex_total);
+      return {
+        state: (st && st.state) || "",
+        running: !!(st && st.state === "running"),
+        pct, stepsDone: counted ? Math.min(sd, stt) : null, stepsTotal: counted ? stt : null,
+        tally, total: items.length,
+        current: (cur && cur.state === "running") ? cur : null,
+        currentN: (cur && cur.state === "running" && curIdx >= 0) ? curIdx + 1 : null,
+        phase: p.phase || null,
+        live: p,
+        phaseFrac,
+        elapsed: (st && st.elapsed_s != null) ? st.elapsed_s : null,
+      };
+    }
+
+    // The run's title, by its own state. A finished run that left a backup behind
+    // does not say "finished" on its own.
+    function _uxImRunTitle(m, t) {
+      if (m.running) return m.current || m.phase ? t("Importing") : t("Preparing the import");
+      if (m.state === "done") return m.tally.failed ? t("Import finished with errors") : t("Import finished");
+      if (m.state === "stopped") return t("Import stopped");
+      if (m.state === "interrupted") return t("Import interrupted");
+      if (m.state === "error") return t("Import finished with errors");
+      return t("Import");
+    }
+
+    // The hover of the percentage, word for word the same in the dialog and the top bar.
+    function _uxImPctHover(t) {
+      return t("The percentage counts import steps: each backup or item is one step, and merging the search index after the last one is one more. It is not a share of the data or of the time, so it can stay still during a large backup. The re-index of imported articles continues after the import and is shown in the task manager.");
+    }
+
+    function _uxImPctText(pct, tf) {
+      return tf("{pct}%", { pct: fmtNum(pct, 0) });
+    }
+
+    // A ring drawn over a measured fraction. r = 15.9155 makes the circumference 100,
+    // so the dash IS the percentage.
+    function _uxImRingSvg(pct, cls) {
+      const dash = pct == null ? 0 : pct;
+      return `<svg class="${cls}" viewBox="0 0 36 36" aria-hidden="true">`
+        + `<circle class="imp-ring-bg" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3.2"/>`
+        + `<circle class="imp-ring-fg" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3.2" stroke-linecap="round"`
+        + ` stroke-dasharray="${dash} ${100 - dash}" stroke-dashoffset="25"${pct == null ? ' style="display:none"' : ""}/></svg>`;
+    }
+
+    // Pure: the hero card's HTML. Every number in it comes from `m`.
+    function _uxImHeroHtml(m, t, tf) {
+      const hover = esc(_uxImPctHover(t));
+      const tone = m.running ? "run" : (m.state === "done" && !m.tally.failed) ? "ok"
+        : (m.state === "stopped") ? "warn" : (m.state === "done" || m.state === "error" || m.state === "interrupted") ? "err" : "run";
+      const pctTxt = m.pct == null ? "—" : esc(_uxImPctText(m.pct, tf));
+      const steps = m.stepsTotal != null
+        ? esc(tf("{done} of {total} import steps", { done: fmtNum(m.stepsDone, 0), total: fmtNum(m.stepsTotal, 0) }))
+        : esc(t("steps not reported"));
+      let now = "";
+      if (m.running && m.current) {
+        now = `<div class="imp-hero-now"><bdi translate="no" dir="ltr">${esc(m.current.label || m.current.kind || "")}</bdi>`
+          + (m.currentN ? ` <span class="muted">${esc(tf("({text})", { text: tf("{done} of {total}", { done: fmtNum(m.currentN, 0), total: fmtNum(m.total, 0) }) }))}</span>` : "")
+          + `</div>`;
+      }
+      let phase = "";
+      if (m.running && m.phase) {
+        const bits = _uxImPhaseBits({ progress: m.live }, t);
+        const bar = m.phaseFrac != null
+          ? `<div class="imp-pbar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(m.phaseFrac * 100)}"><span style="width:${(m.phaseFrac * 100).toFixed(1)}%"></span></div>`
+          : `<div class="imp-pbar imp-pbar-ind" title="${esc(t("This step publishes no counter, so no percentage is shown for it."))}"><span></span></div>`;
+        phase = `<div class="imp-hero-phase">${bits}</div>${bar}`
+          + (m.phaseFrac == null ? `<div class="imp-hero-why">${esc(t("This step publishes no counter, so no percentage is shown for it."))}</div>` : "");
+      }
+      const chip = (cls, label, n) => `<span class="imp-chip imp-chip-${cls}">${ooLabelHtml(esc(label), esc(fmtNum(n, 0)))}</span>`;
+      const chips = [chip("ok", t("Done"), m.tally.done)];
+      if (m.tally.skipped) chips.push(chip("wait", t("Skipped"), m.tally.skipped));
+      if (m.tally.running) chips.push(chip("run", t("Running"), m.tally.running));
+      if (m.tally.waiting) chips.push(chip("wait", t("Waiting"), m.tally.waiting));
+      if (m.tally.staged) chips.push(chip("warn", t("Merged — not yet saved"), m.tally.staged));
+      if (m.tally.stopped) chips.push(chip("warn", t("Stopped"), m.tally.stopped));
+      if (m.tally.failed) chips.push(chip("err", t("Failed"), m.tally.failed));
+      // The elapsed time is filled in apart (_uxImRenderHero): it changes every tick, and
+      // in this HTML it would rewrite the whole card once a second.
+      const elapsed = `<span class="imp-hero-time"></span>`;
+      return `<div class="imp-hero-ring imp-tone-${tone}" title="${hover}">${_uxImRingSvg(m.pct, "imp-ring")}`
+        + `<span class="imp-ring-pct">${pctTxt}</span></div>`
+        + `<div class="imp-hero-body"><div class="imp-hero-top"><b class="imp-hero-title">${esc(_uxImRunTitle(m, t))}</b>${elapsed}</div>`
+        + `<div class="imp-hero-steps muted" title="${hover}">${steps}</div>`
+        + now + phase
+        + `<div class="imp-chips">${chips.join("")}</div></div>`;
+    }
+
+    // Plain text (it is set as textContent): the elapsed time, or nothing when unsent.
+    function _uxImElapsedText(m, t) {
+      return m.elapsed != null ? ooLabelText(t("Elapsed"), _uxImDur(m.elapsed)) : "";
+    }
+
+    function _uxImRenderHero(st) {
+      const host = document.getElementById("ux-imp-hero");
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      if (!st || !(st.items || []).length) { host.hidden = true; _uxPruneRows(host, []); _uxImHeroDialogClass(false); return; }
+      const model = _uxImRunModel(st);
+      const html = _uxImHeroHtml(model, t, tf);
+      host.hidden = false;
+      _uxImHeroDialogClass(true, st.state === "running");
+      // The ring animates from its old value: the patch replaces the card only when its
+      // facts change (never for the elapsed time, set apart below), and the arc is then
+      // started from where it was.
+      const oldFg = host.querySelector(".imp-ring-fg");
+      const oldDash = oldFg ? oldFg.getAttribute("stroke-dasharray") : null;
+      _uxPatchRow(host, "hero", html, html);
+      const fg = host.querySelector(".imp-ring-fg");
+      if (fg && oldDash && oldDash !== fg.getAttribute("stroke-dasharray")) {
+        const want = fg.getAttribute("stroke-dasharray");
+        fg.setAttribute("stroke-dasharray", oldDash);
+        requestAnimationFrame(() => fg.setAttribute("stroke-dasharray", want));
+      }
+      const time = host.querySelector(".imp-hero-time");
+      const txt = _uxImElapsedText(model, t);
+      if (time && time.textContent !== txt) time.textContent = txt;
+    }
+
+    // While the hero shows, the native bar it replaces is hidden by CSS (its own logic
+    // is untouched), and while a run RUNS the folder picker above folds away.
+    function _uxImHeroDialogClass(on, running) {
+      const dlg = document.getElementById("ux-import");
+      if (!dlg) return;
+      dlg.classList.toggle("imp-has-hero", !!on);
+      dlg.classList.toggle("imp-running", !!(on && running));
+    }
+
+    // SIMPLE or DETAILED, remembered on this device. Simple hides only repetition and
+    // method (the per-backup list of backups that are fine, the run's figures); every
+    // caveat, refusal, failure and "not read" stays in both.
+    function _uxImGetView() {
+      try { return localStorage.getItem("oo.import.view") === "detailed" ? "detailed" : "simple"; }
+      catch (_e) { return "simple"; }
+    }
+    function _uxImSetView(v) {
+      const view = v === "detailed" ? "detailed" : "simple";
+      try { localStorage.setItem("oo.import.view", view); } catch (_e) { /* storage may be unavailable */ }
+      _uxImPaintView(view);
+    }
+    function _uxImPaintView(view) {
+      const box = document.getElementById("ux-imp-queue");
+      if (box) box.setAttribute("data-view", view || _uxImGetView());
+      const cur = view || _uxImGetView();
+      for (const v of ["simple", "detailed"]) {
+        const b = document.getElementById("ux-imp-view-" + v);
+        if (b) b.setAttribute("aria-pressed", String(v === cur));
+      }
+    }
+
+    // Pure: the Detailed view's figures about the run, each a label and a value the
+    // server published. A field the server did not send is left out, never shown as 0.
+    function _uxImFactsRows(st, t, tf) {
+      const rows = [];
+      const n = (v) => fmtNum(Number(v), 0);
+      if (st.started_at) rows.push([t("Started"), (typeof fmtDateTime === "function") ? fmtDateTime(st.started_at * 1000) : ""]);
+      if (st.elapsed_s != null) rows.push([t("Elapsed"), _uxImDur(st.elapsed_s)]);
+      if (st.stages_total) rows.push([t("Import steps finished"), tf("{done} of {total}", { done: n(Math.min(st.stages_done || 0, st.stages_total)), total: n(st.stages_total) })]);
+      if (st.items_total != null) rows.push([t("Items in this import"), n(st.items_total)]);
+      if (st.items_committed != null) rows.push([t("Written to your corpus"), n(st.items_committed)]);
+      if (st.items_staged) rows.push([t("Merged — not yet saved"), n(st.items_staged)]);
+      if (st.checkpoint && st.checkpoint.k) rows.push([t("Backups written to your corpus at a time"), n(st.checkpoint.k)]);
+      // The current backup's own figures, only while the run runs: an ended run can keep its
+      // last sub-job's status, and "phase 3 of 3" under a stopped run is not a current fact.
+      const p = (st.state === "running" && st.live && (st.live.progress || st.live)) || {};
+      if (p.phase_index && p.phase_total && p.phase_index <= p.phase_total) {
+        rows.push([t("Phase of the current backup"), tf("{done} of {total}", { done: n(p.phase_index), total: n(p.phase_total) })]);
+      }
+      if (p.merge_steps) rows.push([t("Merge steps"), tf("{done} of {total}", { done: n(p.merge_step || 0), total: n(p.merge_steps) })]);
+      if (p.merge_label) rows.push([t("Table being merged"), String(p.merge_label)]);
+      if (p.reindex_total) rows.push([t("Articles re-indexed in this backup"), tf("{done} of {total}", { done: n(p.reindex_done || 0), total: n(p.reindex_total) })]);
+      return rows;
+    }
+    function _uxImRenderFacts(st) {
+      const host = document.getElementById("ux-imp-facts");
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const rows = st ? _uxImFactsRows(st, t, tf) : [];
+      const html = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+      // Through the keyed patch (an unchanged list is not rewritten); no rows, no list.
+      if (rows.length) _uxPatchRow(host, "facts", html, html);
+      _uxPruneRows(host, rows.length ? ["facts"] : []);
+    }
+
+    // ── THE TOP-BAR PILL ─────────────────────────────────────────────────────
+    // Painted from the reads the import dialog's ONE chain already makes (it keeps
+    // ticking while the dialog is closed, for as long as the run runs). No poll of its
+    // own: at boot one read finds a run already in flight and points that same chain at
+    // it. A read that fails says "could not be read", never 0% and never blank. The pill
+    // keeps a fixed width so nothing beside it moves as the number changes (#3), and it
+    // is the FIRST item of the status cluster, so appearing or leaving moves nothing to
+    // its right.
+    let _ooImpPillHideT = null;
+    function _ooImportPillPaint(st, unread) {
+      const pill = document.getElementById("imp-pill");
+      if (!pill) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const pctEl = document.getElementById("imp-pill-pct");
+      const arc = document.getElementById("imp-pill-arc");
+      // The ring is static markup; only its arc's length is set (a number, never HTML).
+      const setArc = (pct) => { if (arc) { arc.setAttribute("stroke-dasharray", `${pct == null ? 0 : pct} ${100 - (pct == null ? 0 : pct)}`); arc.style.display = pct == null ? "none" : ""; } };
+      if (_ooImpPillHideT && (unread || (st && st.state === "running"))) { clearTimeout(_ooImpPillHideT); _ooImpPillHideT = null; }
+      if (unread) {
+        // Only once a run was being shown: a failed read with no run in sight shows nothing.
+        if (pill.hidden) return;
+        pill.className = "imp-pill imp-pill-unread";
+        if (pctEl) pctEl.textContent = "?";
+        setArc(null);
+        const why = t("Import status could not be read. The import may still be running; open the import to check.");
+        pill.title = why; pill.setAttribute("aria-label", why);
+        return;
+      }
+      if (!st || !(st.items || []).length) { pill.hidden = true; return; }
+      const m = _uxImRunModel(st);
+      if (!m.running && pill.hidden) return;        // a finished run never brings the pill back
+      const tone = m.running ? "run" : (m.state === "done" && !m.tally.failed) ? "ok" : m.state === "stopped" ? "warn" : "err";
+      pill.className = "imp-pill imp-pill-" + tone;
+      pill.hidden = false;
+      const pctTxt = m.pct == null ? "—" : _uxImPctText(m.pct, tf);
+      if (pctEl) pctEl.textContent = m.running ? pctTxt : (tone === "ok" ? "✓" : tone === "warn" ? "■" : "!");
+      // A clean finish is a full ring; any other ending keeps the share it reached.
+      setArc(tone === "ok" ? 100 : m.pct);
+      const lines = [_uxImRunTitle(m, t)];
+      if (m.stepsTotal != null) lines.push(ooLabelText(t("Import steps finished"), tf("{done} of {total}", { done: fmtNum(m.stepsDone, 0), total: fmtNum(m.stepsTotal, 0) }) + " · " + pctTxt));
+      else lines.push(t("steps not reported"));
+      if (m.current) lines.push(ooLabelText(t("Now"), String(m.current.label || m.current.kind || "")));
+      if (m.running && m.phase) lines.push(_uxVolPhase(m.phase, "restore", t) + (m.phaseFrac != null ? " · " + _uxImPctText(Math.floor(m.phaseFrac * 100), tf) : ""));
+      if (m.tally.failed) lines.push(ooLabelText(t("Failed"), fmtNum(m.tally.failed, 0)));
+      lines.push(_uxImPctHover(t));
+      lines.push(t("Click to open the import."));
+      // One sentence after another: the shared hover bubble shows a title as flowing text.
+      pill.title = lines.map((l) => String(l).replace(/[.\s]+$/, "")).join(". ") + ".";
+      pill.setAttribute("aria-label", lines.slice(0, 3).join(". "));
+      if (!m.running && !_ooImpPillHideT) {
+        // The ending stays in sight for a moment, then the slot empties.
+        _ooImpPillHideT = setTimeout(() => { _ooImpPillHideT = null; pill.hidden = true; }, 12000);
+      }
+    }
+    function ooOpenImportFromPill() {
+      const dlg = document.getElementById("ux-import");
+      if (dlg && dlg.open) return;
+      openUnifiedImport();
+    }
+    // One read at start-up: a run already in flight (a reload, another tab) gets the
+    // dialog's chain, which paints the pill from then on. Nothing is read again unless
+    // that run is running.
+    async function ooImportPillBoot() {
+      let st = null;
+      try { st = await api("/api/backup/import-queue/status"); } catch (_e) { return; }
+      if (st && st.state === "running" && !_uxImWatch) {
+        _ooImportPillPaint(st);
+        _uxImWatchQueue();
+      }
     }
 
     // REMOVED 2026-09-16 (Q207 = a, R2): `_uxImDetails` and the "Show details"
@@ -3333,6 +3652,8 @@
       }
       _uxImLastStatus = null;
       _uxImView = null;
+      if (typeof _uxImRenderHero === "function") _uxImRenderHero(null);
+      if (typeof _uxImRenderFacts === "function") _uxImRenderFacts(null);
     }
 
     // The FRESH PAGE's run surfaces (see _uxImFreshView): nothing at all for a finished
