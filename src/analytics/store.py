@@ -3488,6 +3488,24 @@ def reconcile_article_language(
     }
 
 
+def counter_basis_or_none(session: Session) -> dict | None:
+    """:func:`counter_envelope` as a dict, for a surface that shows the counters beside other content (row 422 P6).
+
+    Read inside a SAVEPOINT, so a failure (a store without the marker's table, a locked page) leaves the caller's
+    transaction usable and answers None (no basis shown). A deadline or a memory floor is the caller's to honour and is
+    raised, never swallowed."""
+    from src.database.maintenance import StatementTimeout
+
+    try:
+        with session.begin_nested():
+            return counter_envelope(session).to_dict()
+    except StatementTimeout:
+        raise
+    except Exception as exc:  # noqa: BLE001 - a surface never fails on its disclosure
+        log_failure(_LOG, "counter basis not read", exc, level=logging.DEBUG)
+        return None
+
+
 def counter_envelope(session: Session, *, window_hours: int | None = None, now=None):
     """The honesty envelope (Slice 1) over the maintained keyword counters (Slice 2).
 

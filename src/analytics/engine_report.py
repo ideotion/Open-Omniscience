@@ -428,13 +428,10 @@ def _generic_terms(session: Session, *, top_per_lang: int = 15, cap: int = 40000
 
 
 def _counter_basis(session: Session) -> dict | None:
-    """The counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
-    try:
-        from src.analytics.store import counter_envelope
+    """The maintained counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
+    from src.analytics.store import counter_basis_or_none
 
-        return counter_envelope(session).to_dict()
-    except Exception:  # noqa: BLE001 - a report block never fails on its disclosure
-        return None
+    return counter_basis_or_none(session)
 
 
 def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles: int = 25) -> dict:

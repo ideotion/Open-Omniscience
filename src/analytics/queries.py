@@ -1325,12 +1325,9 @@ def _counter_rows_without_pending(session, q, want: int) -> list:
 
 def _counter_basis(session) -> dict | None:
     """The maintained counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
-    try:
-        from src.analytics.store import counter_envelope
+    from src.analytics.store import counter_basis_or_none
 
-        return counter_envelope(session).to_dict()
-    except Exception:  # noqa: BLE001 - a view never fails on its disclosure
-        return None
+    return counter_basis_or_none(session)
 
 
 def top_terms(

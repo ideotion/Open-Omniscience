@@ -10771,7 +10771,9 @@ def run_restore(
     drain after this import (the volume job when ``defer_reindex()``: its hand-off, or the queue's end). The commit then
     skips the per-item whole-corpus counter sweep, after opening the durable R22 deferral marker
     (:func:`_leave_counters_to_drain`), so the counters read ``estimated`` until the drain's closing sweep reconciles them
-    in full and closes the marker. A marker that cannot be opened runs the sweep exactly as before.
+    in full and closes the marker. A marker that cannot be opened runs the sweep exactly as before. If the process
+    stops before that sweep, the next start asks for the drain; with ``OO_NO_SCHEDULER=1`` or
+    ``OO_REINDEX_AUTORESUME=0`` it does not, and the counters stay ``estimated`` (never ``exact``) until a drain runs.
 
     ``final_activation`` (R827 R7(a), default True): False only for an import queue's INTERMEDIATE checkpoint,
     one after which another backup of the run will merge. Such a commit checks the tables the import wrote

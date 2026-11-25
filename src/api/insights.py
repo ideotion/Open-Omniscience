@@ -4635,8 +4635,13 @@ def ring_gaps(languages: str = Query("", max_length=200)) -> dict:
     want = [x for x in (languages or "").replace(",", " ").split() if x] or None
     with session_scope() as db:
         out = gap_summary(db, languages=want)
-        # Row 422 P6: candidates are chosen by the maintained article counters, so their basis travels.
-        return _with_counter_basis(db, out)
+        # Row 422 P6: candidates are chosen by the maintained article counters, so their basis travels. A basis that
+        # cannot be read leaves the preview as it was rather than failing it.
+        try:
+            return _with_counter_basis(db, out)
+        except Exception as exc:  # noqa: BLE001 - the preview never fails on its disclosure
+            log_failure(_LOG, "ring gaps: counter envelope not read", exc, level=logging.INFO)
+            return out
 
 
 @router.post("/ring-load")

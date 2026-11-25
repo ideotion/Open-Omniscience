@@ -1430,7 +1430,7 @@ def _keyword_facts(session, card) -> dict:
         "keywords": out,
         # Row 422 P6: the per-keyword watermark is not touched while a deferred re-index (or an import that left
         # its counter sweep to the drain) holds the counters, so the envelope says whether they are exact now.
-        "counts": _counter_basis(session),
+        "counts": _counter_basis_once(session),
         "note": (
             "Counters are the maintained corpus-wide totals, with the reconcile watermark stated; "
             "a NULL watermark means never verified, not wrong. `counts.basis` is `estimated` while "
@@ -1439,14 +1439,21 @@ def _keyword_facts(session, card) -> dict:
     }
 
 
-def _counter_basis(session) -> dict | None:
-    """The counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
-    try:
-        from src.analytics.store import counter_envelope
+def _counter_basis_once(session) -> dict | None:
+    """:func:`_counter_basis`, read once per audit session rather than once per card (it counts the keyword index)."""
+    info = getattr(session, "info", None)
+    if not isinstance(info, dict):
+        return _counter_basis(session)
+    if "oo_counter_basis" not in info:
+        info["oo_counter_basis"] = _counter_basis(session)
+    return info["oo_counter_basis"]
 
-        return counter_envelope(session).to_dict()
-    except Exception:  # noqa: BLE001 - an audit section never fails on its disclosure
-        return None
+
+def _counter_basis(session) -> dict | None:
+    """The maintained counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
+    from src.analytics.store import counter_basis_or_none
+
+    return counter_basis_or_none(session)
 
 
 # --------------------------------------------------------------------------- #

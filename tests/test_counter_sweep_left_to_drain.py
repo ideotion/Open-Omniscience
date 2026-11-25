@@ -280,4 +280,68 @@ def test_the_card_audit_and_engine_report_state_the_counters_basis():
 
     from src.briefing import card_audit
 
-    assert '"counts": _counter_basis(session)' in inspect.getsource(card_audit._keyword_facts)
+    assert '"counts": _counter_basis_once(session)' in inspect.getsource(card_audit._keyword_facts)
+
+
+def test_an_unreadable_backlog_sweeps_in_the_import_instead_of_a_drain_that_would_stop_first(client, monkeypatch):
+    from src.backup import volume_job
+
+    _open_marker()
+    monkeypatch.setattr("src.backup.merge.reindex_backlog", lambda: {"available": False, "reason": "locked"})
+    monkeypatch.setattr("src.scheduler.runner.exclusive_window_open", lambda: False)
+    started: list[int] = []
+    monkeypatch.setattr(volume_job, "start_reindex_drain", lambda: (started.append(1), (True, None))[1])
+    report: dict = {"keyword_counters": {"reconciled": False, "left_to_drain": True}}
+    volume_job.hand_off_reindex(report)
+    assert not started, "a drain that cannot read its backlog never reaches its closing sweep"
+    assert report["keyword_counters"]["swept_in_import"] is True
+    assert report["keyword_counters"]["reconciled"] is True
+    assert not _marker_open()
+
+
+def test_the_disclosure_readers_honour_a_deadline_and_never_fail_a_preview(client, monkeypatch):
+    from src.analytics import engine_report, queries, store
+    from src.briefing import card_audit
+    from src.database.maintenance import StatementTimeout
+    from src.database.session import session_scope
+
+    def _deadline(*_a, **_k):
+        raise StatementTimeout("deadline")
+
+    monkeypatch.setattr(store, "counter_envelope", _deadline)
+    with session_scope() as s:
+        for fn in (queries._counter_basis, engine_report._counter_basis, card_audit._counter_basis):
+            with pytest.raises(StatementTimeout):
+                fn(s)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(store, "counter_envelope", _boom)
+    r = client.get("/api/insights/ring-gaps")
+    assert r.status_code == 200 and "counts" not in r.json()
+
+
+def test_a_sweep_only_drain_at_boot_still_queues_the_builds_that_wait_for_a_reindex(monkeypatch):
+    from src.api import boot_sequence
+
+    queued: list[str] = []
+    monkeypatch.setattr(boot_sequence, "_queue_title_index", lambda: None)
+    monkeypatch.setattr(boot_sequence, "_queue_keyword_index_heal", lambda: queued.append("heal"))
+    monkeypatch.setattr(boot_sequence, "_queue_day_counts", lambda: queued.append("day"))
+    monkeypatch.setattr("src.backup.volume_job.start_reindex_drain", lambda: (True, None))
+    monkeypatch.setitem(boot_sequence._STATE, "reindex_pending", 0)
+    boot_sequence._start_reindex()
+    assert sorted(queued) == ["day", "heal"]
+    queued.clear()
+    monkeypatch.setitem(boot_sequence._STATE, "reindex_pending", 5)
+    boot_sequence._start_reindex()
+    assert queued == [], "a real re-index still holds them back"
+
+
+def test_the_triage_proposal_states_the_counters_basis():
+    import inspect
+
+    from src.ai_layer import triage_proposal
+
+    assert '"counts": _counter_basis(session)' in inspect.getsource(triage_proposal.build_triage_proposal)
