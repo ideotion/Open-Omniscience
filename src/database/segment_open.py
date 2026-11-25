@@ -354,8 +354,9 @@ def create_segment(r: Reservation, *, key: str | None = None) -> Path:
             raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
         con.isolation_level = None
         for ddl in SEGMENT_DDL:
-            if ddl is not _SEGMENT_META_DDL:
-                con.execute(ddl)
+            if ddl is _SEGMENT_META_DDL:
+                continue
+            con.execute(ddl)
         if _identity_of_name(path) != ident:
             raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
         commit_segment(con, r)
