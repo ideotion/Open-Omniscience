@@ -475,6 +475,7 @@ def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], re
     and noted as such; otherwise it is NOT written and ``None`` is returned (neither done nor failed: its contents may remain
     under its other name, which the report says), noted too. Every caller says which it is: there is no default."""
     flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_BINARY", 0)
+    linked: os.stat_result | None = None  # a file with another name about to be written: noted as written only once it is (Opus read)
     try:
         if at is not None:
             fd = os.open(at.name, flags, dir_fd=at.dfd)
@@ -496,10 +497,13 @@ def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], re
                 own = _verified_on(fd, st, keyed)
                 # ``unverified``: how a file the check did not clear is said: "key" (R841) or "refused" (a store's page 1 that is not
                 # the pinned one: a possible copy of the corpus, R840)
-                _note_link(st, keyed=own, key=not own and unverified == "key", refused=not own and unverified == "refused")
+                if not own:
+                    _note_link(st, key=unverified == "key", refused=unverified == "refused")
                 keyed = own
-            else:
-                _note_link(st, keyed=keyed, refused=refused and not keyed)  # ``refused``: the caller leaves its name too (R840)
+            elif not keyed:
+                _note_link(st, refused=refused)  # ``refused``: the caller leaves its name too (R840)
+            if keyed:
+                linked = st
             if not keyed:
                 os.close(fd)
                 return None  # R839: another name holds this file; never written through this one
@@ -518,8 +522,10 @@ def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], re
                 written += len(chunk)
             f.flush()
             os.fsync(f.fileno())
+        _note_link(linked, keyed=True)  # None (one name): nothing to note
         return True
     except OSError:
+        _note_link(linked, refused=refused)  # a write that failed: never said as overwritten, so its other name may still hold it
         _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", _masked([str(path)])[0])
         return False
 

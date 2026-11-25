@@ -661,3 +661,28 @@ def test_a_failing_key_check_never_leaks_the_descriptor(tmp_path):
     assert crypto_erase._overwrite(f, keyed=boom) is False
     if before is not None:
         assert len(os.listdir("/proc/self/fd")) == before
+
+
+def test_a_linked_file_whose_write_fails_is_never_said_as_overwritten(tmp_path, monkeypatch):
+    """Opus read of row 438: a file with another name is noted as overwritten only once its write is synced; a write that
+    fails is said as left (its other name may still hold it)."""
+    if sys.platform == "win32":
+        pytest.skip("POSIX hard links")
+    from tests.os_scope import scope_os
+
+    f = tmp_path / "x"
+    f.write_bytes(b"x" * 100)
+    os.link(f, tmp_path / "y")
+
+    def eio(_fd):
+        raise OSError(5, "")
+
+    notes = {"keyed": set(), "left": set(), "refused": set(), "key": set()}
+    token = crypto_erase._LINK_NOTES.set(notes)
+    try:
+        scope_os(monkeypatch, crypto_erase, fsync=eio)
+        assert crypto_erase._overwrite(f, keyed=True) is False
+    finally:
+        crypto_erase._LINK_NOTES.reset(token)
+    counts = crypto_erase._link_counts(notes)
+    assert counts["written"] == 0 and counts["left"] == 1

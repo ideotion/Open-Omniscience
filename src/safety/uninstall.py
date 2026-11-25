@@ -140,6 +140,7 @@ def segment_path(p):
     return len(r) == 2 and r[0] == "corpus" and SEG.fullmatch(r[1]) is not None
 def overwrite(p, head_only, keyed=False):   # True once every byte it was to write is written and synced (R798: nothing else is "destroyed")
     # "left" / "refused": another name holds the file and it is not the app's own by what it is (R839/R840): never written
+    pend = None
     try:
         try: st = os.lstat(p)
         except FileNotFoundError: return True                          # gone already: nothing left to overwrite
@@ -159,7 +160,7 @@ def overwrite(p, head_only, keyed=False):   # True once every byte it was to wri
             kn = key_names(ident) if key_path(p) else 0
             if key_path(p) and (kn < 1 or kn != fs.st_nlink):   # R841: a name elsewhere, or a count of 0: not shown to be this installation's key
                 os.close(fd); linked["key"].add(ident); return "key"
-            linked["keyed"].add(ident)
+            pend = ident   # said as overwritten all the same only once it is (Opus read of row 438)
         n = fs.st_size
         limit = min(n, PAGE1) if head_only else n
         with os.fdopen(fd, "r+b", buffering=0) as f:
@@ -168,8 +169,11 @@ def overwrite(p, head_only, keyed=False):   # True once every byte it was to wri
                 c = os.urandom(min(CHUNK, limit - w)); f.write(c); w += len(c)
             f.flush(); os.fsync(f.fileno())
         linked["written"].add((fs.st_dev, fs.st_ino))   # overwritten after all (through another of its names): never counted as left
+        if pend is not None: linked["keyed"].add(pend)
         return True
-    except OSError: return False
+    except OSError:
+        if pend is not None: linked["left"].add(pend)   # its write failed: its other name may still hold it
+        return False
 # R798: every folder a walk of the wipe could not list (it then checked none of the files in it); one is enough for "may be
 # incomplete", and the log gives their count and each as its role (tok), never "DB salt pages destroyed".
 unlisted_dirs = []
