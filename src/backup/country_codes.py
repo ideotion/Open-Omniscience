@@ -496,12 +496,6 @@ def normalise_staged_country_codes(
 
     return _conversion_report(
         con, form, scanned, alternates, converted, refused, collisions,
-        method=(
-            "every registered country column of the incoming corpus is converted to "
-            f"the store's canonical form ({form}) before the "
-            "value-keyed joins; a code the converter does not recognise is left "
-            "unchanged and listed, and NULL stays NULL"
-        ),
     )
 
 
@@ -687,12 +681,6 @@ def plan_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -
 
     return _conversion_report(
         con, form, scanned, alternates, converted, refused, collisions,
-        method=(
-            "every registered country column of the incoming corpus is read in "
-            f"the store's canonical form ({form}) by the value-keyed joins and the copy into your corpus; "
-            "a code the converter does not recognise is left unchanged and listed, NULL stays NULL, "
-            "and the incoming backup file itself is never written"
-        ),
     )
 
 
@@ -734,7 +722,7 @@ def staged_alternates_sql(con: sqlite3.Connection, alias: str = "i") -> tuple[st
 
 def _conversion_report(
     con: sqlite3.Connection, form: Literal["alpha2", "alpha3"], scanned: int, alternates: dict, converted: dict[str, int],
-    refused: dict[str, list[str]], collisions: list[dict], *, method: str,
+    refused: dict[str, list[str]], collisions: list[dict],
 ) -> dict:
     """The report block both conversions publish (``results["_country_codes"]``): one shape, whichever ran."""
     report: dict = {
@@ -756,7 +744,14 @@ def _conversion_report(
         # so a threshold would either refuse good restores or miss bad ones. This number
         # is how an operator sees it.
         "live_corpus_in_target_form": _live_corpus_in_target_form(con, form),
-        "method": method,
+        # One sentence for both conversions (it is true of each: the values the joins compare are in the store's form);
+        # row 439 did not add a second English one.
+        "method": (
+            "every registered country column of the incoming corpus is converted to "
+            f"the store's canonical form ({form}) before the "
+            "value-keyed joins; a code the converter does not recognise is left "
+            "unchanged and listed, and NULL stays NULL"
+        ),
     }
     if converted:
         report["converted"] = converted
