@@ -7906,10 +7906,22 @@ def _merge_side_files_and_custody(staged: StagedArtifact, report: dict) -> None:
         report["custody"] = {"entries": 0, "imported": 0, "duplicate": 0, "chains": [], "refused": staged.custody_refused}
 
 
-def _ids_after(all_ids: list[int], after: int) -> list[int]:
-    """The ids above ``after``. A function of its own, not a comprehension in ``reindex_imported_articles``: the list is long (a corpus), so a call per
-    item (``kept``) would cost, and a comprehension in a caller's frame leaves its back-edge outside the caller's ``try`` (src/utils/interrupts.py)."""
-    return [i for i in all_ids if i > after]
+def _owed_in_order(ordered: list[int], skip: set[int]) -> list[int]:
+    """``ordered`` without the ids in ``skip``, order kept (row 423; ``merged_rows``' primary key means no id repeats). A function of its
+    own, not a comprehension in ``reindex_imported_articles``: the list is long (a corpus), so a call per item would cost, and a
+    comprehension in a caller's frame leaves its back-edge outside the caller's ``try`` (src/utils/interrupts.py)."""
+    return [i for i in ordered if i not in skip]
+
+
+#: Row 423: the order the post-import drain analyses a batch in. Newest publication date first, so the recent weeks a reader looks at
+#: first are ready first; an article with no date goes last; the id breaks ties, newest inserted first. A LEFT JOIN, so an id that names
+#: no article any more (an imported article deleted since: ``merged_rows`` has no cascade) stays in the list, last, exactly as before,
+#: and the pass counts it out as absent. The date is the article's own column (R775), read once at the start of the batch.
+_BATCH_NEWEST_FIRST_SQL = (
+    "SELECT m.row_id FROM merged_rows m LEFT JOIN articles a ON a.id = m.row_id"
+    " WHERE m.batch_id = :b AND m.table_name = 'articles'"
+    " ORDER BY a.published_at IS NULL, a.published_at DESC, m.row_id DESC"
+)
 
 
 def _write_batch_report(working: Path, batch_id: int, report: dict) -> None:
@@ -10161,14 +10173,8 @@ def reindex_imported_articles(
         stats = {}  # the count of ids that named no article comes back through it (below)
 
     with session_scope() as session:
-        rows = session.execute(
-            text(
-                "SELECT row_id FROM merged_rows "
-                "WHERE batch_id = :b AND table_name = 'articles'"
-            ),
-            {"b": batch_id},
-        ).fetchall()
-        batch_ids = {int(r[0]) for r in rows}
+        # Row 423: newest first (see _BATCH_NEWEST_FIRST_SQL), so a large import's recent news is analysed first rather than last.
+        ordered = [int(r[0]) for r in session.execute(text(_BATCH_NEWEST_FIRST_SQL), {"b": batch_id}).fetchall()]
         # R24: an article whose rows are already stamped by the engine this re-index would
         # run -- carried at import, or finished by an earlier interrupted run -- would be
         # re-indexed into exactly the rows it already has. Skipped. Read from
@@ -10190,7 +10196,9 @@ def reindex_imported_articles(
         }
         # A stand-in (the place-holder a salvage copy writes at a lost id, which a backup of that copy carries and the merge records here) is
         # never re-indexed: asked for, it would leave the batch one short of its total for ever and the batch would never be stamped done.
-        all_ids = sorted(batch_ids - certified - stand_in_article_ids(session))
+        all_ids = _owed_in_order(ordered, certified | stand_in_article_ids(session))
+        batch_total = len(ordered)
+        del ordered  # a corpus-long list: not held through the pass
         if not all_ids:
             mark_reindex_complete(batch_id)
             out0: dict = {"reindexed": 0, "failed": 0}
@@ -10198,12 +10206,13 @@ def reindex_imported_articles(
                 out0["already_certified"] = len(certified)
             return out0
 
-        # RESUME. Ascending order + a last-completed watermark is an exact cursor: every
-        # id at or below it is already re-indexed. A missing/foreign watermark simply
-        # starts from the top -- correct, only slower (the re-index is idempotent).
+        # RESUME (row 423). The stamps are the exact cursor: ``index_article`` writes both in the same transaction as the article's rows,
+        # so after a crash "owed = batch - certified - stand-ins" above is exactly what remains, in any order, and nothing below needs a
+        # watermark. The cursor file is kept for the progress line and the journal; its ``last_id`` is diagnostic only (an id watermark
+        # was exact only while the drain went in ascending id order). An article that failed is owed again and retried, as it was
+        # whenever no watermark was found.
         resume_after = _load_reindex_cursor(batch_id)
-        ids = _ids_after(all_ids, resume_after) if resume_after is not None else all_ids
-        already = len(all_ids) - len(ids)
+        ids = all_ids
 
         # "Did this resume or start over?" -- answered from the artefact, with the
         # raw cursor so a FOREIGN checkpoint (a different batch's, correctly
@@ -10216,40 +10225,34 @@ def reindex_imported_articles(
             batch_id=batch_id,
             cursor_on_disk=_raw,
             cursor_batch_id=(_raw or {}).get("batch_id"),
+            # Diagnostic only since row 423: the last article the previous run finished, no longer a cursor.
             resumed_after_id=resume_after,
-            already_done=already,
+            # Row 423: what the stamps say is done (carried at import or finished by an earlier run), which is what a resume skips.
+            already_done=len(certified),
             # BOTH denominators, named. `remaining` is what this invocation will
             # walk; `batch_total` is the batch. "3000/686896" meant different
             # things in different lines before they were both stated.
             remaining=len(ids),
-            batch_total=len(all_ids),
+            batch_total=batch_total,
         )
-        if not ids:
-            mark_reindex_complete(batch_id)
-            out: dict = {"reindexed": 0, "failed": 0}
-            if already:
-                out["resumed_already_done"] = already
-            return out
 
         total = len(ids)
 
         def _tracked(done: int, _total: int) -> None:
-            # Persist the watermark as the re-index advances, so a crash resumes here
-            # rather than redoing the batch. `done` counts the articles FINALISED (reindexed
+            # Persist the progress as the re-index advances. Since row 423 the stamps, not this file, say what a resume skips; ``last_id``
+            # stays as a diagnostic. `done` counts the articles FINALISED (reindexed
             # or failed), in list order, so ids[done-1] is the last one that completed --
             # EXACTLY when every id of the list names an article. An id that names none (an
             # imported article deleted since: ``merged_rows`` has no cascade) is not counted
             # by the pass until the batch has ended, so after one `done` lags the list and
             # ids[done-1] is an EARLIER id than the last that completed. That is the safe
-            # direction: a resume redoes the articles between (the re-index is idempotent)
-            # and can never skip one, which counting the absent id here, before the articles
-            # that precede it in the list are done, would (a crash would resume past them).
+            # direction for a diagnostic: it never names an article as finished before it is.
             if 0 < done <= total:
                 _save_reindex_cursor(
-                    batch_id, last_id=ids[done - 1], done=already + done, total=len(all_ids)
+                    batch_id, last_id=ids[done - 1], done=done, total=len(all_ids)
                 )
             if progress_cb is not None:
-                progress_cb(already + done, len(all_ids))
+                progress_cb(done, len(all_ids))
 
         result = reindex_articles(
             session,
@@ -10287,8 +10290,6 @@ def reindex_imported_articles(
                     # The TYPE only, no exc_info: the callback is the caller's job-state writer, so what it raises is not ours, and a traceback
                     # (and the error it was raised from) ends in the engine's own words.
                     _LOG.debug("could not report the finished batch's progress (%s)", type(exc).__name__)
-        if already:
-            result["resumed_already_done"] = already
         if certified:
             result["already_certified"] = len(certified)
         return result

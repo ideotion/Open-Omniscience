@@ -783,7 +783,8 @@ def test_the_post_swap_re_index_skips_an_article_already_certified(monkeypatch):
 
         monkeypatch.setattr(store_mod, "reindex_articles", _spy)
         out = merge_mod.reindex_imported_articles(batch_id, commit_batch=1, workers=0)
-        assert seen == [[made[1], made[2], made[3]]], f"the certified article was re-indexed, or a half-stamped one skipped: {seen}"
+        # Newest first since row 423; these share one date, so the id breaks the tie, newest inserted first.
+        assert seen == [[made[3], made[2], made[1]]], f"the certified article was re-indexed, or a half-stamped one skipped: {seen}"
         assert out["already_certified"] == 1
     finally:
         with session_scope() as s:
