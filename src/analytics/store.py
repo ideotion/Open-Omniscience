@@ -2230,6 +2230,10 @@ def reindex_all_batch(
 # --------------------------------------------------------------------------- #
 
 RECONCILE_CURSOR_KEY = "counter_reconcile_cursor"
+#: When the sweep now under way began at keyword 0 (unix seconds), and, once a sweep reaches the end, that same time as the age
+#: of the last whole sweep: its OLDEST verification, never the time it finished (row 424).
+RECONCILE_SWEEP_BEGAN_KEY = "counter_reconcile_sweep_began_at"
+RECONCILE_SWEPT_KEY = "counter_reconcile_swept_at"
 PRUNE_CURSOR_KEY = "orphan_prune_cursor"
 # Keyword ids per slice (module-level so tests can shrink them to exercise the resume).
 _RECONCILE_SCAN_CHUNK = 50_000
@@ -2520,6 +2524,33 @@ def _fresh_window_hours() -> int:
         return 24
 
 
+def _exact_counters_and_wrong_rows(session: Session, mention_filter, keyword_filter) -> tuple[dict, list[dict]]:
+    """The exact counters of the keywords ``keyword_filter`` selects, and the rows among them that hold other values.
+
+    The truth is one covering-index GROUP BY over the live mentions ``mention_filter`` selects, a quarantined article counting
+    for nothing (R101); a keyword with no such mention is exactly 0. Both reconciles call this INSIDE the write gate, so the
+    compare and the write that follows it see the same counts."""
+    agg = {
+        int(kid): (int(m or 0), int(a or 0))
+        for kid, m, a in (
+            session.query(
+                KeywordMention.keyword_id,
+                func.sum(KeywordMention.count),
+                func.count(func.distinct(KeywordMention.article_id)),
+            )
+            .filter(mention_filter)
+            .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
+            .group_by(KeywordMention.keyword_id)
+        )
+    }
+    fixes = []
+    for kid, cur_m, cur_a in session.query(Keyword.id, Keyword.mention_count, Keyword.article_count).filter(keyword_filter):
+        want = agg.get(int(kid), (0, 0))
+        if (int(cur_m or 0), int(cur_a or 0)) != want:
+            fixes.append({"id": int(kid), "mention_count": want[0], "article_count": want[1]})
+    return agg, fixes
+
+
 def reconcile_keyword_counters(
     session: Session,
     *,
@@ -2559,7 +2590,6 @@ def reconcile_keyword_counters(
     import time as _time
     from datetime import UTC, datetime
 
-    from sqlalchemy import func
 
     stamp = now or datetime.now(UTC)
     budget = budget_s if budget_s is not None else _maint_budget_s("OO_RECONCILE_BUDGET_S")
@@ -2578,6 +2608,9 @@ def reconcile_keyword_counters(
     # the optimisation meant to close it.
     after_id = 0 if restart else _cursor_get(session, RECONCILE_CURSOR_KEY)
     resumed_from = after_id
+    if after_id == 0:
+        # A sweep begins here; committed with the first slice. A pass that resumes keeps the time its sweep began.
+        _cursor_set(session, RECONCILE_SWEEP_BEGAN_KEY, int(stamp.timestamp()))
     scanned = 0
     with_mentions = 0
     drift = 0
@@ -2595,31 +2628,6 @@ def reconcile_keyword_counters(
             complete = True
             break
         lo, hi = after_id, ids[-1]
-        # The slice's truth: one covering-index range GROUP BY over the mentions. Every
-        # keyword id in (lo, hi] is in `ids` (consecutive ordered ids), so the range
-        # filter is exactly this slice.
-        agg = {
-            kid: (int(m or 0), int(a or 0))
-            for kid, m, a in (
-                session.query(
-                    KeywordMention.keyword_id,
-                    func.sum(KeywordMention.count),
-                    func.count(func.distinct(KeywordMention.article_id)),
-                )
-                .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
-                .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
-                .group_by(KeywordMention.keyword_id)
-            )
-        }
-        # Detect drift within the slice (small-row keyword scan, background only), keeping the rows that are wrong.
-        fixes = []
-        for kid, cur_m, cur_a in session.query(
-            Keyword.id, Keyword.mention_count, Keyword.article_count
-        ).filter(Keyword.id > lo, Keyword.id <= hi):
-            want = agg.get(kid, (0, 0))
-            if (int(cur_m or 0), int(cur_a or 0)) != want:
-                drift += 1
-                fixes.append({"id": kid, "mention_count": want[0], "article_count": want[1]})
         # Repair the slice: stamp everything in range (a never-mentioned keyword is also
         # "verified 0 as of now"), and rewrite only the keywords whose counters were wrong.
         #
@@ -2633,14 +2641,24 @@ def reconcile_keyword_counters(
         #
         # GATED AS ONE UNIT (C8 sweep): the Query.update() below IS gated on its own (it
         # fires do_orm_execute) but bulk_update_mappings is invisible to BOTH write-gate
-        # hooks, so without this the zero-out and the repair that restores the real counts
-        # ran on opposite sides of the gate -- and a reader landing between them would see
-        # every keyword in the slice at zero. The gate is reentrant per thread, so the
+        # hooks, so without this the stamp and the repair ran on opposite sides of the gate
+        # (before row 424 the first half zeroed the slice, and a reader landing between
+        # them saw every keyword in it at zero). The gate is reentrant per thread, so the
         # inner acquisitions are no-ops. The connection first (the last slice's commit gave it back), then the gate.
         from src.database.writer import connection_first, write_lock
 
+        #
+        # THE READ IS INSIDE THE GATE TOO (row 424): a compare-then-write must not let a concurrent ingest land a count
+        # between the GROUP BY and the write, or the write would put back the count from before it. Every keyword id in
+        # (lo, hi] is in `ids` (consecutive ordered ids), so the range filter is exactly this slice.
         connection_first(session)
         with write_lock():
+            agg, fixes = _exact_counters_and_wrong_rows(
+                session,
+                (KeywordMention.keyword_id > lo) & (KeywordMention.keyword_id <= hi),
+                (Keyword.id > lo) & (Keyword.id <= hi),
+            )
+            drift += len(fixes)
             session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
                 {Keyword.last_reconciled_at: stamp},
                 synchronize_session=False,
@@ -2661,6 +2679,7 @@ def reconcile_keyword_counters(
             break  # soft deadline: stop cleanly; the stamps above disclose the partial
     if complete:
         _cursor_set(session, RECONCILE_CURSOR_KEY, 0)
+        _cursor_set(session, RECONCILE_SWEPT_KEY, _cursor_get(session, RECONCILE_SWEEP_BEGAN_KEY) or int(stamp.timestamp()))
         session.commit()
     return {
         "keywords": scanned,  # scanned THIS pass (a sweep may span several passes)
@@ -2673,6 +2692,62 @@ def reconcile_keyword_counters(
         "cursor_id": 0 if complete else after_id,
         "budget_s": budget,
     }
+
+
+def whole_sweep_is_fresh(session: Session, *, now=None) -> bool:
+    """Whether a whole-corpus sweep has landed whose oldest verification is inside the freshness window (row 424).
+
+    :func:`counter_envelope` reads only the keywords whose counter is above 0, so a keyword stored at 0 over real mentions --
+    the drift imports left before the 2026-07-29 ruling -- is invisible to it. Only a whole sweep reaches that keyword, so the
+    import stage skips its insurance sweep only when the envelope is exact AND this says one landed recently."""
+    from datetime import UTC, datetime
+
+    began = _cursor_get(session, RECONCILE_SWEPT_KEY)
+    if began <= 0:
+        return False
+    now = now or datetime.now(UTC)
+    return now.timestamp() - began < _fresh_window_hours() * 3600
+
+
+def reconcile_counters_after_import(session: Session, article_ids: list[int] | None, *, now=None) -> dict:
+    """The import's keyword-counter reconcile (row 424): the imported articles' keywords first, the insurance sweep when owed.
+
+    ``article_ids`` are every article the swap brought in, or ``None`` when the group could not be derived. Routes:
+
+    * ``None``, or an import over a quarter of the corpus: the budgeted whole-corpus sweep, as the stage always ran. A large
+      import mentions most of the vocabulary (measured: 122,000 articles into 186,000 touched 302,390 of 376,872 keywords),
+      and there the sweep's range reads beat the scoped pass's id lists (5.4 s against 9.7 s).
+    * otherwise :func:`reconcile_keyword_counters_for_articles`, then the sweep from its durable cursor with what is left of
+      the SAME budget, unless the counters are exact afterwards and :func:`whole_sweep_is_fresh`. A budget already spent skips
+      the sweep and says so; it is never handed a value at or below 0, which would make it unbounded."""
+    import time as _time
+
+    from sqlalchemy import func
+
+    t0 = _time.monotonic()
+    total = int(session.query(func.count(Article.id)).scalar() or 0)
+    if article_ids is None or len(article_ids) * 4 > total:
+        out = reconcile_keyword_counters(session, now=now)
+        out["scope"] = "the whole-corpus sweep: " + (
+            "the batches this swap brought in could not be derived"
+            if article_ids is None
+            else "the import is over a quarter of the corpus"
+        )
+        return out
+    budget = _maint_budget_s("OO_RECONCILE_BUDGET_S")
+    out = reconcile_keyword_counters_for_articles(session, article_ids, now=now, budget_s=budget)
+    if counter_envelope(session, now=now).is_exact() and whole_sweep_is_fresh(session, now=now):
+        out["sweep"] = {"skipped": "the counters are exact and a whole sweep is recent"}
+        return out
+    if budget <= 0:
+        out["sweep"] = reconcile_keyword_counters(session, now=now, budget_s=0)  # unbounded, as the budget says
+        return out
+    left = budget - (_time.monotonic() - t0)
+    if left <= 0:
+        out["sweep"] = {"skipped": "the budget was spent on the imported keywords"}
+    else:
+        out["sweep"] = reconcile_keyword_counters(session, now=now, budget_s=left)
+    return out
 
 
 #: How many article ids one ``IN`` list carries when the scoped reconcile below gathers the keywords those articles mention,
@@ -2708,7 +2783,6 @@ def reconcile_keyword_counters_for_articles(
     import time as _time
     from datetime import UTC, datetime
 
-    from sqlalchemy import func
 
     from src.database.writer import connection_first, write_lock
 
@@ -2753,31 +2827,15 @@ def reconcile_keyword_counters_for_articles(
             complete = False
             break
         part = kids[i : i + _SCOPED_KEYWORD_CHUNK]
-        agg = {
-            kid: (int(m or 0), int(a or 0))
-            for kid, m, a in (
-                session.query(
-                    KeywordMention.keyword_id,
-                    func.sum(KeywordMention.count),
-                    func.count(func.distinct(KeywordMention.article_id)),
-                )
-                .filter(KeywordMention.keyword_id.in_(part))
-                .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
-                .group_by(KeywordMention.keyword_id)
-            )
-        }
-        fixes = []
-        for kid, cur_m, cur_a in session.query(Keyword.id, Keyword.mention_count, Keyword.article_count).filter(
-            Keyword.id.in_(part)
-        ):
-            want = agg.get(kid, (0, 0))
-            if (int(cur_m or 0), int(cur_a or 0)) != want:
-                drift += 1
-                fixes.append({"id": kid, "mention_count": want[0], "article_count": want[1]})
-        # One gated unit, as in the sweep: the stamp fires do_orm_execute but bulk_update_mappings is invisible to both
-        # write-gate hooks (C8). Only the wrong rows are rewritten, as in the sweep. The connection first, then the gate.
+        # One gated unit, as in the sweep, the read included: the stamp fires do_orm_execute but bulk_update_mappings is
+        # invisible to both write-gate hooks (C8), and an ingest landing between the compare and the write would be undone.
+        # Only the wrong rows are rewritten. The connection first, then the gate.
         connection_first(session)
         with write_lock():
+            agg, fixes = _exact_counters_and_wrong_rows(
+                session, KeywordMention.keyword_id.in_(part), Keyword.id.in_(part)
+            )
+            drift += len(fixes)
             session.query(Keyword).filter(Keyword.id.in_(part)).update(
                 {Keyword.last_reconciled_at: stamp}, synchronize_session=False
             )
