@@ -3392,6 +3392,12 @@
       // dates and fixed reason tokens (kill_switch, robots, http_403, ...); no unit, address or station is named, so the operator's
       // real-host run can be read back dataset by dataset (scripts/climate_readback.py). A few kilobytes.
       {kind: "file", url: "/api/climate/fetch-record", name: "oo-field-{press}-climate-fetches.json"},
+      // The import's own record (row 414, 2026-11-24): where a long import's time went. Run journals, import reports and the
+      // re-index drain's metrics (its rate against the store's size included), numbers and the app's own tokens only, each file
+      // at most 200 KB by the server's own cut, oldest dropped first. None of the three reads the corpus.
+      {kind: "file", url: "/api/diagnostics/field-run-journal", name: "oo-field-{press}-run-journal.json"},
+      {kind: "file", url: "/api/diagnostics/field-import-reports", name: "oo-field-{press}-import-reports.json"},
+      {kind: "file", url: "/api/diagnostics/field-drain-status", name: "oo-field-{press}-drain-status.json"},
     ];
     // Every file the button saves is at most this size (maintainer 2026-11-14: «create smaller files», about half
     // the parts would not upload; every part that did was under 175 KB; 200 KB since 2026-11-15, «the loop has to limit itself to 200kb files»). A larger file is cut into numbered byte
