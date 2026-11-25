@@ -2638,7 +2638,7 @@
         const d = await api("/api/insights/corpus-www?" + p.toString());
         if (stale()) return;
         _anPanelsLast.www = d;
-        $("an-www").innerHTML = _anWwwHtml(d);
+        $("an-www").innerHTML = anNotCountedYetHtml(d) + _anWwwHtml(d);
       } catch (e) { if (stale()) return; $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Links: outbound URLs SHARED by 2+ of the matched articles (shared-origin
       // structure; convergence is corroboration only when paths are independent).
@@ -2646,7 +2646,7 @@
         const d = await api("/api/links/corpus?" + p.toString());
         if (stale()) return;
         _anPanelsLast.links = d;
-        $("an-links").innerHTML = _anLinksHtml(d);
+        $("an-links").innerHTML = anNotCountedYetHtml(d) + _anLinksHtml(d);
       } catch (e) { if (stale()) return; $("an-links").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Sentiment: distribution of the STORED per-article VADER tone over the set,
       // with the English-lexicon limitation disclosed (non-English scores unreliable).
@@ -2654,7 +2654,7 @@
         const d = await api("/api/insights/corpus-sentiment?" + p.toString());
         if (stale()) return;
         _anPanelsLast.sentiment = d;
-        $("an-sentiment").innerHTML = _anSentimentHtml(d);
+        $("an-sentiment").innerHTML = anNotCountedYetHtml(d) + _anSentimentHtml(d);
       } catch (e) { if (stale()) return; $("an-sentiment").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Sources: how each source covers the matched set -- volume, mean tone, span,
       // and the catalogue facts the source ASSERTS about itself.
@@ -2676,7 +2676,7 @@
         const d = await api("/api/insights/corpus-sources?" + p.toString());
         if (stale()) return;
         _anPanelsLast.sources = d;
-        $("an-sources").innerHTML = _anSourcesHtml(d);
+        $("an-sources").innerHTML = anNotCountedYetHtml(d) + _anSourcesHtml(d);
       } catch (e) { if (stale()) return; $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     // The payloads the Links, Sentiment and Sources panels last drew, so a LANGUAGE
@@ -2685,6 +2685,21 @@
     // reach, so a panel drawn in English stayed English after a switch. Emptied by each
     // new run, so a panel still loading is never painted over with the previous corpus.
     let _anPanelsLast = {};
+    // R830 group D: an analysis figure counts only the matched articles the junk screening has
+    // reached; the Articles list beside it still shows every result. The payload says how many it
+    // left out (``not_counted_yet``) and this line says so, inside the panel, so a copy or an enlarged
+    // view of the panel carries it too. Nothing at 0.
+    function anNotCountedYetHtml(d) {
+      const n = d && typeof d.not_counted_yet === "number" ? d.not_counted_yet : 0;
+      if (n <= 0) return "";
+      const i18n = window.OOI18N || null;
+      const F = (i18n && i18n.tf) ? i18n.tf
+        : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const T = (i18n && i18n.t) ? i18n.t : ((x) => x);
+      const num = (typeof fmtNum === "function") ? fmtNum(n, 0) : String(n);
+      return `<div class="hint an-not-counted" title="${esc(T("These results were imported and the junk screening has not reached them yet. The list shows them; this figure leaves them out until they are screened, which happens in the background after an import."))}">`
+        + `${esc(F("{n} of these results not counted yet", {n: num}))}</div>`;
+    }
     // THE THREE CAVEATS ARE FIXED SERVER SENTENCES, so each is keyed x12 and goes through
     // t() -- appended verbatim they read in English in every locale, beside labels that
     // were translated (the 2026-09-27 re-walk, N-2). A caveat that holds a translation
@@ -2887,8 +2902,9 @@
       // hidden one redraws itself from the same cache when its subtab is next opened.
       const tr = $("an-trend");
       if (tr && tr.offsetParent !== null && $("an-trend-chart") && (_anTrend.counts || []).length) drawAnTrend();
-      [["an-www", "www", _anWwwHtml], ["an-links", "links", _anLinksHtml],
-       ["an-sentiment", "sentiment", _anSentimentHtml], ["an-sources", "sources", _anSourcesHtml],
+      const _nc = (draw) => (d) => anNotCountedYetHtml(d) + draw(d);
+      [["an-www", "www", _nc(_anWwwHtml)], ["an-links", "links", _nc(_anLinksHtml)],
+       ["an-sentiment", "sentiment", _nc(_anSentimentHtml)], ["an-sources", "sources", _nc(_anSourcesHtml)],
        ["an-competitive", "competitive", (d) => _anCompetitiveHtml(d.cs, d.fr, d.query)]].forEach(([id, k, draw]) => {
         const el = $(id), d = _anPanelsLast[k];
         if (el && d) el.innerHTML = draw(d);

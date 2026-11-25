@@ -916,26 +916,32 @@ _BACKLOG_TTL_S = 30.0
 _backlog_cache: dict = {"at": 0.0, "value": None}
 
 
-def _reindex_backlog_rows() -> list[dict]:
-    """Imported articles merged without keywords while nothing is finishing them: ONE waiting row with Resume, which starts
-    the same ``reindex-resume`` job as Settings > Backup. While that job runs it is its own row (with Cancel). Counts only."""
+def reindex_backlog_cached() -> dict:
+    """:func:`src.backup.merge.reindex_backlog`, read at most once per ``_BACKLOG_TTL_S`` for the surfaces that poll it (the task manager
+    row, and the "N articles not analysed yet" line, R832). ``{"available": False}`` when it could not be read: never a zero."""
     import time
 
-    from src.jobs.background import get_job as _get_bg_job
-
-    job = _get_bg_job("reindex-resume")
-    if job is None or job.status().get("state") == "running":
-        return []  # a failed run keeps this row too: its Resume is the retry while articles are still owed
     now = time.monotonic()
     if _backlog_cache["value"] is None or now - _backlog_cache["at"] > _BACKLOG_TTL_S:
         try:
             from src.backup.merge import reindex_backlog
 
             _backlog_cache["value"] = reindex_backlog()
-        except Exception:  # noqa: BLE001 - the task manager never fails for a row; an unread backlog draws none
+        except Exception:  # noqa: BLE001 - a poll never fails for this read; an unread backlog says nothing
             _backlog_cache["value"] = {"available": False}
         _backlog_cache["at"] = now
-    bk = _backlog_cache["value"] or {}
+    return _backlog_cache["value"] or {"available": False}
+
+
+def _reindex_backlog_rows() -> list[dict]:
+    """Imported articles merged without keywords while nothing is finishing them: ONE waiting row with Resume, which starts
+    the same ``reindex-resume`` job as Settings > Backup. While that job runs it is its own row (with Cancel). Counts only."""
+    from src.jobs.background import get_job as _get_bg_job
+
+    job = _get_bg_job("reindex-resume")
+    if job is None or job.status().get("state") == "running":
+        return []  # a failed run keeps this row too: its Resume is the retry while articles are still owed
+    bk = reindex_backlog_cached()
     n = int(bk.get("articles_pending") or 0) if bk.get("available") else 0
     if n <= 0:
         return []

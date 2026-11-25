@@ -66,6 +66,7 @@ const HARNESS = `
   function _anLinksHtml(d) { return "LINKS:" + d.tag; }
   function _anSentimentHtml(d) { return "SENT:" + d.tag; }
   function _anSourcesHtml(d) { return "SRC:" + d.tag; }
+  function anNotCountedYetHtml(d) { return ""; }
   function _anRenderArtFacetChips() {
     $("an-art-facets").innerHTML = "FACETS:" + (_anArtFacetData.sources || []).join(",");
   }

@@ -723,7 +723,7 @@ def link_dense_article_ids(
             for aid, wc, sid, lang, deduced in (
                 session.query(Article.id, Article.word_count, Article.source_id, Article.language,
                               Article.detected_language)
-                .filter(Article.quarantined.isnot(True))
+                .filter(not_counted(Article.id))
                 .filter(Article.id.in_(chunk))
             ):
                 if sid is None or not _word_signals_apply(_cohort_lang(lang, deduced)):

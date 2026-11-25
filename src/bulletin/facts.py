@@ -300,6 +300,21 @@ def disclosures(session, period: Period) -> dict:
         out["quarantined_in_period"] = None
         out["quarantined_error"] = type(exc).__name__
 
+    # R830 (row 408 PR 3b): the imported articles in the period the junk screening has not reached yet. Every aggregate of this
+    # edition leaves them out until they are screened, so the file says how many; None is "could not be read", never zero.
+    try:
+        from src.analytics.quarantine_scope import pending_ids_select
+
+        out["not_screened_in_period"] = int(
+            session.query(func.count(Article.id))
+            .filter(and_(_CLOCK >= lo, _CLOCK < hi, Article.id.in_(pending_ids_select())))
+            .scalar()
+            or 0
+        )
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "bulletin: not-screened count failed", exc, level=logging.WARNING)
+        out["not_screened_in_period"] = None
+
     try:
         out["mentions_without_a_date"] = int(
             session.query(func.count(KeywordMentionRead.id))
