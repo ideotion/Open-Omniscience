@@ -107,8 +107,10 @@ def forget(path: os.PathLike[str] | str) -> None:
 def forget_under(folder: os.PathLike[str] | str) -> int:
     """Drop every key of a file in ``folder`` (a staging folder being removed). Returns how many."""
     root = _norm(folder).rstrip(os.sep) + os.sep
+    from src.utils.interrupts import kept
+
     with _lock:
-        gone = [p for p in _registry if p.startswith(root)]
+        gone = kept(list(_registry), lambda p: p.startswith(root))  # a frame of its own: the erase reaches this on the main thread
         for p in gone:
             del _registry[p]
     return len(gone)
