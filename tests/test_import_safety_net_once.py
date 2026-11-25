@@ -182,7 +182,8 @@ def test_without_read_back_the_cheap_checks_still_run_and_the_copy_says_it_is_no
     assert [r for r in read if Path(r) == net] == [], "the read-back is left to the caller"
     assert [y for y in synced if Path(y) == net] == [net], "the copy is flushed to disk before anything relies on it"
     C.store_copy_reads_back(net, facts)  # and the caller's read-back passes on a good copy
-    net.write_bytes(net.read_bytes()[:-1] + b"\x00")
+    data = net.read_bytes()
+    net.write_bytes(data[:-1] + bytes([data[-1] ^ 0xFF]))  # flip it: overwriting with a fixed byte is a no-op 1 run in 256
     with pytest.raises(C.StoreCopyRefused, match="does not match"):
         C.store_copy_reads_back(net, facts)
 
