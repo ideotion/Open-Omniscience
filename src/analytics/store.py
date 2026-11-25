@@ -2558,7 +2558,16 @@ def _wrong_rows_under_the_gate(session: Session, agg: dict[int, tuple[int, int]]
     may predate an ingest that committed while the reconcile waited: a new mention and its counter increment. Every row the
     stored counters disagree with is therefore read again here, under the gate, and only that fresh answer is written. A
     row an ingest moved disagrees with the stale ``agg`` and is re-read, so its write can never undo the ingest; a row that
-    agrees is not written at all. ``agg`` is updated in place with the re-read values. Must be called inside ``write_lock``."""
+    agrees is not written at all. It is still STAMPED, and there are two cases where that stamp can be wrong, both left by a write that
+    commits inside the window between the GROUP BY and the gate. (1) A row whose stored counters were already off by exactly
+    the delta an ingest then committed (stored = truth - c, the ingest adds c to both) agrees with the stale ``agg`` and is
+    stamped while still off by that old drift. (2) A write that moves a keyword's mentions WITHOUT moving its counter -- the
+    ``ondelete=CASCADE`` delete of an article, the very drift the sweep exists to repair -- leaves the stored counter equal to
+    the stale ``agg``, so the row is stamped over the count from before the delete. Main had both (its GROUP BY also ran
+    before the gate), and reading under the gate closes them only by holding ingest for seconds (measured 2.9 s). Nothing is
+    lost by either (no count is written), each needs that write to land inside a window of a slice's GROUP BY, and they are
+    bounded only because a stamp is never proof beyond the freshness window: :func:`counter_envelope` reads a stamp older than the window as ``estimated``, and the import
+    stage and the idle maintenance both owe a whole sweep once the last one is older than that, which re-reads this row. ``agg`` is updated in place with the re-read values. Must be called inside ``write_lock``."""
     current = {
         int(kid): (int(m or 0), int(a or 0))
         for kid, m, a in session.query(Keyword.id, Keyword.mention_count, Keyword.article_count).filter(keyword_filter)
