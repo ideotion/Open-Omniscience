@@ -37,6 +37,7 @@ from src.backup.volumes import (
     VolumeStopped,
     load_manifest,
 )
+from tests.staged_db import same_database
 
 GiB = 1024 ** 3
 MiB = 1024 * 1024
@@ -160,7 +161,7 @@ def test_below_floor_is_byte_identical_and_unannotated(tmp_path):
     assert load_manifest(dest)["volume_size"] == VOLUME_SIZE_DEFAULT
     assert not any("adaptive volume sizing" in n for n in s["notes"])
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
 
 
 def test_above_floor_adaptive_slices_records_size_and_roundtrips(tmp_path, monkeypatch):
@@ -183,7 +184,7 @@ def test_above_floor_adaptive_slices_records_size_and_roundtrips(tmp_path, monke
     # verify + round-trip
     assert verify_stream_backup(dest, passphrase="pw")["ok"] is True
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
 
 
 def test_parity_recovers_a_corrupt_volume_on_the_adaptive_path(tmp_path, monkeypatch):
@@ -198,7 +199,7 @@ def test_parity_recovers_a_corrupt_volume_on_the_adaptive_path(tmp_path, monkeyp
     victim.write_bytes(victim.read_bytes()[:-8])  # corrupt it
     assert verify_stream_backup(dest)["recoverable"] is True
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
 
 
 def test_explicit_volume_size_bypasses_adaptive(tmp_path):
@@ -234,7 +235,7 @@ def test_size_tier_crossing_reemits_all_and_notes_it(tmp_path, monkeypatch):
     referenced = {v["name"] for v in m2["volumes"]}
     assert on_disk == referenced
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
 
 
 def _interrupt_after(n: int):
@@ -273,14 +274,14 @@ def test_interrupted_tier_crossing_keeps_the_previous_backup_restorable(tmp_path
     assert m["volume_size"] == old_vsize
     assert verify_stream_backup(dest)["ok"] is True
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st-old")
-    assert staged.corpus_path.read_bytes() == old_bytes
+    assert same_database(staged.corpus_path, old_bytes)
 
     # resuming completes the refresh at the NEW size, yielding the new corpus
     s = _adaptive_backup(dest, corpus)
     assert s["resumed"] is True
     assert load_manifest(dest)["volume_size"] > old_vsize
     staged2 = read_stream_backup(dest, "pw", staging_root=tmp_path / "st-new")
-    assert staged2.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged2.corpus_path, corpus)
     assert not (dest / BUILDING_NAME).exists()
 
 
@@ -309,4 +310,4 @@ def test_adaptive_accounts_for_members_end_to_end(tmp_path, monkeypatch):
     assert n + mm <= 12, f"real emitted N+M={n + mm} exceeded the safety margin"
     assert any("adaptive volume sizing" in note for note in s["notes"])
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    assert same_database(staged.corpus_path, corpus)
