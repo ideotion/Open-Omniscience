@@ -159,8 +159,8 @@ _RECORD_LEFT_SENTENCE = (
     "incomplete."
 )
 #: R823: database copies without evidence, rewritten in full (said apart, never in "Wiped n/n"), and those a stop or a failure left.
-_COPIES_OVERWRITTEN_SENTENCE = "Copies of a database that could not be shown to be encrypted were overwritten in full rather than crypto-erased (count: {n})."
-_COPIES_SHORT_SENTENCE = "Copies of a database that could not be shown to be encrypted were only partially overwritten, or not at all, so the erase may be incomplete (count: {n})."
+_COPIES_OVERWRITTEN_SENTENCE = "Database copies that could not be shown to be encrypted were overwritten in full rather than crypto-erased (count: {n})."
+_COPIES_SHORT_SENTENCE = "Database copies that could not be shown to be encrypted were only partially overwritten, or not at all, so the erase may be incomplete (count: {n})."
 #: R826: the split corpus's segments without evidence, rewritten in full; and those left short of that (a stop, a failure, a segment
 #: name with another name or a link at it, a folder that could not be read).
 _SEGMENTS_OVERWRITTEN_SENTENCE = "Corpus files that could not be shown to be encrypted were overwritten in full instead of being crypto-erased (count: {n})."

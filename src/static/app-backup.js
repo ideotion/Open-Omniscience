@@ -4477,8 +4477,8 @@
             : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
           (segShort ? `<div class="card-caveat">${esc(tfw("Some corpus files could not be overwritten, or only partially, so the erase may be incomplete (count: {n}).", { n: fmtNum(segShort, 0) }))}</div>` : "") +
           (segOver ? `<div class="hint">${esc(tfw("Corpus files that could not be shown to be encrypted were overwritten in full instead of being crypto-erased (count: {n}).", { n: fmtNum(segOver, 0) }))}</div>` : "") +
-          (copiesShort ? `<div class="card-caveat">${esc(tfw("Copies of a database that could not be shown to be encrypted were only partially overwritten, or not at all, so the erase may be incomplete (count: {n}).", { n: fmtNum(copiesShort, 0) }))}</div>` : "") +
-          (copiesOver ? `<div class="hint">${esc(tfw("Copies of a database that could not be shown to be encrypted were overwritten in full rather than crypto-erased (count: {n}).", { n: fmtNum(copiesOver, 0) }))}</div>` : "") +
+          (copiesShort ? `<div class="card-caveat">${esc(tfw("Database copies that could not be shown to be encrypted were only partially overwritten, or not at all, so the erase may be incomplete (count: {n}).", { n: fmtNum(copiesShort, 0) }))}</div>` : "") +
+          (copiesOver ? `<div class="hint">${esc(tfw("Database copies that could not be shown to be encrypted were overwritten in full rather than crypto-erased (count: {n}).", { n: fmtNum(copiesOver, 0) }))}</div>` : "") +
           (recordLeft ? `<div class="card-caveat">${esc(t("The app’s at-rest record could not be overwritten and removed, so key material may remain on the disk: the erase may be incomplete."))}</div>` : "") +
           (keysLeft ? `<div class="card-caveat">${esc(tfw("Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}` +
             // the app's own exact file names only (never another entry of the folder), so the operator knows which to remove
