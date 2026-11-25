@@ -55,6 +55,9 @@ _ALLOWED: dict[str, tuple[int, str]] = {
     "src/backup/runlog.py": (5, "export"),
     "src/backup/stream_backup.py": (3, "export"),
     "src/backup/regular_file.py": (1, "export"),
+    # seal_plaintext's os.replace: the sealed copy over the plaintext one, both in the import's private 0700 staging
+    # folder (R829), which no other server writes; nothing to lock against
+    "src/backup/staged_key.py": (1, "U"),
     "src/backup/volumes.py": (1, "export"),
     "src/briefing/card_audit.py": (1, "keyword"),
     "src/bulletin/evidence.py": (1, "Plan J"),

@@ -692,8 +692,11 @@ def test_an_open_that_starts_between_the_listing_and_the_close_stops_the_close(t
 # already made), and the sqlite_opening wrappers that cover some of them. Each file's count is pinned with the reason no
 # Python read of ours can race it, so a new opener, or a wrapper removed, is classified by whoever makes the change.
 _UNAUDITED_OPENERS = {
-    ("sqlcipher-connect", "src/database/connect.py"): (6, "four inside _connect/_try_open_encrypted, under connect()'s "
-        "sqlite_opening; reencrypt_plain_to and copy_at_current_settings wrap theirs"),
+    ("sqlcipher-connect", "src/database/connect.py"): (8, "six inside _connect/_try_open_encrypted, under connect()'s "
+        "sqlite_opening (two are the keyless sqlcipher_host open of a plaintext store, R829 A2); reencrypt_plain_to and "
+        "copy_at_current_settings wrap theirs"),
+    ("sqlcipher-connect", "src/backup/staged_key.py"): (3, "_open_with's two and seal_plaintext's, each inside "
+        "sqlite_opening; they open an import's staged copy, never a live store"),
     ("sqlcipher-connect", "src/database/verify.py"): (1, ":memory: probe, no file"),
     ("sqlcipher-connect", "src/monitoring/machine_record.py"): (2, ":memory: probes, no file"),
     ("sqlcipher-connect", "src/backup/lane_merge.py"): (1, ":memory: host for the ATTACHed staged lanes"),
@@ -704,7 +707,8 @@ _UNAUDITED_OPENERS = {
     ("attach", "src/backup/lane_merge.py"): (2, "both wrapped in sqlite_opening"),
     ("attach", "src/backup/merge.py"): (1, "the merge's own scratch database"),
     ("attach", "src/backup/newsletter_export.py"): (2, "a docstring, and the export's own new file"),
-    ("attach", "src/backup/stream_backup.py"): (1, "a snapshot destination in the backup's work folder"),
+    ("attach", "src/backup/staged_key.py"): (2, "attach_staged and seal_plaintext, both wrapped in sqlite_opening; the "
+        "key is a bound parameter"),
     ("attach", "src/monitoring/merge_diag.py"): (1, "the diagnostic's own scratch database"),
     ("attach", "src/monitoring/diagnostics_runs.py"): (1, "a comment about scrubbing keys"),
     ("attach", "src/monitoring/secret_scrub.py"): (1, "a docstring about scrubbing keys"),
@@ -712,6 +716,7 @@ _UNAUDITED_OPENERS = {
         "copy_at_current_settings"),
     ("wrapped", "src/database/read_only_uri.py"): (1, "open_plain_read_only"),
     ("wrapped", "src/backup/lane_merge.py"): (2, "the two ATTACHes"),
+    ("wrapped", "src/backup/staged_key.py"): (6, "every open and ATTACH of an import's staged copy (R789)"),
 }
 
 

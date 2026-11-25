@@ -235,6 +235,7 @@ def test_sub_timings_are_recorded_but_never_pinged_as_phases(monkeypatch, tmp_pa
     monkeypatch.setattr(
         "src.backup.sqlite_backup.validate_sqlite_file", lambda p, **k: 1, raising=False
     )
+    monkeypatch.setattr(m, "_check_staged_schema_file", lambda p: None)
     monkeypatch.setattr("src.database.migrate.file_revision", lambda p: "abc123", raising=False)
     monkeypatch.setattr("src.database.migrate.known_revisions", lambda: {"abc123"}, raising=False)
     monkeypatch.setattr(
@@ -249,7 +250,7 @@ def test_sub_timings_are_recorded_but_never_pinged_as_phases(monkeypatch, tmp_pa
 
     m.prepare_staged_corpus(_Staged(), timings=_Recorder())
 
-    assert recorded == ["prepare_staged:validate", "prepare_staged:upgrade"]
+    assert recorded == ["prepare_staged:validate", "prepare_staged:schema", "prepare_staged:upgrade"]
     assert staged_names == [], "no sub-timing may reach timings.stage()"
 
 

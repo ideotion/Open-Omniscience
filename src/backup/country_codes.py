@@ -309,7 +309,8 @@ def _law_document_holds(con: sqlite3.Connection, schema: str, jurisdiction: str,
 
 
 def convert_alternate_countries(
-    con: sqlite3.Connection, *, schema: str, form: Literal["alpha2", "alpha3"], keep_with_unconverted_document: bool = False
+    con: sqlite3.Connection, *, schema: str, form: Literal["alpha2", "alpha3"], keep_with_unconverted_document: bool = False,
+    before_write: Callable[[], None] | None = None,
 ) -> dict:
     """Write the country codes inside ``metadata_alternates`` identities and field sets in ``form``.
 
@@ -373,6 +374,8 @@ def convert_alternate_countries(
                     ):
                         kept += 1
                         continue  # its document kept this spelling (see above): the identity stays with it
+                    if before_write is not None:
+                        before_write()
                     con.execute(
                         f'UPDATE {schema}.metadata_alternates SET "{column}" = json_set("{column}", ?, ?) WHERE id = ?',  # noqa: S608  # nosec B608 # as above; the path, the value and the id are bound
                         (path, target, rid),
@@ -387,7 +390,9 @@ def convert_alternate_countries(
     return out
 
 
-def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -> dict:
+def normalise_staged_country_codes(
+    con: sqlite3.Connection, *, schema: str = "inc", before_write: Callable[[], None] | None = None
+) -> dict:
     """Normalise every registered country column of the ATTACHED staged corpus.
 
     Runs as the FIRST merge step, before any handler joins on one of these values.
@@ -439,6 +444,8 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
                     continue  # already canonical: the common case in 0.4
                 # ONE statement for the whole spelling: the fast, overwhelmingly common
                 # path, bounded by the code set rather than the corpus.
+                if before_write is not None:
+                    before_write()  # R834: the staged copy's integrity walk has its verdict before anything writes it
                 con.execute("SAVEPOINT oo_country_norm")
                 try:
                     cur = con.execute(
@@ -468,7 +475,9 @@ def normalise_staged_country_codes(con: sqlite3.Connection, *, schema: str = "in
                 con.execute("RELEASE oo_country_norm")
                 converted[key] = converted.get(key, 0) + int(cur.rowcount or 0)
 
-    alternates = convert_alternate_countries(con, schema=schema, form=form, keep_with_unconverted_document=True)
+    alternates = convert_alternate_countries(
+        con, schema=schema, form=form, keep_with_unconverted_document=True, before_write=before_write
+    )
 
     report: dict = {
         "target_form": form,
