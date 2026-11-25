@@ -463,3 +463,21 @@ def test_the_watcher_writes_a_copy_s_log_whole_on_a_full_disk(tmp_path):
     text = _watch(tmp_path, {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log")}, _FULL_DISK)
     assert "partially overwritten <data>/.../x.db-wal" not in text, text
     assert not (data / "backups" / "x.db-wal").exists()
+
+
+def test_the_watcher_writes_a_sign_in_token_file_whole_on_a_full_disk(tmp_path):
+    """Final-head security read B (row 332): a Hugging Face sign-in token file is never held to the reserve in the watcher, as in
+    the panic erase (_track_key)."""
+    from src.safety import uninstall
+
+    data = tmp_path / "home" / "jane.doe" / "oo-data"
+    hf = data / "models" / "huggingface"
+    hf.mkdir(parents=True)
+    name = uninstall._hf_token_files()[0]
+    (hf / name).write_bytes(b"hf_TOKEN" * 4096)
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    plan = {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log"),
+            "hf_token_files": list(uninstall._hf_token_files()), "shaped_spec": uninstall._shaped_spec({"broad": False})}
+    text = _watch(tmp_path, plan, _FULL_DISK)
+    assert not (hf / name).exists(), text
+    assert "partially overwritten" not in text, text

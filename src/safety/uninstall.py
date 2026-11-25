@@ -193,8 +193,9 @@ def write_regions(fd, limit, capped, deadline=None, where=None):
         stop = stop or ("disk" if ex.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)) else "error")
     return w, known, stop
 def uncapped(p):   # R797 (a): key material and the logs that hold copies of the salt page are written whole
-    # every -wal/-journal, as the panic erase's step 5b: a copy's or snapshot's log anywhere in the folder can hold its salt page
-    return key_path(p) or os.path.basename(p).endswith(("-wal", "-journal"))
+    # every -wal/-journal, as the panic erase's step 5b: a copy's or snapshot's log anywhere in the folder can hold its salt page;
+    # a sign-in token file too, as the panic erase's _track_key (final-head security read B, row 332)
+    return key_path(p) or p in hf_set or os.path.basename(p).endswith(("-wal", "-journal"))
 def overwrite(p, head_only, keyed=False):   # True once every byte it was to write is written and synced (R798: nothing else is "destroyed")
     # "left" / "refused": another name holds the file and it is not the app's own by what it is (R839/R840): never written
     pend = None
@@ -467,6 +468,7 @@ def shaped_dir(nm): return nm in sh and lkind(os.path.join(wd, nm)) == "dir"
 # In a data folder the app owns they are taken by their exact names whatever else the Hugging Face home holds; in one it does not
 # own, only in a home that fits the rule. A token file seen and left, or not overwritten and removed, is said in the log.
 hf_left = []
+hf_set = set()   # every token file hf_tokens() handed out: never held to the reserve (uncapped)
 def hf_tokens():
     out = []
     for f in ("models", "cache"):
@@ -477,6 +479,7 @@ def hf_tokens():
         s_ = shape_of(f, "huggingface", "dir")
         if s_ is None or (only and second_ok(home, s_) is not True): hf_left.append(f + "/huggingface"); continue
         out += present
+    hf_set.update(out)
     return out
 kstate = keys_state(os.path.join(wd, "keys")) if (wd and not only and ks) else "absent"
 keys_foreign = kstate in ("foreign", "unlisted")
