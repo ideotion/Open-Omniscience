@@ -105,6 +105,30 @@ def test_the_read_before_the_seal_runs_only_when_the_file_and_a_margin_fit(size_
     assert staged_key.preread_fits(size_mb * _MB, available_mb, source) is expected
 
 
+def test_the_disk_check_counts_one_seal_page_per_table_and_index(tmp_path, monkeypatch):
+    """A small file at a small page grows when sealed at 16 KiB: every table and index takes at least one seal page. The
+    space check counts that, so a disk with room for the plaintext's bytes but not for the copy's pages is refused before a
+    byte of the copy is written."""
+    import shutil
+
+    p = tmp_path / "s.db"
+    con = sqlite3.connect(p)
+    con.execute("PRAGMA page_size = 1024")
+    con.executescript("CREATE TABLE sources(id INTEGER PRIMARY KEY, domain TEXT);"
+                      "CREATE TABLE articles(id INTEGER PRIMARY KEY, hash TEXT UNIQUE, content TEXT);"
+                      + "".join(f"CREATE TABLE t{i}(id INTEGER PRIMARY KEY, v TEXT);" for i in range(40)))
+    trees = con.execute("SELECT count(*) FROM sqlite_master WHERE rootpage > 0").fetchone()[0]
+    con.close()
+    assert p.stat().st_size < 64 * 1024 < (trees + 1) * staged_key.SEAL_PAGE_SIZE
+    real = shutil.disk_usage
+    free = staged_key._SPACE_MARGIN + p.stat().st_size * 4  # room for the plaintext's bytes, not for 41 seal pages
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: real(path)._replace(free=free))
+    with pytest.raises(staged_key.StagedKeyError) as refused:
+        staged_key.seal_plaintext(p)
+    assert str(refused.value) == staged_key.DISK_FULL
+    assert not list(tmp_path.glob("*.sealing*"))
+
+
 def _calls(monkeypatch) -> list[Path]:
     calls: list[Path] = []
     monkeypatch.setattr(sqlite_backup, "_warm_sequentially", lambda path, should_stop=None: calls.append(Path(path)))
@@ -188,9 +212,12 @@ class _NewFds:
         return out
 
     def _poll(self) -> None:
+        import time
+
         while not self._stop.is_set():
             for _fd, target in self._snapshot() - self._before:
                 self.seen.add(target)
+            time.sleep(0)  # yield the interpreter lock to the thread being watched
 
     def __enter__(self):  # noqa: ANN204
         self._before = self._snapshot()
@@ -228,6 +255,13 @@ def test_on_disk_the_seal_opens_no_file_outside_its_own_staging(tmp_path):
     con.close()
     if not _files_outside(control.seen, ctl):
         pytest.skip("this SQLite build keeps even a FILE temp store in memory, so the watcher has nothing to see here")
+
+    # A first seal outside the watch: a module imported lazily on the first call opens its .py/.pyc under the install
+    # tree, which is a read of code, not a temp file, and must not be mistaken for one.
+    warm = tmp_path / "warm"
+    warm.mkdir()
+    staged_key.seal_plaintext(_db(warm / "w.db", n=5))
+    staged_key.forget(warm / "w.db")
 
     stage = tmp_path / "stage"
     stage.mkdir()

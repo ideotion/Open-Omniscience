@@ -514,6 +514,11 @@ def seal_plaintext(path: os.PathLike[str] | str) -> None:
         page_size = SEAL_PAGE_SIZE
         auto_vacuum = int(src.execute("PRAGMA auto_vacuum").fetchone()[0])
         need = _live_bytes(src)
+        if need is not None:
+            # At the 16 KiB seal page every table and index takes at least one page, so a small file at a smaller page
+            # grows: the copy needs no less than one seal page per b-tree, plus page 1.
+            trees = int(src.execute("SELECT count(*) FROM sqlite_master WHERE rootpage > 0").fetchone()[0])
+            need = max(need, (trees + 1) * SEAL_PAGE_SIZE)
         if _short_of_space(p, 0, need):
             raise StagedKeyError(DISK_FULL)  # refused before a byte of the copy is written (as R793 does for a snapshot)
         create_new(sealed, mode=0o600).close()
