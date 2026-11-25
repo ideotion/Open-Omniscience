@@ -369,19 +369,24 @@ def newsletter_attach_undo(db: Session = Depends(get_db)) -> dict:
         db.commit()
 
     deleted: list[str] = []
-    for sid in sorted(ladder_created - {int(bucket.id)}):
-        src = db.get(Source, sid)
-        # enabled / source_type are belt-and-braces beside the recorded fact above: if either
-        # ever disagrees with `new-email-source`, something else has edited the source and it
-        # is no longer purely ours to remove.
-        if src is None or src.enabled or src.source_type != _IMPORT_SOURCE_TYPE:
-            continue
-        still = db.query(Article.id).filter(Article.source_id == sid).first()
-        if still is None:
-            deleted.append(src.domain)
-            db.delete(src)
-    if deleted:
-        db.commit()
+    # Row 429: the "no article left" check and the delete run under ONE hold of the gate. Deleting a source cascades to its
+    # articles and their keyword mentions without moving the keyword counters, so an import attaching an article between
+    # an ungated check and the flush would have been deleted with the source and left the counters counting it.
+    connection_first(db)
+    with write_lock():
+        for sid in sorted(ladder_created - {int(bucket.id)}):
+            src = db.get(Source, sid)
+            # enabled / source_type are belt-and-braces beside the recorded fact above: if either
+            # ever disagrees with `new-email-source`, something else has edited the source and it
+            # is no longer purely ours to remove.
+            if src is None or src.enabled or src.source_type != _IMPORT_SOURCE_TYPE:
+                continue
+            still = db.query(Article.id).filter(Article.source_id == sid).first()
+            if still is None:
+                deleted.append(src.domain)
+                db.delete(src)
+        if deleted:
+            db.commit()
 
     # The bulk UPDATE bypassed index_article's per-source counter maintenance, so the
     # denormalised Source.article_count is now stale for both ends of every move.

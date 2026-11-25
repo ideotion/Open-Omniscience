@@ -107,6 +107,57 @@
       });
       strip.hidden = !any;
     }
+    // R830 (row 408 PR 3b) and R832: the articles every figure of a tab leaves out for a reason that will pass, said ONCE per
+    // tab at its top, so a copy or an enlarged view of the tab carries it: imported articles the junk screening has not reached
+    // ("N articles not screened yet") and those the re-index has not reached ("N articles not analysed yet"). Home says the
+    // same inside its status strip, Explore says it per figure ("N of these results not counted yet"). Nothing at 0, and a
+    // count the server could not read draws nothing rather than a 0.
+    // (Not the Timemap: its signals are curated anchors, never counts of your articles.)
+    const OO_NOT_COUNTED_TABS = ["insights", "observatory", "library", "agenda", "claim"];
+    function ooNotCountedHover(kind) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      return kind === "analysed"
+        ? T("Imported articles the re-index has not finished yet. They are readable and searchable, but some or all of their keywords, dates, places and people may not be there yet, so the analyses may leave them out or count them only in part until it does.")
+        : T("Imported articles the junk screening has not reached yet. They are readable and searchable, but the counts, trends and cards leave them out until they are screened, which happens in the background after an import.");
+    }
+    async function ooNotCountedTabLine(name) {
+      if (OO_NOT_COUNTED_TABS.indexOf(name) < 0) return;
+      const page = document.getElementById("tab-" + name);
+      if (!page) return;
+      let s = null;
+      try { s = await api("/api/database/stats", {polled: true}); } catch (_e) { return; }
+      const nc = (s && s.not_counted) || {};
+      const i18n = window.OOI18N || null;
+      const F = (i18n && i18n.tf) ? i18n.tf
+        : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const num = (n) => (typeof fmtNum === "function") ? fmtNum(n, 0) : String(n);
+      const parts = [], hovers = [];
+      // The Library's figures are status totals over every stored article (R831(2)), so its line is a
+      // breakdown of what they hold, as on Home, never a "left out".
+      const status = name === "library";
+      const all = s && s.counts && typeof s.counts.articles === "number" ? s.counts.articles : null;
+      if (status && all == null) return;   // a breakdown with no total to break down says nothing
+      if (status && typeof nc.quarantined === "number" && nc.quarantined > 0)
+        parts.push(F("of which quarantined: {n}", {n: num(nc.quarantined)}));
+      if (typeof nc.not_screened === "number" && nc.not_screened > 0) {
+        parts.push(F(status ? "of which not screened yet: {n}" : "{n} articles not screened yet", {n: num(nc.not_screened)}));
+        hovers.push(ooNotCountedHover("screened"));
+      }
+      if (typeof nc.not_analysed === "number" && nc.not_analysed > 0) {
+        parts.push(F(status ? "of which not analysed yet: {n}" : "{n} articles not analysed yet", {n: num(nc.not_analysed)}));
+        hovers.push(ooNotCountedHover("analysed"));
+      }
+      let el = page.querySelector(":scope > .oo-not-counted");
+      if (!parts.length) { if (el) el.remove(); return; }
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "hint oo-not-counted";
+        el.setAttribute("data-i18n-dyn", "");
+        page.insertBefore(el, page.firstChild);
+      }
+      el.textContent = (status ? F("{n} articles", {n: num(all)}) + " · " : "") + parts.join(" · ");
+      el.title = hovers.join(" ");
+    }
     function showTab(name, push = true) {
       if (name === "database") name = "library";  // legacy #database deep-links
       // Search and the analysis are one page, Explore (R47): every older entry point --
@@ -173,6 +224,7 @@
       }
       if (name !== "timemap" && typeof stopTmapPlay === "function") stopTmapPlay();  // don't animate a hidden tab
       startLive(name, {loaderJustRan: justLoaded});      // live status for the active tab
+      ooNotCountedTabLine(name).catch(() => {});   // R830/R832: what this tab's figures leave out for now, once per tab
       document.body.classList.remove("nav-open");       // close mobile drawer
       closePalette();
       const m = document.querySelector("main"); if (m) m.scrollTop = 0;

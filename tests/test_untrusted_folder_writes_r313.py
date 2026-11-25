@@ -209,7 +209,30 @@ def test_a_streamed_export_over_planted_manifest_links_leaves_them_untouched(tmp
     _backup(tmp_path, dest, corpus)
     assert victim.read_bytes() == _VICTIM
     staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
-    assert staged.corpus_path.read_bytes() == corpus.read_bytes()
+    # The read seals a plaintext member under a key held in memory (R829 A2), so the staged copy's content comes back
+    # whole through that key, never its bytes.
+    import sqlite3
+
+    from src.backup import staged_key
+
+    def content(con):
+        schema = con.execute("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").fetchall()
+        return schema, [con.execute(f'SELECT * FROM "{n}" ORDER BY rowid').fetchall() for k, n, _ in schema if k == "table"]
+
+    try:
+        assert not staged.corpus_path.read_bytes().startswith(b"SQLite format 3")
+        con = staged_key.open_staged(staged.corpus_path)
+        try:
+            back = content(con)
+        finally:
+            con.close()
+    finally:
+        staged_key.forget_under(tmp_path / "st")
+    src_con = sqlite3.connect(corpus)
+    try:
+        assert back == content(src_con)
+    finally:
+        src_con.close()
 
 
 @posix_only

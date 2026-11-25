@@ -4488,7 +4488,17 @@
         const keyLeft = r.corpus_encryption === "encrypted_key_left";
         // R828 (2): the app's at-rest record could not be overwritten and removed: "key material may remain", never clean.
         const recordLeft = r.at_rest_record === "left";
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft;
+        // R823: database copies that could not be shown to be encrypted, rewritten in full (said apart), or left short of that.
+        const _sumOf = (o) => (o && typeof o === "object") ? Object.values(o).reduce((a, v) => a + (Number(v) || 0), 0) : 0;
+        const copiesOver = _sumOf(r.copies_overwritten);
+        const copiesShort = _sumOf(r.copies_partially_overwritten) + _sumOf(r.copies_not_overwritten);
+        // R826: the split corpus's segments, by count: rewritten in full without evidence (said apart), or left short of that.
+        const seg = r.corpus_segments && typeof r.corpus_segments === "object" ? r.corpus_segments : {};
+        const segOver = Number(seg.overwritten) || 0;
+        // Security reads (row 402): a corpus folder that could not be reached counts too (the server says "not_overwritten" with no file)
+        const segShort = Math.max((Number(seg.partially_overwritten) || 0) + (Number(seg.not_overwritten) || 0) + (Number(seg.left) || 0),
+          (seg.corpus === "not_overwritten" || seg.corpus === "partially_overwritten") ? 1 : 0);
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
@@ -4591,6 +4601,10 @@
           (keptForeign
             ? (keptCount ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds items the app did not create (count: {n}).", { n: fmtNum(keptCount, 0) }))}</div>` : "")
             : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
+          (segShort ? `<div class="card-caveat">${esc(tfw("Some corpus files could not be overwritten, or only partially, so the erase may be incomplete (count: {n}).", { n: fmtNum(segShort, 0) }))}</div>` : "") +
+          (segOver ? `<div class="hint">${esc(tfw("Corpus files that could not be shown to be encrypted were overwritten in full instead of being crypto-erased (count: {n}).", { n: fmtNum(segOver, 0) }))}</div>` : "") +
+          (copiesShort ? `<div class="card-caveat">${esc(tfw("Database copies that could not be shown to be encrypted were only partially overwritten, or not at all, so the erase may be incomplete (count: {n}).", { n: fmtNum(copiesShort, 0) }))}</div>` : "") +
+          (copiesOver ? `<div class="hint">${esc(tfw("Database copies that could not be shown to be encrypted were overwritten in full rather than crypto-erased (count: {n}).", { n: fmtNum(copiesOver, 0) }))}</div>` : "") +
           (recordLeft ? `<div class="card-caveat">${esc(t("The app’s at-rest record could not be overwritten and removed, so key material may remain on the disk: the erase may be incomplete."))}</div>` : "") +
           (keysLeft ? `<div class="card-caveat">${esc(tfw("Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}` +
             // the app's own exact file names only (never another entry of the folder), so the operator knows which to remove

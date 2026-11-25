@@ -65,6 +65,9 @@ _ADDED_AFTER_THE_SPLIT: tuple[str, ...] = (
     "source_samples",
     "field_cards",  # every Home card + its evidence, saved by the Field data button (2026-11-14, Lane X)
     "field_candidate_sources",  # sources an instance qualified that no catalogue has, proposed for review (2026-11-14, Lane X)
+    "field_run_journal",  # row 414 (2026-11-24): the import's run journal, numbers only, for the Field data button
+    "field_import_reports",  # row 414: the import reports, numbers only
+    "field_drain_status",  # row 414: the re-index drain's metrics, numbers only
     # 2026-11-08, R459: what a Thorough build is expected to cost, before the release run.
     "all_diagnostics_estimate",
     # 2026-09-18, the 0.4 release acceptance run (gate rows A-E, K, P, Q, T): one job,

@@ -2630,13 +2630,19 @@
     // elId lets a second surface (the corpus window's Sentiment sub-tab) REUSE
     // this exact renderer + its English-only VADER disclosure (d.caveat) by
     // pointing it at a fresh host, instead of relocating the Insights DOM.
+    // The analysis window's "N of these results not counted yet" line (app-analysis.js, a classic-script global);
+    // absent when that file is not loaded, never a guessed count.
+    function _aiNotCountedYetHtml(d) {
+      return (typeof anNotCountedYetHtml === "function") ? anNotCountedYetHtml(d) : "";
+    }
     async function loadFraming(term, elId) {
       const el = $(elId || "ins-framing");
       el.innerHTML = "<span class='muted'>Comparing how outlets frame this…</span>";
       try {
         const d = await api("/api/framing?query=" + encodeURIComponent(term));
+        // R830 group D: the comparison leaves results still queued for screening out, and says how many.
         if (!d.framing || !d.framing.length) {
-          el.innerHTML = "<span class='muted'>Not enough coverage to compare framing for this term.</span>"; return;
+          el.innerHTML = _aiNotCountedYetHtml(d) + "<span class='muted'>Not enough coverage to compare framing for this term.</span>"; return;
         }
         const tLoc = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const rows = d.framing.map(f => {
@@ -2658,7 +2664,7 @@
         // on a language switch, like the headers beside it. The table scrolls in its own box:
         // four columns of translated headers do not fit a 375 px phone in de or ru, and it
         // pushed the whole page sideways instead (the re-walk review of M-8).
-        el.innerHTML = `<div style="overflow-x:auto"><table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table></div>
+        el.innerHTML = _aiNotCountedYetHtml(d) + `<div style="overflow-x:auto"><table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table></div>
           <div class="hint">${ooSaidHtml(d, "caveat")}</div>`;
       } catch (e) {
         el.innerHTML = "<span class='muted'>Framing unavailable (needs the [analysis] extra installed).</span>";
