@@ -159,6 +159,7 @@ def test_an_operator_s_file_in_a_shaped_folder_stays_untouched_and_keeps_the_dat
     assert report["removed"] is False and report["folder_kept_foreign"] is True and report["kept_items"] == 2
     assert report["shaped_left"] == {"models": 1, "wiki_dumps": 1} and report["not_removed"] == []
     assert "the erase of the data folder is not complete (count: 2)" in report["limit"]
+    assert crypto_erase._LIMIT_NOTE not in report["limit"], "the clean guarantee is never said beside 'not complete'"
     assert "my notes" not in json.dumps(report) and "my-model" not in json.dumps(report), "no user file names (R806)"
     assert crypto_erase.settle_removed(report) is False and report["folder_kept_foreign"] is True
     assert report["not_removed"] == [], "kept on purpose: never said as a removal that failed"
@@ -577,7 +578,46 @@ def test_the_token_sentence_is_the_same_on_the_page_in_the_result_and_in_twelve_
     s3 = "A Hugging Face sign-in token may remain in {folders}: you can revoke it in your Hugging Face account."
     assert crypto_erase._HF_TOKEN_LEFT_SENTENCE == s3
     backup = (_ROOT / "src/static/app-backup.js").read_text(encoding="utf-8")
-    assert s3 in backup and "r.hf_token_left" in backup and "!leftOver && !hfTokenLeft.length" in backup, "a token left is never a clean result"
+    assert s3 in backup and "r.hf_token_left" in backup and "!leftOver && !shapedN && !hfTokenLeft.length" in backup, "a token or an item left is never a clean result"
     for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
         loc = json.loads((_ROOT / f"src/static/locales/{lang}.json").read_text(encoding="utf-8"))
         assert "{folders}" in loc[s3] and "Hugging" in loc[s3], lang
+
+
+def test_an_entry_made_after_the_judgement_is_never_removed_unjudged(tmp_path, monkeypatch):
+    """Security reads of row 378: only the names of the listing that was judged are removed, never a second listing's."""
+    if sys.platform == "win32" or not hasattr(os, "O_DIRECTORY"):
+        pytest.skip("POSIX folder handles")
+    data = _own(tmp_path)
+    _app_entries(data)
+    real = crypto_erase._remove_names
+
+    def late(efd, judged):
+        if any(n == "blobs" for n, _k in judged):
+            os.mkdir("zq-late", dir_fd=efd)
+        return real(efd, judged)
+
+    monkeypatch.setattr(crypto_erase, "_remove_names", late)
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert (data / "models" / "ollama" / "zq-late").is_dir(), "made after the judgement: never taken unjudged"
+
+
+def test_a_token_home_that_cannot_be_opened_is_said_as_a_token_that_may_remain(tmp_path, monkeypatch):
+    """Security reads of row 378: a Hugging Face home that is there and cannot be opened (another drive mounted there, no
+    access) may hold a sign-in token: said, never passed over in silence."""
+    if sys.platform == "win32" or not hasattr(os, "O_DIRECTORY"):
+        pytest.skip("POSIX folder handles")
+    data = _own(tmp_path)
+    _app_entries(data)
+    (data / "models" / "huggingface" / "token").write_bytes(b"secret")
+    real = crypto_erase._open_below
+
+    def refuse(dfd, parts):
+        if tuple(parts) == ("models", "huggingface"):
+            return None, OSError(18, "another device")
+        return real(dfd, parts)
+
+    monkeypatch.setattr(crypto_erase, "_open_below", refuse)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert "models/huggingface" in report["hf_token_left"]
+    assert "A Hugging Face sign-in token may remain in" in report["limit"]

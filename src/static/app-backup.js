@@ -4483,7 +4483,7 @@
         // Security reads (row 402): a corpus folder that could not be reached counts too (the server says "not_overwritten" with no file)
         const segShort = Math.max((Number(seg.partially_overwritten) || 0) + (Number(seg.not_overwritten) || 0) + (Number(seg.left) || 0),
           (seg.corpus === "not_overwritten" || seg.corpus === "partially_overwritten") ? 1 : 0);
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !hfTokenLeft.length && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !shapedN && !hfTokenLeft.length && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf

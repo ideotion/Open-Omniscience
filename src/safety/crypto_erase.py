@@ -2516,7 +2516,8 @@ def _hf_token_home(base: Path, dfd: int | None, folder: str, *, shared: bool, tr
     if dfd is not None:
         hfd, _err = _open_below(dfd, (folder, "huggingface"))  # no-follow at each name; another device refused
         if hfd is None:
-            return 0, 0, False
+            # security reads of row 378: a home that is there and cannot be opened (another drive, no access) may hold a token
+            return 0, 0, _kind(base / folder / "huggingface") not in ("absent", "link")
     try:
         return _hf_token_take(base, hfd, folder, shape, shared=shared, track=track)
     finally:
@@ -2780,20 +2781,48 @@ def _remove_judged(parent: int, name: str, shape: dict) -> None:
     if efd is None:
         return
     try:
-        if _second_ok_fd(efd, shape) is not True:
-            return
-        for child in sorted(os.listdir(efd)):
-            if _kind(Path(child), None, _At(efd, child)) == "dir":
-                _rmtree_at(efd, child)
-                continue
-            with contextlib.suppress(OSError):
-                os.unlink(child, dir_fd=efd)
-    except OSError:
+        judged = _judged_names(efd, shape)
+    finally:
+        _close_quietly(efd)
+    if judged is None:
         return
+    efd, _err = _open_below(parent, (name,))
+    if efd is None:
+        return
+    try:
+        _remove_names(efd, judged)
     finally:
         _close_quietly(efd)
     with contextlib.suppress(OSError):
         os.rmdir(name, dir_fd=parent)
+
+
+def _judged_names(fd: int, shape: dict) -> list[tuple[str, str]] | None:
+    """R837 (security reads of row 378): the entries of the folder held by ``fd`` with their kinds, from the ONE listing the
+    rule judged, or None when that listing does not fit ``shape`` (or cannot be read): only these names are ever removed, so an
+    entry made after the judgement is never taken unjudged."""
+    from src.safety.data_scope import second_level_ok
+
+    try:
+        kinds = [(n, _kind(Path(n), None, _At(fd, n))) for n in os.listdir(fd)]
+    except OSError:
+        return None
+    if any(k == "unreached" for _n, k in kinds) or second_level_ok(shape, kinds) is not True:
+        return None
+    return sorted(kinds)
+
+
+def _remove_names(efd: int, judged: list[tuple[str, str]]) -> None:
+    """Each judged entry of the folder held by ``efd``, removed through it only while it is still of the kind it was judged."""
+    for child, kind in judged:
+        now = _kind(Path(child), None, _At(efd, child))
+        if now != kind:
+            continue  # no longer what was judged: left
+        if kind == "dir":
+            _rmtree_at(efd, child)
+            continue
+        with contextlib.suppress(OSError):
+            os.unlink(child, dir_fd=efd)
 
 
 def _remove_shaped(roots: list[Path], base: Path, dfd: int | None) -> None:
@@ -3955,8 +3984,10 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
            if shaped_items else "")
         + (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
         + (_LIMIT_NOTE_UNLISTED + ("" if guaranteed is True else " " + _plain_sentence(guaranteed)) if unlisted_folders
-           # R828 (2): with the record left, the clean guarantee is never said beside "key material may remain"
-           else _DEFENCE_TAIL.lstrip() if record_state == "left" and guaranteed is True else _clean_note(guaranteed)),
+           # R828 (2): with the record left, the clean guarantee is never said beside "key material may remain"; row 378: nor beside
+           # "the erase of the data folder is not complete" or a sign-in token that may remain
+           else _DEFENCE_TAIL.lstrip() if (record_state == "left" or shaped_items or hf_token_left) and guaranteed is True
+           else _clean_note(guaranteed)),
     }
 
 

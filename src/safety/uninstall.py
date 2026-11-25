@@ -108,9 +108,13 @@ def overwrite(p, head_only):   # True once every byte it was to write is written
         except FileNotFoundError: return True                          # gone already: nothing left to overwrite
         except OSError: unreached(p); return False                     # could not be looked at: never counted as handled
         if not stat.S_ISREG(st.st_mode): return True   # a link is never written through, nor a FIFO or a device
+        fd = os.open(p, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+        try: st = os.fstat(fd)   # the file opened, never a link swapped in after the look (O_NOFOLLOW), and only a regular one
+        except OSError: os.close(fd); raise
+        if not stat.S_ISREG(st.st_mode): os.close(fd); return True
         n = st.st_size
         limit = min(n, PAGE1) if head_only else n
-        with open(p, "r+b", buffering=0) as f:
+        with os.fdopen(fd, "r+b", buffering=0) as f:
             w = 0
             while w < limit:
                 c = os.urandom(min(CHUNK, limit - w)); f.write(c); w += len(c)
@@ -396,6 +400,7 @@ if wd and os.path.isdir(wd):
             touched.add(rel[0])
             kk = lkind(top)
             if kk in ("file", "dir", "other") and shape_of(rel[0], rel[1], kk) is None: continue   # no longer what it was judged
+        if len(rel) == 3 and rel[0] in sh and lkind(top) != "file": continue   # a token file no longer a file (or a link on the way): left
         if top != wd and (linkish(top) or not os.path.isdir(top)):
             k = sqlite_kind(os.path.basename(top))
             if k and linkish(top): held_stat["seen"] += 1; held_stat["missed"] += 1   # a linked store file is never followed
@@ -407,6 +412,7 @@ if wd and os.path.isdir(wd):
             continue
         s2 = shape_of(rel[0], rel[1], "dir") if len(rel) == 2 and rel[0] in sh else None
         if s2 is not None and second_ok(top, s2) is not True: continue   # row 378 (R837): no longer only what its rule allows: left
+        if top != wd and linkish(top): continue   # swapped for a link after the look: never walked through
         for root, dirs, names in os.walk(top, onerror=unlisted):
             # row 378: a shaped folder is never walked whole from the data folder (its app entries are roots of their own)
             dirs[:] = [d for d in dirs if not linkish(os.path.join(root, d)) and not (top == wd and root == wd and d in sh)]

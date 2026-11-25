@@ -166,7 +166,8 @@ def test_a_panic_wipe_leaves_nothing_of_the_weather_slices(data_dir):
     from src.weather import openmeteo
 
     (data_dir / openmeteo.LEGACY_CACHE_DIR).mkdir()
-    (data_dir / openmeteo.LEGACY_CACHE_DIR / "a.json").write_text("{}", encoding="utf-8")
+    # the shape the app wrote (24 hex digits of a hash): row 378 (R836) takes only what fits it, an operator's file stays
+    (data_dir / openmeteo.LEGACY_CACHE_DIR / "0123456789abcdef01234567.json").write_text("{}", encoding="utf-8")
     (data_dir / "open_omniscience.db").write_bytes(b"x" * 64)  # where app_state, and so every held slice, lives
     try:
         panic_wipe(data_dir, confirm=True)
