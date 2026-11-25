@@ -621,3 +621,49 @@ def test_a_token_home_that_cannot_be_opened_is_said_as_a_token_that_may_remain(t
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert "models/huggingface" in report["hf_token_left"]
     assert "A Hugging Face sign-in token may remain in" in report["limit"]
+
+
+def test_a_folder_swapped_in_after_the_judgement_is_never_acted_on(tmp_path, monkeypatch):
+    """Opus read of row 378: the folder is judged and emptied through ONE handle, so a folder put at its name after the
+    judgement (the judged one moved away) is never emptied on the strength of a listing of another folder."""
+    if sys.platform == "win32" or not hasattr(os, "O_DIRECTORY"):
+        pytest.skip("POSIX folder handles")
+    data = _own(tmp_path)
+    _app_entries(data)
+    real = crypto_erase._judged_names
+    done = []
+
+    def swap(fd, shape):
+        judged = real(fd, shape)
+        if not done and judged and any(n == "blobs" for n, _k in judged):
+            done.append(1)
+            os.rename(data / "models" / "ollama", tmp_path / "judged-ollama")
+            (data / "models" / "ollama" / "blobs").mkdir(parents=True)
+            (data / "models" / "ollama" / "blobs" / "sha256-00").write_bytes(b"swapped in")
+        return judged
+
+    monkeypatch.setattr(crypto_erase, "_judged_names", swap)
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert done
+    assert (data / "models" / "ollama" / "blobs" / "sha256-00").read_bytes() == b"swapped in", "never judged: never removed"
+    assert not (tmp_path / "judged-ollama" / "blobs").exists(), "the judged folder is the one emptied"
+
+
+def test_the_watcher_never_goes_through_a_shaped_folder_that_is_a_link(tmp_path):
+    """Opus read of row 378: an app-shaped folder name that is a link (to a folder elsewhere) is never walked through."""
+    if sys.platform == "win32":
+        pytest.skip("POSIX links")
+    data = _own(tmp_path)
+    _app_entries(data)
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "ollama" / "blobs").mkdir(parents=True)
+    (elsewhere / "ollama" / "blobs" / "sha256-00").write_bytes(b"not the app's")
+    (elsewhere / "huggingface").mkdir()
+    (elsewhere / "huggingface" / "token").write_bytes(b"theirs")
+    import shutil
+
+    shutil.rmtree(data / "models")
+    (data / "models").symlink_to(elsewhere, target_is_directory=True)
+    _run_watcher(tmp_path, data, broad=False)
+    assert (elsewhere / "ollama" / "blobs" / "sha256-00").read_bytes() == b"not the app's"
+    assert (elsewhere / "huggingface" / "token").read_bytes() == b"theirs"

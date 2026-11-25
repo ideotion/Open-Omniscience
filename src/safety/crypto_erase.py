@@ -2780,19 +2780,15 @@ def _remove_judged(parent: int, name: str, shape: dict) -> None:
     efd, _err = _open_below(parent, (name,))
     if efd is None:
         return
-    try:
+    judged = None
+    try:   # judged and removed through the ONE handle: a folder swapped in between is never acted on (Opus read of row 378)
         judged = _judged_names(efd, shape)
+        if judged is not None:
+            _remove_names(efd, judged)
     finally:
         _close_quietly(efd)
     if judged is None:
         return
-    efd, _err = _open_below(parent, (name,))
-    if efd is None:
-        return
-    try:
-        _remove_names(efd, judged)
-    finally:
-        _close_quietly(efd)
     with contextlib.suppress(OSError):
         os.rmdir(name, dir_fd=parent)
 

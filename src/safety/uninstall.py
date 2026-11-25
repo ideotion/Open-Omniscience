@@ -109,9 +109,11 @@ def overwrite(p, head_only):   # True once every byte it was to write is written
         except OSError: unreached(p); return False                     # could not be looked at: never counted as handled
         if not stat.S_ISREG(st.st_mode): return True   # a link is never written through, nor a FIFO or a device
         fd = os.open(p, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+        look = (st.st_dev, st.st_ino)
         try: st = os.fstat(fd)   # the file opened, never a link swapped in after the look (O_NOFOLLOW), and only a regular one
         except OSError: os.close(fd); raise
         if not stat.S_ISREG(st.st_mode): os.close(fd); return True
+        if (st.st_dev, st.st_ino) != look: os.close(fd); return False   # another file swapped in after the look: never written, not counted
         n = st.st_size
         limit = min(n, PAGE1) if head_only else n
         with os.fdopen(fd, "r+b", buffering=0) as f:
@@ -396,6 +398,8 @@ if wd and os.path.isdir(wd):
     touched = set()
     for top in all_roots:
         rel = os.path.relpath(top, wd).replace("\\", "/").split("/") if top != wd else []
+        if len(rel) >= 2 and rel[0] in sh and lkind(os.path.join(wd, rel[0])) != "dir": continue   # its folder is no longer a folder (a link on the way): left
+        if len(rel) == 3 and rel[0] in sh and lkind(os.path.join(wd, rel[0], rel[1])) != "dir": continue
         if len(rel) == 2 and rel[0] in sh:
             touched.add(rel[0])
             kk = lkind(top)
