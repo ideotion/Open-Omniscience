@@ -340,22 +340,19 @@ def test_route_the_sweep_gets_what_the_scoped_pass_left_and_never_an_unbounded_z
 
 
 @pytest.mark.parametrize("which", ["sweep", "scoped"])
-def test_an_ingest_cannot_land_between_the_compare_and_the_write(tmp_path, which, monkeypatch):
+def test_an_ingest_between_the_group_by_and_the_write_is_never_undone(tmp_path, which, monkeypatch):
     """Plan's check on row 424: the reconcile reads the exact counts, compares them with the stored counters and writes the
-    wrong ones, so the read must sit inside the write gate with the write. A writer that commits a new mention and its counter
-    increment while the reconcile is between its GROUP BY and its compare would otherwise be undone: the compare sees the
-    incremented counter, calls it wrong, and writes back the count from before the mention. Here the writer is started at
-    exactly that point and given time to finish; it must instead wait for the gate, and every counter ends exact."""
-    import threading
-
-    from sqlalchemy import event
-
+    wrong ones. The GROUP BY runs before the write gate (holding the gate across it stalled ingest for 2.9 s on the 422
+    shape), so an ingest can commit a new mention and its counter increment between the GROUP BY and the gate. That ingest
+    is run here at exactly that point; the stored counter then disagrees with the stale GROUP BY, and writing the GROUP BY's
+    answer would put back the count from before the mention. Every counter must instead end exact."""
+    import src.analytics.store as store
     from src.database.writer import connection_first, write_lock
 
     monkeypatch.setenv("OO_WRITE_GATE", "1")
     engine = app_sqlite_engine(str(tmp_path / "c.db"), future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
-    make = sessionmaker(bind=engine, future=True)
+    make = sessionmaker(bind=engine, future=True, autoflush=False)  # as the app's SessionLocal
     s = make()
     s.add(Source(name="S", domain="x.test", country="fr"))
     s.commit()
@@ -378,29 +375,57 @@ def test_an_ingest_cannot_land_between_the_compare_and_the_write(tmp_path, which
         finally:
             w.close()
 
-    started: list[threading.Thread] = []
+    real = store._exact_counts
+    ingested: list[bool] = []
 
-    def at_the_compare(conn, cursor, statement, params, context, executemany):
-        low = statement.lower()
-        if not started and low.startswith("select") and "keywords.mention_count" in low and "group by" not in low:
-            t = threading.Thread(target=ingest)
-            started.append(t)
-            t.start()
-            t.join(0.5)  # long enough to commit if nothing holds it back
+    def group_by_then_an_ingest(session, mention_filter):
+        out = real(session, mention_filter)
+        if not ingested:
+            ingested.append(True)
+            ingest()  # lands after the GROUP BY was read and before the reconcile takes the gate
+        return out
 
-    event.listen(engine, "before_cursor_execute", at_the_compare)
-    try:
-        if which == "sweep":
-            reconcile_keyword_counters(s, now=T_NOW, budget_s=0, restart=True)
-        else:
-            reconcile_keyword_counters_for_articles(s, [aids[0]], now=T_NOW, budget_s=0)
-    finally:
-        event.remove(engine, "before_cursor_execute", at_the_compare)
-    assert started, "the interleaving point was never reached"
-    started[0].join(10)
-    assert not started[0].is_alive()
+    monkeypatch.setattr(store, "_exact_counts", group_by_then_an_ingest)
+    if which == "sweep":
+        out = reconcile_keyword_counters(s, now=T_NOW, budget_s=0, restart=True)
+    else:
+        out = reconcile_keyword_counters_for_articles(s, [aids[0]], now=T_NOW, budget_s=0)
+    assert ingested, "the interleaving point was never reached"
     s.expire_all()
     k = s.get(Keyword, kid)
     assert (k.mention_count, k.article_count) == (7, 2), "the ingest's count was undone by the reconcile"
+    assert out["drift_repaired"] == 0, "the ingest's own increment is not drift"
     s.close()
     engine.dispose()
+
+
+def test_only_a_sweep_that_finishes_counts_as_recent_and_its_age_is_when_it_began(db, monkeypatch):
+    """Plan's check: a sweep cut off by its budget or a stop is not insurance. The record is written only when a sweep
+    reaches the end, and it carries the time that sweep BEGAN (its oldest verification), so a sweep spread over several
+    passes is as old as its first slice."""
+    import src.analytics.store as store
+    from src.analytics.store import RECONCILE_SWEPT_KEY, _cursor_get, whole_sweep_is_fresh
+
+    monkeypatch.setattr(store, "_RECONCILE_SCAN_CHUNK", 1)
+    aids = _articles(db, 3)
+    kids = _keywords(db, 3)
+    for kid, aid in zip(kids, aids, strict=True):
+        _mention(db, kid, aid, 1)
+    db.commit()
+    t0 = datetime(2026, 11, 20, tzinfo=UTC)
+    out = reconcile_keyword_counters(db, now=t0, budget_s=0, should_stop=lambda: True)  # stopped after one slice
+    assert out["complete"] is False and _cursor_get(db, RECONCILE_SWEPT_KEY) == 0
+    assert not whole_sweep_is_fresh(db, now=t0)
+    clock = iter([0.0])
+    monkeypatch.setattr("time.monotonic", lambda: next(clock, 100.0))
+    out = reconcile_keyword_counters(db, now=t0 + timedelta(hours=1), budget_s=1.0)  # resumes, then the budget cuts it
+    assert out["complete"] is False and _cursor_get(db, RECONCILE_SWEPT_KEY) == 0
+    monkeypatch.undo()
+    monkeypatch.setattr(store, "_RECONCILE_SCAN_CHUNK", 1)
+    later = t0 + timedelta(hours=30)
+    out = reconcile_keyword_counters(db, now=later, budget_s=0)  # resumes and finishes
+    assert out["complete"] is True
+    assert _cursor_get(db, RECONCILE_SWEPT_KEY) == int(t0.timestamp()), "its age is the first slice's"
+    assert not whole_sweep_is_fresh(db, now=later), "begun 30 h ago: outside the 24 h window although it just finished"
+    reconcile_keyword_counters(db, now=later, budget_s=0, restart=True)
+    assert whole_sweep_is_fresh(db, now=later + timedelta(minutes=1))

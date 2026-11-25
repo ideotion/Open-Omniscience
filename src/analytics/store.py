@@ -2524,13 +2524,10 @@ def _fresh_window_hours() -> int:
         return 24
 
 
-def _exact_counters_and_wrong_rows(session: Session, mention_filter, keyword_filter) -> tuple[dict, list[dict]]:
-    """The exact counters of the keywords ``keyword_filter`` selects, and the rows among them that hold other values.
-
-    The truth is one covering-index GROUP BY over the live mentions ``mention_filter`` selects, a quarantined article counting
-    for nothing (R101); a keyword with no such mention is exactly 0. Both reconciles call this INSIDE the write gate, so the
-    compare and the write that follows it see the same counts."""
-    agg = {
+def _exact_counts(session: Session, mention_filter) -> dict[int, tuple[int, int]]:
+    """``{keyword_id: (SUM(count), COUNT(DISTINCT article_id))}`` over the live mentions ``mention_filter`` selects, a
+    quarantined article counting for nothing (R101): one covering-index GROUP BY. A keyword absent from it is exactly 0."""
+    return {
         int(kid): (int(m or 0), int(a or 0))
         for kid, m, a in (
             session.query(
@@ -2543,12 +2540,39 @@ def _exact_counters_and_wrong_rows(session: Session, mention_filter, keyword_fil
             .group_by(KeywordMention.keyword_id)
         )
     }
+
+
+#: How many keyword ids one re-check under the gate reads at a time.
+_RECHECK_CHUNK = 500
+
+
+def _wrong_rows_under_the_gate(session: Session, agg: dict[int, tuple[int, int]], keyword_filter) -> list[dict]:
+    """The rows ``keyword_filter`` selects whose stored counters differ from the truth, read with the write gate HELD.
+
+    ``agg`` is the slice's GROUP BY, taken BEFORE the gate (row 424, measured: on 186,000 + 122,000 articles the first
+    slice's GROUP BY held the gate 2.9 s, where main's longest hold was 0.9 s, and ingest waits behind every hold). So it
+    may predate an ingest that committed while the reconcile waited: a new mention and its counter increment. Every row the
+    stored counters disagree with is therefore read again here, under the gate, and only that fresh answer is written. A
+    row an ingest moved disagrees with the stale ``agg`` and is re-read, so its write can never undo the ingest; a row that
+    agrees is not written at all. ``agg`` is updated in place with the re-read values. Must be called inside ``write_lock``."""
+    current = {
+        int(kid): (int(m or 0), int(a or 0))
+        for kid, m, a in session.query(Keyword.id, Keyword.mention_count, Keyword.article_count).filter(keyword_filter)
+    }
+    suspects = sorted(kid for kid, have in current.items() if have != agg.get(kid, (0, 0)))
     fixes = []
-    for kid, cur_m, cur_a in session.query(Keyword.id, Keyword.mention_count, Keyword.article_count).filter(keyword_filter):
-        want = agg.get(int(kid), (0, 0))
-        if (int(cur_m or 0), int(cur_a or 0)) != want:
-            fixes.append({"id": int(kid), "mention_count": want[0], "article_count": want[1]})
-    return agg, fixes
+    for i in range(0, len(suspects), _RECHECK_CHUNK):
+        part = suspects[i : i + _RECHECK_CHUNK]
+        fresh = _exact_counts(session, KeywordMention.keyword_id.in_(part))
+        for kid in part:
+            want = fresh.get(kid, (0, 0))
+            if want == (0, 0):
+                agg.pop(kid, None)
+            else:
+                agg[kid] = want
+            if current[kid] != want:
+                fixes.append({"id": kid, "mention_count": want[0], "article_count": want[1]})
+    return fixes
 
 
 def reconcile_keyword_counters(
@@ -2648,16 +2672,15 @@ def reconcile_keyword_counters(
         from src.database.writer import connection_first, write_lock
 
         #
-        # THE READ IS INSIDE THE GATE TOO (row 424): a compare-then-write must not let a concurrent ingest land a count
-        # between the GROUP BY and the write, or the write would put back the count from before it. Every keyword id in
-        # (lo, hi] is in `ids` (consecutive ordered ids), so the range filter is exactly this slice.
+        # THE COMPARE IS INSIDE THE GATE (row 424): a compare-then-write must not let a concurrent ingest land a count
+        # between the GROUP BY and the write, or the write would put back the count from before it. The GROUP BY itself
+        # runs before the gate (it is the long part), and every row it disagrees with is read again under the gate before
+        # anything is written (_wrong_rows_under_the_gate). Every keyword id in (lo, hi] is in `ids` (consecutive ordered
+        # ids), so the range filter is exactly this slice.
+        agg = _exact_counts(session, (KeywordMention.keyword_id > lo) & (KeywordMention.keyword_id <= hi))
         connection_first(session)
         with write_lock():
-            agg, fixes = _exact_counters_and_wrong_rows(
-                session,
-                (KeywordMention.keyword_id > lo) & (KeywordMention.keyword_id <= hi),
-                (Keyword.id > lo) & (Keyword.id <= hi),
-            )
+            fixes = _wrong_rows_under_the_gate(session, agg, (Keyword.id > lo) & (Keyword.id <= hi))
             drift += len(fixes)
             session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
                 {Keyword.last_reconciled_at: stamp},
@@ -2827,14 +2850,13 @@ def reconcile_keyword_counters_for_articles(
             complete = False
             break
         part = kids[i : i + _SCOPED_KEYWORD_CHUNK]
-        # One gated unit, as in the sweep, the read included: the stamp fires do_orm_execute but bulk_update_mappings is
-        # invisible to both write-gate hooks (C8), and an ingest landing between the compare and the write would be undone.
-        # Only the wrong rows are rewritten. The connection first, then the gate.
+        # One gated unit, as in the sweep: the stamp fires do_orm_execute but bulk_update_mappings is invisible to both
+        # write-gate hooks (C8). The GROUP BY runs before the gate and every row it disagrees with is read again under it,
+        # so an ingest landing in between is never undone. Only the wrong rows are rewritten. The connection, then the gate.
+        agg = _exact_counts(session, KeywordMention.keyword_id.in_(part))
         connection_first(session)
         with write_lock():
-            agg, fixes = _exact_counters_and_wrong_rows(
-                session, KeywordMention.keyword_id.in_(part), Keyword.id.in_(part)
-            )
+            fixes = _wrong_rows_under_the_gate(session, agg, Keyword.id.in_(part))
             drift += len(fixes)
             session.query(Keyword).filter(Keyword.id.in_(part)).update(
                 {Keyword.last_reconciled_at: stamp}, synchronize_session=False
