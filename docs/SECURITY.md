@@ -789,8 +789,17 @@ imply a protection we cannot deliver.
   on a staged file runs with `trusted_schema` off and `cell_size_check` on (the merge's connection, which attaches it,
   keeps `trusted_schema` as its own search-index triggers need it), and a schema holding a trigger, view or virtual
   table the app does not make, judged against a fixed list and never by the user's own store, is refused before any
-  row is read, sealed or filtered. Public members (lanes, wiki dumps, maps, models) stay
-  plaintext inside the private folder. The erase treats every staging file as a file with no evidence of its identity:
+  row is read, sealed or filtered. A name is no evidence of a body, so every trigger and view the staged copy carries
+  is then dropped from the staged corpus and custody log before anything writes to them (row 432), on every path that
+  writes to one (the merge, and the restore's newsletter filter, which never runs on an artifact whose hashes failed): no
+  SQL a backup brings in a trigger or a view of those two files runs, and a backup made by an older build still imports.
+  A trigger or view whose stored name and declared name differ is refused, as is a generated column (the app makes
+  none). What the corpus's schema can still run on the merge's connection is a CHECK, a DEFAULT or an index expression,
+  which can call only the pure functions that connection
+  registers (the search index's text normalisers and the incoming sources' key lookup) and can load no extension. Public members (lanes, wiki dumps, maps, models) stay
+  plaintext inside the private folder. A lane database's triggers are not dropped, and never fire: the lane merge only
+  reads the member (every write it makes names the live lane or its temp tables, pinned by a source guard), and SQLite
+  lets a trigger stored in the member fire only on a write to the member; a member holding any view is refused. The erase treats every staging file as a file with no evidence of its identity:
   its head goes in the pass above and it is rewritten in full, after the key-material pass. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
   junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a
   data, keys or cache folder that is itself a link; a key file, `anchors.db`, a cache file or a

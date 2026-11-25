@@ -210,12 +210,12 @@ def _apply_restore_selection(staged: StagedArtifact, *, include_newsletters: boo
     a single artifact this filter can edit. The import queue therefore REFUSES
     ``include_newsletters=false`` for a volume corpus backup by name rather than
     accepting it and doing nothing (:meth:`ImportQueueManager._run_corpus`)."""
-    if include_newsletters:
-        return
+    if include_newsletters or staged.hash_failures:
+        return  # a refused artifact is never written to: the restore refuses it in a moment (row 432)
     from src.backup.artifact import _drop_newsletter_articles
 
     try:
-        _drop_newsletter_articles(staged.corpus_path)
+        _drop_newsletter_articles(staged.corpus_path, foreign=True)
     except Exception as exc:  # noqa: BLE001 - never block a restore on the optional filter
         log_failure(_LOG, "restore: newsletter filter on the staged corpus failed", exc, level=logging.WARNING)
 

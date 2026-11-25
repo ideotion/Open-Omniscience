@@ -796,15 +796,14 @@ def _staged_keyed(path: Path) -> bool:
 
 def _check_staged_schema_file(path: Path) -> None:
     """Refuse a staged corpus whose schema holds what the app does not make (``staged_key.check_staged_schema``), before
-    any row of it is read. Raises :class:`MergeError` with fixed words."""
-    from src.backup.staged_key import StagedKeyError, check_staged_schema, db_errors, open_staged
+    any row of it is read, then drop its triggers and views (``staged_key.disarm_staged``, row 432). Raises
+    :class:`MergeError` with fixed words."""
+    from src.backup.staged_key import StagedKeyError, db_errors, disarm_staged
 
     try:
-        conn = open_staged(path)
-        try:
-            check_staged_schema(conn)
-        finally:
-            conn.close()
+        # Row 432: checked, then every trigger and view of the backup's dropped from our copy before the upgrade or the
+        # merge writes it (a no-op when the reader already did it on staging; this is the merge's own entry).
+        disarm_staged(path)
     except StagedKeyError as exc:
         from src.monitoring.secret_scrub import record_text
 
@@ -7902,6 +7901,9 @@ def _merge_side_files_and_custody(staged: StagedArtifact, report: dict) -> None:
     report["side_files"] = merge_side_files(staged)
     if staged.custody_path is not None:
         report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
+    elif getattr(staged, "custody_refused", None):
+        # Row 432: refused for its schema when it was staged, in merge_custody's own words and shape.
+        report["custody"] = {"entries": 0, "imported": 0, "duplicate": 0, "chains": [], "refused": staged.custody_refused}
 
 
 def _ids_after(all_ids: list[int], after: int) -> list[int]:
