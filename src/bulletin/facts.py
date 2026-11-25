@@ -42,7 +42,6 @@ adding a drift surface for it.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from datetime import date, datetime, time
 from typing import Any
@@ -340,11 +339,15 @@ def disclosures(session, period: Period) -> dict:
         elif isinstance(backlog, dict) and backlog.get("available"):
             # R832 (row 421): the edition names an article under ONE reason, so the count it states is the backlog without the
             # articles it already names as quarantined or not screened yet (the shared notion, quarantine_scope); kept beside
-            # ``articles_pending``, which stays the backlog's own figure. Left out when it cannot be read: the backlog's speaks.
+            # ``articles_pending``, which stays the backlog's own figure and is never stated beside it. When it cannot be read
+            # the record says so (``not_analysed_unread``), and the edition says "unknown", never the backlog's own figure,
+            # which would name the quarantined and not-screened articles a second time.
             from src.analytics.quarantine_scope import not_analysed_count
 
-            with contextlib.suppress(Exception):
+            try:
                 backlog = {**backlog, "not_analysed": not_analysed_count(session)}
+            except Exception:  # noqa: BLE001 - unknown is not zero, and not the other figure either
+                backlog = {**backlog, "not_analysed_unread": True}
         out["reindex_backlog"] = backlog
     except Exception as exc:  # noqa: BLE001
         log_failure(_LOG, "bulletin: re-index backlog unreadable", exc, level=logging.WARNING)

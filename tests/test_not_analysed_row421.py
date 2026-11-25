@@ -227,6 +227,30 @@ def test_the_bulletin_states_the_disjoint_count():
     assert "- 9 imported article(s) await re-index" in "\n".join(_md_disclosures({"disclosures": d}, Translator("en")))
     facts = python_function_source((ROOT / "src/bulletin/facts.py").read_text(encoding="utf-8"), "disclosures")
     assert '"not_analysed": not_analysed_count(session)' in facts
+    # one figure for one fact: a record whose disjoint count could not be read says unknown, never the backlog's figure
+    d = {"reindex_backlog": {"available": True, "articles_pending": 9, "not_analysed_unread": True}}
+    text = "\n".join(_md_disclosures({"disclosures": d}, Translator("en")))
+    assert "9 imported" not in text and "The re-index backlog could not be read" in text
+    d = {"reindex_backlog": {"available": True, "articles_pending": 9, "not_analysed": 0}}
+    assert "imported article(s) await re-index" not in "\n".join(_md_disclosures({"disclosures": d}, Translator("en")))
+
+
+def test_the_bulletin_record_marks_an_unread_disjoint_count(monkeypatch):
+    import src.analytics.quarantine_scope as q
+    from src.bulletin import facts as F
+    from tests.test_bulletin_facts import _corpus, _period
+
+    monkeypatch.setattr("src.backup.merge.reindex_backlog", lambda: {"available": True, "articles_pending": 9})
+
+    def unread(_s):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(q, "not_analysed_count", unread)
+    b = F.disclosures(_corpus(), _period())["reindex_backlog"]
+    assert b.get("not_analysed_unread") is True and "not_analysed" not in b
+    monkeypatch.setattr(q, "not_analysed_count", lambda _s: 4)
+    b = F.disclosures(_corpus(), _period())["reindex_backlog"]
+    assert b["not_analysed"] == 4 and "not_analysed_unread" not in b
 
 
 def test_the_figures_built_from_the_analysis_say_it_and_the_others_do_not():
