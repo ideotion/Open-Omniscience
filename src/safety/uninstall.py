@@ -102,19 +102,39 @@ _ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", "analytics.
 # included, in a WAL frame or the journal far past their first 4 KiB. Only the -shm index (no page data) is head-only.
 def header_only(name):
     return name in _ENC or any(name == b + "-shm" for b in _ENC)
-def overwrite(p, head_only):   # True once every byte it was to write is written and synced (R798: nothing else is "destroyed")
+# R839 / R840 (row 438): files with another name elsewhere, each once by (device, inode). "keyed": the app's key material, a store's
+# page 1 or the columnar cache's salt, overwritten all the same; "left": any other, never written, only this name removed;
+# "refused": a segment of the split corpus (no record is checked here, so it is never positively the app's), not written; here its
+# name goes with the folder (the walk removes the folder whole; its other name reaches the file either way) and the log says a copy
+# that may hold articles and their salt was left. The link count is read by fstat on the handle about to be written, at the moment of the decision.
+linked = {"keyed": set(), "left": set(), "refused": set()}
+SEG = re.compile(r"seg-[1-9][0-9]{0,3}\.db(-wal|-shm|-journal)?")
+def keyed_path(p):   # the app's own by what it is: a file of its keys folder, or a store whose page 1 holds the salt
+    r = os.path.relpath(p, wd).replace("\\", "/") if wd else ""
+    return r.startswith("keys/") or header_only(os.path.basename(p))
+def segment_path(p):
+    r = os.path.relpath(p, wd).replace("\\", "/").split("/") if wd else []
+    return len(r) == 2 and r[0] == "corpus" and SEG.fullmatch(r[1]) is not None
+def overwrite(p, head_only, keyed=False):   # True once every byte it was to write is written and synced (R798: nothing else is "destroyed")
+    # "left" / "refused": another name holds the file and it is not the app's own by what it is (R839/R840): never written
     try:
         try: st = os.lstat(p)
         except FileNotFoundError: return True                          # gone already: nothing left to overwrite
         except OSError: unreached(p); return False                     # could not be looked at: never counted as handled
         if not stat.S_ISREG(st.st_mode): return True   # a link is never written through, nor a FIFO or a device
         fd = os.open(p, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
-        look = (st.st_dev, st.st_ino)
-        try: st = os.fstat(fd)   # the file opened, never a link swapped in after the look (O_NOFOLLOW), and only a regular one
-        except OSError: os.close(fd); raise
-        if not stat.S_ISREG(st.st_mode): os.close(fd); return True
-        if (st.st_dev, st.st_ino) != look: os.close(fd); return False   # another file swapped in after the look: never written, not counted
-        n = st.st_size
+        try: fs = os.fstat(fd)
+        except OSError: os.close(fd); return False
+        if not stat.S_ISREG(fs.st_mode): os.close(fd); return True
+        if (fs.st_dev, fs.st_ino) != (st.st_dev, st.st_ino): os.close(fd); return False   # another file swapped in after the look: never written, not counted
+        if fs.st_nlink > 1:
+            ident = (fs.st_dev, fs.st_ino)
+            if not keyed:
+                os.close(fd)
+                if segment_path(p): linked["refused"].add(ident); return "refused"
+                linked["left"].add(ident); return "left"
+            linked["keyed"].add(ident)
+        n = fs.st_size
         limit = min(n, PAGE1) if head_only else n
         with os.fdopen(fd, "r+b", buffering=0) as f:
             w = 0
@@ -410,7 +430,8 @@ if wd and os.path.isdir(wd):
             if k and linkish(top): held_stat["seen"] += 1; held_stat["missed"] += 1   # a linked store file is never followed
             elif k: keep(top, k)
             seen += 1
-            if not overwrite(top, header_only(os.path.basename(top))): not_overwritten += 1
+            done = overwrite(top, header_only(os.path.basename(top)), keyed_path(top))
+            if done is False: not_overwritten += 1
             try: os.remove(top); wiped += 1
             except OSError: pass
             continue
@@ -425,7 +446,8 @@ if wd and os.path.isdir(wd):
                 k = sqlite_kind(nm)
                 if k and os.path.islink(fp): held_stat["seen"] += 1; held_stat["missed"] += 1
                 elif k: keep(fp, k)
-                if not overwrite(fp, header_only(nm)): not_overwritten += 1
+                done = overwrite(fp, header_only(nm), keyed_path(fp))
+                if done is False: not_overwritten += 1
                 try: os.remove(fp); wiped += 1
                 except OSError: pass
         if top != wd and (s2 is None or second_ok(top, s2) is True): shutil.rmtree(top, ignore_errors=True)
@@ -492,6 +514,17 @@ if wd and os.path.isdir(wd):
     if hf_left:
         rec("a Hugging Face sign-in token may remain in %s of %s: it can be revoked in the Hugging Face account; "
             "THE ERASE MAY BE INCOMPLETE" % (", ".join(sorted(set(hf_left))), tok(wd)))
+    lk = {"keyed": len(linked["keyed"]), "refused": len(linked["refused"] - linked["keyed"]),
+          "left": len(linked["left"] - linked["keyed"] - linked["refused"])}
+    if lk["refused"]:
+        rec("copies that may hold articles and the salt of their key were left in %s, because they also had another name elsewhere "
+            "on the disk and could not be shown to be the app's own (count: %d): THE ERASE IS NOT COMPLETE" % (tok(wd), lk["refused"]))
+    if lk["left"]:
+        rec("files of %s that also had another name elsewhere on the disk were not overwritten, only removed: their contents may "
+            "remain under that other name (count: %d): THE ERASE IS NOT COMPLETE" % (tok(wd), lk["left"]))
+    if lk["keyed"]:
+        rec("files of the app's own in %s also had another name elsewhere on the disk and were overwritten all the same (count: %d)"
+            % (tok(wd), lk["keyed"]))
     def shaped_note():
         n_ = sum(v[0] for v in shaped_kept.values())
         if n_:
@@ -575,7 +608,7 @@ if wd and os.path.isdir(wd):
             "it afterwards. Restart the computer, then remove that folder." % tok(wd))
     elif kept:
         rec("the data folder %s itself could not be removed, so something may be left in it: check it and remove it by hand" % tok(wd))
-    if gone or not_overwritten or back or kept or keys_link or keys_left or pending_link or shaped_kept or hf_left or not server_gone:
+    if gone or not_overwritten or back or kept or keys_link or keys_left or pending_link or shaped_kept or hf_left or lk["left"] or lk["refused"] or not server_gone:
         rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
             % (tok(wd), wiped, seen, not_overwritten, scrubbed))
     else:
@@ -589,7 +622,7 @@ if sd and os.path.isdir(sd):
     for nm in ("analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb"):
         fp = os.path.join(sd, nm)
         if there(fp):
-            if not overwrite(fp, True): sd_failed += 1
+            if overwrite(fp, True, True) is False: sd_failed += 1   # the columnar cache's salt: overwritten all the same (R840)
             try: os.remove(fp); sd_wiped += 1
             except OSError: pass
     rec("wiped columnar store %s (%d files, header-only%s)" % (tok(sd), sd_wiped, "; %d not overwritten, THE ERASE MAY BE INCOMPLETE" % sd_failed if sd_failed else ""))

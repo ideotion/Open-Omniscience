@@ -62,7 +62,7 @@ def test_salt_page_overwrite_makes_encrypted_db_unopenable(tmp_path):
     ok.close()
 
     head_before = db.read_bytes()[:crypto_erase._SQLCIPHER_PAGE1]
-    crypto_erase._overwrite(db, head_bytes=crypto_erase._SQLCIPHER_PAGE1)  # the quick-pass move
+    crypto_erase._overwrite(db, keyed=True, head_bytes=crypto_erase._SQLCIPHER_PAGE1)  # the quick-pass move
     head_after = db.read_bytes()[:crypto_erase._SQLCIPHER_PAGE1]
     assert head_after != head_before, "the salt page must be overwritten"
 
@@ -77,7 +77,7 @@ def test_full_overwrite_covers_entire_file_not_just_4mib(tmp_path):
     capped at 4 MiB, so bytes past 4 MiB survived."""
     f = tmp_path / "big.bin"
     f.write_bytes(b"\x00" * (6 * 1024 * 1024))  # 6 MiB of zeros
-    crypto_erase._overwrite(f)  # head_bytes=None -> full length
+    crypto_erase._overwrite(f, keyed=False)  # head_bytes=None -> full length
     data = f.read_bytes()
     cap = 4 * 1024 * 1024
     # A 4 KiB window starting past the old 4 MiB cap cannot be all-zero after a random
@@ -88,11 +88,11 @@ def test_full_overwrite_covers_entire_file_not_just_4mib(tmp_path):
 def test_shred_overwrites_then_unlinks(tmp_path):
     f = tmp_path / "anchors.db"
     f.write_bytes(b"SECRET" * 1000)
-    seen, overwritten, unlinked = crypto_erase._shred(f)
+    seen, overwritten, unlinked = crypto_erase._shred(f, keyed=False)
     assert seen and overwritten and unlinked
     assert not f.exists()
     # A missing file is neither seen, overwritten, nor unlinked.
-    assert crypto_erase._shred(tmp_path / "gone.db") == (False, False, False)
+    assert crypto_erase._shred(tmp_path / "gone.db", keyed=False) == (False, False, False)
 
 
 def test_shred_does_not_report_overwrite_success_when_write_fails(tmp_path, monkeypatch):
@@ -106,7 +106,7 @@ def test_shred_does_not_report_overwrite_success_when_write_fails(tmp_path, monk
         raise OSError("ENOSPC (simulated)")
 
     scope_os(monkeypatch, crypto_erase, fsync=_boom)
-    seen, overwritten, unlinked = crypto_erase._shred(f)
+    seen, overwritten, unlinked = crypto_erase._shred(f, keyed=False)
     # The unlink still succeeds (directory-entry removal needs no new block), but the
     # overwrite must be reported as failed -- not folded into "destroyed".
     assert seen is True
@@ -321,7 +321,7 @@ def test_quick_crypto_erase_overwrites_the_columnar_key_sidecar_where_the_salt_l
     seen: dict[str, object] = {}
 
     def spy(path, *, head_bytes=None, zeros=False, **kw):
-        done = real_overwrite(path, head_bytes=head_bytes, zeros=zeros)
+        done = real_overwrite(path, head_bytes=head_bytes, zeros=zeros, **kw)
         if path.name == sidecar.name:
             seen.update(done=done, head_bytes=head_bytes, after=path.read_bytes())
         return done

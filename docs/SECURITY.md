@@ -1055,6 +1055,14 @@ imply a protection we cannot deliver.
   shared folder an operator's empty folder at a shaped name is left, and a name that is a shaped folder's only through an ending
   the app strips (`wiki_dumps.tmp`) is not the app's. In a
   shared folder the bare cache names (`triton`, `inductor`, `nv`, `vllm`, `huggingface`) are left and counted; `vllm-config` goes.
+  **A file with another name elsewhere on the disk (a hard link; row 438, R839 as amended by R840)** is judged by what it is,
+  its link count read by `fstat` on the handle about to be written: only one positively the app's own is overwritten whatever
+  its other name (the keys folder's files, a store's page 1 and logs, the columnar cache's salt, a segment or a database copy a
+  record names by identity, a plaintext store's log whose own valid header states the pinned store's page size), and the result
+  says so; any other is never written, its name here is removed, it is counted once by identity and the result says its contents
+  may remain under that other name; a possible copy of the corpus that is not positively the app's (a segment or copy no record
+  names, a plaintext log not tied by its header) is left whole and said so. The at-rest record with another name stays refused.
+  Either of the last two keeps the result from being clean (`linked_files`).
   Every other app folder is removed whole (`data_scope.WHOLE_DIRS`, which the shared-folder notice lists by name);
   `annotations`, `triage`, `bench`, `bulletin` and `diagnostics`
   always go, so an operator's own entry under one of those names there goes too; a
