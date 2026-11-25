@@ -298,8 +298,11 @@ def test_the_reserve_is_the_safety_copy_and_the_merges_growth(tmp_path, monkeypa
     live.write_bytes(b"\0" * 4096)
     monkeypatch.setattr(SQ, "live_db_path", lambda: live)
     monkeypatch.setattr(V, "load_manifest", lambda p: {"members": [
-        {"role": "corpus", "plaintext_bytes": 10_000}, {"role": "state", "plaintext_bytes": 7}]})
-    assert ImportQueueManager._merge_in_flight_reserve(tmp_path) == 4096 + 10_000
+        {"role": "corpus", "plaintext_bytes": 10_000}, {"role": "state", "plaintext_bytes": 7},
+        {"role": "file", "plaintext_bytes": 50_000}, {"role": "lane", "plaintext_bytes": 300}]})
+    # the safety copy, everything the backup brings (large files and living-source stores included), and a quarter
+    # of its corpus again for the scratch file and the journal (both security reads, 2026-11-25)
+    assert ImportQueueManager._merge_in_flight_reserve(tmp_path) == 4096 + 10_000 + 7 + 50_000 + 300 + 2_500
 
     monkeypatch.setattr(V, "load_manifest", lambda p: {"members": []})
     assert ImportQueueManager._merge_in_flight_reserve(tmp_path) >= 1 << 60, "no corpus size known: nothing ahead"
@@ -385,9 +388,14 @@ def test_a_queue_stopped_while_the_next_backup_is_being_staged_leaves_no_staging
     env.vols._polls = 10_000
     env.mgr.start(_items("1", "2"), passphrase="pw")
     assert started.wait(5)
+    t_stop = time.time()
     env.mgr.stop()
     _drain(env.mgr)
-    assert not list(env.tmp.glob("staged-*"))
+    assert time.time() - t_stop < 5, "a Stop never waits for a staging taken ahead"
+    end = time.time() + 5
+    while list(env.tmp.glob("staged-*")) and time.time() < end:
+        time.sleep(0.02)
+    assert not list(env.tmp.glob("staged-*")), "the worker removed its own folder once let go"
     from src.backup.stream_backup import _ACTIVE_STAGING
 
     assert not any("staged-" in s for s in _ACTIVE_STAGING)
@@ -438,3 +446,145 @@ def test_an_item_in_flight_that_is_refused_never_strands_the_next_staging(env, m
     on_disk = list(env.tmp.glob("staged-*"))
     assert len(handed) + len(env.cleaned) == 1
     assert on_disk == [Path(h.staging_dir) for h in handed], "only a staging an item took may remain (its restore owns it)"
+
+
+# --- the two security reads (2026-11-25) ------------------------------------------------------------------------------
+
+
+def test_a_stop_while_a_staging_step_runs_long_does_not_wait_for_it(env, monkeypatch):
+    """The export or seal of the next backup can take minutes with no stop point inside it: the run ends at once and
+    the worker removes its staging when the step returns."""
+    import threading
+
+    import src.backup.artifact as A
+
+    _real_cleanup(monkeypatch, env)
+    release = threading.Event()
+    entered = threading.Event()
+
+    def _long_step(src, pw, **kw):
+        d = env.tmp / f"staged-{Path(src).name}"
+        d.mkdir()
+        entered.set()
+        release.wait(30)  # a step that never asks should_stop
+        return SimpleNamespace(staging_dir=d, stage_a_timings={})
+
+    monkeypatch.setattr(A, "read_volume_backup", _long_step)
+    env.vols._polls = 10_000
+    env.mgr.start(_items("1", "2"), passphrase="pw")
+    assert entered.wait(5)
+    t0 = time.time()
+    env.mgr.stop()
+    st = _drain(env.mgr)
+    assert time.time() - t0 < 5 and st["state"] != "running"
+    assert list(env.tmp.glob("staged-*")), "still being made"
+    release.set()
+    end = time.time() + 5
+    while list(env.tmp.glob("staged-*")) and time.time() < end:
+        time.sleep(0.02)
+    assert not list(env.tmp.glob("staged-*")), "removed by its worker once the step returned"
+    from src.backup.stream_backup import _ACTIVE_STAGING
+
+    assert not any("staged-" in s for s in _ACTIVE_STAGING)
+
+
+def test_a_thread_that_cannot_start_costs_the_next_item_nothing(env, monkeypatch):
+    import threading
+
+    real_start = threading.Thread.start
+
+    def _start(self):
+        if self.name == "import-prestage":
+            raise RuntimeError("can't start new thread")
+        return real_start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", _start)
+    env.mgr.start(_items("1", "2", "3"), passphrase="pw")
+    st = _drain(env.mgr)
+    assert st["state"] == "done"
+    assert [c[0] for c in env.vols.calls] == ["/b/1", "/b/2", "/b/3"]
+    assert all(it.get("state") == "done" for it in env.mgr._items)
+    assert env.reads == []
+
+
+def test_a_folder_changed_since_it_was_staged_is_staged_again_at_its_turn(env, monkeypatch):
+    import src.backup.merge as M
+
+    _real_cleanup(monkeypatch, env)
+    import threading
+
+    def _digest(p):
+        # the staging records what its worker read; at the hand-over (another thread) the folder answers another
+        if Path(p).name == "2" and threading.current_thread().name != "import-prestage":
+            return "digest-2-replaced"
+        return f"digest-{Path(p).name}"
+
+    monkeypatch.setattr(M, "artifact_source_digest", _digest)
+    env.mgr.start(_items("1", "2"), passphrase="pw")
+    _drain(env.mgr)
+    assert env.reads, "it was staged ahead"
+    assert "prestaged" not in env.vols.calls[1][1], "not handed over: the folder changed"
+    assert env.mgr._items[1]["summary"]["prestage"] == {"used": False, "reason": "changed-since-staged"}
+    assert not list(env.tmp.glob("staged-*"))
+
+
+def test_a_damaged_next_backup_is_not_repaired_under_the_merge(env, monkeypatch):
+    import src.backup.artifact as A
+    from src.backup.stream_backup import NeedsRepair
+
+    seen = {}
+
+    def _damaged(src, pw, **kw):
+        seen.update(kw)
+        raise NeedsRepair("a volume of this backup is damaged or missing; it is repaired at its own turn")
+
+    monkeypatch.setattr(A, "read_volume_backup", _damaged)
+    env.mgr.start(_items("1", "2"), passphrase="pw")
+    _drain(env.mgr)
+    assert seen["repair"] is False
+    assert env.mgr._items[1]["summary"]["prestage"] == {"used": False, "reason": "needs-repair"}
+
+
+def test_short_memory_beside_the_merge_stages_nothing(env, monkeypatch):
+    import src.backup.merge as M
+
+    def _short():
+        raise M.MergeError("not enough memory")
+
+    monkeypatch.setattr(M, "check_memory_before_staging", _short)
+    env.mgr.start(_items("1", "2"), passphrase="pw")
+    _drain(env.mgr)
+    assert env.reads == []
+    assert env.mgr._items[1]["summary"]["prestage"] == {"used": False, "reason": "memory"}
+
+
+def test_the_reader_asks_the_free_space_again_before_every_volume_under_a_reserve(tmp_path, monkeypatch):
+    import src.backup.artifact as A
+    from src.backup.stream_backup import read_stream_backup
+
+    src = _tiny_set(tmp_path)
+    asked: list[int] = []
+    real = A.preflight_free_space
+
+    def _spy(target, needed, *, what):
+        asked.append(needed)
+        if len(asked) > 2:  # the merge in flight took the space after the staging began
+            raise A.BackupSpaceError(f"Not enough free space for the {what}: needs about 2 GB, only 1 GB free at /d.")
+        return real(target, needed, what=what)
+
+    monkeypatch.setattr(A, "preflight_free_space", _spy)
+    staging_root = tmp_path / "stage-root"
+    staging_root.mkdir()
+    with pytest.raises(A.BackupSpaceError):
+        read_stream_backup(src, "pw", staging_root, include_merge_budget=False, reserve_bytes=1024, reserve_what=PRESTAGE_WHAT)
+    assert len(asked) >= 3
+    assert not [p for p in staging_root.iterdir() if p.name.startswith(".restore-")], "the partial staging went with it"
+
+
+def test_a_standalone_restore_stopped_during_its_staging_reads_cancelled():
+    import inspect
+
+    from src.backup import volume_job
+
+    src = inspect.getsource(volume_job.VolumeBackupManager._run_restore)
+    assert "except VolumeStopped:" in src and 'raise RestoreAborted("the import was stopped while its backup' in src

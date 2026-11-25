@@ -710,6 +710,7 @@ class VolumeBackupManager:
             RestoreRefused,
             WriterJobsRefused,
         )
+        from src.backup.volumes import VolumeStopped
 
         # ONE run journal per queue item, opened before anything expensive. Eight
         # sequential imports at ~10 h each sharing one run_id would wrap the beat
@@ -888,14 +889,21 @@ class VolumeBackupManager:
                 refuse_while_writer_jobs_run()  # (R659)
                 if prestaged is not None:
                     # Staged under the previous item's merge by the same reader (row 422 P1): the same checks, earlier.
-                    staged, prestaged_taken[0] = prestaged, True
-                    runlog.milestone("prestaged", stage_a=getattr(staged, "stage_a_timings", None) or {})
+                    staged = prestaged
                 else:
-                    staged = read_volume_backup(
-                        srcp, passphrase, corpus_passphrase=corpus_passphrase,
-                        should_stop=self._stop.is_set,
-                    )  # verify + parity-recover + reassemble
+                    try:
+                        staged = read_volume_backup(
+                            srcp, passphrase, corpus_passphrase=corpus_passphrase,
+                            should_stop=self._stop.is_set,
+                        )  # verify + parity-recover + reassemble
+                    except VolumeStopped:
+                        # The Stop reached the staging between two volumes (the reader removed it): a cancellation.
+                        raise RestoreAborted("the import was stopped while its backup was being staged") from None
                 try:
+                    if staged is prestaged:
+                        # From here the cleanup below owns it (no call between the hand-over and its try).
+                        prestaged_taken[0] = True
+                        runlog.milestone("prestaged", stage_a=getattr(staged, "stage_a_timings", None) or {})
                     self._on_prog({
                         "phase": "merging", "own_the_machine": True,
                         "phase_total": _phase_total,

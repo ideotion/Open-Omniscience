@@ -946,6 +946,7 @@ def read_volume_backup(
     should_stop: Callable[[], bool] | None = None,
     reserve_bytes: int = 0,
     reserve_what: str = "",
+    repair: bool = True,
 ) -> StagedArtifact:
     """Verify + (parity-)recover + reassemble a volume-set backup from the server-side
     directory ``src_dir``, then stage it like any oo-backup-2 artifact. Streams the
@@ -971,6 +972,7 @@ def read_volume_backup(
             should_stop=should_stop,
             reserve_bytes=reserve_bytes,
             reserve_what=reserve_what,
+            repair=repair,
         )
     if reserve_bytes:
         # Row 422 P1 stages only oo-volumes-2 sets under another item's merge: this legacy path has no preflight to
