@@ -2457,3 +2457,108 @@
 
 /* Diagnostics: a running AI sweep or bench is visible while its group is folded (#ai-sweeps). */
 #ai-sweeps:has([data-running="1"]) > summary::after { content: " \25CF"; color: var(--accent); }
+
+    /* ── Import run view (row 440) ─────────────────────────────────────────────
+       The run at a glance: a ring over the import steps the server counts, the
+       current backup and its phase, and the tally of items. Colours are theme tokens
+       only (--accent/--ok/--warn/--err/--muted through color-mix), so all 17 themes
+       carry it; motion is a transition the global reduced-motion rule switches off. */
+    #ux-import.imp-running .imp-intro, #ux-import.imp-running .imp-src { display:none; }
+    /* Only while a run runs: the run bar is the hero's ring then, and a Verify started after the run keeps its bar. */
+    #ux-import.imp-running #ux-imp-bar { display:none !important; }
+    /* The header's count and time are in the hero; its caveat lines below it stay. */
+    #ux-import.imp-has-hero #ux-imp-queue-note > [data-row-key="head"] { display:none; }
+    .imp-viewbar { display:flex; justify-content:flex-end; margin:0 0 8px; }
+    .imp-seg { display:inline-flex; border:1px solid var(--border); border-radius:999px; padding:2px;
+      background:var(--panel2); }
+    .imp-seg button { border:0; background:transparent; color:var(--muted); font:inherit; font-size:12px;
+      padding:3px 12px; border-radius:999px; cursor:pointer; box-shadow:none; min-height:0; }
+    .imp-seg button[aria-pressed="true"] { background:var(--panel); color:var(--fg); font-weight:600;
+      box-shadow:0 1px 2px color-mix(in srgb, var(--fg) 18%, transparent); }
+    .imp-seg button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+    .imp-hero { display:flex; gap:16px; align-items:center; padding:14px 16px; margin-bottom:10px;
+      border:1px solid color-mix(in srgb, var(--accent) 28%, var(--border)); border-radius:14px;
+      background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, var(--panel)), var(--panel) 70%); }
+    .imp-hero[hidden] { display:none; }
+    .imp-hero > [data-row-key] { display:contents; }
+    .imp-hero-ring { position:relative; flex:0 0 auto; width:84px; height:84px; }
+    .imp-ring { width:84px; height:84px; transform:rotate(0deg); }
+    .imp-ring-bg { stroke:color-mix(in srgb, var(--fg) 12%, transparent); }
+    .imp-ring-fg { stroke:var(--accent); transition:stroke-dasharray .8s ease; }
+    .imp-tone-ok .imp-ring-fg { stroke:var(--ok); }
+    .imp-tone-warn .imp-ring-fg { stroke:var(--warn); }
+    .imp-tone-err .imp-ring-fg { stroke:var(--err); }
+    .imp-ring-pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      font-size:19px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--fg); }
+    .imp-hero-body { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:4px; }
+    .imp-hero-top { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 12px; }
+    .imp-hero-title { font-size:16px; }
+    .imp-hero-time { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .imp-hero-steps { font-size:12px; }
+    .imp-hero-now { font-weight:600; overflow-wrap:anywhere; word-break:break-all; }
+    .imp-hero-phase { font-size:12.5px; color:var(--muted); }
+    .imp-hero-why { font-size:11.5px; color:var(--muted); }
+    .imp-pbar { position:relative; height:6px; border-radius:999px; overflow:hidden;
+      background:color-mix(in srgb, var(--fg) 10%, transparent); }
+    .imp-pbar > span { position:absolute; inset-block:0; inset-inline-start:0; border-radius:999px;
+      background:var(--accent); transition:width .8s ease; }
+    /* No counter: a slow sweep, never a fill that could be read as a share. */
+    .imp-pbar-ind > span { width:30%; opacity:.55; animation:imp-sweep 2.4s ease-in-out infinite; }
+    @keyframes imp-sweep { 0% { inset-inline-start:-30%; } 100% { inset-inline-start:100%; } }
+    /* Reduced motion stops the sweep; a still 30% block would read as a share. Hatch the
+       whole track instead, so it says "running, not counted". */
+    @media (prefers-reduced-motion: reduce) {
+      .imp-pbar-ind > span { width:100%; opacity:.35;
+        background:repeating-linear-gradient(135deg, var(--accent) 0 4px, transparent 4px 9px); }
+    }
+    .imp-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
+    .imp-chip { font-size:11.5px; padding:1px 9px; border-radius:999px; border:1px solid var(--border);
+      background:var(--panel2); color:var(--fg); white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .imp-chip-ok { border-color:color-mix(in srgb, var(--ok) 45%, var(--border)); }
+    .imp-chip-run { border-color:color-mix(in srgb, var(--accent) 50%, var(--border)); }
+    .imp-chip-warn { border-color:color-mix(in srgb, var(--warn) 55%, var(--border)); }
+    .imp-chip-err { border-color:color-mix(in srgb, var(--err) 60%, var(--border)); color:var(--err); font-weight:600; }
+    /* The four stage rows as a timeline: a rail joins their dots. */
+    #ux-imp-stages { position:relative; padding:8px 10px; border:1px solid var(--border); border-radius:12px;
+      background:var(--panel2); gap:8px !important; }
+    #ux-imp-stages > div { position:relative; padding-inline-start:18px; }
+    #ux-imp-stages > div:not(:last-child)::after { content:""; position:absolute; inset-inline-start:4px;
+      top:calc(.45em + 9px); height:calc(100% - 1px); width:1px; background:var(--border); }
+    #ux-imp-stages > div > span:first-child { position:absolute; z-index:1; inset-inline-start:0; top:.45em;
+      width:9px !important; height:9px !important; box-shadow:0 0 0 3px var(--panel2); }
+    #ux-imp-statements > div { padding:2px 0; }
+    .imp-section-h { margin:12px 0 2px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+    .imp-facts { margin:4px 0 0; font-size:12.5px; }
+    .imp-facts > div { display:grid; grid-template-columns:auto 1fr; gap:3px 14px; }
+    .imp-facts dt { color:var(--muted); }
+    .imp-facts dd { margin:0; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+    .imp-facts:empty { display:none; }
+    /* SIMPLE folds repetition and method only: rows going fine, the run's figures.
+       A row with a warning stays (.imp-row-alert). */
+    #ux-imp-queue[data-view="simple"] .imp-detail { display:none; }
+    #ux-imp-queue[data-view="simple"] #ux-imp-queue-rows > div:not(:has(.imp-row-alert)) { display:none; }
+    @media (max-width:600px) {
+      .imp-hero { flex-direction:column; align-items:stretch; gap:10px; padding:12px; }
+      .imp-hero-ring { align-self:center; }
+    }
+    /* The top-bar import pill: a FIXED width (invariant #3), so 0% to 100% or a
+       finished mark never moves its neighbours; it is the first item of the status
+       cluster, so its coming and going moves nothing to its right. */
+    .imp-pill { display:inline-flex; align-items:center; gap:5px; width:76px; flex:0 0 76px; box-sizing:border-box;
+      padding:1px 8px 1px 4px; border:1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+      border-radius:999px; background:var(--panel2); color:var(--fg); font:inherit; font-size:12px;
+      font-variant-numeric:tabular-nums; cursor:pointer; min-height:0; box-shadow:none; white-space:nowrap; overflow:hidden; }
+    .imp-pill[hidden] { display:none; }
+    .imp-pill:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+    .imp-pill-icon { position:relative; width:20px; height:20px; flex:0 0 20px; }
+    .imp-pill-svg { position:absolute; inset:0; width:20px; height:20px; }
+    .imp-pill-svg .imp-ring-fg { stroke:var(--accent); }
+    .imp-pill-arrow { position:absolute; inset:4px; width:12px; height:12px; color:var(--accent); }
+    .imp-pill-pct { flex:1 1 auto; text-align:end; font-weight:600; }
+    .imp-pill-ok { border-color:color-mix(in srgb, var(--ok) 50%, var(--border)); }
+    .imp-pill-ok .imp-ring-fg, .imp-pill-ok .imp-pill-arrow { stroke:var(--ok); color:var(--ok); }
+    .imp-pill-warn { border-color:color-mix(in srgb, var(--warn) 55%, var(--border)); }
+    .imp-pill-warn .imp-ring-fg, .imp-pill-warn .imp-pill-arrow { stroke:var(--warn); color:var(--warn-fg); }
+    .imp-pill-err, .imp-pill-unread { border-color:color-mix(in srgb, var(--err) 55%, var(--border)); border-style:dashed; }
+    .imp-pill-err .imp-ring-fg, .imp-pill-err .imp-pill-arrow,
+    .imp-pill-unread .imp-pill-arrow { stroke:var(--err); color:var(--err); }

@@ -142,6 +142,13 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         </div>
         <div class="status-cluster" id="statusCluster">
+          <!-- Row 440: the import's status and percentage while a run runs. FIRST in the
+               cluster with a fixed width, so its appearing, leaving or changing number
+               moves nothing to its right (#3). The percentage counts import steps; the
+               hover says what it counts. Painted by app-backup.js from the import
+               dialog's own reads; it has no poll of its own. -->
+          <button type="button" id="imp-pill" class="imp-pill" hidden data-on-click="ooOpenImportFromPill()"
+                  aria-label="Import in progress" title="Import in progress"><span class="imp-pill-icon" aria-hidden="true"><svg class="imp-pill-svg" viewBox="0 0 36 36"><circle class="imp-ring-bg" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3.2"/><circle id="imp-pill-arc" class="imp-ring-fg" cx="18" cy="18" r="15.9155" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="0 100" stroke-dashoffset="25" style="display:none"/></svg><svg class="imp-pill-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v9M8 11.5l4 4 4-4"/></svg></span><span id="imp-pill-pct" class="imp-pill-pct"></span></button>
           <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click to open the task manager" tabindex="0" style="cursor:pointer" data-on-click="openTaskManager()" data-on-key="Enter Space" data-on-keydown="ooPrevent(event);openTaskManager()"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span><span id="activity-host" class="act-host"></span></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
           <span id="llm" class="pill" title="AI status" data-i18n-dyn>AI</span>
@@ -3948,10 +3955,10 @@
        dialog element inside a display:none ancestor does not render even via
        showModal(). Keeping them here is what lets Safety open the backup flow
        without navigating away (2026-07-31 Settings review). -->
-    <dialog id="ux-import" style="max-width:560px;width:92%;padding:18px">
+    <dialog id="ux-import" class="imp-dialog" style="max-width:640px;width:92%;padding:18px">
       <h3 style="margin:0 0 4px">Import</h3>
-      <p class="muted" style="margin-top:0">Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps), or newsletters. Restore is always additive: nothing you already have is overwritten.</p>
-      <div><label for="ux-imp-src">Folder to import from</label>
+      <p class="muted imp-intro" style="margin-top:0">Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps), or newsletters. Restore is always additive: nothing you already have is overwritten.</p>
+      <div class="imp-src"><label for="ux-imp-src">Folder to import from</label>
         <div class="row" style="gap:6px"><input id="ux-imp-src" type="text" dir="ltr" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2 1 12em;min-width:12em">
           <button class="secondary" type="button" data-on-click="ooFolderPicker('ux-imp-src', false)">Browse…</button>
           <button class="secondary" type="button" data-on-click="_uxImScan(this)">Scan</button>
@@ -3979,7 +3986,18 @@
       <!-- The RUN: one row per item, each with its own identity, state and elapsed time.
            A multi-backup folder is one import, so the collection-paused note and the Stop
            belong to the run as a whole, not to any single item. -->
-      <div id="ux-imp-queue" style="display:none;margin-top:8px">
+      <div id="ux-imp-queue" style="display:none;margin-top:8px" data-view="simple">
+        <!-- Row 440: the run at a glance (a ring over the import steps counted by the
+             server, the current backup and its phase, the tally of items), and the
+             Simple / Detailed switch. Simple folds only repetition and method; every
+             caveat, failure and "could not be read" stays in both views. -->
+        <div class="imp-viewbar">
+          <div class="imp-seg" role="group" aria-label="How much of the import to show">
+            <button type="button" id="ux-imp-view-simple" aria-pressed="true" data-on-click="_uxImSetView('simple')"
+                    title="The run at a glance, with every warning">Simple</button>
+            <button type="button" id="ux-imp-view-detailed" aria-pressed="false" data-on-click="_uxImSetView('detailed')"
+                    title="Adds every backup's own row and the run's figures">Detailed</button></div></div>
+        <div id="ux-imp-hero" class="imp-hero" role="group" aria-label="Import progress" hidden></div>
         <div id="ux-imp-queue-note" class="hint"></div>
         <!-- Q202 = a: the FOUR stages of an import, as four rows with their own
              progress. A stage whose work publishes no counter renders indeterminate
@@ -3989,7 +4007,10 @@
              keyed on ITEM STATE, never on a live phase, so nothing here rests on where
              a straddling phase is filed. -->
         <div id="ux-imp-statements" class="hint" style="margin-top:6px"></div>
+        <div class="imp-section-h imp-detail">Backups in this import</div>
         <div id="ux-imp-queue-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>
+        <div class="imp-section-h imp-detail">This import in figures</div>
+        <dl id="ux-imp-facts" class="imp-facts imp-detail"></dl>
       </div>
       <div id="ux-imp-summary" style="margin-top:8px"></div>
       <!-- Q216 = a (K = 3): what the checkpoint costs, stated where the operator

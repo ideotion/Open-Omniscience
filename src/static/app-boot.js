@@ -455,6 +455,9 @@
     // it at boot or the operator could have an open window with no visible sign of
     // it and no way to close it -- the exact failure mode the bar exists to prevent.
     initEgressWindow();
+    // Row 440: an import already running (a reload, another tab) shows in the top bar.
+    // One read; the import dialog's own chain carries it from there, only while it runs.
+    if (typeof ooImportPillBoot === "function") ooImportPillBoot();
     // Keep the background-activity chip live app-wide (e.g. a scheduled scrape that
     // the user didn't trigger from the current tab). Adaptive: fast while a scrape
     // is active, backing off when idle; paused while the tab is hidden (audit PR G).
