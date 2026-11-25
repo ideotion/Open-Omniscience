@@ -180,7 +180,7 @@ def _record_for_write() -> dict:
         return {}
     try:
         got = json.loads(raw)
-    except ValueError as exc:
+    except ValueError:
         raise OSError("the safety-copy record could not be read; it is left as it is") from None
     if not isinstance(got, dict):
         raise OSError("the safety-copy record could not be read; it is left as it is")
