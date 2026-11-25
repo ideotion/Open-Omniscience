@@ -86,7 +86,7 @@ def test_each_segment_has_its_own_salt_opens_with_the_key_and_is_named_in_the_re
     assert (os.stat(data / "corpus").st_mode & 0o777) == 0o700
     h1, h2 = p1.read_bytes()[:16], p2.read_bytes()[:16]
     assert h1 != h2 and b"SQLite format 3" not in h1
-    stores = json.loads((data / at_rest_state.RECORD_NAME).read_text())["stores"]
+    stores = json.loads((data / at_rest_state.RECORD_NAME).read_text(encoding="utf-8"))["stores"]
     assert {"corpus:seg-1", "corpus:seg-2"} <= set(stores)
     before = _sha(p1)
     con = segment_open.open_segment(_seg(_res(1)), key=_PW)
