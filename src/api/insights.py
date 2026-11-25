@@ -85,6 +85,9 @@ class InsightsStatus(_CacheEnvelopeFields):
     total_articles: int
     keywords: int
     entities: int
+    # R831(2): what the status total holds, absent when it could not be read.
+    quarantined: int | None = None
+    not_screened: int | None = None
     # The three figures that need a full pass over the mention index are ``None`` while that pass has not finished (or failed),
     # with ``index_counts_state`` saying which; never a zero standing for "not known".
     indexed_articles: int | None = None

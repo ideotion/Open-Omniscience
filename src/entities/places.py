@@ -454,6 +454,7 @@ def mention_count(session, place) -> int:
     """How many corpus articles mention this place, by the mention rows that resolve into it."""
     from sqlalchemy import func, select
 
+    from src.analytics.quarantine_scope import not_counted
     from src.database.models import ArticleMentionedPlace
     from src.database.stand_in import not_a_stand_in_article_id
 
@@ -465,6 +466,7 @@ def mention_count(session, place) -> int:
             ArticleMentionedPlace.kind != "country",
             # the mentions kept for a lost article: a stand-in is no article that names the place
             not_a_stand_in_article_id(ArticleMentionedPlace.article_id),
+            not_counted(ArticleMentionedPlace.article_id),  # R831: a count; the list (mention_article_ids) keeps them
         )
     ).scalar()
     return int(n or 0)

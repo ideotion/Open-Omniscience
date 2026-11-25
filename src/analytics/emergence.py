@@ -58,6 +58,7 @@ def find_manufactured_emergence(
     articles cite no datable anchor (no ArticleMentionedDate within ``anchor_lookback_days``
     of the onset). Read-only; counts only; no score.
     """
+    from src.analytics.quarantine_scope import not_counted
     from src.database.derived_views import KeywordMentionRead
     from src.database.models import Article, ArticleMentionedDate, Keyword
     from src.database.outlet import OutletMap
@@ -89,7 +90,7 @@ def find_manufactured_emergence(
             hi=hi,
             keep=keep,
             # the mentions kept for a lost article: a stand-in is no article, so it is neither a "recent article" of a keyword nor a source
-            where=(not_a_stand_in_article_id(KeywordMentionRead.article_id),),
+            where=(not_a_stand_in_article_id(KeywordMentionRead.article_id), not_counted(KeywordMentionRead.article_id)),  # R831
         )
         return kept
 
@@ -130,6 +131,7 @@ def find_manufactured_emergence(
                 KeywordMentionRead.observed_on >= r_start,
                 KeywordMentionRead.observed_on < today + timedelta(days=1),
                 not_a_stand_in_article_id(KeywordMentionRead.article_id),
+                not_counted(KeywordMentionRead.article_id),  # R831
             )
             .distinct()
             .all()

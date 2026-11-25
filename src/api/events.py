@@ -222,9 +222,14 @@ def deduced_events(
     from src.timemap import datestore
 
     with session_scope() as db:
-        return datestore.upcoming_deduced(
+        out = datestore.upcoming_deduced(
             db, days_ahead=days_ahead, min_articles=min_articles, limit=limit
         )
+    # R831: these counts are read in src/timemap/datestore.py, which the import hold keeps unchanged, so they cannot take
+    # the aggregate slice yet: each event says so (correction proposed for after the hold, docs/ledger row 415).
+    for ev in out.get("events") or []:
+        ev["may_include_unscreened"] = True
+    return out
 
 
 @router.get("/deduced/ids")
