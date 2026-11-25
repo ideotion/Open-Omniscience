@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "bf6937e1f0e452deda092523ba4cf432999f602e931ea638f35a4fe0174424d2",
+  "digest": "2b488a97129476a52888ac69bab4ef62c35c7f91850b9403c6796b2d410d493b",
   "log": [
     {
       "version": 1,
@@ -136,15 +136,15 @@
     },
     {
       "version": 3,
-      "digest": "78f40d9e08d516d5e2584f8822ccf6413892290224cda31925ff41dded18361e",
+      "digest": "b2b4fb39f46d80984df44b3784d6e7ac2f5a0cbf34c933bb7b2c75d164372260",
       "kind": "same",
-      "note": "Row 424 changes only the keyword-counter reconcile (it rewrites only drifted counters and gains a pass scoped to the imported articles' keywords); no code that writes an article's mentions or tags changed, so the rows an article gets are identical."
+      "note": "Row 425 changes only which flag the re-index drain's finally reads to decide whether to wait for or kill a window computed ahead (a stop-path change); no task, derivation or apply is touched, so index_article writes the same rows"
     },
     {
       "version": 3,
-      "digest": "bf6937e1f0e452deda092523ba4cf432999f602e931ea638f35a4fe0174424d2",
+      "digest": "2b488a97129476a52888ac69bab4ef62c35c7f91850b9403c6796b2d410d493b",
       "kind": "same",
-      "note": "Row 424 changes only the keyword-counter reconcile (only drifted counters are rewritten, read and write share one write-gate hold, and a pass scoped to the imported articles' keywords is added); no code that writes an article's mentions or tags changed, so the rows an article gets are identical."
+      "note": "Row 424 changes only the keyword-counter reconcile (only drifted counters are rewritten, after a re-read under the write gate, and a pass scoped to the imported articles' keywords is added); no code that writes an article's mentions or tags changed, so the rows an article gets are identical."
     }
   ]
 }
