@@ -14,6 +14,7 @@ from src.database import at_rest_state
 from src.database import connect as connect_module
 from src.database.connect import connect, have_driver
 from src.safety import crypto_erase
+from tests.os_scope import scope_os
 
 _PW = "row-400-r828-test-passphrase"
 
@@ -125,7 +126,7 @@ def test_a_record_that_cannot_be_overwritten_is_left_never_destroyed(tmp_path, m
             raise PermissionError("read-only")
         return real_open(path, flags, *a, **k)
 
-    monkeypatch.setattr(os, "open", refuse)
+    scope_os(monkeypatch, crypto_erase, open=refuse)
     assert crypto_erase._take_record(folder)[1] == "left"
     assert not rec.exists(), "still unlinked when its name holds the same file (Opus read, row 400), and said as left"
 
@@ -142,7 +143,7 @@ def test_a_record_that_cannot_be_unlinked_is_left_never_destroyed(tmp_path, monk
             raise PermissionError("busy")
         return real_unlink(path, *a, **k)
 
-    monkeypatch.setattr(os, "unlink", refuse)
+    scope_os(monkeypatch, crypto_erase, unlink=refuse)
     raw, outcome = crypto_erase._take_record(folder)
     assert outcome == "left" and raw == b'{"stores": {}}'
     assert rec.read_bytes() != b'{"stores": {}}', "overwritten all the same"
@@ -602,7 +603,7 @@ def test_the_write_copies_are_overwritten_without_pwrite(tmp_path, monkeypatch):
     folder.mkdir()
     tmp = folder / (at_rest_state.RECORD_NAME + ".tmp.1.2")
     tmp.write_bytes(b'{"binding_key": "' + os.urandom(32).hex().encode() + b'"}')
-    monkeypatch.delattr(os, "pwrite", raising=False)
+    scope_os(monkeypatch, crypto_erase)._hidden.add("pwrite")
     assert crypto_erase._take_record(folder) == (None, "destroyed")
     assert not tmp.exists()
 
@@ -620,7 +621,7 @@ def test_a_write_copy_that_cannot_be_overwritten_makes_the_record_left(tmp_path,
             raise PermissionError("read-only")
         return real_open(path, flags, *a, **k)
 
-    monkeypatch.setattr(os, "open", refuse)
+    scope_os(monkeypatch, crypto_erase, open=refuse)
     assert crypto_erase._take_record(folder)[1] == "left", "key material possibly remaining: never destroyed"
     assert crypto_erase._drop_record_temps(folder) == "left"
 
@@ -716,14 +717,14 @@ def test_a_folder_that_cannot_be_listed_says_its_write_copies_are_left(tmp_path,
             raise PermissionError("no read")
         return real_listdir(path)
 
-    monkeypatch.setattr(os, "listdir", refuse)
+    scope_os(monkeypatch, crypto_erase, listdir=refuse)
     assert crypto_erase._drop_record_temps(folder) == "left"
 
 
 def test_a_vanished_write_copy_is_absent_never_destroyed(tmp_path, monkeypatch):
     folder = tmp_path / "f"
     folder.mkdir()
-    monkeypatch.setattr(os, "listdir", lambda d: [at_rest_state.RECORD_NAME + ".tmp.9.9"])
+    scope_os(monkeypatch, crypto_erase, listdir=lambda d: [at_rest_state.RECORD_NAME + ".tmp.9.9"])
     assert crypto_erase._drop_record_temps(folder) == "absent"
     assert crypto_erase._take_record(folder) == (None, "absent")
 
@@ -764,5 +765,5 @@ def test_a_write_copy_whose_name_could_not_be_removed_is_left(tmp_path, monkeypa
             raise PermissionError("busy")
         return real_unlink(path, *a, **k)
 
-    monkeypatch.setattr(os, "unlink", refuse)
+    scope_os(monkeypatch, crypto_erase, unlink=refuse)
     assert crypto_erase._drop_record_temps(folder) == "left", "overwritten, but its name remains: never destroyed"
