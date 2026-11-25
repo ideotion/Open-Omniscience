@@ -294,7 +294,7 @@ def attach_staged(conn: Any, path: os.PathLike[str] | str, alias: str) -> bool:
     # keeps the setting a plaintext ATTACH gives it. The attached copy holds no trigger or view of the backup's: they
     # were dropped from it when it was staged (``disarm_staged``, row 432), whatever their names; what its schema can
     # still run on this connection is a CHECK, a DEFAULT, a generated column or an index expression, and the functions
-    # registered here are pure: the search index's four (``fts_norm.register``) and ``oo_inc_feed_key``; no extension
+    # registered here are pure: the search index's four (``fts_norm.register``) and the incoming sources' key lookup of the merge; no extension
     # loads (``tests/test_staged_disarm_row432.py`` lists them).
     conn.execute("PRAGMA cell_size_check = ON")
     try:
@@ -387,15 +387,13 @@ def _short_of_space(source: Path, written: int, need: int | None = None) -> bool
 def _held_now(source: Path) -> bool:
     """True when another connection holds a lock on ``source`` that a read or a write here would wait for: asked of SQLite
     with a zero timeout, read from the error's result code (``held_by_another``), never from its words."""
-    from urllib.parse import quote
-
     from src.database.connect import sqlite_opening
 
     if source.is_symlink() or not source.is_file():
         return False  # nothing to ask about, and a probe must never create a file
     try:
         with sqlite_opening():  # R789
-            probe = sqlite3.connect(f"file:{quote(str(source))}?mode=rw", uri=True, timeout=0, isolation_level=None)
+            probe = sqlite3.connect(_read_write_uri(source), uri=True, timeout=0, isolation_level=None)
     except sqlite3.Error:
         return False
     try:
@@ -407,6 +405,17 @@ def _held_now(source: Path) -> bool:
         return _is_held(getattr(exc, "sqlite_errorcode", None))
     finally:
         probe.close()
+
+
+def _read_write_uri(source: Path) -> str:
+    """The shared encoded ``file:`` URI of ``source`` (``read_only_uri``), opened read-write: ``mode=rw`` never creates a
+    file, as ``mode=ro`` never does."""
+    from src.database.read_only_uri import read_only_uri
+
+    uri = read_only_uri(source)
+    if not uri.endswith("?mode=ro"):
+        raise ValueError("the shared URI builder's query changed")
+    return uri[: -len("ro")] + "rw"
 
 
 def _is_held(code: object) -> bool:
