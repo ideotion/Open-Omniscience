@@ -372,29 +372,87 @@ def test_only_the_alternates_that_can_hold_a_code_are_copied(tmp_path, template)
         con.close()
 
 
-def test_a_quote_in_a_staged_index_or_column_name_is_quoted_not_a_broken_restore(tmp_path, template):
-    """The law copy's DDL is built from the STAGED file's own catalogue (a backup's text): an index over a column named with a
-    ``"`` makes the copy and converts as before, it neither breaks the restore nor reaches the SQL as anything but a name."""
-    from src.backup.country_codes import plan_staged_country_codes
+#: Names a backup's own catalogue can carry. None of them may reach SQL text: as a plain extra column each one is ignored and the
+#: restore converts as before; inside a unique key over a country column each one is refused with the restore's fixed words.
+_HOSTILE = ['a"b', "a`b", "[a]", "x; DROP TABLE articles; --", "line\nbreak", "n" * 2000, "JURISDICTION_2", "Jurisdiction_2",
+            "pa\u00efs\u2603", "url", "Url"]
 
+
+@pytest.mark.parametrize("name", _HOSTILE)
+def test_a_hostile_name_beside_the_keys_is_ignored_and_the_restore_converts(tmp_path, template, name):
     src, tgt = tmp_path / "src.db", tmp_path / "tgt.db"
     shutil.copy(template, src)
     shutil.copy(template, tgt)
     con = sqlite3.connect(src)
-    con.execute('ALTER TABLE law_documents ADD COLUMN "a""b" TEXT')
-    con.execute('CREATE UNIQUE INDEX "ix""q" ON law_documents (jurisdiction, "a""b")')
-    con.execute("""INSERT INTO law_documents (jurisdiction, title, url, watched, "a""b") VALUES ('gb', 'Loi', 'https://l.example/1', 1, 'v')""")
+    q = '"' + name.replace('"', '""') + '"'
+    if name.lower() != "url":
+        con.execute(f"ALTER TABLE law_documents ADD COLUMN {q} TEXT")
+    con.execute(f"CREATE INDEX {'"ix ' + name.replace(chr(34), chr(34) * 2) + chr(34)} ON law_documents (jurisdiction, {q})")
+    con.execute("INSERT INTO law_documents (jurisdiction, title, url, watched) VALUES ('gb', 'Loi', 'https://l.example/1', 1)")
     con.commit()
     con.close()
     con = sqlite3.connect(tgt)
     cf.write_form(con, "alpha3", by="test")
     con.commit()
+    con.close()
+    before = _digest(src)
+    counts, _ = merge_corpus(src, tgt, _META)
+    assert _digest(src) == before
+    assert counts["_country_codes"]["converted"] == {"law_documents.jurisdiction": 1}
+    con = sqlite3.connect(tgt)
+    try:
+        assert con.execute("SELECT jurisdiction FROM law_documents").fetchall() == [("GBR",)]
+    finally:
+        con.close()
+
+
+@pytest.mark.parametrize("name", [n for n in _HOSTILE if n.lower() != "url"] + ["PARTIAL", "EXPR"])
+def test_a_unique_key_the_app_does_not_make_is_refused_in_fixed_words(tmp_path, template, name):
+    """A unique key over a country column that this version does not declare (any extra column, a partial index, an index over an
+    expression) is refused before a row moves, in the restore's fixed sentence, never with the file's own names, never uncaught."""
+    from src.backup.country_codes import STAGED_KEYS_DIFFER
+    from src.backup.merge import MergeError
+
+    src, tgt = tmp_path / "src.db", tmp_path / "tgt.db"
+    shutil.copy(template, src)
+    shutil.copy(template, tgt)
+    con = sqlite3.connect(src)
+    if name == "PARTIAL":
+        con.execute("CREATE UNIQUE INDEX ix_p ON law_documents (country, url) WHERE country IS NOT NULL")
+    elif name == "EXPR":
+        con.execute("CREATE UNIQUE INDEX ix_e ON law_documents (lower(jurisdiction), url)")
+    else:
+        q = '"' + name.replace('"', '""') + '"'
+        con.execute(f"ALTER TABLE law_documents ADD COLUMN {q} TEXT")
+        con.execute(f"CREATE UNIQUE INDEX ix_h ON law_documents (jurisdiction, {q})")
+    con.execute("INSERT INTO law_documents (jurisdiction, title, url, watched) VALUES ('gb', 'Loi', 'https://l.example/1', 1)")
+    con.commit()
+    con.close()
+    before = _digest(src), _digest(tgt)
+    with pytest.raises(MergeError) as err:
+        merge_corpus(src, tgt, _META)
+    assert str(err.value) == STAGED_KEYS_DIFFER
+    assert (_digest(src), _digest(tgt)) == before, "a refused restore wrote something"
+
+
+def test_the_copy_is_built_from_the_apps_own_names_never_the_files(tmp_path, template):
+    """No DDL text the plan runs carries a name read from the staged file: traced, every CREATE names only fixed identifiers."""
+    from src.backup.country_codes import plan_staged_country_codes
+
+    src = tmp_path / "src.db"
+    shutil.copy(template, src)
+    _fill(src, random.Random("names"), "alpha2", n=12, tag="B")
+    con = sqlite3.connect(src)
+    con.execute('ALTER TABLE law_documents ADD COLUMN "zz""; DROP" TEXT')
+    con.commit()
+    con.close()
+    con = sqlite3.connect(":memory:")
     try:
         con.execute("ATTACH DATABASE ? AS inc", (str(src),))
-        report = plan_staged_country_codes(con, schema="inc")
-        assert report["converted"] == {"law_documents.jurisdiction": 1}
-        cols = [r[1] for r in con.execute('PRAGMA temp.table_info("oo_country_law_documents")')]
-        assert 'a"b' in cols
-        assert con.execute("SELECT jurisdiction FROM temp.oo_country_law_documents").fetchall() == [("GBR",)]
+        seen: list[str] = []
+        con.set_trace_callback(seen.append)
+        plan_staged_country_codes(con, schema="inc")
+        ddl = [s for s in seen if s.lstrip().upper().startswith(("CREATE", "INSERT INTO TEMP"))]
+        assert ddl and not any("zz" in s or "DROP" in s for s in ddl), ddl
     finally:
         con.close()

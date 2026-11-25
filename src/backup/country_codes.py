@@ -509,53 +509,93 @@ _ALTERNATES_COPY = "oo_country_alternates"
 _SQL_ALIAS = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def _q(identifier: object) -> str:
-    """``identifier`` as a quoted SQL identifier. The column and index names the plan copies are read from the STAGED file's own
-    catalogue -- a backup's text, not the app's -- so every ``"`` in one is doubled (an index over a column named ``a"b`` must make
-    the copy, not break the restore's DDL)."""
-    return '"' + str(identifier).replace('"', '""') + '"'
-
-
 def _copy_name(table: str) -> str:
     """The in-memory copy of ``table``'s key columns (``table`` is a key of :data:`COUNTRY_COLUMNS`)."""
     return f"oo_country_{table}"
 
 
-def _unique_column_sets(con: sqlite3.Connection, schema: str, table: str) -> list[tuple[str, ...]]:
-    """The column lists of ``schema.table``'s unique indexes (declared constraints included), as the staged file itself defines them.
+class StagedKeysDiffer(ValueError):
+    """The staged file's unique keys over a country column are not the ones this version makes (row 439)."""
 
-    An index over an expression, or a partial one, is left out: the app's schema declares none on these tables, and leaving one out can
-    only make the in-memory copy accept a value the staged file would have refused -- which the working copy's own indexes still refuse
-    when the row is copied into it."""
-    out: list[tuple[str, ...]] = []
-    for row in con.execute(f'PRAGMA {schema}.index_list({_q(table)})').fetchall():  # noqa: S608  # `schema` is a module-internal literal; `table` comes from COUNTRY_COLUMNS
-        name, unique, partial = row[1], int(row[2] or 0), int(row[4] or 0) if len(row) > 4 else 0
-        if not unique or partial:
+
+#: The restore's words for :class:`StagedKeysDiffer`: fixed, naming no column or index of the file (a backup's text).
+STAGED_KEYS_DIFFER = (
+    "the backup's country-code columns are not keyed the way this version keys them, so the backup was not merged; "
+    "your corpus was not changed"
+)
+
+
+def _app_unique_sets(table: str) -> list[tuple[str, ...]]:
+    """The unique keys THIS VERSION declares on ``table`` (constraints and unique indexes, from the app's own models), as column
+    tuples. The plan builds its copies from these fixed names, never from the staged file's catalogue."""
+    from sqlalchemy import UniqueConstraint
+
+    from src.database.models import Base
+
+    tbl = Base.metadata.tables.get(table)
+    if tbl is None:
+        return []
+    out = [tuple(c.name for c in u.columns) for u in tbl.constraints if isinstance(u, UniqueConstraint)]
+    out += [tuple(c.name for c in ix.columns) for ix in tbl.indexes if ix.unique]
+    return sorted(set(out))
+
+
+def _staged_unique_sets(con: sqlite3.Connection, schema: str, table: str) -> list[tuple[object, ...]]:
+    """The staged file's unique keys on ``table``, read through the table-valued pragmas with every name BOUND, so no name from the
+    file's catalogue is ever part of SQL text. Names are case-folded as SQLite folds them; a column over an expression reads as
+    None and a partial index carries a ``("partial",)`` marker, so either one differs from every key the app declares and the file
+    is refused, never copied as text."""
+    out: list[tuple[object, ...]] = []
+    for name, unique, partial in con.execute(
+        'SELECT name, "unique", partial FROM pragma_index_list(?, ?)', (table, schema)
+    ).fetchall():
+        if not int(unique or 0):
             continue
-        cols = [r[2] for r in con.execute(f"PRAGMA {schema}.index_info({_q(name)})").fetchall()]  # noqa: S608  # the index's own name, read from the file's catalogue and quoted by _q
-        if cols and all(isinstance(c, str) for c in cols):
-            out.append(tuple(cols))
+        cols: list[object] = [
+            (r[0].lower() if isinstance(r[0], str) else None)
+            for r in con.execute("SELECT name FROM pragma_index_info(?, ?) ORDER BY seqno", (name, schema)).fetchall()
+        ]
+        if int(partial or 0):
+            cols.append(("partial",))
+        out.append(tuple(cols))
     return out
+
+
+def _check_staged_keys(con: sqlite3.Connection, schema: str, table: str, columns: list[str]) -> list[tuple[str, ...]]:
+    """The app's unique keys over a country column of ``table``, once the staged file is shown to hold exactly those.
+
+    The conversion's collisions are decided by these keys, so a key the copy did not reproduce would convert a row the file itself
+    would have refused, and one the copy added would refuse a row the file converts. Any difference -- a key more or fewer, a partial
+    one, one over an expression, a key column the table lacks -- raises :class:`StagedKeysDiffer` (the restore's normal refusal).
+    The staged file is at the schema head by now, so a backup the app made always matches."""
+    wanted = {c.lower() for c in columns}
+    app = [u for u in _app_unique_sets(table) if wanted & {c.lower() for c in u}]
+    staged = [u for u in _staged_unique_sets(con, schema, table) if None in u or wanted & {c for c in u if isinstance(c, str)}]
+    if sorted(repr(tuple(c.lower() for c in u)) for u in app) != sorted(repr(u) for u in staged):
+        raise StagedKeysDiffer(STAGED_KEYS_DIFFER)
+    present = {c.lower() for c in _columns_of(con, schema, table)}
+    if any(c.lower() not in present for u in app for c in u):
+        raise StagedKeysDiffer(STAGED_KEYS_DIFFER)
+    return app
 
 
 def _copy_key_columns(
     con: sqlite3.Connection, schema: str, table: str, columns: list[str], uniques: list[tuple[str, ...]], extra: tuple[str, ...]
 ) -> str:
-    """``temp.oo_country_<table>``: the row id, the country columns, and every column of a unique index over them, copied from the staged
-    file with their declared types, and the same unique indexes. The conversion then runs on THIS copy, exactly as it ran on the file."""
-    present = {r[1] for r in con.execute(f"PRAGMA {schema}.table_info({_q(table)})").fetchall()}  # noqa: S608  # as above
+    """``temp.oo_country_<table>``: the row id, the country columns, and every column of the app's unique keys over them, copied from
+    the staged file, with those same unique indexes. Every name here is the app's own (:data:`COUNTRY_COLUMNS`, the models, ``url``),
+    never one read from the file, and no declared type is copied. The conversion then runs on THIS copy, exactly as on the file."""
+    present = {c.lower() for c in _columns_of(con, schema, table)}
     cols: list[str] = []
     for c in [*columns, *(c for u in uniques for c in u), *extra]:
-        if c in present and c not in cols:
+        if c.lower() in present and c not in cols:
             cols.append(c)
     copy = _copy_name(table)
-    # No declared types: a type is the file's own text, and every value is copied with its storage class as it is, so the
-    # unique indexes compare exactly what the staged file's indexes compared (BINARY, the app's schema declares no COLLATE).
-    names = ", ".join(_q(c) for c in cols)
-    con.execute(f"CREATE TEMP TABLE {_q(copy)} (rid INTEGER PRIMARY KEY, {names})")  # noqa: S608  # names are the staged file's own column names, quoted by _q
-    con.execute(f"INSERT INTO temp.{_q(copy)} (rid, {names}) SELECT rowid, {names} FROM {schema}.{_q(table)}")  # noqa: S608  # nosec B608 # as above
+    names = ", ".join(f'"{c}"' for c in cols)
+    con.execute(f'CREATE TEMP TABLE "{copy}" (rid INTEGER PRIMARY KEY, {names})')  # noqa: S608  # the app's own fixed names
+    con.execute(f'INSERT INTO temp."{copy}" (rid, {names}) SELECT rowid, {names} FROM {schema}."{table}"')  # noqa: S608  # nosec B608 # as above
     for n, u in enumerate(uniques):
-        con.execute(f"CREATE UNIQUE INDEX temp.{_q(f'{copy}_u{n}')} ON {_q(copy)} ({', '.join(_q(c) for c in u)})")  # noqa: S608  # as above
+        con.execute(f'CREATE UNIQUE INDEX temp."{copy}_u{n}" ON "{copy}" ({", ".join(f"{chr(34)}{c}{chr(34)}" for c in u)})')  # noqa: S608  # as above
     return copy
 
 
@@ -619,7 +659,7 @@ def plan_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -
         if not columns:
             continue
         scanned += len(columns)
-        uniques = [u for u in _unique_column_sets(con, schema, table) if set(u) & set(columns)]
+        uniques = _check_staged_keys(con, schema, table, columns)
         if uniques or table == "law_documents":
             # law_documents always: the law alternates follow a document by (jurisdiction, url) as converted.
             copy = _copy_key_columns(con, schema, table, columns, uniques, ("url",) if table == "law_documents" else ())
