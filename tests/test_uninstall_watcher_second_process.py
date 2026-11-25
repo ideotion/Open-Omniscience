@@ -84,7 +84,7 @@ def _run_watcher(tmp_path: Path, data: Path) -> list[str]:
 def test_a_process_writing_through_the_uninstall_erase_is_named_in_the_audit_log(tmp_path):
     """R792 (4)+(7): never a silent log beside a surviving salt -- either none survives, or the log says the erase may be
     incomplete. The looper never closes its connection, so the watcher must have seen it."""
-    data, salt = _store(tmp_path)
+    data, salt = _store(tmp_path, hold=False)
     db = data / "open_omniscience.db"
     env = {**os.environ, "ROW315_KEY": _KEY}
     errlog = tmp_path / "looper.stderr"
@@ -118,7 +118,7 @@ def test_a_process_writing_through_the_uninstall_erase_is_named_in_the_audit_log
 
 
 def test_with_no_other_process_the_watcher_says_checked_and_does_not_wait(tmp_path):
-    data, _salt = _store(tmp_path)
+    data, _salt = _store(tmp_path, hold=False)
     t0 = time.monotonic()
     lines = _run_watcher(tmp_path, data)
     elapsed = time.monotonic() - t0
@@ -158,7 +158,7 @@ sys.stdin.readline()
 def test_a_holder_seen_during_the_erase_is_never_reported_as_none_after_it_lets_go(tmp_path):
     """Both security reads (R792 part B): once a holder was seen, its release does not turn the log into "Checked" -- it
     may have written behind the last rewrite before letting go."""
-    data, _salt = _store(tmp_path)
+    data, _salt = _store(tmp_path, hold=False)
     db = data / "open_omniscience.db"
     with subprocess.Popen([sys.executable, "-c", _RELEASER, str(db)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                           text=True) as other:

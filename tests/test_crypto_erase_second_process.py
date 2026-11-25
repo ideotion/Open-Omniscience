@@ -81,7 +81,7 @@ def _close_held_open():
             _HELD_OPEN.pop().close()
 
 
-def _store(tmp_path: Path) -> tuple[Path, bytes]:
+def _store(tmp_path: Path, *, hold: bool = True) -> tuple[Path, bytes]:
     from src.database import connect as cm
     from src.safety import crypto_erase as ce
 
@@ -97,7 +97,8 @@ def _store(tmp_path: Path) -> tuple[Path, bytes]:
         con.commit()
     finally:
         con.close()
-    _HELD_OPEN.append(cm.connect(db, key=_KEY, check_same_thread=False))  # R819 (1): read back under its key and held, as the pool does
+    if hold:  # R819 (1): read back under its key and held, as the pool does; never for a test where this process is "another program"
+        _HELD_OPEN.append(cm.connect(db, key=_KEY, check_same_thread=False))
     # The salt SQLCipher keeps in plaintext at the start of page 1: with the passphrase, it is what makes the body readable.
     # Read with os.pread on a descriptor no SQLite connection of this process shares (nothing of this process holds the store).
     fd = os.open(db, os.O_RDONLY)
