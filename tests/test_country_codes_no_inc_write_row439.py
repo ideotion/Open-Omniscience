@@ -370,3 +370,31 @@ def test_only_the_alternates_that_can_hold_a_code_are_copied(tmp_path, template)
         assert report["alternates"]["left_unreadable"] == total_bad, report["alternates"]
     finally:
         con.close()
+
+
+def test_a_quote_in_a_staged_index_or_column_name_is_quoted_not_a_broken_restore(tmp_path, template):
+    """The law copy's DDL is built from the STAGED file's own catalogue (a backup's text): an index over a column named with a
+    ``"`` makes the copy and converts as before, it neither breaks the restore nor reaches the SQL as anything but a name."""
+    from src.backup.country_codes import plan_staged_country_codes
+
+    src, tgt = tmp_path / "src.db", tmp_path / "tgt.db"
+    shutil.copy(template, src)
+    shutil.copy(template, tgt)
+    con = sqlite3.connect(src)
+    con.execute('ALTER TABLE law_documents ADD COLUMN "a""b" TEXT')
+    con.execute('CREATE UNIQUE INDEX "ix""q" ON law_documents (jurisdiction, "a""b")')
+    con.execute("""INSERT INTO law_documents (jurisdiction, title, url, watched, "a""b") VALUES ('gb', 'Loi', 'https://l.example/1', 1, 'v')""")
+    con.commit()
+    con.close()
+    con = sqlite3.connect(tgt)
+    cf.write_form(con, "alpha3", by="test")
+    con.commit()
+    try:
+        con.execute("ATTACH DATABASE ? AS inc", (str(src),))
+        report = plan_staged_country_codes(con, schema="inc")
+        assert report["converted"] == {"law_documents.jurisdiction": 1}
+        cols = [r[1] for r in con.execute('PRAGMA temp.table_info("oo_country_law_documents")')]
+        assert 'a"b' in cols
+        assert con.execute("SELECT jurisdiction FROM temp.oo_country_law_documents").fetchall() == [("GBR",)]
+    finally:
+        con.close()

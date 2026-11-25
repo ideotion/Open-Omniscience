@@ -1530,6 +1530,29 @@ _ENCRYPTED_RESIDENT_BYTES_PER_ROW = {
 }
 #: Every table whose incoming rows the memory check counts.
 _COUNTED_TABLES = (*_ENCRYPTED_REP_BYTES_PER_ROW, *_ENCRYPTED_RESIDENT_BYTES_PER_ROW)
+#: Row 439: the country-code plan's copy of the alternates whose JSON can hold a code is resident too, and its size is the
+#: JSON's own (a law summary's field set can be kilobytes), so it is counted in BYTES, read from the staged file, under this key
+#: of the counts, and doubled for the copy's row and index overhead.
+_ALTERNATES_COPY_BYTES = "metadata_alternates:copy_bytes"
+
+
+def _alternates_copy_bytes(con: sqlite3.Connection, prefix: str) -> int:
+    """The JSON bytes of the staged alternates :func:`country_codes.plan_staged_country_codes` copies (``prefix`` is ``'"cnt".'`` or
+    ``''``); 0 when the file carries no such table."""
+    from src.backup.country_codes import alternate_country_keys
+    from src.backup.provenance import ALTERNATE_SPECS
+
+    holders = sorted(t for t in ALTERNATE_SPECS if any(alternate_country_keys(t)))
+    if not holders:
+        return 0
+    marks = ", ".join("?" for _ in holders)
+    return int(
+        con.execute(
+            "SELECT COALESCE(SUM(COALESCE(length(identity), 0) + COALESCE(length(fields), 0)), 0)"  # noqa: S608  # nosec B608 # a fixed prefix, the names are bound
+            f" FROM {prefix}metadata_alternates WHERE table_name IN ({marks})",
+            holders,
+        ).fetchone()[0]
+    )
 
 
 def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> dict[str, int]:
@@ -1568,6 +1591,11 @@ def _incoming_group_rows(con: sqlite3.Connection, staged_corpus: Path | str) -> 
                     # no folding; the engine's message is folded once
                     if str(exc).lower() != f"no such table: cnt.{table}":
                         raise
+            # a file without the table, or an old one without its columns, copies nothing: a measured zero, asked first
+            alt_columns = {str(r[1]) for r in con.execute("PRAGMA cnt.table_info(metadata_alternates)").fetchall()}
+            out[_ALTERNATES_COPY_BYTES] = (
+                _alternates_copy_bytes(con, '"cnt".') if {"table_name", "identity", "fields"} <= alt_columns else 0
+            )
         finally:
             # A failed attach never reaches here (it is raised before the try); this covers a
             # DETACH that fails after a good attach, which must not mask the real outcome.
@@ -1633,6 +1661,7 @@ def check_memory_for_encrypted_merge(
     )
     maps = 16 * sum(int(rows.get(t, 0)) for t in _ENCRYPTED_REP_BYTES_PER_ROW)
     maps += sum(int(rows.get(t, 0)) * per_row for t, per_row in _ENCRYPTED_RESIDENT_BYTES_PER_ROW.items())
+    maps += 2 * int(rows.get(_ALTERNATES_COPY_BYTES, 0))
     need = _ENCRYPTED_TEMP_NEED_BYTES + maps + int(max(0.0, floor_mb) * 1024 * 1024)
     need_scratch = need if grouping == 0 else need + _SCRATCH_CACHE_KIB * 1024
     have = avail * 1024 * 1024
@@ -1702,6 +1731,8 @@ def _staged_group_rows_or_none(staged_corpus: Path | str) -> dict[str, int] | No
                 if table in present
                 else 0
             )
+        columns = {str(r[1]) for r in con.execute("PRAGMA table_info(metadata_alternates)").fetchall()}
+        out[_ALTERNATES_COPY_BYTES] = _alternates_copy_bytes(con, "") if {"table_name", "identity", "fields"} <= columns else 0
         return out
     except Exception:  # noqa: BLE001 - not countable here: the validation names it
         return None

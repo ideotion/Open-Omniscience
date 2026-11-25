@@ -509,6 +509,13 @@ _ALTERNATES_COPY = "oo_country_alternates"
 _SQL_ALIAS = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
+def _q(identifier: object) -> str:
+    """``identifier`` as a quoted SQL identifier. The column and index names the plan copies are read from the STAGED file's own
+    catalogue -- a backup's text, not the app's -- so every ``"`` in one is doubled (an index over a column named ``a"b`` must make
+    the copy, not break the restore's DDL)."""
+    return '"' + str(identifier).replace('"', '""') + '"'
+
+
 def _copy_name(table: str) -> str:
     """The in-memory copy of ``table``'s key columns (``table`` is a key of :data:`COUNTRY_COLUMNS`)."""
     return f"oo_country_{table}"
@@ -521,11 +528,11 @@ def _unique_column_sets(con: sqlite3.Connection, schema: str, table: str) -> lis
     only make the in-memory copy accept a value the staged file would have refused -- which the working copy's own indexes still refuse
     when the row is copied into it."""
     out: list[tuple[str, ...]] = []
-    for row in con.execute(f'PRAGMA {schema}.index_list("{table}")').fetchall():  # noqa: S608  # `schema` is a module-internal literal; `table` comes from COUNTRY_COLUMNS
+    for row in con.execute(f'PRAGMA {schema}.index_list({_q(table)})').fetchall():  # noqa: S608  # `schema` is a module-internal literal; `table` comes from COUNTRY_COLUMNS
         name, unique, partial = row[1], int(row[2] or 0), int(row[4] or 0) if len(row) > 4 else 0
         if not unique or partial:
             continue
-        cols = [r[2] for r in con.execute(f'PRAGMA {schema}.index_info("{name}")').fetchall()]  # noqa: S608  # the index's own name, read from the file's catalogue and quoted
+        cols = [r[2] for r in con.execute(f"PRAGMA {schema}.index_info({_q(name)})").fetchall()]  # noqa: S608  # the index's own name, read from the file's catalogue and quoted by _q
         if cols and all(isinstance(c, str) for c in cols):
             out.append(tuple(cols))
     return out
@@ -536,18 +543,19 @@ def _copy_key_columns(
 ) -> str:
     """``temp.oo_country_<table>``: the row id, the country columns, and every column of a unique index over them, copied from the staged
     file with their declared types, and the same unique indexes. The conversion then runs on THIS copy, exactly as it ran on the file."""
-    present = {r[1]: r[2] for r in con.execute(f'PRAGMA {schema}.table_info("{table}")').fetchall()}  # noqa: S608  # as above
+    present = {r[1] for r in con.execute(f"PRAGMA {schema}.table_info({_q(table)})").fetchall()}  # noqa: S608  # as above
     cols: list[str] = []
     for c in [*columns, *(c for u in uniques for c in u), *extra]:
         if c in present and c not in cols:
             cols.append(c)
     copy = _copy_name(table)
-    decl = ", ".join(f'"{c}" {present[c] or ""}'.rstrip() for c in cols)
-    names = ", ".join(f'"{c}"' for c in cols)
-    con.execute(f'CREATE TEMP TABLE "{copy}" (rid INTEGER PRIMARY KEY, {decl})')  # noqa: S608  # names are the staged file's own column names, quoted
-    con.execute(f'INSERT INTO temp."{copy}" (rid, {names}) SELECT rowid, {names} FROM {schema}."{table}"')  # noqa: S608  # nosec B608 # as above
+    # No declared types: a type is the file's own text, and every value is copied with its storage class as it is, so the
+    # unique indexes compare exactly what the staged file's indexes compared (BINARY, the app's schema declares no COLLATE).
+    names = ", ".join(_q(c) for c in cols)
+    con.execute(f"CREATE TEMP TABLE {_q(copy)} (rid INTEGER PRIMARY KEY, {names})")  # noqa: S608  # names are the staged file's own column names, quoted by _q
+    con.execute(f"INSERT INTO temp.{_q(copy)} (rid, {names}) SELECT rowid, {names} FROM {schema}.{_q(table)}")  # noqa: S608  # nosec B608 # as above
     for n, u in enumerate(uniques):
-        con.execute(f'CREATE UNIQUE INDEX temp."{copy}_u{n}" ON "{copy}" ({", ".join(f"{chr(34)}{c}{chr(34)}" for c in u)})')  # noqa: S608  # as above
+        con.execute(f"CREATE UNIQUE INDEX temp.{_q(f'{copy}_u{n}')} ON {_q(copy)} ({', '.join(_q(c) for c in u)})")  # noqa: S608  # as above
     return copy
 
 

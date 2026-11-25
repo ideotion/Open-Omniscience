@@ -304,6 +304,33 @@ def test_the_law_documents_are_counted_from_the_staged_file(tmp_path) -> None:
     assert merge_mod._staged_group_rows_or_none(staged)["law_documents"] == 3
 
 
+def test_the_alternates_copy_is_counted_by_its_json_bytes(tmp_path) -> None:
+    """Row 439: the plan's copy of the law and places alternates is resident for the whole merge; the need counts its JSON bytes
+    (doubled for the copy's row and index overhead), read from the staged file by both counters; other alternates are not copied."""
+    import sqlite3
+
+    staged = tmp_path / "d" / "staged.db"
+    _staged_with_keywords(staged, 1)
+    con = sqlite3.connect(staged)
+    for table, fields in (("places", "x" * 1000), ("law_revision_summaries", "y" * 3000), ("keyword_translations", "z" * 9000)):
+        con.execute(
+            "INSERT INTO metadata_alternates (batch_id, table_name, identity, local_row_id, fields, provenance, origin, status, created_at)"
+            " VALUES (1, ?, '{}', 1, ?, '{}', 'o', 'pending', '2026-01-01')",
+            (table, fields),
+        )
+    con.commit()
+    con.close()
+    key = merge_mod._ALTERNATES_COPY_BYTES
+    assert merge_mod._incoming_group_rows(_open_plain(), staged)[key] == 4004
+    assert merge_mod._staged_group_rows_or_none(staged)[key] == 4004
+    base = merge_mod._ENCRYPTED_TEMP_NEED_BYTES
+    rows = {key: 50_000_000}
+    need = base + 2 * rows[key]
+    assert check_memory_for_encrypted_merge(available_mb=need / _MB, floor_mb=0.0, incoming_rows=rows) == "memory"
+    with pytest.raises(MergeError):
+        check_memory_for_encrypted_merge(available_mb=need / _MB - 1, floor_mb=0.0, incoming_rows=rows)
+
+
 def test_a_table_with_no_incoming_rows_adds_nothing() -> None:
     need_mb = merge_mod._ENCRYPTED_TEMP_NEED_BYTES / _MB
     check_memory_for_encrypted_merge(available_mb=need_mb, floor_mb=0.0, incoming_rows={})
@@ -345,7 +372,7 @@ def test_incoming_rows_are_counted_through_the_merges_own_attach(tmp_path) -> No
     con = _open_plain()
     got = merge_mod._incoming_group_rows(con, staged)
     assert got["keywords"] == 2
-    assert set(got) <= set(merge_mod._COUNTED_TABLES)
+    assert set(got) <= {*merge_mod._COUNTED_TABLES, merge_mod._ALTERNATES_COPY_BYTES}
     # the throwaway alias is gone again, so the merge's own attach of the same file still works
     assert "cnt" not in [r[1] for r in con.execute("PRAGMA database_list")]
     from src.database.connect import attach
@@ -376,7 +403,7 @@ def test_a_missing_table_counts_as_nothing_but_any_other_failure_refuses(tmp_pat
     c.execute("CREATE TABLE unrelated (x)")
     c.commit()
     c.close()
-    assert merge_mod._incoming_group_rows(_open_plain(), bare) == {}
+    assert merge_mod._incoming_group_rows(_open_plain(), bare) == {merge_mod._ALTERNATES_COPY_BYTES: 0}
     # a file that cannot be read is a refusal that writes nothing, never a smaller need
     junk = tmp_path / "junk.db"
     junk.write_bytes(b"this is not a database" * 100)
