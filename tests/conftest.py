@@ -391,6 +391,19 @@ def _write_gate_not_leaked(request):
         )
 
 
+@pytest.fixture
+def roomy_memory(monkeypatch):
+    """Row 444: the available-memory reading an encrypted merge checks (``maintenance._available_mb_now``, read by
+    ``merge.check_memory_for_encrypted_merge``), held at 16 GB. Without it a test that restores into an encrypted corpus
+    passes or fails by how much memory the runner has free at that moment: at 300 MB free the merge rightly refuses with
+    its named message. A file whose tests are not about that refusal opts in with
+    ``pytestmark = pytest.mark.usefixtures("roomy_memory")``; the refusal itself is pinned in
+    ``tests/test_merge_encrypted_temp.py``, and a test that sets its own reading still wins (its monkeypatch runs later)."""
+    from src.database import maintenance
+
+    monkeypatch.setattr(maintenance, "_available_mb_now", lambda: 16_384.0)
+
+
 @pytest.fixture(autouse=True)
 def _memory_guard_not_leaked():
     """The RSS memory guard (P0.3 E3) is a process-global latch; a test that

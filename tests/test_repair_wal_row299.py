@@ -81,6 +81,9 @@ def _wal_live(tmp_path, monkeypatch, request, encrypted: bool) -> Path:
     monkeypatch.setattr(damage, "_previous_end", lambda: UNCLEAN)
     assert verify.arm_at_boot() is True and verify.run_armed() is True
     monkeypatch.setattr(repair, "_empty_the_log", _REAL_EMPTY_THE_LOG)
+    # The room check reads the runner's own disk (the file, its log and 2% of the drive). Row 444: on a runner with about
+    # 5 GB free that check refused, so the drive decided the outcome; the refusal has its own test in tests/test_repair.py.
+    monkeypatch.setattr("src.config.hardware_reading.disk_bytes", lambda p: (10**12, 2 * 10**12))
     return live
 
 
