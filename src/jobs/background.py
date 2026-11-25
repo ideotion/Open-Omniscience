@@ -563,12 +563,17 @@ def _start_again(kind: str) -> bool:
         if job._alive():
             job.join(_RESTART_JOIN_S)
         refused: list[str] = []
-        with job._lock:  # the check and the start under ONE hold, so a Cancel pressed in between is never overridden
+        # The restore hold's lock first, then the job's (the order ``start()`` takes them): a committing restore that holds these starts
+        # (row 383) also holds this restart, so one restore ending cannot start the drain under another that is past its last check.
+        with _RESTORE_HOLD_LOCK, job._lock:  # the check and the start under ONE hold, so a Cancel pressed in between is never overridden
             if job._state == "cancelled" or job._stop.is_set():  # a Cancel pressed after the yield ended leaves the state 'done'
                 return False
             if seen is None or stop_all_count() != seen:  # the app began shutting down since the stop: never start a writer then
                 return False
             if job._alive():  # still running (it never yielded): nothing to start
+                return False
+            if _RESTORE_HOLDS[0]:  # made when that restore ends, as a start asked for during it is
+                _DEFERRED_FOR_RESTORE.setdefault(kind, seen)
                 return False
             try:
                 job._start({}, refused)

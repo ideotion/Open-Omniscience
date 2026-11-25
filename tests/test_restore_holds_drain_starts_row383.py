@@ -267,4 +267,52 @@ def test_run_restore_is_wrapped_by_the_hold():
     tree = ast.parse((ROOT / "src/backup/merge.py").read_text(encoding="utf-8"))
     fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "run_restore")
     names = [d.id for d in fn.decorator_list if isinstance(d, ast.Name)]
-    assert "_holding_drain_starts" in names
+    # OUTERMOST: the held start is made after the safety net is settled, which compares the live store (a drain could change it)
+    assert names[0] == "_holding_drain_starts", names
+    assert "_settle_pending_net" in names
+
+
+def test_another_restores_restart_waits_for_this_restores_hold(registry):
+    """Two restores overlapping: the first one ending restarts what it stopped (``_start_again``); under the second one's hold that
+    restart is held too, and made when the second ends, so it cannot take its lease through the second's swap."""
+    job, release = _drain()
+    try:
+        job.start()
+        assert bg.stop_jobs_for_restore(5.0) == ["drain"]  # restore A stops it
+        bg.hold_starts_for_restore()  # restore B is past its first check
+        assert bg.start_jobs_after_refusal(["drain"]) == []  # restore A ends
+        assert not job._alive()
+        held = bg.release_restore_hold()
+        assert list(held) == ["drain"]
+        assert bg.start_held_jobs(held) == ["drain"]
+    finally:
+        release.set()
+        job.join(5)
+
+
+def test_the_hand_off_reports_a_drain_the_held_start_made_as_started(monkeypatch):
+    from src.backup import merge, volume_job
+
+    monkeypatch.setattr(merge, "reindex_backlog", lambda: {"available": True, "articles_pending": 5})
+    monkeypatch.setattr(volume_job, "start_reindex_drain", lambda: (False, "a reindex-resume job is already running"))
+    monkeypatch.setattr(volume_job, "_drain_running", lambda: True)
+    from src.scheduler import runner
+
+    monkeypatch.setattr(runner, "exclusive_window_open", lambda: False)
+    report: dict = {}
+    volume_job.hand_off_reindex(report)
+    assert report["reindex_deferred"]["started"] is True
+    assert "start_detail" not in report["reindex_deferred"]
+
+
+def test_the_task_managers_resume_answers_busy_when_the_start_is_held(registry, monkeypatch):
+    from fastapi import HTTPException
+
+    from src.api import backup_v2, jobs
+    from src.scheduler import runner
+
+    monkeypatch.setattr(runner.get_scheduler(), "holds_exclusive", lambda: False)
+    monkeypatch.setattr(backup_v2, "reindex_backlog_resume", lambda: {"started": False, "held_for_import": True})
+    with pytest.raises(HTTPException) as err:
+        jobs.resume_job("reindex-backlog")
+    assert err.value.status_code == 409

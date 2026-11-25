@@ -7614,8 +7614,10 @@ def _holding_drain_starts(fn: Any) -> Any:
     The re-index drain could be started by the boot's last step, the Resume button or a hand-off after the restore's last writer
     check: it then took its lease batch after batch, the swap's barrier waited the whole ``_SWAP_QUIESCE_S`` for it and the import was
     refused with "import again". The hold opens before the first check (so a drain already running is stopped by it, R659) and closes
-    on every way out; a start asked for in between is then made, unless an import run's window is open (the run starts the drain once,
-    when it ends) or the app began shutting down since. A restore that does not commit holds nothing."""
+    on every way out, after the safety net is settled; a start asked for in between is then made, unless an exclusive window is open
+    (an import run starts the drain once, when it ends; another window's owner leaves it to the drain's own Resume, the rule
+    :func:`start_jobs_stopped_for_restore` already follows) or the app began shutting down since. A restore that does not commit holds
+    nothing."""
 
     @functools.wraps(fn)
     def _wrapped(*args: Any, **kwargs: Any) -> Any:
@@ -7623,11 +7625,13 @@ def _holding_drain_starts(fn: Any) -> Any:
             return fn(*args, **kwargs)
         from src.jobs.background import hold_starts_for_restore, release_restore_hold, start_held_jobs
 
-        hold_starts_for_restore()
+        opened = False
         try:
+            hold_starts_for_restore()
+            opened = True
             return fn(*args, **kwargs)
         finally:
-            held = release_restore_hold()
+            held = release_restore_hold() if opened else {}
             if held:
                 with suppress(Exception):  # a held start that is not made keeps its own Resume
                     from src.scheduler.runner import exclusive_window_open
@@ -10977,8 +10981,8 @@ def _leave_counters_to_drain() -> str | None:
         return None
 
 
+@_holding_drain_starts  # OUTSIDE the net's settlement: a held drain started first could change the live store the settlement compares
 @_settle_pending_net
-@_holding_drain_starts
 def run_restore(
     staged: StagedArtifact,
     *,
