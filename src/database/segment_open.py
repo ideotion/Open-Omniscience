@@ -153,13 +153,11 @@ def _schema_of(con: Any) -> frozenset[tuple[str, str, str, str]]:
 
 
 def check_schema(con: Any) -> bool:
-    """True only when the open file's schema is exactly :func:`reference_schema`, plus at most SQLite's own statistics
-    tables. Reads ``sqlite_master`` only."""
-    try:
-        seen = _schema_of(con)
-    except Exception:  # noqa: BLE001 - a schema that cannot be read is not the app's schema
-        return False
-    return seen - _sqlite_own(con) == reference_schema()
+    """True when the open file's schema is exactly :func:`reference_schema`, plus at most SQLite's own statistics tables;
+    False only for a schema that was READ and differs. A read that fails raises (the opener names it: "in_use" when another
+    program holds a lock, "unreadable" otherwise), so a held or damaged file is never reported as a foreign schema. Reads
+    ``sqlite_master`` only."""
+    return _schema_of(con) - _sqlite_own(con) == reference_schema()
 
 
 def harden(con: Any, *, closed: bool) -> bool:
@@ -208,6 +206,43 @@ def _sidecars_are_plain(path: Path) -> bool:
         if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
             return False
     return True
+
+
+def _absent_sidecars(path: Path) -> frozenset[str]:
+    """The sidecar suffixes with nothing at their name now."""
+    out = []
+    for suffix in _SIDECARS:
+        try:
+            os.lstat(f"{path}{suffix}")
+        except FileNotFoundError:
+            out.append(suffix)
+        except OSError:
+            pass
+    return frozenset(out)
+
+
+def _remove_sidecars_made(path: Path, absent_before: frozenset[str]) -> None:
+    """After a refused open: remove the ``-wal``/``-shm`` an open of a WAL-mode file made (a read-only open of one creates
+    both). Only a name that was empty before the open and is now a regular file with one name, and a ``-wal`` only while
+    it is empty (it then holds no page); never a ``-journal``, which a writer of the same file may be using. Best effort."""
+    for suffix in ("-wal", "-shm"):
+        if suffix not in absent_before:
+            continue
+        side = f"{path}{suffix}"
+        try:
+            st = os.lstat(side)
+        except OSError:
+            continue
+        if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or (suffix == "-wal" and st.st_size != 0):
+            continue
+        with contextlib.suppress(OSError):
+            os.unlink(side)
+
+
+def _held_or_unreadable(exc: BaseException) -> str:
+    from src.database.connect import held_by_another
+
+    return "in_use" if held_by_another(exc) else "unreadable"
 
 
 def _header_of(path: Path, ident: tuple[int, int]) -> bytes | None:
@@ -279,6 +314,7 @@ def open_segment(seg: Segment, *, key: str | None = None):
     shared_encrypted = _shared_is_encrypted()
     if shared_encrypted is None or on_disk != shared_encrypted:
         raise SegmentUnavailable(seg.seg_no, "encryption_differs")
+    absent_before = _absent_sidecars(path)
     try:
         con = connect(path, key=key, read_only=True, check_same_thread=False, cipher_page_size=SEGMENT_PAGE_SIZE)
     except StoreHeldError:
@@ -290,13 +326,20 @@ def open_segment(seg: Segment, *, key: str | None = None):
         reason = "locked" if shared_encrypted else "encryption_differs"
         raise SegmentUnavailable(seg.seg_no, reason) from None
     except FileNotFoundError:
+        _remove_sidecars_made(path, absent_before)
         raise SegmentUnavailable(seg.seg_no, "missing") from None
     except Exception as exc:  # noqa: BLE001 - damaged, held, I/O: one fixed reason, the text stays in the debug log
         log_failure(_LOG, "a corpus segment could not be opened", exc, level=logging.DEBUG)
-        raise SegmentUnavailable(seg.seg_no, "unreadable") from None
+        _remove_sidecars_made(path, absent_before)
+        raise SegmentUnavailable(seg.seg_no, _held_or_unreadable(exc)) from None
     try:
         if _identity_of_name(path) != before:
             raise SegmentUnavailable(seg.seg_no, "changed_while_opening")
+        # An encrypted header hides the journal mode, so it is asked here: a segment is always in rollback-journal mode
+        # (the mode this app makes it in). A WAL-mode file is refused, and the -wal/-shm its open made are removed below.
+        mode = con.execute("PRAGMA journal_mode").fetchone()
+        if mode is None or str(mode[0]).lower() != "delete":
+            raise SegmentUnavailable(seg.seg_no, "not_a_segment_file")
         # The driver the open used, never evidence from an earlier open: a plaintext file swapped in for the open and back
         # out again is opened by the standard driver, and is refused here.
         if _is_sqlcipher_conn(con) != bool(shared_encrypted):
@@ -308,11 +351,13 @@ def open_segment(seg: Segment, *, key: str | None = None):
             raise SegmentUnavailable(seg.seg_no, "identity")
     except SegmentUnavailable:
         con.close()
+        _remove_sidecars_made(path, absent_before)
         raise
     except Exception as exc:  # noqa: BLE001 - see above
         con.close()
+        _remove_sidecars_made(path, absent_before)
         log_failure(_LOG, "a corpus segment could not be checked", exc, level=logging.DEBUG)
-        raise SegmentUnavailable(seg.seg_no, "unreadable") from None
+        raise SegmentUnavailable(seg.seg_no, _held_or_unreadable(exc)) from None
     return con
 
 
@@ -352,33 +397,85 @@ def create_segment(r: Reservation, *, key: str | None = None) -> Path:
     finally:
         os.close(fd)  # nothing of this process holds the new, empty file yet (R789)
     ident = (made.st_dev, made.st_ino)
-    if encrypted:
-        con = connect(path, key=key, create_encrypted=True, cipher_page_size=SEGMENT_PAGE_SIZE)
-    else:
-        con = connect(path, create_encrypted=False)
     try:
-        if _identity_of_name(path) != ident:
-            raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
-        con.isolation_level = None
-        for ddl in SEGMENT_DDL:
-            if ddl is _SEGMENT_META_DDL:
-                continue
-            con.execute(ddl)
-        if _identity_of_name(path) != ident:
-            raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
-        commit_segment(con, r)
-    finally:
-        con.close()
-    if encrypted:
-        # A fresh file counts as keyed only once it is reopened with the key (lane D, R828).
-        seg = Segment(r.seg_no, r.file_name, "reserved", r.id_lo, r.id_hi)
-        back = open_segment(seg, key=key)
+        if encrypted:
+            con = connect(path, key=key, create_encrypted=True, cipher_page_size=SEGMENT_PAGE_SIZE)
+        else:
+            con = connect(path, create_encrypted=False)
         try:
-            if not record_segment(path):
-                raise SegmentError("the new segment could not be named in the at-rest record")
+            if _identity_of_name(path) != ident:
+                raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
+            con.isolation_level = None
+            for ddl in SEGMENT_DDL:
+                if ddl is _SEGMENT_META_DDL:
+                    continue
+                con.execute(ddl)
+            if _identity_of_name(path) != ident:
+                raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
+            commit_segment(con, r)
         finally:
-            back.close()
+            con.close()
+        if encrypted:
+            # A fresh file counts as keyed only once it is reopened with the key (lane D, R828).
+            seg = Segment(r.seg_no, r.file_name, "reserved", r.id_lo, r.id_hi)
+            back = open_segment(seg, key=key)
+            try:
+                if not record_segment(path):
+                    raise SegmentError("the new segment could not be named in the at-rest record")
+            finally:
+                back.close()
+    except BaseException:
+        if not _remove_failed_create(folder, r.file_name, ident):
+            raise SegmentError(
+                "the segment could not be made, and the file at its name is not the one this call made; it was left in place"
+            ) from None
+        raise
     return path
+
+
+def _remove_failed_create(folder: Path, name: str, ident: tuple[int, int]) -> bool:
+    """A create that failed frees its name: the file goes when the name still leads to the very file this call made (same
+    device and inode, regular, one name), looked at and removed relative to the corpus folder's own descriptor where the
+    system offers one. Anything else at the name is never touched, and False says so. True also when the name is already
+    empty. Once the file is gone, a regular single-named sidecar left at its name goes too: a journal left beside a name
+    would otherwise be rolled into the next file made there."""
+    if os.unlink in os.supports_dir_fd and os.lstat in os.supports_dir_fd and hasattr(os, "O_DIRECTORY"):
+        flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        try:
+            dfd = os.open(folder, flags)
+        except OSError:
+            return False
+        try:
+            return _remove_at(name, ident, dfd)
+        finally:
+            os.close(dfd)
+    if _identity_of_name(folder / name) not in (None, ident):
+        return False
+    return _remove_at(str(folder / name), ident, None)
+
+
+def _remove_at(name: str, ident: tuple[int, int], dfd: int | None) -> bool:
+    def plain(n: str) -> os.stat_result | None:
+        st = os.lstat(n, dir_fd=dfd)
+        return st if stat.S_ISREG(st.st_mode) and st.st_nlink == 1 else None
+
+    try:
+        try:
+            st = plain(name)
+        except FileNotFoundError:
+            gone = True
+        else:
+            if st is None or (st.st_dev, st.st_ino) != ident:
+                return False
+            os.unlink(name, dir_fd=dfd)
+            gone = True
+        for suffix in _SIDECARS:
+            with contextlib.suppress(OSError):
+                if plain(name + suffix) is not None:
+                    os.unlink(name + suffix, dir_fd=dfd)
+        return gone
+    except OSError:
+        return False
 
 
 @dataclass
@@ -411,6 +508,9 @@ class SegmentSet:
             self._done.set()
 
     def _open_one(self, seg: Segment, key: str | None) -> None:
+        with self._lock:
+            if self._closed:
+                return  # a closed set opens nothing more
         try:
             con = open_segment(seg, key=key)
         except SegmentUnavailable as exc:

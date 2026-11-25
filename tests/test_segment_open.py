@@ -48,6 +48,11 @@ def _seg(r: Reservation, state: str = "closed") -> Segment:
     return Segment(r.seg_no, r.file_name, state, r.id_lo, r.id_hi)
 
 
+def _opener_threads() -> list[str]:
+    """The opener's own threads, by name: a count of every thread in the process moves with whatever else the run started."""
+    return [t.name for t in threading.enumerate() if t.name.startswith("oo-segment")]
+
+
 def _sha(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
@@ -278,9 +283,8 @@ def test_the_set_opens_newest_first_and_counts_unavailable_segments(data, monkey
 
 def test_an_empty_registry_starts_nothing(monkeypatch):
     con = sqlite3.connect(":memory:")
-    before = threading.active_count()
     assert segment_open.start_background_open(lambda: con) is None
-    assert threading.active_count() == before
+    assert _opener_threads() == []
     assert segment_open.current_status() == {"total": 0, "opened": 0, "opening": False, "unavailable": []}
 
 
@@ -469,11 +473,10 @@ def test_a_set_read_from_a_registry_a_disposal_overtook_is_never_installed(monke
         segment_open.close_all()  # a lock or an erase lands while the registry is read
         return shared
 
-    started = threading.active_count()
     try:
         assert segment_open.start_background_open(factory) is None
         assert segment_open.current_status()["total"] == 0
-        assert threading.active_count() == started
+        assert _opener_threads() == []
     finally:
         segment_open.close_all()
 
@@ -519,3 +522,136 @@ def test_a_segment_the_record_refuses_is_a_failed_create(data, monkeypatch):
     monkeypatch.setattr(at_rest_state, "record_segment", lambda *a, **k: False)
     with pytest.raises(SegmentError):
         segment_open.create_segment(_res(1), key=_PW)
+    assert list((data / "corpus").iterdir()) == [], "a failed create frees its name"
+    monkeypatch.undo()
+    _carry_data(data, monkeypatch)
+    _shared(monkeypatch, True)
+    segment_open.create_segment(_res(1), key=_PW)  # the same reservation can be made again
+
+
+# --- stage 3 carry-overs from the final read of stage 2 (L1 to L4, L6) ---
+
+
+def _carry_data(data: Path, monkeypatch) -> None:
+    """Re-apply the ``data`` fixture's settings after a ``monkeypatch.undo()``."""
+    monkeypatch.setenv("OO_DATA_DIR", str(data))
+    import src.api.unlock as unlock
+
+    monkeypatch.setattr(unlock, "main_db_path", lambda **_: data / "open_omniscience.db")
+    monkeypatch.setattr(segment_open, "SEGMENT_WRITES_ENABLED", True)
+
+
+@posix_only
+@sqlcipher_only
+def test_an_encrypted_segment_in_wal_mode_is_refused_and_its_wal_and_shm_are_removed(data, monkeypatch):
+    from src.database.connect import connect
+
+    _shared(monkeypatch, True)
+    p = segment_open.create_segment(_res(1), key=_PW)
+    con = connect(p, key=_PW, cipher_page_size=segment_open.SEGMENT_PAGE_SIZE)
+    assert str(con.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower() == "wal"
+    con.close()
+    for suffix in ("-wal", "-shm"):
+        Path(f"{p}{suffix}").unlink(missing_ok=True)
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_open.open_segment(_seg(_res(1)), key=_PW)
+    assert e.value.reason == "not_a_segment_file"
+    assert sorted(x.name for x in (data / "corpus").iterdir()) == ["seg-1.db"], "the refused open left no -wal or -shm"
+
+
+@posix_only
+def test_a_sidecar_that_was_there_before_a_refused_open_is_left_alone(data, monkeypatch):
+    p = _plain_segment(data, monkeypatch, _res(1), extra=("CREATE TABLE evil(x)",))
+    Path(f"{p}-shm").write_bytes(b"")
+    Path(f"{p}-wal").write_bytes(b"")
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_open.open_segment(_seg(_res(1)))
+    assert e.value.reason == "schema"
+    assert sorted(x.name for x in (data / "corpus").iterdir()) == ["seg-1.db", "seg-1.db-shm", "seg-1.db-wal"]
+
+
+def test_only_empty_new_wal_and_new_shm_are_removed(tmp_path):
+    p = tmp_path / "seg-1.db"
+    p.write_bytes(b"x")
+    Path(f"{p}-wal").write_bytes(b"pages")  # holds pages: never removed
+    Path(f"{p}-shm").write_bytes(b"")
+    Path(f"{p}-journal").write_bytes(b"")  # a writer's journal: never removed here
+    segment_open._remove_sidecars_made(p, frozenset({"-wal", "-shm", "-journal"}))
+    assert sorted(x.name for x in tmp_path.iterdir()) == ["seg-1.db", "seg-1.db-journal", "seg-1.db-wal"]
+
+
+def _held_error() -> sqlite3.OperationalError:
+    exc = sqlite3.OperationalError("database is locked")
+    exc.sqlite_errorcode = 5  # SQLITE_BUSY
+    return exc
+
+
+@posix_only
+@pytest.mark.parametrize(("error", "reason"), [(_held_error, "in_use"), (lambda: sqlite3.DatabaseError("malformed"), "unreadable")])
+def test_a_schema_that_could_not_be_read_is_never_reported_as_a_foreign_schema(data, monkeypatch, error, reason):
+    _plain_segment(data, monkeypatch, _res(1))
+
+    def unread(con):
+        raise error()
+
+    monkeypatch.setattr(segment_open, "_schema_of", unread)
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_open.open_segment(_seg(_res(1)))
+    assert e.value.reason == reason
+
+
+def test_check_schema_is_false_only_for_a_schema_it_read():
+    con = sqlite3.connect(":memory:")
+    try:
+        for ddl in segment_open.SEGMENT_DDL:
+            con.execute(ddl)
+        assert segment_open.check_schema(con) is True
+        con.execute("CREATE TABLE evil(x)")
+        assert segment_open.check_schema(con) is False
+    finally:
+        con.close()
+    with pytest.raises(sqlite3.ProgrammingError):
+        segment_open.check_schema(con)  # closed: raises, never False
+
+
+def test_a_closed_set_opens_nothing_more(monkeypatch):
+    opened: list[int] = []
+    monkeypatch.setattr(segment_open, "open_segment", lambda seg, key=None: opened.append(seg.seg_no))
+    sset = segment_open.SegmentSet(segments=[_seg(_res(2)), _seg(_res(1))])
+    sset.close()
+    sset.open_all(threads=1)
+    assert opened == [] and sset.status()["opened"] == 0
+
+
+@posix_only
+def test_a_failed_plaintext_create_frees_its_name(data, monkeypatch):
+    _shared(monkeypatch, False)
+
+    def refuse(con, r):
+        raise SegmentError("the registry refused it")
+
+    monkeypatch.setattr(segment_open, "commit_segment", refuse)
+    with pytest.raises(SegmentError):
+        segment_open.create_segment(_res(1))
+    assert list((data / "corpus").iterdir()) == []
+
+
+@posix_only
+def test_a_failed_create_never_removes_a_file_it_did_not_make(data, monkeypatch, tmp_path):
+    other = tmp_path / "other.db"
+    other.write_bytes(b"someone else's file")
+    _shared(monkeypatch, False)
+    real = segment_open.commit_segment
+
+    def swap_then_fail(con, r):
+        name = data / "corpus" / r.file_name
+        os.unlink(name)
+        os.link(other, name)  # the name now leads to a file with two names
+        raise SegmentError("failed after the swap")
+
+    monkeypatch.setattr(segment_open, "commit_segment", swap_then_fail)
+    with pytest.raises(SegmentError) as e:
+        segment_open.create_segment(_res(1))
+    assert "left in place" in str(e.value)
+    assert (data / "corpus" / "seg-1.db").read_bytes() == b"someone else's file" and other.exists()
+    monkeypatch.setattr(segment_open, "commit_segment", real)
