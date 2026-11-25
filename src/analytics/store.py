@@ -2819,7 +2819,6 @@ def reconcile_keyword_counters_for_articles(
     import time as _time
     from datetime import UTC, datetime
 
-
     from src.database.writer import connection_first, write_lock
 
     stamp = now or datetime.now(UTC)
