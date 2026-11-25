@@ -216,7 +216,17 @@ class BackgroundJob:
         returns the current status — a single job of a kind runs at a time)."""
         refused: list[str] = []
         try:
-            return self._start(kwargs, refused)
+            if not self.stops_for_restore:
+                return self._start(kwargs, refused)
+            # Row 383: a committing restore holds these starts from its first writer check to its end, so a drain started by the boot,
+            # the Resume button or a hand-off cannot begin after the restore's last check and keep the swap waiting on its lease. The
+            # check and the start under ONE hold of the restore's lock: a start that got in first is running when the restore opens its
+            # hold, and the restore's own stop (``stop_jobs_for_restore``) then catches it.
+            with _RESTORE_HOLD_LOCK:
+                if _RESTORE_HOLDS[0]:
+                    _DEFERRED_FOR_RESTORE.setdefault(self.kind, stop_all_count())
+                    raise StartHeldForRestore(f"an import is being committed; the {self.kind} job starts when it ends")
+                return self._start(kwargs, refused)
         except Exception:
             if refused:
                 # A thread that could not be made: written once, here, for every caller of every kind, and after the job's lock is
@@ -553,12 +563,17 @@ def _start_again(kind: str) -> bool:
         if job._alive():
             job.join(_RESTART_JOIN_S)
         refused: list[str] = []
-        with job._lock:  # the check and the start under ONE hold, so a Cancel pressed in between is never overridden
+        # The restore hold's lock first, then the job's (the order ``start()`` takes them): a committing restore that holds these starts
+        # (row 383) also holds this restart, so one restore ending cannot start the drain under another that is past its last check.
+        with _RESTORE_HOLD_LOCK, job._lock:  # the check and the start under ONE hold, so a Cancel pressed in between is never overridden
             if job._state == "cancelled" or job._stop.is_set():  # a Cancel pressed after the yield ended leaves the state 'done'
                 return False
             if seen is None or stop_all_count() != seen:  # the app began shutting down since the stop: never start a writer then
                 return False
             if job._alive():  # still running (it never yielded): nothing to start
+                return False
+            if _RESTORE_HOLDS[0]:  # made when that restore ends, as a start asked for during it is
+                _DEFERRED_FOR_RESTORE.setdefault(kind, seen)
                 return False
             try:
                 job._start({}, refused)
@@ -572,6 +587,61 @@ def _start_again(kind: str) -> bool:
         return False
     except Exception:  # noqa: BLE001 - never raised
         return False
+
+
+class StartHeldForRestore(RuntimeError):
+    """A ``stops_for_restore`` job asked to start while a committing restore holds such starts (row 383). A ``RuntimeError``, as the
+    "already running" refusal is, so every caller that treats a refused start as "not started now" keeps doing so. The start is not
+    lost: the restore starts the job when it ends (:func:`release_restore_hold`)."""
+
+
+#: Row 383: how many committing restores hold the starts of ``stops_for_restore`` jobs (a one-item list, so the lock guards a value
+#: and not a rebinding), and for each kind whose start was held, :func:`stop_all_count` at that moment.
+_RESTORE_HOLD_LOCK = threading.Lock()
+_RESTORE_HOLDS: list[int] = [0]
+_DEFERRED_FOR_RESTORE: dict[str, int] = {}
+
+
+def hold_starts_for_restore() -> None:
+    """Open a committing restore's hold (row 383): until :func:`release_restore_hold`, ``start()`` on a ``stops_for_restore`` job does
+    not start it and remembers the ask. Opened BEFORE the restore's first writer check, so a drain started earlier is running and is
+    stopped by that check, and one asked for later waits for the restore instead of holding its lease through the swap."""
+    with _RESTORE_HOLD_LOCK:
+        _RESTORE_HOLDS[0] += 1
+
+
+def release_restore_hold() -> dict[str, int]:
+    """Close one committing restore's hold. When it was the last, returns the kinds whose start it held, each with the shutdown count
+    when it was asked (and forgets them), for :func:`start_held_jobs` or for dropping; otherwise an empty dict. Never raises."""
+    try:
+        with _RESTORE_HOLD_LOCK:
+            _RESTORE_HOLDS[0] = max(0, _RESTORE_HOLDS[0] - 1)
+            if _RESTORE_HOLDS[0]:
+                return {}
+            held = dict(_DEFERRED_FOR_RESTORE)
+            _DEFERRED_FOR_RESTORE.clear()
+        return held
+    except Exception:  # noqa: BLE001 - never raises; a held start that is lost keeps its own Resume
+        return {}
+
+
+def start_held_jobs(held: dict[str, int]) -> list[str]:
+    """Start the jobs whose start a committing restore held (row 383), once its hold is released. Unlike a restart after a yield, a held
+    start is a fresh ask (nothing was running to cancel), so an earlier cancel does not drop it; a shutdown begun since the ask does,
+    and a job already running is left alone. Goes through ``start()``, so a hold another restore has opened since holds it again.
+    Returns the kinds started; never raises."""
+    started: list[str] = []
+    for kind in sorted(held):
+        try:
+            with _REG_LOCK:
+                job = _REGISTRY.get(kind)
+            if job is None or stop_all_count() != held[kind]:
+                continue
+            job.start()
+        except Exception:  # noqa: BLE001 - already running, held again, or no thread: its own Resume still works
+            continue
+        started.append(kind)
+    return started
 
 
 def _ask_to_stop(job: BackgroundJob) -> bool:
@@ -613,3 +683,6 @@ def _reset_registry_for_tests() -> None:
     with _REG_LOCK:
         _REGISTRY.clear()
         _STOPS_SEEN_AT_YIELD.clear()
+    with _RESTORE_HOLD_LOCK:
+        _RESTORE_HOLDS[0] = 0
+        _DEFERRED_FOR_RESTORE.clear()
