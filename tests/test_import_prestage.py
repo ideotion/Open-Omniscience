@@ -287,6 +287,10 @@ def test_the_restore_job_removes_a_staging_it_was_handed_and_did_not_use(tmp_pat
     end = time.time() + 5
     while mgr.status().get("state") == "running" and time.time() < end:
         time.sleep(0.02)
+    # The handed-in staging goes in the run's ``finally``, AFTER the state left "running": wait for the thread itself,
+    # or the read below can land between the two (seen on CI as ``[] == [staged]``).
+    assert mgr._thread is not None
+    mgr._thread.join(timeout=5)
     assert removed == [staged]
 
 

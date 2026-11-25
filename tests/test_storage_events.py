@@ -800,7 +800,8 @@ def test_the_background_writer_outlives_a_failed_write(journal, monkeypatch):
     assert _wait_until(lambda: _member()["file"]["write_failures"] == 1)
     se.record("guard", {"n": 2})
     assert _wait_until(journal.exists), "the next change is written by the same thread"
-    assert _member()["file"]["last_write_ok_at"] is not None
+    # The file appears at os.replace; the writer notes the success a few lines later, so poll for it too.
+    assert _wait_until(lambda: _member()["file"]["last_write_ok_at"] is not None)
 
 
 def _record_every_shape(n: int = 300) -> None:

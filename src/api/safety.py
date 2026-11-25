@@ -34,6 +34,8 @@ router = APIRouter(prefix="/api/safety", tags=["safety"])
 # name. ``_ERASE_LOCK`` keeps two overwrites from running at once on one volume.
 _PANIC_DONE = threading.Event()
 _ERASE_LOCK = threading.Lock()
+#: Set while a panic wipe runs (row 428: a safety copy is never deleted beside an erase).
+_PANIC_RUNNING = threading.Event()
 
 _PROXY_NOTE = (
     "Protected mode routes the app's web fetches through your proxy and sends a generic User-Agent, "
@@ -181,7 +183,11 @@ def panic(body: PanicBody) -> dict:
         raise HTTPException(status_code=400, detail="set confirm=true to wipe (irreversible)")
     from src.safety import panic_wipe
 
-    report = panic_wipe(confirm=True)
+    _PANIC_RUNNING.set()
+    try:
+        report = panic_wipe(confirm=True)
+    finally:
+        _PANIC_RUNNING.clear()
     _PANIC_DONE.set()
     if report.get("drive_key_in_memory") is True:
         # R813 row 389: the key to the drive's data stays in this process until it ends, so it ends now, once this answer is sent.
