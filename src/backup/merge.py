@@ -10726,6 +10726,23 @@ def refuse_half_migrated_store() -> None:
         raise HalfMigratedStoreRefused(f"nothing was restored: {unfinished_message(journal.get('state'), path)}")
 
 
+def _leave_counters_to_drain() -> str | None:
+    """Open the R22 counter-deferral marker and COMMIT it, for a commit that leaves its counter sweep to the drain.
+
+    Returns the marker's timestamp, or None when it could not be opened: the caller then runs the sweep as before,
+    because a skipped sweep without the marker would let the counters read ``exact`` while unreconciled -- the one
+    failure R22 forbids. An already-open marker keeps its earlier timestamp (``open_deferral``). Never raises."""
+    try:
+        from src.analytics.counter_deferral import open_deferral
+        from src.database.session import session_scope
+
+        with session_scope() as _s:
+            return open_deferral(_s, reason="restore-counter-sweep-left-to-drain")
+    except Exception as exc:  # noqa: BLE001 - not opened: the caller reconciles here instead
+        log_failure(_LOG, "counter-deferral marker not opened; reconciling in the restore", exc, level=logging.WARNING)
+        return None
+
+
 @_settle_pending_net
 def run_restore(
     staged: StagedArtifact,
@@ -10746,8 +10763,15 @@ def run_restore(
     hold_after_merge: bool = False,
     trust_fetch_history: bool | None = None,
     final_activation: bool = True,
+    counters_left_to_drain: bool = False,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
+
+    ``counters_left_to_drain`` (row 422 P6, default False): True only from a caller that starts the deferred re-index
+    drain after this import (the volume job when ``defer_reindex()``: its hand-off, or the queue's end). The commit then
+    skips the per-item whole-corpus counter sweep, after opening the durable R22 deferral marker
+    (:func:`_leave_counters_to_drain`), so the counters read ``estimated`` until the drain's closing sweep reconciles them
+    in full and closes the marker. A marker that cannot be opened runs the sweep exactly as before.
 
     ``final_activation`` (R827 R7(a), default True): False only for an import queue's INTERMEDIATE checkpoint,
     one after which another backup of the run will merge. Such a commit checks the tables the import wrote
@@ -11563,13 +11587,26 @@ def run_restore(
         # counters as `estimated` until a whole sweep lands -- a half-reconciled corpus can
         # never masquerade as exact. Still a NAMED, TIMED stage, so the real number shows up
         # in report["timings"] on the operator's hardware rather than being guessed at.
+        #
+        # ROW 422 P6: when the deferred drain follows this import, its closing sweep reconciles EVERY counter in full
+        # (``finish_deferral``: restart, no budget) and closes the R22 marker. The per-item pass is then paid twice
+        # for one answer, so it is left to the drain -- but only after the marker is durably open, so nothing reads
+        # ``exact`` meanwhile, a crash included (the next drain, at boot or after the next import, finishes it).
         with timings.stage("keyword_counter_reconcile"):
             try:
                 from src.analytics.store import reconcile_keyword_counters
                 from src.database.session import session_scope
 
-                with session_scope() as _cnt_sess:
-                    report["keyword_counters"] = reconcile_keyword_counters(_cnt_sess)
+                left_since = _leave_counters_to_drain() if counters_left_to_drain else None
+                if left_since is not None:
+                    report["keyword_counters"] = {
+                        "reconciled": False,
+                        "left_to_drain": True,
+                        "estimated_since": left_since,
+                    }
+                else:
+                    with session_scope() as _cnt_sess:
+                        report["keyword_counters"] = reconcile_keyword_counters(_cnt_sess)
             except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
                 log_failure(_LOG, "keyword-counter reconcile after restore-merge failed", exc, level=logging.WARNING)
                 report["keyword_counters"] = {"reconciled": False, "error": "see server log"}

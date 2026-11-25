@@ -126,7 +126,10 @@ def hand_off_reindex(report: dict) -> None:
     }
 
     pending = report["reindex_deferred"]["articles_pending"]
-    if not pending:
+    # Row 422 P6: a commit that left its counter sweep to the drain needs the drain even with no article pending,
+    # because only its closing sweep reconciles the counters and closes the R22 marker.
+    counters_owed = bool((report.get("keyword_counters") or {}).get("left_to_drain"))
+    if not pending and not counters_owed:
         # Nothing to drain, or nothing we could READ. Starting a job in either case is
         # pointless work whose only visible effect is a failure in the log -- and on the
         # unreadable branch it would also imply we knew there was work, which we do not.
@@ -1012,6 +1015,9 @@ class VolumeBackupManager:
                         working_copy=working_copy,
                         hold_after_merge=hold_after_merge,
                         final_activation=final_activation,
+                        # Row 422 P6: the drain this deferral starts (hand_off_reindex, or the queue's end) closes the
+                        # counter sweep, so the commit leaves it there behind the durable R22 marker.
+                        counters_left_to_drain=defer_reindex(),
                     )
                     # S6.2: an artifact that CARRIES the large public files puts them
                     # back once the corpus merge has committed -- after, because a
