@@ -194,6 +194,9 @@ class StagedArtifact:
     # What each of ``key_passphrases`` was given as, in the same order: "corpus", "backup", or "backup and corpus" (one
     # passphrase given as both). Names, never a secret: the import report says which one a still-encrypted key needs.
     key_passphrase_roles: tuple[str, ...] = field(default=(), repr=False, compare=False)
+    #: Row 432: the fixed words of a custody log refused for its schema when it was staged (it is then left out, as the
+    #: merge leaves out one it refuses itself); ``None`` when there was none or it was kept.
+    custody_refused: str | None = None
 
     def member_paths(self, role: str, *, keep_links: bool = False) -> list[tuple[str, Path]]:
         """``(name, staged path)`` of each member of ``role``, its name spelled with "/" whatever build wrote it (:func:`member_name`).
@@ -1204,10 +1207,28 @@ def seal_staged_members(staged: StagedArtifact, stage_a_timings: dict[str, float
 
     if staged.hash_failures:
         return
+    from src.backup import staged_key
+    from src.monitoring.secret_scrub import record_text
+
     t0 = time.monotonic()
-    _seal_staged(staged.corpus_path)
+    try:
+        _seal_staged(staged.corpus_path)
+        _disarm_staged(staged.corpus_path)
+    except staged_key.StagedKeyError as exc:
+        raise ArtifactError(record_text(exc)) from None  # fixed words of its own, scrubbed as every record is
     if staged.custody_path is not None:
-        _seal_staged(staged.custody_path)
+        try:
+            _seal_staged(staged.custody_path)
+            _disarm_staged(staged.custody_path)
+        except staged_key.StagedSchemaRefused as exc:
+            # Row 432: the custody log is refused and left out, the import goes on, in the words the merge uses when it
+            # refuses one itself (merge_custody); a damaged or unsealable one still stops the import, as before.
+            staged.custody_refused = record_text(exc)
+            staged.custody_path.unlink(missing_ok=True)
+            staged_key.forget(staged.custody_path)
+            staged.custody_path = None
+        except staged_key.StagedKeyError as exc:
+            raise ArtifactError(record_text(exc)) from None
     if stage_a_timings is not None:
         stage_a_timings["seal"] = round(time.monotonic() - t0, 3)
 
@@ -1225,10 +1246,23 @@ def _seal_staged(path: Path) -> None:
         staged_key.seal_plaintext(path)
     except staged_key.NotADatabase:
         return  # nothing a database holds is in it; the validation refuses it in its own words
-    except staged_key.StagedKeyError as exc:
-        from src.monitoring.secret_scrub import record_text
 
-        raise ArtifactError(record_text(exc)) from None  # fixed words of its own, scrubbed as every record is
+
+def _disarm_staged(path: Path) -> None:
+    """Drop every trigger and view the backup's copy carries (row 432, :func:`staged_key.disarm_staged`), once it is
+    staged and before anything writes to it. A file that is not a keyed copy or a plaintext SQLite file is left: the
+    validation refuses it in its own words."""
+    from src.backup import staged_key
+    from src.database.connect import is_encrypted_file
+
+    if not path.is_file() or path.is_symlink():
+        return
+    if not staged_key.is_keyed(path) and is_encrypted_file(path) is not False:
+        return
+    try:
+        staged_key.disarm_staged(path)
+    except staged_key.db_errors():
+        return  # it does not read as a database: the validation refuses it in its own words, before any merge
 
 
 def cleanup_staging(staged: StagedArtifact) -> None:

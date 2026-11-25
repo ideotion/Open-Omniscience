@@ -163,6 +163,17 @@ def test_a_full_disk_is_not_called_a_damaged_backup(tmp_path, monkeypatch):
             return _Conn(real().connect(*a, **k))
 
     monkeypatch.setattr(staged_key, "_driver", lambda: _Driver)
+    import shutil
+
+    real_usage = shutil.disk_usage
+    calls = []
+
+    def usage(path):  # room when the seal starts, none when its export fails (row 432: the disk is the evidence)
+        calls.append(path)
+        u = real_usage(path)
+        return u if len(calls) == 1 else type(u)(u.total, u.used, 0)
+
+    monkeypatch.setattr(shutil, "disk_usage", usage)
     with pytest.raises(staged_key.StagedKeyError) as refused:
         staged_key.seal_plaintext(p)
     assert str(refused.value) == staged_key.DISK_FULL
