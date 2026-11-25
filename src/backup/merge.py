@@ -8040,10 +8040,61 @@ def _merge_side_files_and_custody(staged: StagedArtifact, report: dict) -> None:
         report["custody"] = {"entries": 0, "imported": 0, "duplicate": 0, "chains": [], "refused": staged.custody_refused}
 
 
+def _owed_in_order(ordered: list[int], skip: set[int]) -> list[int]:
+    """``ordered`` without the ids in ``skip``, order kept (row 423; ``merged_rows``' primary key means no id repeats). A function of its
+    own, not a comprehension in ``reindex_imported_articles``: the list is long (a corpus), so a call per item would cost, and a
+    comprehension in a caller's frame leaves its back-edge outside the caller's ``try`` (src/utils/interrupts.py)."""
+    return [i for i in ordered if i not in skip]
+
+
 def _ids_after(all_ids: list[int], after: int) -> list[int]:
-    """The ids above ``after``. A function of its own, not a comprehension in ``reindex_imported_articles``: the list is long (a corpus), so a call per
-    item (``kept``) would cost, and a comprehension in a caller's frame leaves its back-edge outside the caller's ``try`` (src/utils/interrupts.py)."""
+    """The ids above ``after``: the id watermark of the ascending fallback order (row 423). A function of its own for the reason above."""
     return [i for i in all_ids if i > after]
+
+
+#: Row 423: the order the post-import drain analyses a batch in. Newest publication date first, so the recent weeks a reader looks at
+#: first are ready first; an undated article after every dated one; the id breaks ties, newest inserted first. The date is the article's
+#: own column (R775), read once at the start of the batch. Driven by ``idx_article_published_at`` (a covering scan of the index plus a
+#: sort), never by a lookup into each article's row: ``published_at`` sits after ``content`` in the table, so reaching it row by row
+#: walks every article's overflow pages (measured, 100k articles of 8 KB, cold: 0.64 s through the rows, 0.15 s through the index).
+_BATCH_NEWEST_FIRST_SQL = (
+    "SELECT a.id FROM articles a INDEXED BY idx_article_published_at"
+    " WHERE a.id IN (SELECT row_id FROM merged_rows WHERE batch_id = :b AND table_name = 'articles')"
+    " ORDER BY a.published_at IS NULL, a.published_at DESC, a.id DESC"
+)
+#: The same order for a store without that index (it reads each article's row: slower, never wrong).
+_BATCH_NEWEST_FIRST_NO_INDEX_SQL = (
+    "SELECT a.id FROM merged_rows m JOIN articles a ON a.id = m.row_id"
+    " WHERE m.batch_id = :b AND m.table_name = 'articles'"
+    " ORDER BY a.published_at IS NULL, a.published_at DESC, a.id DESC"
+)
+#: The batch's ids that name no article any more (an imported article deleted since: ``merged_rows`` has no cascade). They go last; the
+#: pass counts them out as absent, which is what lets such a batch be stamped done. A rowid probe each, no article row read.
+_BATCH_ABSENT_SQL = (
+    "SELECT m.row_id FROM merged_rows m WHERE m.batch_id = :b AND m.table_name = 'articles'"
+    " AND NOT EXISTS (SELECT 1 FROM articles a WHERE a.id = m.row_id) ORDER BY m.row_id DESC"
+)
+#: The fallback order (row 423): ascending id, the order whose id watermark is an exact cursor. Used when the stamps cannot be the cursor.
+_BATCH_BY_ID_SQL = "SELECT row_id FROM merged_rows WHERE batch_id = :b AND table_name = 'articles' ORDER BY row_id"
+
+
+def _batch_in_drain_order(session, batch_id: int, *, newest_first: bool) -> list[int]:
+    """The batch's article ids in the order the drain analyses them (row 423): newest first, then the absent ids; or ascending id."""
+    from sqlalchemy import text
+
+    if not newest_first:
+        return [int(r[0]) for r in session.execute(text(_BATCH_BY_ID_SQL), {"b": batch_id}).fetchall()]
+    has_index = session.execute(
+        # The app's own index (models.py): on articles, not partial. Any other index under that name gets the read through the rows.
+        text(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_article_published_at' AND tbl_name = 'articles'"
+            " AND upper(sql) NOT LIKE '% WHERE %'"
+        )
+    ).fetchone()
+    sql = _BATCH_NEWEST_FIRST_SQL if has_index else _BATCH_NEWEST_FIRST_NO_INDEX_SQL
+    ordered = [int(r[0]) for r in session.execute(text(sql), {"b": batch_id}).fetchall()]
+    ordered.extend(int(r[0]) for r in session.execute(text(_BATCH_ABSENT_SQL), {"b": batch_id}).fetchall())
+    return ordered
 
 
 def _write_batch_report(working: Path, batch_id: int, report: dict) -> None:
@@ -9940,7 +9991,7 @@ def _reindex_state_path() -> Path:
     return data_dir() / _REINDEX_STATE_FILE
 
 
-def _save_reindex_cursor(batch_id: int, *, last_id: int, done: int, total: int) -> None:
+def _save_reindex_cursor(batch_id: int, *, last_id: int, done: int, total: int, order: str = "id") -> None:
     """Best-effort watermark write. Never raises: a resilience sidecar that can itself
     break the operation it exists to protect is worse than no sidecar (the project's
     recorded crash-journal lesson)."""
@@ -9950,7 +10001,7 @@ def _save_reindex_cursor(batch_id: int, *, last_id: int, done: int, total: int) 
         _replace_file_bytes(  # atomic: a torn read can never yield a bogus watermark
             path,
             json.dumps(
-                {"batch_id": batch_id, "last_id": last_id, "done": done, "total": total},
+                {"batch_id": batch_id, "last_id": last_id, "done": done, "total": total, "order": order},
                 sort_keys=True,
             ).encode("utf-8"),
         )
@@ -9974,13 +10025,17 @@ def peek_reindex_cursor() -> dict | None:
         return None
 
 
-def _load_reindex_cursor(batch_id: int) -> int | None:
+def _load_reindex_cursor(batch_id: int, *, order: str = "id") -> int | None:
     """The last completed article id for THIS batch, or None. A cursor belonging to a
     different batch is ignored rather than trusted -- resuming batch B from batch A's
-    watermark would skip real work and leave articles permanently keyword-less."""
+    watermark would skip real work and leave articles permanently keyword-less. So is one
+    written in another ORDER (row 423): an id watermark is a cursor only over the ascending
+    order it was written in, and a cursor with no order named was written in that one."""
     try:
         raw = json.loads(_reindex_state_path().read_text(encoding="utf-8"))
         if int(raw.get("batch_id", -1)) != int(batch_id):
+            return None
+        if str(raw.get("order", "id")) != order:
             return None
         last = raw.get("last_id")
         return int(last) if last is not None else None
@@ -10295,20 +10350,18 @@ def reindex_imported_articles(
         stats = {}  # the count of ids that named no article comes back through it (below)
 
     with session_scope() as session:
-        rows = session.execute(
-            text(
-                "SELECT row_id FROM merged_rows "
-                "WHERE batch_id = :b AND table_name = 'articles'"
-            ),
-            {"b": batch_id},
-        ).fetchall()
-        batch_ids = {int(r[0]) for r in rows}
+        kw_ids = _backlog_engines()
+        www_id = _backlog_www_engine()
+        # Row 423: newest first (see _BATCH_NEWEST_FIRST_SQL), so a large import's recent news is analysed first rather than last. That
+        # order needs the stamps as its resume cursor; when an engine identity cannot be computed nothing is ever stamped, so the batch
+        # falls back to ascending id order and its exact id watermark (a stamp-less resume would otherwise start again from the top).
+        newest_first = "<unknown>" not in (kw_ids[0], www_id)
+        ordered = _batch_in_drain_order(session, batch_id, newest_first=newest_first)
         # R24: an article whose rows are already stamped by the engine this re-index would
         # run -- carried at import, or finished by an earlier interrupted run -- would be
         # re-indexed into exactly the rows it already has. Skipped. Read from
         # the narrow stamps tables, never from the article rows. R415: BOTH stamps -- an article with only the keyword
         # stamp still owes its places and entities, and one with only the www stamp still owes its keywords.
-        kw_ids = _backlog_engines()
         certified = {
             int(r[0])
             for r in session.execute(
@@ -10319,12 +10372,14 @@ def reindex_imported_articles(
                     " WHERE m.batch_id = :b AND m.table_name = 'articles'"
                     " AND st.engine IN (:e, :el) AND ws.engine = :w"
                 ),
-                {"b": batch_id, "e": kw_ids[0], "el": kw_ids[1], "w": _backlog_www_engine()},
+                {"b": batch_id, "e": kw_ids[0], "el": kw_ids[1], "w": www_id},
             ).fetchall()
         }
         # A stand-in (the place-holder a salvage copy writes at a lost id, which a backup of that copy carries and the merge records here) is
         # never re-indexed: asked for, it would leave the batch one short of its total for ever and the batch would never be stamped done.
-        all_ids = sorted(batch_ids - certified - stand_in_article_ids(session))
+        all_ids = _owed_in_order(ordered, certified | stand_in_article_ids(session))
+        batch_total = len(ordered)
+        del ordered  # a corpus-long list: not held through the pass
         if not all_ids:
             mark_reindex_complete(batch_id)
             out0: dict = {"reindexed": 0, "failed": 0}
@@ -10332,11 +10387,15 @@ def reindex_imported_articles(
                 out0["already_certified"] = len(certified)
             return out0
 
-        # RESUME. Ascending order + a last-completed watermark is an exact cursor: every
-        # id at or below it is already re-indexed. A missing/foreign watermark simply
-        # starts from the top -- correct, only slower (the re-index is idempotent).
-        resume_after = _load_reindex_cursor(batch_id)
-        ids = _ids_after(all_ids, resume_after) if resume_after is not None else all_ids
+        # RESUME (row 423). Newest first, the stamps are the exact cursor: ``index_article`` writes both in the same transaction as the
+        # article's rows, so after a crash "owed = batch - certified - stand-ins" above is exactly what remains, in any order. An article
+        # the pass finished without stamping (its places-and-entities savepoint failed) is owed again and redone on a resume -- slower,
+        # never a skip. The cursor file then serves the progress line and the journal, its ``last_id`` diagnostic only. In the ascending
+        # fallback order the id watermark is exact, as before: every id at or below it is finished; a missing, foreign or other-order
+        # watermark starts from the top -- correct, only slower.
+        order = "newest" if newest_first else "id"
+        resume_after = _load_reindex_cursor(batch_id, order=order)
+        ids = _ids_after(all_ids, resume_after) if resume_after is not None and not newest_first else all_ids
         already = len(all_ids) - len(ids)
 
         # "Did this resume or start over?" -- answered from the artefact, with the
@@ -10350,14 +10409,19 @@ def reindex_imported_articles(
             batch_id=batch_id,
             cursor_on_disk=_raw,
             cursor_batch_id=(_raw or {}).get("batch_id"),
+            # Newest first (row 423) a diagnostic only: the last article the previous run finished. In the id order, the cursor.
             resumed_after_id=resume_after,
-            already_done=already,
+            drain_order=order,
+            # Row 423: what the stamps say is done (carried at import or finished by an earlier run) plus, in the id order, what the
+            # watermark skips: what this resume does not redo.
+            already_done=len(certified) + already,
             # BOTH denominators, named. `remaining` is what this invocation will
             # walk; `batch_total` is the batch. "3000/686896" meant different
             # things in different lines before they were both stated.
             remaining=len(ids),
-            batch_total=len(all_ids),
+            batch_total=batch_total,
         )
+
         if not ids:
             mark_reindex_complete(batch_id)
             out: dict = {"reindexed": 0, "failed": 0}
@@ -10368,8 +10432,8 @@ def reindex_imported_articles(
         total = len(ids)
 
         def _tracked(done: int, _total: int) -> None:
-            # Persist the watermark as the re-index advances, so a crash resumes here
-            # rather than redoing the batch. `done` counts the articles FINALISED (reindexed
+            # Persist the progress as the re-index advances: in the id order the resume cursor, newest first (row 423) the progress line
+            # and a diagnostic, the stamps saying what a resume skips. `done` counts the articles FINALISED (reindexed
             # or failed), in list order, so ids[done-1] is the last one that completed --
             # EXACTLY when every id of the list names an article. An id that names none (an
             # imported article deleted since: ``merged_rows`` has no cascade) is not counted
@@ -10380,7 +10444,7 @@ def reindex_imported_articles(
             # that precede it in the list are done, would (a crash would resume past them).
             if 0 < done <= total:
                 _save_reindex_cursor(
-                    batch_id, last_id=ids[done - 1], done=already + done, total=len(all_ids)
+                    batch_id, last_id=ids[done - 1], done=already + done, total=len(all_ids), order=order
                 )
             if progress_cb is not None:
                 progress_cb(already + done, len(all_ids))
