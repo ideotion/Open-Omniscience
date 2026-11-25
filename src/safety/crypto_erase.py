@@ -165,6 +165,17 @@ _COPIES_SHORT_SENTENCE = "Database copies that could not be shown to be encrypte
 #: R826: the split corpus's segments without evidence, rewritten in full; and those left short of that (a stop, a failure, a segment
 #: name with another name or a link at it, a folder that could not be read).
 _SEGMENTS_OVERWRITTEN_SENTENCE = "Corpus files that could not be shown to be encrypted were overwritten in full instead of being crypto-erased (count: {n})."
+#: Row 378 (R836 Q2): what is left in the shaped folders may be the operator's, or the app's own under a name an older version
+#: gave it, so the erase of the data folder is never said to be complete: the folders by their (the app's) names, a count only.
+_SHAPED_LEFT_SENTENCE = (
+    "Items were left in the app's {folders} folders, because the app did not create them or wrote them under an older name: "
+    "the erase of the data folder is not complete (count: {n})."
+)
+#: Row 378 (coordinator's ruling amending R837): a Hugging Face sign-in token file the erase saw and left, or could not overwrite
+#: and remove. The token is a credential of the operator's Hugging Face account, which only they can revoke.
+_HF_TOKEN_LEFT_SENTENCE = (
+    "A Hugging Face sign-in token may remain in {folders}: you can revoke it in your Hugging Face account."
+)
 _SEGMENTS_SHORT_SENTENCE = "Some corpus files could not be overwritten, or only partially, so the erase may be incomplete (count: {n})."
 _DEFENCE_TAIL = (
     " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
@@ -305,17 +316,20 @@ def settle_removed(report: dict) -> bool:
                 return True
             seg = report.get("corpus_segments") or {}
             corpus_kept = bool(seg.get("foreign") or seg.get("left")) and _kind(base / CORPUS_DIR) != "absent"
+            # row 378: a shaped folder kept for what it holds, still there (one removed since is kept for nothing)
+            shaped = {f: int(n or 0) for f, n in (report.get("shaped_left") or {}).items() if _kind(base / f) == "dir"}
+            report["shaped_left"] = shaped  # one removed since is no longer said to be left
             if _kind(base / "keys") == "absent":
                 # its keys folder is gone since: nothing is kept for it any more (security reads, row 402: never a stale count)
-                report["folder_kept_foreign"] = corpus_kept
+                report["folder_kept_foreign"] = corpus_kept or bool(shaped)
                 # the count the erase gave: items not the app's AND segments it left (Opus read, row 402)
-                report["kept_items"] = int(seg.get("foreign") or 0) + int(seg.get("left") or 0) if corpus_kept else 0
+                report["kept_items"] = (int(seg.get("foreign") or 0) + int(seg.get("left") or 0) if corpus_kept else 0) + sum(shaped.values())
                 report["keys_left"] = 0
                 report["keys_left_names"] = []
             failed: list[OSError] = []
             # R826: the corpus folder is kept on purpose when it holds items that are not the app's, as keys is (R806)
             rest = sorted(e.name for e in _listing(base, failed.append) if e.name != "keys"
-                          and not (corpus_kept and e.name == CORPUS_DIR))
+                          and not (corpus_kept and e.name == CORPUS_DIR) and e.name not in shaped)
             if failed:
                 rest = rest or ["?"]  # could not be listed: never read as "only keys is left"
             if rest:
@@ -2316,12 +2330,249 @@ def _erase_roots(base: Path, *, app_only: bool, unlisted=None, unreached=None, d
     owns there, by name."""
     if not (_present(base, unreached) if dfd is None else _held_present(dfd)):
         return []  # row 387: with the handle, the folder the erase started on, wherever it is now (security read)
+    # Row 378 (R836): a shaped folder is never a root itself; the entries in it that fit the app's shapes are (its folder is
+    # skipped by the walks, :func:`_shaped_skip`), so what fits no shape stays.
+    # Never an entry's own name in the report or the log (R806): an entry of a shaped folder that cannot be looked at makes its
+    # FOLDER "could not check" (R798), handed to ``unlisted`` by :func:`_shaped_folder`.
+    shaped = [r for folder in _shaped_names() for r in _shaped_folder(base, dfd, folder, shared=app_only, unlisted=unlisted)[0]]
     if not app_only:
-        return [base]
+        return [base, *shaped]
     from src.safety.data_scope import is_app_owned, owned_spec
 
     spec = owned_spec(shared=True)  # the app's common names (models, cache, keys...) are left: they may be the operator's
-    return sorted(Path(e.path) for e in _listing(base, unlisted, dfd) if is_app_owned(e.name, spec=spec))
+    tops = [Path(e.path) for e in _listing(base, unlisted, dfd) if is_app_owned(e.name, spec=spec) and not _shaped_variant(e.name)]
+    # a shaped folder's own name is a root only when it is not a folder (a link is removed, never followed, as before)
+    return sorted([t for t in tops if not (t.name in _shaped_names() and _kind(t, None, _At(dfd, t.name) if dfd is not None else None)
+                                           == "dir")] + shaped)
+
+
+def _shaped_variant(name: str) -> bool:
+    """Row 378 (security read): a name that is the app's only through an ending stripped from a shaped folder's name
+    (``wiki_dumps.tmp``, ``models.oopart``): the app never writes a folder or file so named, and taking it by name would remove a
+    shaped folder's contents whole, never judged. In a folder the app does not own it is left, as any name that is not the app's."""
+    from src.safety.data_scope import _SUFFIXES, STRIP_RE
+
+    stem = re.sub(STRIP_RE, "", name)
+    for suffix in _SUFFIXES:
+        stem = stem.removesuffix(suffix)
+    return stem != name and stem in _shaped_names()
+
+
+def _shaped_names() -> tuple[str, ...]:
+    from src.safety.data_scope import SHAPED_DIRS
+
+    return tuple(SHAPED_DIRS)
+
+
+def _shaped_skip(base: Path, dfd: int | None = None) -> set[Path]:
+    """Row 378: the shaped folders that are folders, which no walk enters whole: only the entries :func:`_erase_roots` gives for
+    them. A FILE at a shaped name is not skipped: it is the app's by its name, overwritten and removed as before (security reads)."""
+    return {base / f for f in _shaped_names() if _kind(base / f, None, _At(dfd, f) if dfd is not None else None) == "dir"}
+
+
+def _shape_now(root: Path, kind: str) -> dict | None:
+    """Row 378 (security read): the shape a shaped-folder entry fits as it is NOW (its kind looked at again through the handle the
+    walk or the removal uses), or None: an entry judged a file that is a folder by then (or the reverse) is never walked or
+    removed. Judged against every shape of its folder: the name was already judged in its scope when it became a root."""
+    from src.safety.data_scope import shaped_match, shaped_spec
+
+    return shaped_match(shaped_spec(shared=False).get(root.parent.name, []), root.name, kind)
+
+
+def _second_shape(root: Path, base: Path) -> dict | None:
+    """Row 378 (R837): the shape with a second-level rule that the shaped-folder entry ``root`` fits by name, or None."""
+    from src.safety.data_scope import shaped_spec
+
+    try:
+        rel = root.relative_to(base).parts
+    except ValueError:
+        return None
+    if len(rel) != 2 or rel[0] not in _shaped_names():
+        return None
+    from src.safety.data_scope import shaped_match
+
+    shape = shaped_match(shaped_spec(shared=False)[rel[0]], rel[1], "dir")
+    return shape if shape is not None and shape.get("second") else None
+
+
+def _second_ok_fd(fd: int, shape: dict) -> bool | None:
+    """R837: whether the folder held by ``fd`` holds only what ``shape`` allows at its first level, looked at through that very
+    handle (the folder judged is the folder walked or removed). None when it, or an entry of it, cannot be looked at: "could not
+    check" (R798), never the app's and never counted as an item the app did not create."""
+    from src.safety.data_scope import second_level_ok
+
+    try:
+        kinds = [(n, _kind(Path(n), None, _At(fd, n))) for n in os.listdir(fd)]
+    except OSError:
+        return None
+    if any(k == "unreached" for _n, k in kinds):
+        return None
+    return second_level_ok(shape, kinds)
+
+
+def _second_ok_path(p: Path, shape: dict) -> bool | None:
+    """:func:`_second_ok_fd` by path (Windows, which has no folder handle here)."""
+    from src.safety.data_scope import second_level_ok
+
+    try:
+        kinds = [(e.name, _kind(Path(e.path))) for e in os.scandir(p)]
+    except OSError:
+        return None
+    if any(k == "unreached" for _n, k in kinds):
+        return None
+    return second_level_ok(shape, kinds)
+
+
+def _shaped_folder(base: Path, dfd: int | None, folder: str, *, shared: bool, unlisted=None) -> tuple[list[Path], int, str]:
+    """Row 378 (R836, R837): one shaped folder of the data folder, listed through its own handle (opened no-follow from ``dfd``)
+    or by path: ``(the app's entries in it, how many entries are left, state)``. ``state`` is the folder's kind (``dir``, or
+    ``absent``, ``link``, ``file``, ``other``, ``unreached``: then nothing in it is judged), ``unlisted`` (R798: handed to
+    ``unlisted``, "could not check", nothing counted) or ``partial`` (listed, but an entry of it, or the first level of one with a
+    second-level rule, could not be looked at: that entry is neither taken nor counted, and the FOLDER is handed to ``unlisted``,
+    never the entry's own name: R806). An entry is the app's when it fits one of the folder's shapes by name and kind and, for a
+    shape with a second-level rule, its own first level holds only what the rule allows; anything else (a link, a FIFO, a name
+    that fits no shape) is left and counted, never followed, never named (R806)."""
+    from src.safety.data_scope import shaped_match, shaped_spec
+
+    p = base / folder
+    kind = _kind(p, None, _At(dfd, folder) if dfd is not None else None)
+    if kind == "unreached" and unlisted is not None:
+        unlisted(OSError(errno.EACCES, "", str(p)))
+    if kind != "dir":
+        return [], 0, kind
+    spec = shaped_spec(shared=shared)[folder]
+    mine: list[Path] = []
+    left = 0
+    unchecked = False
+    fd: int | None = None
+    try:
+        if dfd is not None:
+            fd, err = _open_below(dfd, (folder,))
+            if fd is None:
+                raise OSError(getattr(err, "errno", None) or errno.EIO, "")
+            entries = [(n, _kind(p / n, None, _At(fd, n))) for n in sorted(os.listdir(fd))]
+        else:
+            entries = [(e.name, _kind(Path(e.path))) for e in sorted(os.scandir(p), key=lambda e: e.name)]
+        for name, k in entries:
+            shape = shaped_match(spec, name, k)
+            ok = True if shape is None or not shape.get("second") else _shaped_second_ok(fd, p, name, shape)
+            if k == "unreached" or ok is None:
+                unchecked = True  # "could not check" (R798): never taken, never counted, never named
+                continue
+            if shape is None or not ok:
+                left += 1
+                continue
+            mine.append(p / name)
+    except OSError as exc:
+        if isinstance(exc, FileNotFoundError):
+            return [], 0, "absent"
+        if unlisted is not None:
+            unlisted(OSError(exc.errno, "", str(p)))  # the folder by its path, never a handle number
+        return [], 0, "unlisted"
+    finally:
+        if fd is not None:
+            _close_quietly(fd)
+    if unchecked and unlisted is not None:
+        unlisted(OSError(errno.EACCES, "", str(p)))  # the folder by its path, never the entry's name (R806)
+    return mine, left, "partial" if unchecked else "dir"
+
+
+def _shaped_second_ok(fd: int | None, p: Path, name: str, shape: dict) -> bool | None:
+    if fd is None:
+        return _second_ok_path(p / name, shape)
+    efd, _err = _open_below(fd, (name,))
+    if efd is None:
+        return None  # could not be opened (a link is never one: it never fits a folder shape): could not check
+    try:
+        return _second_ok_fd(efd, shape)
+    finally:
+        _close_quietly(efd)
+
+
+def _hf_token_pass(base: Path, dfd: int | None, *, shared: bool, track) -> tuple[int, int, list[str]]:
+    """Row 378 (coordinator's ruling amending R837): Hugging Face's sign-in token files (data_scope.HF_TOKEN_FILES), credentials,
+    in the early pass right after the keys. In a folder the app owns they are taken in ``models/huggingface`` and
+    ``cache/huggingface`` by their exact names whatever else the folder holds; in a folder it does not own only in a Hugging Face
+    home that fits R837's rule (``models/huggingface``; ``cache/huggingface`` is never the app's there). Regular files only, never
+    through a link, each looked at, overwritten and removed through its folder's kept handle (by path without one); plaintext, so
+    "overwritten and removed", never "destroyed" (R815). Returns ``(seen, wiped, where one may remain)``: each Hugging Face home
+    holding a token file this pass did not take, or could not overwrite and remove, by the app's own folder names only."""
+    seen = wiped = 0
+    left: list[str] = []
+    for folder in ("models", "cache"):
+        s_, w_, stays = _hf_token_home(base, dfd, folder, shared=shared, track=track)
+        seen += s_
+        wiped += w_
+        left += [f"{folder}/huggingface"] if stays else []
+    return seen, wiped, sorted(set(left))
+
+
+def _hf_token_home(base: Path, dfd: int | None, folder: str, *, shared: bool, track) -> tuple[int, int, bool]:
+    """One Hugging Face home of :func:`_hf_token_pass`: ``(seen, wiped, a token file may remain there)``."""
+    from src.safety.data_scope import shaped_match, shaped_spec
+
+    shape = shaped_match(shaped_spec(shared=shared)[folder], "huggingface", "dir")
+    hfd: int | None = None
+    if dfd is not None:
+        hfd, _err = _open_below(dfd, (folder, "huggingface"))  # no-follow at each name; another device refused
+        if hfd is None:
+            # security reads of row 378: a home that is there and cannot be opened (another drive, no access) may hold a token
+            return 0, 0, _kind(base / folder / "huggingface") not in ("absent", "link")
+    try:
+        return _hf_token_take(base, hfd, folder, shape, shared=shared, track=track)
+    finally:
+        if hfd is not None:
+            _close_quietly(hfd)
+
+
+def _hf_token_take(base: Path, hfd: int | None, folder: str, shape, *, shared: bool, track) -> tuple[int, int, bool]:
+    """The body of :func:`_hf_token_home`, in a frame of its own so its loop has no cleanup around it (src/utils/interrupts.py)."""
+    from src.safety.data_scope import HF_TOKEN_FILES
+
+    home = base / folder / "huggingface"
+    present = kept(HF_TOKEN_FILES, lambda n: _kind(home / n, None, _At(hfd, n) if hfd is not None else None) == "file")
+    ok = None if shape is None else True if not shared or not shape.get("second") else (
+        _second_ok_fd(hfd, shape) if hfd is not None else _second_ok_path(home, shape))
+    if hfd is None and (_kind(base / folder) != "dir" or _kind(home) != "dir"):
+        ok = None  # by path: never through a link at either name
+    if present and ok is not True:
+        return 0, 0, True  # seen and left: said (a sign-in token may remain), never taken
+    seen = wiped = 0
+    stays = False
+    for n in present:
+        _s, overwritten, unlinked = track(home / n) if hfd is None else track(home / n, at=_At(hfd, n))
+        seen += _s
+        wiped += unlinked
+        stays = stays or not (overwritten and unlinked)
+    return seen, wiped, stays
+
+
+def _shaped_settle(base: Path, dfd: int | None, *, shared: bool, unlisted=None, touched: set[str] | None = None) -> dict[str, dict]:
+    """Row 378: after step 6 removed the app's entries of each shaped folder, each folder that is now empty is removed (only an
+    empty one: :func:`os.rmdir`), and each one still there is measured again: ``{folder: {"left": n, "app_left": m}}``, ``left``
+    the entries that are not the app's (a count only, R806), ``app_left`` the app's whose removal failed, ``unlisted`` when it
+    could not be listed (R798). A folder that is gone, or not a folder, is not in the answer."""
+    out: dict[str, dict] = {}
+    for folder in _shaped_names():
+        p = base / folder
+        if _kind(p, None, _At(dfd, folder) if dfd is not None else None) != "dir":
+            continue
+        # In a folder the app does not own, only a folder this erase took entries from is removed when empty: an operator's own
+        # empty ``models`` (a mount point not mounted, say) is never removed (security read). In the app's own, every one may go.
+        if not shared or folder in (touched or ()):
+            with contextlib.suppress(OSError):
+                if dfd is None:
+                    os.rmdir(p)
+                else:
+                    os.rmdir(folder, dir_fd=dfd)
+                continue
+        mine, left, state = _shaped_folder(base, dfd, folder, shared=shared, unlisted=unlisted)
+        if state not in ("dir", "unlisted", "partial"):
+            continue  # gone since, or swapped for something that is not a folder: nothing kept for it
+        if shared and not (left or mine or state != "dir") and folder not in (touched or ()):
+            continue  # an empty folder the erase took nothing from, in a folder the app does not own: not the erase's to keep or name
+        out[folder] = {"left": left, "app_left": len(mine), **({"unlisted": True} if state != "dir" else {})}
+    return out
 
 
 class _Entry(NamedTuple):
@@ -2445,11 +2696,18 @@ def _files_under(roots: list[Path], base: Path, onerror, skip: Path | set[Path] 
             kind = _kind(root, unreached)
             if kind == "unreached":
                 continue
+            if kind not in ("dir", "link") and root.parent != base and _shape_now(root, kind) is None:
+                continue  # row 378: judged a folder, a file now (or not a plain file): never written, counted at the end
             if kind != "dir":
                 yield root, None
                 continue
         if root in skips:
             continue
+        if root != base and root.parent != base and _shape_now(root, "dir") is None:
+            continue  # row 378: judged a file, a folder now: never walked, counted as left at the end
+        shape = _second_shape(root, base) if root != base else None
+        if shape is not None and _second_ok_path(root, shape) is not True:
+            continue  # row 378 (R837): no longer only what its rule allows: not walked, counted as left at the end
         for top, dirs, names in os.walk(root, onerror=onerror):
             dirs[:] = [d for d in dirs if Path(top, d) not in skips and _kind(Path(top, d), unreached) == "dir"]
             for name in names:
@@ -2467,6 +2725,9 @@ def _fd_roots(roots: list[Path], base: Path, base_fd: int, skips: set[Path], one
         if root == base:
             yield from _fd_files(base_fd, base, (), skips, onerror, unreached)
             continue
+        if root.parent != base:
+            yield from _fd_shaped_root(root, base, base_fd, skips, onerror, unreached)
+            continue
         kind = _kind(root, unreached, _At(base_fd, root.name))
         if kind in ("absent", "unreached"):
             continue
@@ -2474,6 +2735,124 @@ def _fd_roots(roots: list[Path], base: Path, base_fd: int, skips: set[Path], one
             yield root, _At(base_fd, root.name)
             continue
         yield from _fd_files(base_fd, base, (root.name,), skips, onerror, unreached)
+
+
+def _fd_shaped_root(root: Path, base: Path, base_fd: int, skips: set[Path], onerror, unreached):
+    """Row 378: one entry of a shaped folder (``<data>/<folder>/<name>``), reached from the data folder's handle through its
+    folder's own handle (opened no-follow). A folder whose shape has a second-level rule (R837) is judged again through the very
+    handle the walk then goes on from, so the folder judged is the folder walked; one that no longer fits is not walked (it is
+    counted as left when the folder is measured at the end)."""
+    folder, name = root.parent.name, root.name
+    parent, err = _open_below(base_fd, (folder,))
+    if parent is None:
+        onerror(OSError(getattr(err, "errno", None) or errno.EIO, "", str(root.parent)))
+        return
+    try:
+        kind = _kind(root, unreached, _At(parent, name))
+        if kind in ("absent", "unreached"):
+            return
+        if kind == "link":
+            yield root, _At(parent, name)  # removed, never followed or written (step 6 unlinks a link)
+            return
+        if _shape_now(root, kind) is None:
+            return  # no longer what it was judged (a file swapped for a folder, say): never walked, counted at the end
+        if kind != "dir":
+            yield root, _At(parent, name)
+            return
+        efd, err = _open_below(parent, (name,))
+        if efd is None:
+            onerror(OSError(getattr(err, "errno", None) or errno.EIO, "", str(root)))
+            return
+        try:
+            shape = _second_shape(root, base)
+            if shape is not None and _second_ok_fd(efd, shape) is not True:
+                return
+            yield from _fd_files(efd, root, (), skips, onerror, unreached)
+        finally:
+            _close_quietly(efd)
+    finally:
+        _close_quietly(parent)
+
+
+def _remove_judged(parent: int, name: str, shape: dict) -> None:
+    """R837: remove the folder ``name`` below ``parent`` only when, looked at through the handle the removal uses, it still holds
+    only what ``shape`` allows; each of its entries goes through that handle, then the folder itself (only an empty one)."""
+    efd, _err = _open_below(parent, (name,))
+    if efd is None:
+        return
+    judged = None
+    try:   # judged and removed through the ONE handle: a folder swapped in between is never acted on (Opus read of row 378)
+        judged = _judged_names(efd, shape)
+        if judged is not None:
+            _remove_names(efd, judged)
+    finally:
+        _close_quietly(efd)
+    if judged is None:
+        return
+    with contextlib.suppress(OSError):
+        os.rmdir(name, dir_fd=parent)
+
+
+def _judged_names(fd: int, shape: dict) -> list[tuple[str, str]] | None:
+    """R837 (security reads of row 378): the entries of the folder held by ``fd`` with their kinds, from the ONE listing the
+    rule judged, or None when that listing does not fit ``shape`` (or cannot be read): only these names are ever removed, so an
+    entry made after the judgement is never taken unjudged."""
+    from src.safety.data_scope import second_level_ok
+
+    try:
+        kinds = [(n, _kind(Path(n), None, _At(fd, n))) for n in os.listdir(fd)]
+    except OSError:
+        return None
+    if any(k == "unreached" for _n, k in kinds) or second_level_ok(shape, kinds) is not True:
+        return None
+    return sorted(kinds)
+
+
+def _remove_names(efd: int, judged: list[tuple[str, str]]) -> None:
+    """Each judged entry of the folder held by ``efd``, removed through it only while it is still of the kind it was judged."""
+    for child, kind in judged:
+        now = _kind(Path(child), None, _At(efd, child))
+        if now != kind:
+            continue  # no longer what was judged: left
+        if kind == "dir":
+            _rmtree_at(efd, child)
+            continue
+        with contextlib.suppress(OSError):
+            os.unlink(child, dir_fd=efd)
+
+
+def _remove_shaped(roots: list[Path], base: Path, dfd: int | None) -> None:
+    """Row 378: the app's entries of the shaped folders (``<data>/<folder>/<name>``), each looked at and removed through its
+    folder's handle (by path without ``dfd``); a link is removed, never followed; a folder with a second-level rule (R837) only
+    while it still fits it."""
+    for root in roots:
+        if root.parent == base or root == base:
+            continue
+        shape = _second_shape(root, base)
+        if dfd is None:
+            kind = _kind(root)
+            if kind == "link":
+                with contextlib.suppress(OSError):
+                    root.unlink()
+            elif kind == "dir" and _shape_now(root, kind) is not None and (shape is None or _second_ok_path(root, shape) is True):
+                shutil.rmtree(root, ignore_errors=True)
+            continue
+        parent, _err = _open_below(dfd, (root.parent.name,))
+        if parent is None:
+            continue
+        try:
+            kind = _kind(root, None, _At(parent, root.name))
+            if kind == "link":
+                with contextlib.suppress(OSError):
+                    os.unlink(root.name, dir_fd=parent)
+            elif kind == "dir" and _shape_now(root, kind) is None:
+                pass  # no longer what it was judged: left, counted at the end
+            elif kind == "dir" and shape is not None:
+                _remove_judged(parent, root.name, shape)
+            elif kind == "dir":
+                _rmtree_at(parent, root.name)
+        finally:
+            _close_quietly(parent)
 
 
 def _remove_app_folders(roots: list[Path], dfd: int | None = None, *, files: bool = False) -> None:
@@ -2579,16 +2958,18 @@ def _remove_base(base: Path, dfd: int | None) -> bool:
     return True
 
 
-def _left_entries(base: Path, dfd: int | None = None) -> dict[str, list[str]]:
+def _left_entries(base: Path, dfd: int | None = None, *, shaped: set[str] | None = None) -> dict[str, list[str]]:
     """What an app-only erase left at the top of the data folder, by name (never opened or read): ``others`` the app does not
     own, ``common`` the app's common names left because they may be the operator's, ``not_removed`` the app's own that a
-    removal failed on (each also named in ``overwrite_failures`` when its overwrite failed)."""
+    removal failed on (each also named in ``overwrite_failures`` when its overwrite failed). The ``shaped`` folders (row 378) are
+    kept on purpose and counted by what they hold, so none of the three names them."""
     from src.safety.data_scope import is_app_owned, owned_spec
 
     full, shared = owned_spec(), owned_spec(shared=True)
     left: dict[str, list[str]] = {"others": [], "common": [], "not_removed": []}
-    for name in sorted(e.name for e in _listing(base, None, dfd)):
-        kind = "not_removed" if is_app_owned(name, spec=shared) else "common" if is_app_owned(name, spec=full) else "others"
+    for name in sorted(e.name for e in _listing(base, None, dfd) if e.name not in (shaped or ())):
+        kind = ("others" if _shaped_variant(name)  # row 378: never the app's in a folder it does not own (security read)
+                else "not_removed" if is_app_owned(name, spec=shared) else "common" if is_app_owned(name, spec=full) else "others")
         left[kind].append(name)
     return left
 
@@ -3122,6 +3503,13 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, unreached=_unreached)
     seen += _s
     wiped += _w
+    # 2b) Row 378 (coordinator on R837): Hugging Face's sign-in token files in the app's own Hugging Face homes are credentials,
+    #    so they go here with the other secrets, never only in the slow step 6.
+    hf_token_left: list[str] = []
+    if not keys_off:
+        _s, _w, hf_token_left = _hf_token_pass(base, walk_fd, shared=app_only, track=_track)
+        seen += _s
+        wiped += _w
 
     # 3) DuckDB cache header and its key-derivation sidecar (the cache's key is stretched from the passphrase and the
     #    salt in that sidecar, so with the sidecar destroyed the key is underivable even from the right passphrase;
@@ -3287,7 +3675,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # Security reads (row 402): a segment the sweep refused to write (a link, a second name) keeps the folder out of the walks too,
     # or 5b and step 6 would write through it by path.
     corpus_kept = corpus_sweep.get("foreign", 0) > 0 or corpus_sweep.get("left", 0) > 0
-    for p, at in _files_under(roots, base, _unlisted, skip={paths["keys_dir"], *([corpus_dir] if corpus_kept else [])},
+    for p, at in _files_under(roots, base, _unlisted, skip={paths["keys_dir"], *([corpus_dir] if corpus_kept else []), *_shaped_skip(base, walk_fd)},
                               unreached=_unreached, base_fd=walk_fd):
         if _kind(p, _unreached, at) != "file":
             continue
@@ -3358,7 +3746,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             drive_forgotten = drive == "ok"  # R812 (b): never restored; said if the drive is then lost
     roots = [] if _off_drive() else _erase_roots(base, app_only=app_only, unlisted=_unlisted, unreached=_unreached, dfd=walk_fd)  # listed again: a file the app wrote since 5b is the app's too
     # R806: a foreign keys folder is left out of the walk (its app key files went in step 2), never followed when it is a link.
-    for p, at in _files_under(roots, base, _unlisted, skip={*([keys_dir] if keys_foreign else []), *([corpus_dir] if corpus_kept else [])},
+    # Row 378: a shaped folder is never walked whole (its entries that fit the app's shapes are roots of their own).
+    for p, at in _files_under(roots, base, _unlisted, skip={*([keys_dir] if keys_foreign else []), *([corpus_dir] if corpus_kept else []),
+                                                         *_shaped_skip(base, walk_fd)},
                               unreached=_unreached, base_fd=walk_fd):  # never follows a symlinked folder or a junction
         kind = _kind(p, _unreached, at)
         if kind in ("absent", "unreached"):
@@ -3405,20 +3795,34 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     removed_at_rmtree = False
     folder_moved = False
     kept_items = 0
-    if _off_drive():
+    off_now = _off_drive()
+    # Row 378 (R836, R837): the app's entries of each shaped folder go first, each folder emptied of them is removed, and each one
+    # still there is measured again: what is left in it is not the app's (or was written under an older name), so the folder
+    # stays, and with it the data folder, as R806 keeps keys.
+    shaped_left: dict[str, dict] = {}
+    if not off_now:
+        _remove_shaped(roots, base, walk_fd)
+        touched = {r.parent.name for r in roots if r != base and r.parent != base}
+        shaped_left = _shaped_settle(base, walk_fd, shared=app_only, unlisted=_unlisted, touched=touched)
+    shaped_keep = {base / f for f in shaped_left}
+    shaped_items = sum(v["left"] for v in shaped_left.values())
+    # one that holds nothing the erase may leave, and could be listed, is a removal that failed: said as that, never as "kept"
+    shaped_failed = [f for f, v in shaped_left.items() if v["app_left"] or not (v["left"] or v.get("unlisted"))]
+    if off_now:
         pass  # R809 / R812: nothing on the absent drive is removed, nor on one that changed during the erase
     elif app_only:
-        _remove_app_folders(roots, walk_fd)
-        left = _left_entries(base, walk_fd)
-        kept_items = len(left["others"])
-    elif keys_foreign and _kind(keys_dir) != "absent" or corpus_kept:
-        # R806 (2) / R826: the data folder is kept because it holds items the app did not create (in keys, or in corpus); every
-        # other entry of it goes.
-        keep = {d for d, held in ((keys_dir, keys_foreign and _kind(keys_dir) != "absent"), (corpus_dir, corpus_kept)) if held}
+        _remove_app_folders([r for r in roots if r.parent == base], walk_fd)
+        left = _left_entries(base, walk_fd, shaped=set(shaped_left))
+        left["not_removed"] = sorted({*left["not_removed"], *shaped_failed})
+        kept_items = len(left["others"]) + shaped_items
+    elif keys_foreign and _kind(keys_dir) != "absent" or corpus_kept or shaped_keep:
+        # R806 (2) / R826 / row 378: the data folder is kept because it holds items the app did not create (in keys, in corpus, or
+        # in a shaped folder); every other entry of it goes.
+        keep = {d for d, held in ((keys_dir, keys_foreign and _kind(keys_dir) != "absent"), (corpus_dir, corpus_kept)) if held} | shaped_keep
         _remove_app_folders([Path(e.path) for e in _listing(base, _unlisted, walk_fd) if Path(e.path) not in keep], walk_fd)
-        kept_items = (_kept_in_keys(keys_dir) if keys_dir in keep else 0) + (corpus_sweep["foreign"] + corpus_sweep["left"] if corpus_kept else 0)
+        kept_items = (_kept_in_keys(keys_dir) if keys_dir in keep else 0) + (corpus_sweep["foreign"] + corpus_sweep["left"] if corpus_kept else 0) + shaped_items
         # Kept ON PURPOSE for those only: anything else still there is a removal that failed, said as that (never hidden by "kept").
-        left["not_removed"] = sorted(e.name for e in _listing(base, None, walk_fd) if Path(e.path) not in keep)
+        left["not_removed"] = sorted({*(e.name for e in _listing(base, None, walk_fd) if Path(e.path) not in keep), *shaped_failed})
     else:
         removed_at_rmtree = _remove_base(base, walk_fd)
         # security read (row 387): the folder the erase started on is still there, at no path it had: never "removed"
@@ -3433,7 +3837,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         # Its own sentence says what was left could not be checked (R798): never counted as a folder to make readable, which a
         # drive that is not there cannot be.
         _LOG.error("CRYPTO-ERASE: the data drive disconnected during the erase; it was only partially erased")
-    kept_foreign = not drive_absent and not drive_stopped and _present(base) and (bool(kept_items) if app_only else keys_foreign and _kind(keys_dir) != "absent" or corpus_kept)
+    kept_foreign = not drive_absent and not drive_stopped and _present(base) and (
+        bool(kept_items) if app_only else keys_foreign and _kind(keys_dir) != "absent" or corpus_kept or bool(shaped_keep))
     # An app key or private copy still in a kept keys folder (its unlink failed), or a ``.pending`` that is a link the app's
     # copies may have gone through: never hidden by "kept", said as such (R806 / R807; the delta security reads). A count in the
     # report; the app's own names only in the log's count, never an operator's.
@@ -3539,6 +3944,12 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "keys_folder": keys_state,
         "folder_kept_foreign": kept_foreign,
         "kept_items": kept_items,
+        # Row 378 (R836 Q2): the shaped folders still there, each with how many entries in it are not the app's (a count, never a
+        # name); their sum is part of kept_items. Any one makes the result say the erase of the data folder is not complete.
+        "shaped_left": {f: v["left"] for f, v in shaped_left.items() if not off_now},
+        # Row 378: each Hugging Face home (the app's folder names) where a sign-in token file may remain: seen and not taken (a
+        # folder that is not the app's), or not overwritten and removed. Said in plain words: revoke it in the Hugging Face account.
+        "hf_token_left": hf_token_left,
         "keys_link": keys_link,
         "keys_left": len(keys_left),
         # R828 (2): the app's at-rest record: "destroyed" (overwritten and unlinked in the key-material pass), "left" (either
@@ -3564,10 +3975,15 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         + (_SEGMENTS_SHORT_SENTENCE.format(n=segments_short) + " " if segments_short else "")
         + (_SEGMENTS_OVERWRITTEN_SENTENCE.format(n=segments["overwritten"]) + " " if segments["overwritten"] else "")
         + (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
+        + (_HF_TOKEN_LEFT_SENTENCE.format(folders=", ".join(hf_token_left)) + " " if hf_token_left else "")
+        + (_SHAPED_LEFT_SENTENCE.format(folders=", ".join(f for f, v in shaped_left.items() if v["left"]), n=shaped_items) + " "
+           if shaped_items else "")
         + (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
         + (_LIMIT_NOTE_UNLISTED + ("" if guaranteed is True else " " + _plain_sentence(guaranteed)) if unlisted_folders
-           # R828 (2): with the record left, the clean guarantee is never said beside "key material may remain"
-           else _DEFENCE_TAIL.lstrip() if record_state == "left" and guaranteed is True else _clean_note(guaranteed)),
+           # R828 (2): with the record left, the clean guarantee is never said beside "key material may remain"; row 378: nor beside
+           # "the erase of the data folder is not complete" or a sign-in token that may remain
+           else _DEFENCE_TAIL.lstrip() if (record_state == "left" or shaped_items or hf_token_left) and guaranteed is True
+           else _clean_note(guaranteed)),
     }
 
 
