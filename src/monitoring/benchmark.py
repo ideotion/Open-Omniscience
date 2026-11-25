@@ -391,6 +391,7 @@ def _host() -> dict:
 
 
 def _store_and_corpus(session: Session) -> tuple[dict, dict]:
+    from src.database import at_rest_state
     from src.database.connect import locked_state
     from src.database.models import Article, Keyword, Source
     from src.database.session import engine
@@ -400,7 +401,8 @@ def _store_and_corpus(session: Session) -> tuple[dict, dict]:
     store: dict = {
         "db_bytes": db_file.stat().st_size if db_file.exists() else None,
         "wal_bytes": wal_file_bytes(db_file),  # row 321: the log beside the store, apart from db_bytes
-        "at_rest_state": locked_state(db_file),
+        # R821 (5): "unlocked-encrypted" only with evidence, never the lock gate's word alone
+        "at_rest_state": at_rest_state.lock_state_claim(locked_state(db_file)),
     }
     if engine.url.get_backend_name() == "sqlite":
         with engine.connect() as conn:

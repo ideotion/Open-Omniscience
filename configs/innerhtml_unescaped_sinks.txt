@@ -40,7 +40,7 @@ app-ai-tools.js loadAiSetup 2
 app-ai-tools.js loadAiStore 1
 app-ai-tools.js loadAiUninstall 2
 app-ai-tools.js loadCandidates 1
-app-ai-tools.js loadFraming 1
+app-ai-tools.js loadFraming 2
 app-ai-tools.js loadModelCatalog 2
 app-ai-tools.js loadOverlayEditor 1
 app-ai-tools.js loadQualQueue 1

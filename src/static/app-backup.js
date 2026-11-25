@@ -4330,9 +4330,11 @@
       const why = { permission: "permission refused",
                     short_header: "the file is too short to be a database", io: "a read error" };
       const word = (s) => !s ? t("not created yet")
-        : s.state === "encrypted" ? (s.key_checked === false ? t("Encrypted (SQLCipher 4), not yet checked against this passphrase") : t("Encrypted (SQLCipher 4)"))
+        // R821: "encrypted" only with evidence (a key opened it, or this installation's record names it); a header alone only looks so
+        : s.state === "encrypted" ? (s.evidence === "record" ? t("Encrypted, per this installation's record (not yet checked with your key)") : t("Encrypted (SQLCipher 4)"))
+        : s.state === "looks_encrypted" ? t("Looks encrypted; not yet checked with your key")
         : s.state === "plaintext" ? t("NOT encrypted")
-        : s.state === "not_this_key" ? t("Encrypted, but this passphrase does not open it (another passphrase, or a damaged file)")
+        : s.state === "not_this_key" ? t("This passphrase does not open it (it may be encrypted with another passphrase, or damaged)")
         : s.state === "unreadable" ? tfw("Cannot be read: {why}", { why: t(why[s.reason] || why.io) })
         : s.state === "busy" ? t("In use right now, try again in a moment")
         : t("not created yet");
@@ -4358,7 +4360,9 @@
       } else if (ar.complete) {
         overall = `<div><b>${esc(t("Every store is encrypted."))}</b></div>`;
       }
-      if (ar.key_held && d.corpus.state === "encrypted" && unchecked.length) {
+      // R821: a library that only LOOKS encrypted while a key is held is "not checked yet" too, never counted as encrypted
+      if (ar.key_held && d.corpus.state === "looks_encrypted" && !unchecked.includes("corpus")) unchecked.unshift("corpus");
+      if (ar.key_held && (d.corpus.state === "encrypted" || d.corpus.state === "looks_encrypted") && unchecked.length) {
         // Row 153: while a store is in use, being encrypted or unreadable the summary says so (beside a pending line too).
         overall += `<div class="caveat">${esc(tfw("Not checked yet against this passphrase: {names} (in use, being encrypted, or a read error). Until then, do not count them as encrypted. Open this panel again in a moment.", { names: names(unchecked) }))}</div>`;
       }
@@ -4376,7 +4380,8 @@
         `<div>${ooLabelHtml(esc(t("Custody log")), `<b>${esc(word(d.custody_log))}</b>`)}</div>` +
         lanes.map((k) => `<div>${ooLabelHtml(esc(tfw("Source store ({kind})", { kind: laneWord(k) })), `<b>${esc(word(d.lanes[k]))}</b>`)}</div>`).join("");
       // The panel stays for a plaintext library, and (R742) for an encrypted one whose other stores are not finished.
-      $("atrest-encrypt").style.display = (d.corpus.state === "plaintext" || (d.corpus.state === "encrypted" && pending.length)) ? "" : "none";
+      $("atrest-encrypt").style.display = (d.corpus.state === "plaintext" || (d.corpus.state === "encrypted" && pending.length)
+        || (ar.key_held && d.corpus.state === "looks_encrypted")) ? "" : "none";
     }
     async function encryptCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -4461,7 +4466,19 @@
         const driveLost = r.drive_lost === true;
         // R820 (6): an encrypted main database whose first page could not be overwritten keeps its key on the disk: never clean.
         const keyLeft = r.corpus_encryption === "encrypted_key_left";
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext && !keyLeft;
+        // R828 (2): the app's at-rest record could not be overwritten and removed: "key material may remain", never clean.
+        const recordLeft = r.at_rest_record === "left";
+        // R823: database copies that could not be shown to be encrypted, rewritten in full (said apart), or left short of that.
+        const _sumOf = (o) => (o && typeof o === "object") ? Object.values(o).reduce((a, v) => a + (Number(v) || 0), 0) : 0;
+        const copiesOver = _sumOf(r.copies_overwritten);
+        const copiesShort = _sumOf(r.copies_partially_overwritten) + _sumOf(r.copies_not_overwritten);
+        // R826: the split corpus's segments, by count: rewritten in full without evidence (said apart), or left short of that.
+        const seg = r.corpus_segments && typeof r.corpus_segments === "object" ? r.corpus_segments : {};
+        const segOver = Number(seg.overwritten) || 0;
+        // Security reads (row 402): a corpus folder that could not be reached counts too (the server says "not_overwritten" with no file)
+        const segShort = Math.max((Number(seg.partially_overwritten) || 0) + (Number(seg.not_overwritten) || 0) + (Number(seg.left) || 0),
+          (seg.corpus === "not_overwritten" || seg.corpus === "partially_overwritten") ? 1 : 0);
+        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
@@ -4564,6 +4581,11 @@
           (keptForeign
             ? (keptCount ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds items the app did not create (count: {n}).", { n: fmtNum(keptCount, 0) }))}</div>` : "")
             : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
+          (segShort ? `<div class="card-caveat">${esc(tfw("Some corpus files could not be overwritten, or only partially, so the erase may be incomplete (count: {n}).", { n: fmtNum(segShort, 0) }))}</div>` : "") +
+          (segOver ? `<div class="hint">${esc(tfw("Corpus files that could not be shown to be encrypted were overwritten in full instead of being crypto-erased (count: {n}).", { n: fmtNum(segOver, 0) }))}</div>` : "") +
+          (copiesShort ? `<div class="card-caveat">${esc(tfw("Database copies that could not be shown to be encrypted were only partially overwritten, or not at all, so the erase may be incomplete (count: {n}).", { n: fmtNum(copiesShort, 0) }))}</div>` : "") +
+          (copiesOver ? `<div class="hint">${esc(tfw("Database copies that could not be shown to be encrypted were overwritten in full rather than crypto-erased (count: {n}).", { n: fmtNum(copiesOver, 0) }))}</div>` : "") +
+          (recordLeft ? `<div class="card-caveat">${esc(t("The app’s at-rest record could not be overwritten and removed, so key material may remain on the disk: the erase may be incomplete."))}</div>` : "") +
           (keysLeft ? `<div class="card-caveat">${esc(tfw("Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}` +
             // the app's own exact file names only (never another entry of the folder), so the operator knows which to remove
             ((r.keys_left_names || []).length ? ` <bdi translate="no" dir="ltr">${esc(r.keys_left_names.join(", "))}</bdi>` : "") + `</div>` : "") +

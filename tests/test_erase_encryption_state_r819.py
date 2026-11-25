@@ -61,12 +61,28 @@ def _ident(p: Path) -> tuple[int, int]:
     return (st.st_dev, st.st_ino)
 
 
-def _record(folder: Path, ident: tuple[int, int] | None, **extra) -> Path:
+def _head_of_ident(folder: Path, ident: tuple[int, int]) -> bytes | None:
+    """The first 16 bytes of the file with this identity in ``folder`` (R828: the record binds them by a MAC)."""
+    for p in folder.rglob("*"):
+        with contextlib.suppress(OSError):
+            if p.is_file() and not p.is_symlink() and _ident(p) == tuple(ident):
+                return p.read_bytes()[:16]
+    return None
+
+
+_BINDING_KEY = bytes(range(32))
+
+
+def _record(folder: Path, ident: tuple[int, int] | None, head: bytes | None = None, **extra) -> Path:
     entry: dict = {"encrypted_at": "2026-11-24T00:00:00Z", "read_back_with_key": True, **extra}
     if ident is not None:
         entry.update(dev=ident[0], ino=ident[1])
+        head = head if head is not None else _head_of_ident(folder, ident)
+        if head is not None and "mac" not in extra:
+            entry["mac"] = at_rest_state._mac(_BINDING_KEY, head)
     p = folder / at_rest_state.RECORD_NAME
-    p.write_text(json.dumps({"version": 1, "stores": {"corpus": entry}}), encoding="utf-8")
+    doc = {"version": 1, "binding_key": _BINDING_KEY.hex(), "stores": {"corpus": entry}}
+    p.write_text(json.dumps(doc), encoding="utf-8")
     return p
 
 
@@ -138,12 +154,12 @@ def test_the_record_gets_the_identity_after_a_keyed_read_and_loses_it_on_a_plain
     connect(db, key=_PW).close()
     at_rest_state.note_main_open(db)
     raw = (tmp_path / at_rest_state.RECORD_NAME).read_bytes()
-    assert at_rest_state.record_names_identity(raw, _ident(db))
+    assert at_rest_state.record_names_identity(raw, _ident(db), db.read_bytes()[:16])
     # the same identity, now opened as plaintext (a reused inode, a decrypted file): its identity leaves the record
     connect_module._note_open(db, keyed=False)
     at_rest_state.note_main_open(db)
     raw = (tmp_path / at_rest_state.RECORD_NAME).read_bytes()
-    assert not at_rest_state.record_names_identity(raw, _ident(db))
+    assert not at_rest_state.record_names_identity(raw, _ident(db), db.read_bytes()[:16])
 
 
 def test_a_record_that_cannot_be_written_never_fails_the_open(tmp_path, monkeypatch):
@@ -158,22 +174,37 @@ def test_a_record_that_cannot_be_written_never_fails_the_open(tmp_path, monkeypa
     at_rest_state.note_main_open(db)  # never raises
 
 
-@pytest.mark.parametrize("case", ["none", "garbage", "old", "other", "bool", "not_read_back", "too_long", "match"])
+@pytest.mark.parametrize("case", ["none", "garbage", "old", "no_salt", "salt", "head_kept", "no_key", "other_key", "other", "bool",
+                                  "not_read_back", "too_long", "match"])
 def test_the_record_names_the_store_only_with_its_own_identity(tmp_path, case):
     ident = (12, 345)
-    entry: dict = {"read_back_with_key": True, "dev": 12, "ino": 345}
+    head = bytes(range(1, 17))
+    key = os.urandom(32)
+    entry: dict = {"read_back_with_key": True, "dev": 12, "ino": 345, "mac": at_rest_state._mac(key, head)}
+    top: dict = {"binding_key": key.hex()}
     if case == "old":
         entry = {"read_back_with_key": True}  # a record from before R820: never evidence
+    elif case == "no_salt":
+        entry.pop("mac")  # a record without the binding: never evidence
+    elif case == "salt":
+        entry["mac"] = at_rest_state._mac(key, bytes(16))  # another file's first 16 bytes at the same inode
+    elif case == "head_kept":
+        entry.pop("mac")
+        entry["head"] = head.hex()  # R828 (1): a record that held the salt itself is never evidence
+    elif case == "no_key":
+        top = {}  # R828 (1): a MAC without the record's binding key cannot be checked
+    elif case == "other_key":
+        top = {"binding_key": os.urandom(32).hex()}
     elif case == "other":
         entry["ino"] = 346
     elif case == "bool":
         entry["dev"] = True
     elif case == "not_read_back":
         entry["read_back_with_key"] = False
-    raw = None if case == "none" else b"{not json" if case == "garbage" else json.dumps({"stores": {"corpus": entry}}).encode()
+    raw = None if case == "none" else b"{not json" if case == "garbage" else json.dumps({**top, "stores": {"corpus": entry}}).encode()
     if case == "too_long":
-        raw = json.dumps({"stores": {"corpus": entry}, "pad": "x" * at_rest_state.RECORD_MAX_BYTES}).encode()
-    assert at_rest_state.record_names_identity(raw, ident) is (case == "match")
+        raw = json.dumps({**top, "stores": {"corpus": entry}, "pad": "x" * at_rest_state.RECORD_MAX_BYTES}).encode()
+    assert at_rest_state.record_names_identity(raw, ident, head) is (case == "match")
 
 
 def test_the_record_is_one_of_the_app_s_own_files():
@@ -458,11 +489,12 @@ def test_an_open_of_unknown_kind_leaves_the_record_as_it_is(tmp_path):
     _record(tmp_path, _ident(db))
     assert connect_module.last_open_of(_ident(db)) is None
     at_rest_state.note_main_open(db)
-    assert at_rest_state.record_names_identity((tmp_path / at_rest_state.RECORD_NAME).read_bytes(), _ident(db))
+    assert at_rest_state.record_names_identity((tmp_path / at_rest_state.RECORD_NAME).read_bytes(), _ident(db), db.read_bytes()[:16])
     connect_module._note_open(db, keyed=False)  # positive evidence: a plaintext open
     assert connect_module.last_open_of(_ident(db)) == "plain"
     at_rest_state.note_main_open(db)
-    assert not at_rest_state.record_names_identity((tmp_path / at_rest_state.RECORD_NAME).read_bytes(), _ident(db))
+    assert not at_rest_state.record_names_identity((tmp_path / at_rest_state.RECORD_NAME).read_bytes(), _ident(db),
+                                                   db.read_bytes()[:16])
 
 
 def test_a_disposal_forgets_the_plaintext_opens_too(tmp_path):
@@ -565,3 +597,20 @@ def test_the_pinned_folder_is_matched_through_a_link_above_it(tmp_path):
     (tmp_path / "via").symlink_to(real)
     assert crypto_erase._folder_is_pinned(tmp_path / "via" / "store" / crypto_erase._MAIN_DB, pin)
     assert not crypto_erase._folder_is_pinned(main, "absent")
+
+
+@posix_only
+def test_a_record_without_the_file_s_own_salt_is_not_evidence(tmp_path):
+    """Row 400 (security reads): a file that later takes the same inode does not carry the first 16 bytes the record holds, and a
+    record written before they were kept (no salt) is never evidence either."""
+    data = _data(tmp_path)
+    main = data / crypto_erase._MAIN_DB
+    main.write_bytes(os.urandom(4096) + WITNESS)
+    _record(data, _ident(main), head=os.urandom(16))  # the same (device, inode), another file's salt
+    kept = tmp_path / "kept"
+    os.link(main, kept)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["corpus_encryption"] == "unknown"
+    assert WITNESS[:34] not in kept.read_bytes()
+    assert not at_rest_state.record_names_identity(
+        json.dumps({"stores": {"corpus": {"read_back_with_key": True, "dev": 1, "ino": 2}}}).encode(), (1, 2), b"x" * 16)

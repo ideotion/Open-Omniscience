@@ -49,6 +49,7 @@ const src = [
   extract("_insCountsNote"),
   extract("_insStatusFrame"),
   extract("_insRemainingHtml"),
+  extract("_insHeldText"),
   extract("_paintInsStatus"),
   "return { _insStatusFrame, _insRemainingHtml, _paintInsStatus, _insCountsNote };",
 ].join("\n");

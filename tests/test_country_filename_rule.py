@@ -52,6 +52,8 @@ _NON_COUNTRY_FILENAME_HELPERS = {
     # `simple` and `zh-yue` have no ISO 639-1 code at all, so reading one as a
     # language -- let alone as a country -- would assert something false.
     ("src/wiki/dumps.py", "dump_filename"),
+    # Split-corpus segment files, "seg-<n>.db": n is a segment number, never a place (row 409, R826).
+    ("src/database/segments.py", "segment_file_name"),
     # Bulletin artifacts, keyed on the EDITION's period and an article's ordinal.
     # An edition covers whatever the corpus collected, which is many countries or
     # none; naming one for a country would assert a scope it does not have.

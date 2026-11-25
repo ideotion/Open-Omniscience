@@ -592,6 +592,30 @@ def shift_keyword_counters_for_quarantine(
     return {"articles": len(ids), "keywords": len(kids), "clamped": clamped}
 
 
+def remove_deleted_articles_from_keyword_counters(session: Session, article_ids: Iterable[int]) -> dict:
+    """Take the articles about to be DELETED out of ``Keyword.mention_count`` / ``article_count`` (row 429).
+
+    Every path that deletes articles calls this in the SAME transaction as the delete, with the write gate held,
+    BEFORE the delete is flushed (the mentions must still be there to be read). A quarantined article's mentions
+    are already out of the counters (R101), so only the articles that are not quarantined are subtracted; the
+    arithmetic is :func:`shift_keyword_counters_for_quarantine`'s. Without it a cascade delete moved the mentions
+    and left the counters counting them until a whole sweep, and a sweep slice whose GROUP BY ran before such a
+    delete could stamp the stale count without reading it again (the second case disclosed in
+    :func:`_wrong_rows_under_the_gate`): with the counters moving inside the delete's transaction, the row
+    disagrees with that GROUP BY and is read again under the gate. Returns the shift's tally."""
+    ids = sorted({int(i) for i in article_ids})
+    live: list[int] = []
+    for i in range(0, len(ids), _MENTION_ID_CHUNK):
+        chunk = ids[i : i + _MENTION_ID_CHUNK]
+        live += [
+            int(a)
+            for (a,) in session.execute(
+                select(Article.id).where(Article.id.in_(chunk), Article.quarantined.is_not(True))
+            )
+        ]
+    return shift_keyword_counters_for_quarantine(session, live, quarantined=True)
+
+
 def _resolve_known_language(article: Article, content: str) -> str | None:
     """The known/deduced language driving extraction + sentiment for one article.
 
@@ -641,6 +665,32 @@ def _resolve_known_language(article: Article, content: str) -> str | None:
     )
 
 
+#: Row 418: the article's derived columns go out through this Core table statement (``session.execute``, so the write
+#: gate and the R827 recorder see it), keyed by a bound id; the SET list is the parameters' columns.
+_ARTICLE_DERIVED_UPDATE = update(cast(Table, Article.__table__)).where(
+    cast(Table, Article.__table__).c.id == bindparam("_article_id")
+)
+
+
+def _write_article_derived(session: Session, article: Article, values: dict[str, Any]) -> None:
+    """Write ``values`` (column name to value) onto the article's row now, plus ``updated_at`` (its onupdate), and record
+    them on ``article`` as its committed state (row 418).
+
+    What the attribute assignments and the flush's UPDATE did, minus the unit of work: the row ends identical, the
+    object reads the same values without a query, and the article is not left dirty for a later flush to write again.
+
+    One difference, on a failure only: when a caller-owned savepoint around ``index_article`` (``ArticleBatch._index_one``)
+    rolls back after this write, the row goes back but the object keeps these values until the next commit or rollback
+    expires it, where the flushed ORM write would have been expired at once. The database is never wrong (the keys are not
+    dirty, so nothing writes them back), and no caller reads them on that path."""
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    values = {**values, "updated_at": datetime.now(UTC)}
+    session.execute(_ARTICLE_DERIVED_UPDATE, {"_article_id": article.id, **values})
+    for key, value in values.items():
+        set_committed_value(article, key, value)
+
+
 def _stamp_index_engine(
     session: Session, article: Article, extractor, *, certified: bool, inputs: str
 ) -> None:
@@ -662,7 +712,6 @@ def _stamp_index_engine(
     -- the stamp only ever makes a restore cheaper, so its absence costs a re-extraction
     and never a keyword."""
     from sqlalchemy import and_, delete, not_
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
     from src.database.models import ArticleIndexStamp
 
@@ -680,21 +729,12 @@ def _stamp_index_engine(
     if certified:
         # R824 (row 405): the stage version beside the id, and no carry provenance -- these rows were extracted HERE, whatever an
         # earlier stamp said; the engine's readable components ride their own table, once per id.
-        stmt = sqlite_insert(ArticleIndexStamp).values(
-            article_id=article.id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
-            stage_version=INDEXER_VERSION, carried_from_batch=None,
-        )
         session.execute(
-            stmt.on_conflict_do_update(
-                index_elements=[ArticleIndexStamp.article_id],
-                set_={
-                    "engine": stmt.excluded.engine,
-                    "inputs": stmt.excluded.inputs,
-                    "stamped_at": stmt.excluded.stamped_at,
-                    "stage_version": stmt.excluded.stage_version,
-                    "carried_from_batch": None,
-                },
-            )
+            _stamp_upsert(ArticleIndexStamp),
+            {
+                "article_id": article.id, "engine": current, "inputs": inputs, "stamped_at": datetime.now(UTC),
+                "stage_version": INDEXER_VERSION, "carried_from_batch": None,
+            },
         )
         _record_engine(session, current, "kw", record)
     else:
@@ -716,7 +756,6 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
     the stamp only ever makes a restore cheaper, so its absence costs a re-extraction
     and never a wrong row."""
     from sqlalchemy import delete
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
     from src.database.models import ArticleWwwStamp
 
@@ -733,21 +772,12 @@ def _stamp_www_engine(session: Session, article_id: int, *, raw_content, country
         log_failure(_LOG, "could not compute the www identity; clearing the stamp", exc, level=logging.WARNING)
         session.execute(delete(ArticleWwwStamp).where(ArticleWwwStamp.article_id == article_id))
         return
-    stmt = sqlite_insert(ArticleWwwStamp).values(
-        article_id=article_id, engine=current, inputs=inputs, stamped_at=datetime.now(UTC),
-        stage_version=WWW_INDEXER_VERSION, carried_from_batch=None,
-    )
     session.execute(
-        stmt.on_conflict_do_update(
-            index_elements=[ArticleWwwStamp.article_id],
-            set_={
-                "engine": stmt.excluded.engine,
-                "inputs": stmt.excluded.inputs,
-                "stamped_at": stmt.excluded.stamped_at,
-                "stage_version": stmt.excluded.stage_version,
-                "carried_from_batch": None,
-            },
-        )
+        _stamp_upsert(ArticleWwwStamp),
+        {
+            "article_id": article_id, "engine": current, "inputs": inputs, "stamped_at": datetime.now(UTC),
+            "stage_version": WWW_INDEXER_VERSION, "carried_from_batch": None,
+        },
     )
     _record_engine(session, current, "www", record)
 
@@ -756,15 +786,50 @@ def _record_engine(session: Session, engine: str, stage: str, components: str) -
     """One ``index_engines`` row per engine id (R824, row 405): what the id is a hash of, so a later restore of this store can name the
     component that differs from its own engine. An insert that keeps an existing row, one primary-key probe per stamp; it writes inside
     the stamp's own transaction, so the row exists exactly when a stamp naming it does."""
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    session.execute(
+        _record_engine_insert(),
+        {"engine": engine, "stage": stage, "components": components, "recorded_at": datetime.now(UTC)},
+    )
 
+
+_STAMP_COLUMNS = ("article_id", "engine", "inputs", "stamped_at", "stage_version", "carried_from_batch")
+
+#: Row 418: the stamp upsert and the engine record as SQL text, written once. SQLAlchemy cannot cache a SQLite ``ON CONFLICT``
+#: insert (it reports "no key"), so the construct these replace was compiled again for every article: about 0.5 ms per statement,
+#: three per article. The text is exactly what that construct rendered with the SQLite dialect (``carried_from_batch`` bound None
+#: there, NULL here); tests/test_apply_core_row418.py compares the two renderings and the rows each one stores.
+_STAMP_UPSERT_SQL = (
+    "INSERT INTO {table} (article_id, engine, inputs, stamped_at, stage_version, carried_from_batch) "
+    "VALUES (:article_id, :engine, :inputs, :stamped_at, :stage_version, :carried_from_batch) "
+    "ON CONFLICT (article_id) DO UPDATE SET engine = excluded.engine, inputs = excluded.inputs, "
+    "stamped_at = excluded.stamped_at, stage_version = excluded.stage_version, carried_from_batch = NULL"
+)
+_ENGINE_RECORD_SQL = (
+    "INSERT INTO index_engines (engine, stage, components, recorded_at) "
+    "VALUES (:engine, :stage, :components, :recorded_at) ON CONFLICT (engine) DO NOTHING"
+)
+
+
+def _typed_text(sql: str, table: Table, names: Iterable[str]):
+    """``sql`` as a text statement whose parameters keep their columns' types, so a datetime is stored exactly as the construct
+    stored it. It runs through ``session.execute``, so the write gate and the R827 recorder see it."""
+    return text(sql).bindparams(*(bindparam(name, type_=table.c[name].type) for name in names))
+
+
+@functools.cache
+def _stamp_upsert(model):
+    """The stamp upsert for ``model`` (``ArticleIndexStamp`` or ``ArticleWwwStamp``), built once (row 418, the reason above
+    :data:`_STAMP_UPSERT_SQL`)."""
+    table = cast(Table, model.__table__)
+    return _typed_text(_STAMP_UPSERT_SQL.format(table=table.name), table, _STAMP_COLUMNS)
+
+
+@functools.cache
+def _record_engine_insert():
+    """``_record_engine``'s insert-or-keep, built once (row 418)."""
     from src.database.models import IndexEngine
 
-    session.execute(
-        sqlite_insert(IndexEngine)
-        .values(engine=engine, stage=stage, components=components, recorded_at=datetime.now(UTC))
-        .on_conflict_do_nothing(index_elements=[IndexEngine.engine])
-    )
+    return _typed_text(_ENGINE_RECORD_SQL, cast(Table, IndexEngine.__table__), ("engine", "stage", "components", "recorded_at"))
 
 
 def _index_article_www(
@@ -1089,12 +1154,13 @@ def index_article(
     # extractor generation. Set unconditionally (never `or`-guarded): an article whose
     # keywords were all suppressed this pass must go BACK to NULL rather than keep a
     # stale top keyword that no mention row supports any more.
+    derived: dict[str, Any] = {}
     if sentiment_result is not None:
-        article.sentiment_score, article.sentiment_label = sentiment_result
+        derived["sentiment_score"], derived["sentiment_label"] = sentiment_result
     (
-        article.top_keyword_id,
-        article.top_keyword_count,
-        article.top_keyword_tied_n,
+        derived["top_keyword_id"],
+        derived["top_keyword_count"],
+        derived["top_keyword_tied_n"],
     ) = top_keyword_of(new_contrib)
 
     # THE ATTEMPT RECORD (PRH-01). Stamped on EVERY scope, including the keyword-only
@@ -1110,7 +1176,13 @@ def index_article(
     # record of a keyword pass that did in fact complete. Verified, not assumed --
     # tests/test_backfill_cursor.py drives a failing WWW store and asserts the stamp
     # survives.
-    article.keyword_indexed_at = datetime.now(UTC)
+    #
+    # Row 418: written by ONE statement here rather than by the unit of work at the next flush -- the same columns, the
+    # same transaction, and still outside the savepoint (it runs before it). ``updated_at`` is the column's own
+    # onupdate, stated so the object can be told; the object then holds the stored values as committed state, exactly
+    # as after the flush, so nothing is pending and nothing is read back.
+    derived["keyword_indexed_at"] = datetime.now(UTC)
+    _write_article_derived(session, article, derived)
 
     # Keep the denormalised counters exact for THIS article's net change.
     #
@@ -1907,6 +1979,10 @@ def _reindex_articles_impl(
     # The next window's tasks and text, its precompute in flight, that precompute's own stats, and the seconds its read took.
     _ahead: tuple[list[Task], dict[int, str], Future, dict, float] | None = None
     _ahead_pool: ThreadPoolExecutor | None = None
+    # ROW 425: the window computed ahead whose result has not been taken yet. ``_ahead`` is emptied when its turn
+    # STARTS, before the article read and the wait for its result; this stays set until that result is taken, so a
+    # stop or an exception in between (Ctrl-C during the read or the wait) still kills that window rather than waits.
+    _pending_fut: Future | None = None
     _pipelined_windows = 0
     # ROW 416: ONE worker pool for the whole drain rather than one per window -- a fresh worker reloads every dictionary
     # it meets (about 4.4 s of CPU per worker on a mixed-language window), and a long drain paid that once per window.
@@ -1942,6 +2018,7 @@ def _reindex_articles_impl(
                     # full-width pools never run together. Its result is not used and its figures are not counted.
                     with contextlib.suppress(Exception):
                         _fut.result()
+                    _pending_fut = None
                 continue
 
             # Precompute (parallel when it's worth it; falls back to serial in-process on any pool trouble -- see
@@ -1952,8 +2029,10 @@ def _reindex_articles_impl(
             if _fut is not None:
                 try:
                     derivs, _secs = _fut.result()
+                    _pending_fut = None
                     _pipelined_windows += 1
                 except PoolUnavailable:
+                    _pending_fut = None
                     # Straight to serial, here: asking the pool again would wait out a second pool timeout on a wedged pool
                     # before the same serial redo. Counted once, as the fallback it is.
                     _ts = time.monotonic()
@@ -1983,11 +2062,8 @@ def _reindex_articles_impl(
                         if _ahead_pool is None:
                             _ahead_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="oo-reindex-ahead")
                         n_stats: dict = {}
-                        _ahead = (
-                            n_tasks, n_content,
-                            _ahead_pool.submit(_precompute, n_tasks, n_stats, serial_fallback=False),
-                            n_stats, n_secs,
-                        )
+                        _pending_fut = _ahead_pool.submit(_precompute, n_tasks, n_stats, serial_fallback=False)
+                        _ahead = (n_tasks, n_content, _pending_fut, n_stats, n_secs)
                     del _n_art  # applied from a fresh read in its own turn
 
             _t0 = time.monotonic()
@@ -1995,12 +2071,12 @@ def _reindex_articles_impl(
             _apply_s += time.monotonic() - _t0
     finally:
         if _ahead_pool is not None:
-            # Nothing left ahead: the helper is idle and this returns at once. A window still ahead (a stop, or an exception in the
+            # Nothing left ahead: the helper is idle and this returns at once. A window still ahead (a stop, or an exception or Ctrl-C in the
             # apply) is not waited for: a Stop is answered now, and the pool it runs in ends at the pool timeout at the latest.
-            _ahead_pool.shutdown(wait=_ahead is None, cancel_futures=True)
+            _ahead_pool.shutdown(wait=_pending_fut is None, cancel_futures=True)
         # A window still ahead (a stop, or an exception in the apply) is running in the kept pool: its workers are killed
         # rather than waited for, which also ends that window's helper thread at once instead of at the pool timeout.
-        _drain_pool.close(abandon=_ahead is not None)
+        _drain_pool.close(abandon=_pending_fut is not None)
         _pre_stats["pools_started"] = _drain_pool.started
         _pre_stats["pools_recycled"] = _drain_pool.recycled
         _pre_stats["pools_broken"] = _drain_pool.broken
@@ -2230,6 +2306,10 @@ def reindex_all_batch(
 # --------------------------------------------------------------------------- #
 
 RECONCILE_CURSOR_KEY = "counter_reconcile_cursor"
+#: When the sweep now under way began at keyword 0 (unix seconds), and, once a sweep reaches the end, that same time as the age
+#: of the last whole sweep: its OLDEST verification, never the time it finished (row 424).
+RECONCILE_SWEEP_BEGAN_KEY = "counter_reconcile_sweep_began_at"
+RECONCILE_SWEPT_KEY = "counter_reconcile_swept_at"
 PRUNE_CURSOR_KEY = "orphan_prune_cursor"
 # Keyword ids per slice (module-level so tests can shrink them to exercise the resume).
 _RECONCILE_SCAN_CHUNK = 50_000
@@ -2520,6 +2600,69 @@ def _fresh_window_hours() -> int:
         return 24
 
 
+def _exact_counts(session: Session, mention_filter) -> dict[int, tuple[int, int]]:
+    """``{keyword_id: (SUM(count), COUNT(DISTINCT article_id))}`` over the live mentions ``mention_filter`` selects, a
+    quarantined article counting for nothing (R101): one covering-index GROUP BY. A keyword absent from it is exactly 0."""
+    return {
+        int(kid): (int(m or 0), int(a or 0))
+        for kid, m, a in (
+            session.query(
+                KeywordMentionRead.keyword_id,
+                func.sum(KeywordMentionRead.count),
+                func.count(func.distinct(KeywordMentionRead.article_id)),
+            )
+            .filter(mention_filter)
+            .filter(not_quarantined(KeywordMentionRead.article_id))  # R101: a quarantined article counts for nothing
+            .group_by(KeywordMentionRead.keyword_id)
+        )
+    }
+
+
+#: How many keyword ids one re-check under the gate reads at a time.
+_RECHECK_CHUNK = 500
+
+
+def _wrong_rows_under_the_gate(session: Session, agg: dict[int, tuple[int, int]], keyword_filter) -> list[dict]:
+    """The rows ``keyword_filter`` selects whose stored counters differ from the truth, read with the write gate HELD.
+
+    ``agg`` is the slice's GROUP BY, taken BEFORE the gate (row 424, measured: on 186,000 + 122,000 articles the first
+    slice's GROUP BY held the gate 2.9 s, where main's longest hold was 0.9 s, and ingest waits behind every hold). So it
+    may predate an ingest that committed while the reconcile waited: a new mention and its counter increment. Every row the
+    stored counters disagree with is therefore read again here, under the gate, and only that fresh answer is written. A
+    row an ingest moved disagrees with the stale ``agg`` and is re-read, so its write can never undo the ingest; a row that
+    agrees is not written at all. It is still STAMPED, and there are two cases where that stamp can be wrong, both left by a write that
+    commits inside the window between the GROUP BY and the gate. (1) A row whose stored counters were already off by exactly
+    the delta an ingest then committed (stored = truth - c, the ingest adds c to both) agrees with the stale ``agg`` and is
+    stamped while still off by that old drift. (2) A write that moves a keyword's mentions WITHOUT moving its counter -- the
+    ``ondelete=CASCADE`` delete of an article, the very drift the sweep exists to repair -- leaves the stored counter equal to
+    the stale ``agg``, so the row is stamped over the count from before the delete. Row 429 closes (2) for the app's own
+    delete paths (source delete, newsletter removal, attach undo): each moves the counters in the delete's own transaction
+    through :func:`remove_deleted_articles_from_keyword_counters`, so the stored counter moves with the mentions and the
+    row disagrees with the stale ``agg`` and is re-read. A cascade from any other path keeps the bound below. Main had both (its GROUP BY also ran
+    before the gate), and reading under the gate closes them only by holding ingest for seconds (measured 2.9 s). Nothing is
+    lost by either (no count is written), each needs that write to land inside a window of a slice's GROUP BY, and they are
+    bounded only because a stamp is never proof beyond the freshness window: :func:`counter_envelope` reads a stamp older than the window as ``estimated``, and the import
+    stage and the idle maintenance both owe a whole sweep once the last one is older than that, which re-reads this row. ``agg`` is updated in place with the re-read values. Must be called inside ``write_lock``."""
+    current = {
+        int(kid): (int(m or 0), int(a or 0))
+        for kid, m, a in session.query(Keyword.id, Keyword.mention_count, Keyword.article_count).filter(keyword_filter)
+    }
+    suspects = sorted(kid for kid, have in current.items() if have != agg.get(kid, (0, 0)))
+    fixes = []
+    for i in range(0, len(suspects), _RECHECK_CHUNK):
+        part = suspects[i : i + _RECHECK_CHUNK]
+        fresh = _exact_counts(session, KeywordMentionRead.keyword_id.in_(part))
+        for kid in part:
+            want = fresh.get(kid, (0, 0))
+            if want == (0, 0):
+                agg.pop(kid, None)
+            else:
+                agg[kid] = want
+            if current[kid] != want:
+                fixes.append({"id": kid, "mention_count": want[0], "article_count": want[1]})
+    return fixes
+
+
 def reconcile_keyword_counters(
     session: Session,
     *,
@@ -2559,8 +2702,8 @@ def reconcile_keyword_counters(
     import time as _time
     from datetime import UTC, datetime
 
-    from sqlalchemy import func
 
+    require_mentions_view(session)  # the GROUP BYs read the view (R96); made here, before any slice takes the gate
     stamp = now or datetime.now(UTC)
     budget = budget_s if budget_s is not None else _maint_budget_s("OO_RECONCILE_BUDGET_S")
     scan_chunk = _RECONCILE_SCAN_CHUNK
@@ -2578,6 +2721,9 @@ def reconcile_keyword_counters(
     # the optimisation meant to close it.
     after_id = 0 if restart else _cursor_get(session, RECONCILE_CURSOR_KEY)
     resumed_from = after_id
+    if after_id == 0:
+        # A sweep begins here; committed with the first slice. A pass that resumes keeps the time its sweep began.
+        _cursor_set(session, RECONCILE_SWEEP_BEGAN_KEY, int(stamp.timestamp()))
     scanned = 0
     with_mentions = 0
     drift = 0
@@ -2595,62 +2741,42 @@ def reconcile_keyword_counters(
             complete = True
             break
         lo, hi = after_id, ids[-1]
-        # The slice's truth: one covering-index range GROUP BY over the mentions. Every
-        # keyword id in (lo, hi] is in `ids` (consecutive ordered ids), so the range
-        # filter is exactly this slice.
-        agg = {
-            kid: (int(m or 0), int(a or 0))
-            for kid, m, a in (
-                session.query(
-                    KeywordMention.keyword_id,
-                    func.sum(KeywordMention.count),
-                    func.count(func.distinct(KeywordMention.article_id)),
-                )
-                .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
-                .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
-                .group_by(KeywordMention.keyword_id)
-            )
-        }
-        # Detect drift within the slice (small-row keyword scan, background only).
-        for kid, cur_m, cur_a in session.query(
-            Keyword.id, Keyword.mention_count, Keyword.article_count
-        ).filter(Keyword.id > lo, Keyword.id <= hi):
-            if (int(cur_m or 0), int(cur_a or 0)) != agg.get(kid, (0, 0)):
-                drift += 1
-        # Repair the slice: zero + stamp everything in range (a never-mentioned keyword
-        # is also "verified 0 as of now"), then set the keywords that have mentions.
+        # Repair the slice: stamp everything in range (a never-mentioned keyword is also
+        # "verified 0 as of now"), and rewrite only the keywords whose counters were wrong.
+        #
+        # ONLY THE WRONG ROWS ARE REWRITTEN (row 424, 2026-11-25). The slice used to zero every
+        # keyword and then set every keyword that has mentions back, one UPDATE per row: 400,000
+        # single-row writes for a 400,000-keyword table whose counters were almost all already
+        # right, and most of the stage's time (measured: the GROUP BY was 2.3 s of an 11.5 s
+        # sweep). The stamp is one range UPDATE, and the rows the drift scan above found wrong
+        # get their exact values; every other row already holds them. The end state is the
+        # same row for row, and no reader can see a zeroed keyword any more.
         #
         # GATED AS ONE UNIT (C8 sweep): the Query.update() below IS gated on its own (it
         # fires do_orm_execute) but bulk_update_mappings is invisible to BOTH write-gate
-        # hooks, so without this the zero-out and the repair that restores the real counts
-        # ran on opposite sides of the gate -- and a reader landing between them would see
-        # every keyword in the slice at zero. The gate is reentrant per thread, so the
+        # hooks, so without this the stamp and the repair ran on opposite sides of the gate
+        # (before row 424 the first half zeroed the slice, and a reader landing between
+        # them saw every keyword in it at zero). The gate is reentrant per thread, so the
         # inner acquisitions are no-ops. The connection first (the last slice's commit gave it back), then the gate.
         from src.database.writer import connection_first, write_lock
 
+        #
+        # THE COMPARE IS INSIDE THE GATE (row 424): a compare-then-write must not let a concurrent ingest land a count
+        # between the GROUP BY and the write, or the write would put back the count from before it. The GROUP BY itself
+        # runs before the gate (it is the long part), and every row it disagrees with is read again under the gate before
+        # anything is written (_wrong_rows_under_the_gate). Every keyword id in (lo, hi] is in `ids` (consecutive ordered
+        # ids), so the range filter is exactly this slice.
+        agg = _exact_counts(session, (KeywordMentionRead.keyword_id > lo) & (KeywordMentionRead.keyword_id <= hi))
         connection_first(session)
         with write_lock():
+            fixes = _wrong_rows_under_the_gate(session, agg, (Keyword.id > lo) & (Keyword.id <= hi))
+            drift += len(fixes)
             session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
-                {
-                    Keyword.mention_count: 0,
-                    Keyword.article_count: 0,
-                    Keyword.last_reconciled_at: stamp,
-                },
+                {Keyword.last_reconciled_at: stamp},
                 synchronize_session=False,
             )
-            if agg:
-                session.bulk_update_mappings(
-                    Keyword,
-                    [
-                        {
-                            "id": kid,
-                            "mention_count": m,
-                            "article_count": a,
-                            "last_reconciled_at": stamp,
-                        }
-                        for kid, (m, a) in agg.items()
-                    ],
-                )
+            if fixes:
+                session.bulk_update_mappings(Keyword, fixes)
             scanned += len(ids)
             with_mentions += len(agg)
             after_id = hi
@@ -2665,6 +2791,7 @@ def reconcile_keyword_counters(
             break  # soft deadline: stop cleanly; the stamps above disclose the partial
     if complete:
         _cursor_set(session, RECONCILE_CURSOR_KEY, 0)
+        _cursor_set(session, RECONCILE_SWEPT_KEY, _cursor_get(session, RECONCILE_SWEEP_BEGAN_KEY) or int(stamp.timestamp()))
         session.commit()
     return {
         "keywords": scanned,  # scanned THIS pass (a sweep may span several passes)
@@ -2675,6 +2802,168 @@ def reconcile_keyword_counters(
         "stopped": stopped,
         "resumed_from_id": resumed_from,
         "cursor_id": 0 if complete else after_id,
+        "budget_s": budget,
+    }
+
+
+def whole_sweep_is_fresh(session: Session, *, now=None) -> bool:
+    """Whether a whole-corpus sweep has landed whose oldest verification is inside the freshness window (row 424).
+
+    :func:`counter_envelope` reads only the keywords whose counter is above 0, so a keyword stored at 0 over real mentions --
+    the drift imports left before the 2026-07-29 ruling -- is invisible to it. Only a whole sweep reaches that keyword, so the
+    import stage skips its insurance sweep only when the envelope is exact AND this says one landed recently."""
+    from datetime import UTC, datetime
+
+    began = _cursor_get(session, RECONCILE_SWEPT_KEY)
+    if began <= 0:
+        return False
+    now = now or datetime.now(UTC)
+    return now.timestamp() - began < _fresh_window_hours() * 3600
+
+
+def reconcile_counters_after_import(session: Session, article_ids: list[int] | None, *, now=None) -> dict:
+    """The import's keyword-counter reconcile (row 424): the imported articles' keywords first, the insurance sweep when owed.
+
+    ``article_ids`` are every article the swap brought in, or ``None`` when the group could not be derived. Routes:
+
+    * ``None``, or an import over a quarter of the corpus: the budgeted whole-corpus sweep, as the stage always ran. A large
+      import mentions most of the vocabulary (measured: 122,000 articles into 186,000 touched 302,390 of 376,872 keywords),
+      and there the sweep's range reads beat the scoped pass's id lists (5.4 s against 9.7 s).
+    * otherwise :func:`reconcile_keyword_counters_for_articles`, then the sweep from its durable cursor with what is left of
+      the SAME budget, unless the counters are exact afterwards and :func:`whole_sweep_is_fresh`. A budget already spent skips
+      the sweep and says so; it is never handed a value at or below 0, which would make it unbounded."""
+    import time as _time
+
+    from sqlalchemy import func
+
+    t0 = _time.monotonic()
+    total = int(session.query(func.count(Article.id)).scalar() or 0)
+    if article_ids is None or len(article_ids) * 4 > total:
+        out = reconcile_keyword_counters(session, now=now)
+        out["scope"] = "the whole-corpus sweep: " + (
+            "the batches this swap brought in could not be derived"
+            if article_ids is None
+            else "the import is over a quarter of the corpus"
+        )
+        return out
+    budget = _maint_budget_s("OO_RECONCILE_BUDGET_S")
+    out = reconcile_keyword_counters_for_articles(session, article_ids, now=now, budget_s=budget)
+    if counter_envelope(session, now=now).is_exact() and whole_sweep_is_fresh(session, now=now):
+        out["sweep"] = {"skipped": "the counters are exact and a whole sweep is recent"}
+        return out
+    if budget <= 0:
+        out["sweep"] = reconcile_keyword_counters(session, now=now, budget_s=0)  # unbounded, as the budget says
+        return out
+    left = budget - (_time.monotonic() - t0)
+    if left <= 0:
+        out["sweep"] = {"skipped": "the budget was spent on the imported keywords"}
+    else:
+        out["sweep"] = reconcile_keyword_counters(session, now=now, budget_s=left)
+    return out
+
+
+#: How many article ids one ``IN`` list carries when the scoped reconcile below gathers the keywords those articles mention,
+#: and how many keyword ids one of its exact ``GROUP BY`` reads covers. Both stay far under SQLite's bound-parameter limit.
+_SCOPED_ARTICLE_CHUNK = 5_000
+_SCOPED_KEYWORD_CHUNK = 2_000
+#: The shortest run of consecutive article ids read as one ``BETWEEN`` range rather than added to an ``IN`` list.
+_SCOPED_RUN_MIN = 64
+
+
+def reconcile_keyword_counters_for_articles(
+    session: Session,
+    article_ids: Iterable[int],
+    *,
+    now=None,
+    budget_s: float | None = None,
+) -> dict:
+    """Reconcile EXACTLY the keywords the given articles mention, and nothing else (row 424).
+
+    The import's merge stage changes the counters only through the articles it brings in (the merged keywords land at 0,
+    and a carried article's mentions add their own deltas), so after an import the keywords that can carry a fresh error
+    are the keywords those articles mention. This recomputes each of them with the same arithmetic as
+    :func:`reconcile_keyword_counters` -- ``SUM(count)`` and ``COUNT(DISTINCT article_id)`` over ALL of the keyword's live,
+    unquarantined mentions, not only the imported ones (R101) -- then stamps them and rewrites the ones that were wrong,
+    as one gated unit per chunk. A keyword it touches ends with exactly the counters and stamp the whole-corpus sweep would give it, and a
+    keyword it does not touch keeps its counters and its stamp, so :func:`counter_envelope` stays as honest as before:
+    drift that was already elsewhere is still disclosed as ``estimated`` until a whole sweep lands.
+
+    The cost is the touched keywords' own mentions (an index range each on ``ix_mention_covering``) rather than every
+    mention in the corpus. It never moves the sweep's resume cursor. ``budget_s`` (default ``OO_RECONCILE_BUDGET_S``;
+    0 or negative = unbounded) stops it between chunks, reporting ``complete: false``; a keyword it did not reach keeps
+    the counter its incremental maintenance gave it, which is the state every import before this one left."""
+    import time as _time
+    from datetime import UTC, datetime
+
+    from src.database.writer import connection_first, write_lock
+
+    stamp = now or datetime.now(UTC)
+    budget = budget_s if budget_s is not None else _maint_budget_s("OO_RECONCILE_BUDGET_S")
+    t0 = _time.monotonic()
+
+    aids = sorted({int(a) for a in article_ids})
+    # Every keyword the articles mention, quarantined or not: a quarantined article's keyword is still one whose counter
+    # this import could have moved, and the GROUP BY below is what leaves the quarantined mention out.
+    #
+    # An import's articles are appended, so their ids come in long consecutive runs. A run is read as one BETWEEN range,
+    # which SQLite answers from a covering (article_id, keyword_id) index in one pass; an IN list of the same ids took it
+    # to the non-covering index and a row lookup per mention (measured: 6.6 s against 1.6 s for 122,000 articles). The
+    # ids outside a long run still go in IN lists.
+    require_mentions_view(session)  # the gathering and the GROUP BYs read the view (R96), before any gate is taken
+    kid_set: set[int] = set()
+    loose: list[int] = []
+
+    def _gather(cond) -> None:
+        kid_set.update(int(k) for (k,) in session.query(KeywordMentionRead.keyword_id).filter(cond).distinct())
+
+    i = 0
+    while i < len(aids):
+        j = i
+        while j + 1 < len(aids) and aids[j + 1] == aids[j] + 1 and j + 1 - i < _SCOPED_ARTICLE_CHUNK:
+            j += 1
+        if j - i + 1 >= _SCOPED_RUN_MIN:
+            _gather(KeywordMentionRead.article_id.between(aids[i], aids[j]))
+        else:
+            loose.extend(aids[i : j + 1])
+        i = j + 1
+    for i in range(0, len(loose), _SCOPED_ARTICLE_CHUNK):
+        _gather(KeywordMentionRead.article_id.in_(loose[i : i + _SCOPED_ARTICLE_CHUNK]))
+    kids = sorted(kid_set)
+
+    reconciled = 0
+    with_mentions = 0
+    drift = 0
+    complete = True
+    for i in range(0, len(kids), _SCOPED_KEYWORD_CHUNK):
+        if i and budget > 0 and _time.monotonic() - t0 > budget:
+            complete = False
+            break
+        part = kids[i : i + _SCOPED_KEYWORD_CHUNK]
+        # One gated unit, as in the sweep: the stamp fires do_orm_execute but bulk_update_mappings is invisible to both
+        # write-gate hooks (C8). The GROUP BY runs before the gate and every row it disagrees with is read again under it,
+        # so an ingest landing in between is never undone. Only the wrong rows are rewritten. The connection, then the gate.
+        agg = _exact_counts(session, KeywordMentionRead.keyword_id.in_(part))
+        connection_first(session)
+        with write_lock():
+            fixes = _wrong_rows_under_the_gate(session, agg, Keyword.id.in_(part))
+            drift += len(fixes)
+            session.query(Keyword).filter(Keyword.id.in_(part)).update(
+                {Keyword.last_reconciled_at: stamp}, synchronize_session=False
+            )
+            if fixes:
+                session.bulk_update_mappings(Keyword, fixes)
+            session.commit()
+        reconciled += len(part)
+        with_mentions += len(agg)
+    return {
+        "scope": "keywords the imported articles mention",
+        "articles": len(aids),
+        "keywords_in_scope": len(kids),
+        "keywords": reconciled,
+        "with_mentions": with_mentions,
+        "drift_repaired": int(drift),
+        "as_of": stamp.isoformat(timespec="seconds"),
+        "complete": complete,
         "budget_s": budget,
     }
 

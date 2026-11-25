@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import re
+import stat
 import threading
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
@@ -80,18 +81,18 @@ def read_record(main: Path | None = None) -> dict[str, Any]:
     rows = stores(main)
     if not rows:
         return {"version": RECORD_VERSION, "stores": {}}
-    try:
-        doc = json.loads(_record_path(rows[0][1]).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"version": RECORD_VERSION, "stores": {}}
-    if not isinstance(doc, dict) or not isinstance(doc.get("stores"), dict):
-        return {"version": RECORD_VERSION, "stores": {}}
-    return {"version": RECORD_VERSION, "stores": {str(k): v for k, v in doc["stores"].items() if isinstance(v, dict)}}
+    return _read_record_at(_record_path(rows[0][1]))
 
 
-def record_encrypted(name: str, main: Path | None = None) -> None:
+_UNSET: Any = object()
+
+
+def record_encrypted(name: str, main: Path | None = None, expect: Any = _UNSET) -> None:
     """Add ``name`` to the record, atomically and under the record's lock (``file_lock``, then ``atomic_replace``). Called only after the store was encrypted AND read
-    back with the key. A failure to write is logged by class and never undoes the encryption: the status reads the files."""
+    back with the key. ``expect``: the store's :func:`_mark` taken BEFORE that keyed read (security reads, row 400); the entry is
+    bound to the file only when the file is still that one, else (another file, or None: no mark could be taken) it carries no
+    identity (never evidence). A failure to write is
+    logged by class and never undoes the encryption: the status reads the files."""
     rows = stores(main)
     if not rows:
         return
@@ -104,24 +105,129 @@ def record_encrypted(name: str, main: Path | None = None) -> None:
             doc = read_record(rows[0][1])
             doc["stores"][name] = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True}
             store = dict(rows).get(name)
-            ident = _identity(store) if store is not None else None
-            if ident is not None:  # R820 (4): the identity of the file read back with the key, by path (R789)
-                doc["stores"][name].update(dev=int(ident[0]), ino=int(ident[1]))
-            atomic_replace(path, json.dumps(doc, indent=1, sort_keys=True))
+            mark = _mark(store) if store is not None else None
+            if mark is not None and expect is not _UNSET and mark != expect:
+                mark = None  # another file at the name since the keyed read (or none could be taken before it): never evidence
+            if mark is not None:  # R820 (4) / R828 (1): the identity of the file read back with the key, bound by a MAC (R789)
+                doc["stores"][name].update(_bound_entry(doc, mark))
+            atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
     except OSError as exc:
         log_failure(_LOG, "the at-rest record could not be written (the files still say which stores are encrypted)", exc)
 
 
 #: R820 (4): the record's identity fields. A store's (device, inode) when it was read back with the app's key, never a secret; an
 #: entry without them (a record from before R820) is never evidence (R755: additive).
-_IDENT_KEYS = ("dev", "ino")
+_IDENT_KEYS = ("dev", "ino", "mac")
 #: R820 (3): the most of the record the erase reads; a longer file is not the app's record.
 RECORD_MAX_BYTES = 64 * 1024
+#: R828 (3): the record and its lock are never carried by a backup, an export, a field-data file or a diagnostic bundle: every
+#: writer of those takes named files only, and none names these (tests/test_at_rest_record_r828.py holds them to that).
+NEVER_CARRIED = frozenset({RECORD_NAME, RECORD_NAME + ".lock"})
 _NOTE_LOCK = threading.Lock()
 #: The identities this process already wrote into the record (keyed) or checked against it (plaintext), so the hook on every new
 #: pooled connection costs one ``stat`` and a set lookup after the first.
 _NOTED_KEYED: set[tuple[int, int]] = set()
 _NOTED_PLAIN: set[tuple[int, int]] = set()
+
+
+def _mark(path: Path) -> tuple[int, int, bytes] | None:
+    """The (device, inode, first 16 bytes) of the file at ``path``, all three from ONE descriptor (:func:`store_reader`, so a read
+    never drops this process's locks: R789), so they cannot name two different files. The 16 bytes of an encrypted store are its
+    SQLCipher salt: they stay in memory here and are NEVER written anywhere (R828 (1)); the record keeps only a MAC of them
+    (:func:`_mac`). None when they cannot be read, are short, or are SQLite's own header. Never raises."""
+    from src.database.connect import read_at, store_reader
+
+    try:
+        with store_reader(path) as fd:
+            st = os.fstat(fd)
+            head = read_at(fd, 16, 0)
+    except Exception:  # noqa: BLE001 - no mark is "no evidence", never an error
+        return None
+    if len(head) < 16 or head == _SQLITE_MAGIC or not stat.S_ISREG(st.st_mode):
+        return None
+    return (st.st_dev, st.st_ino, bytes(head))
+
+
+#: R828 (1): the record's own random binding key (hex), one per record, never derived from anything and never a secret of the
+#: store: it only lets an entry be matched to a file's first 16 bytes without holding them.
+BINDING_KEY_FIELD = "binding_key"
+
+
+def _binding_key(doc: dict[str, Any]) -> bytes | None:
+    raw = doc.get(BINDING_KEY_FIELD)
+    if not isinstance(raw, str) or len(raw) != 64:
+        return None
+    try:
+        return bytes.fromhex(raw)
+    except ValueError:
+        return None
+
+
+def _mac(key: bytes, head: bytes) -> str:
+    """R828 (1): HMAC-SHA-256 over the 16 bytes: matching needs the bytes, recovering them from it is not possible."""
+    import hashlib
+    import hmac
+
+    return hmac.new(key, head[:16], hashlib.sha256).hexdigest()
+
+
+def _bound_entry(doc: dict[str, Any], mark: tuple[int, int, bytes]) -> dict[str, Any]:
+    """The identity fields of an entry for the file ``mark`` describes, under the record's binding key (made once, at random, the
+    first time one is needed)."""
+    import secrets
+
+    key = _binding_key(doc)
+    if key is None:
+        key = secrets.token_bytes(32)
+        doc[BINDING_KEY_FIELD] = key.hex()
+    return {"dev": int(mark[0]), "ino": int(mark[1]), "mac": _mac(key, mark[2])}
+
+
+def entry_names(entry: Any, mark: tuple[int, int, bytes] | None, doc: dict[str, Any]) -> bool:
+    """R820 (1) / R828 (1): whether a record ``entry`` (of the record ``doc``) names the very file ``mark`` describes as read back
+    with the key: the same device, inode AND a MAC of its first 16 bytes under the record's binding key. An entry without one (from
+    before R828) is never evidence: the store is then said to look encrypted, and an erase rewrites it whole."""
+    key = _binding_key(doc)
+    if mark is None or key is None or not isinstance(entry, dict) or entry.get("read_back_with_key") is not True:
+        return False
+    dev, ino, mac = entry.get("dev"), entry.get("ino"), entry.get("mac")
+    if type(dev) is not int or type(ino) is not int or not isinstance(mac, str) or len(mac) != 64:
+        return False
+    try:
+        given = bytes.fromhex(mac)  # a crafted or damaged value (non-ASCII, not hex) is no match, never an error (security read 1)
+    except ValueError:
+        return False
+    import hmac
+
+    return (dev, ino) == (mark[0], mark[1]) and hmac.compare_digest(given, bytes.fromhex(_mac(key, mark[2])))
+
+
+#: Fields an entry may never carry on disk (R828 (1)): ``head`` held page 1's first 16 bytes (the salt) in builds before R828, and
+#: is dropped from EVERY entry whenever the record is read or written, so an upgraded install's record loses it on its next write.
+_NEVER_KEPT = ("head",)
+
+
+def _scrubbed(stores: Any) -> dict[str, Any]:
+    if not isinstance(stores, dict):
+        return {}
+    return {str(k): {f: x for f, x in v.items() if f not in _NEVER_KEPT} for k, v in stores.items() if isinstance(v, dict)}
+
+
+def _holds_legacy(raw: bytes | None) -> bool:
+    """Whether the record's bytes still carry a field R828 forbids (an entry written before it)."""
+    try:
+        doc = json.loads(raw.decode("utf-8")) if raw else None
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return False
+    stores = doc.get("stores") if isinstance(doc, dict) else None
+    return isinstance(stores, dict) and any(isinstance(v, dict) and any(f in v for f in _NEVER_KEPT) for v in stores.values())
+
+
+def _serialisable(doc: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {"version": doc.get("version", RECORD_VERSION), "stores": _scrubbed(doc.get("stores", {}))}
+    if _binding_key(doc) is not None:
+        out[BINDING_KEY_FIELD] = doc[BINDING_KEY_FIELD]
+    return out
 
 
 def _identity(path: Path) -> tuple[int, int] | None:
@@ -132,8 +238,9 @@ def _identity(path: Path) -> tuple[int, int] | None:
     return (st.st_dev, st.st_ino)
 
 
-def _write_identity(name: str, path: Path, ident: tuple[int, int] | None) -> None:
-    """Set (``ident``) or clear (None) the identity of ``name`` in the record, atomically and under its lock. Never raises."""
+def _write_identity(name: str, path: Path, ident: tuple[int, int, bytes] | None) -> None:
+    """Set (``ident``: a :func:`_mark`) or clear (None) the identity of ``name`` in the record, atomically and under its lock.
+    Never raises."""
     from src.safety.file_lock import atomic_replace, file_lock
 
     try:
@@ -141,28 +248,91 @@ def _write_identity(name: str, path: Path, ident: tuple[int, int] | None) -> Non
             doc = _read_record_at(path)
             entry = dict(doc["stores"].get(name) or {})
             if ident is None:
-                if "dev" not in entry and "ino" not in entry:
+                # R828 (4): a file opened as plaintext (decrypted, or another file at the name) loses its entry whole
+                if name not in doc["stores"] and not _holds_legacy(_record_bytes(path)):
                     return
-                for k in _IDENT_KEYS:
-                    entry.pop(k, None)
-                entry["read_back_with_key"] = False
+                doc["stores"].pop(name, None)
+                atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
+                return
             else:
                 entry.setdefault("encrypted_at", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
-                entry.update(read_back_with_key=True, dev=int(ident[0]), ino=int(ident[1]))
+                entry.update(read_back_with_key=True, **_bound_entry(doc, ident))
             doc["stores"][name] = entry
-            atomic_replace(path, json.dumps(doc, indent=1, sort_keys=True))
+            atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
     except OSError as exc:
         log_failure(_LOG, "the at-rest record could not be written (the files still say which stores are encrypted)", exc)
 
 
-def _read_record_at(path: Path) -> dict[str, Any]:
+def _scrub_legacy(path: Path) -> None:
+    """Rewrite the record without the fields R828 forbids, when an entry from before it still carries one (security reads, R828
+    (1)). Only an existing record is rewritten; never creates one; never raises. The record's earlier versions in freed disk blocks
+    are beyond any rewrite (docs/SECURITY.md)."""
+    from src.safety.file_lock import atomic_replace, file_lock
+
+    if not _holds_legacy(_record_bytes(path)):
+        return
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        with file_lock(path):
+            if _holds_legacy(_record_bytes(path)):
+                atomic_replace(path, json.dumps(_serialisable(_read_record_at(path)), indent=1, sort_keys=True))
+    except OSError as exc:
+        log_failure(_LOG, "the at-rest record could not be rewritten", exc)
+
+
+def forget(name: str, store: Path) -> None:
+    """R828 (4): remove ``name``'s entry from the record beside its store ``store`` (the corpus or a lane, whose record is the
+    corpus's: :func:`stores`), when that file was replaced (a restore, a repair, a rebuild switch) or erased. Its next keyed read
+    records the new file again (:func:`note_main_open`, :func:`record_encrypted`); until then the store only LOOKS encrypted, which
+    fails closed. Never creates the record or its folder (an erased folder stays erased: R802/R806); never opens a store file
+    (R789); never raises."""
+    path = _record_path(store)
+    if _record_bytes(path) is None:
+        return  # no record (or not the app's): nothing to remove, and nothing is made
+    _write_identity(name, path, None)
+
+
+def _record_bytes(path: Path) -> bytes | None:
+    """The record's bytes, read the one way every reader takes (security reads, row 400): opened no-follow and non-blocking (a link,
+    a FIFO or a device at its name is never read), a regular file only, at most :data:`RECORD_MAX_BYTES` (a longer one is not the
+    app's). None for anything else. Never raises."""
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > RECORD_MAX_BYTES:
+            return None
+        chunks: list[bytes] = []
+        got = 0
+        while True:  # the guard-clause form (src/utils/interrupts.py; R161/R163)
+            if got > RECORD_MAX_BYTES:
+                break
+            b = os.read(fd, RECORD_MAX_BYTES + 1 - got)
+            if not b:
+                break
+            chunks.append(b)
+            got += len(b)
+        return b"".join(chunks) if got <= RECORD_MAX_BYTES else None
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def _read_record_at(path: Path) -> dict[str, Any]:
+    raw = _record_bytes(path)
+    try:
+        doc = json.loads(raw.decode("utf-8")) if raw else None
+    except (UnicodeDecodeError, ValueError, RecursionError):  # a crafted record never raises out of here (security reads, row 400)
         return {"version": RECORD_VERSION, "stores": {}}
     if not isinstance(doc, dict) or not isinstance(doc.get("stores"), dict):
         return {"version": RECORD_VERSION, "stores": {}}
-    return {"version": RECORD_VERSION, "stores": {str(k): v for k, v in doc["stores"].items() if isinstance(v, dict)}}
+    out: dict[str, Any] = {"version": RECORD_VERSION, "stores": _scrubbed(doc["stores"])}
+    if _binding_key(doc) is not None:
+        out[BINDING_KEY_FIELD] = doc[BINDING_KEY_FIELD]
+    return out
 
 
 def note_main_open(path: Path | str) -> None:
@@ -181,27 +351,190 @@ def note_main_open(path: Path | str) -> None:
             return  # no positive evidence either way (a disposal on another thread, say): the record is left as it is
         keyed = how == "keyed"
         with _NOTE_LOCK:
-            seen = _NOTED_KEYED if keyed else _NOTED_PLAIN
-            if ident in seen:
+            if ident in (_NOTED_KEYED if keyed else _NOTED_PLAIN):
                 return
-            seen.add(ident)
-            (_NOTED_PLAIN if keyed else _NOTED_KEYED).discard(ident)
         record = _record_path(p)
+        _scrub_legacy(record)  # once per process and store: an upgraded install's record loses the salts older builds wrote
         if keyed:
-            entry = _read_record_at(record)["stores"].get("corpus") or {}
-            if (entry.get("dev"), entry.get("ino")) != ident:
-                _write_identity("corpus", record, ident)
+            mark = _mark(p)
+            if mark is None or mark[:2] != ident:
+                return  # the file at the path is not the one just opened (or cannot be read): nothing is recorded on a guess,
+                # and it is not marked as handled, so the next open tries again (security read, row 400)
+            doc = _read_record_at(record)
+            if not entry_names(doc["stores"].get("corpus"), mark, doc):
+                _write_identity("corpus", record, mark)
         elif record.exists():
             entry = _read_record_at(record)["stores"].get("corpus") or {}
             # Whatever identity it names: the corpus at this path is plaintext now, so an older one (a replaced file whose inode
             # the file system may hand out again) is never evidence either (security read, row 396).
             if "dev" in entry or "ino" in entry:
                 _write_identity("corpus", record, None)
+        with _NOTE_LOCK:
+            (_NOTED_KEYED if keyed else _NOTED_PLAIN).add(ident)
+            (_NOTED_PLAIN if keyed else _NOTED_KEYED).discard(ident)
     except Exception as exc:  # noqa: BLE001 - bookkeeping never fails an open
         log_failure(_LOG, "the at-rest record could not be updated after an open", exc, level=logging.DEBUG)
 
 
-def record_names_identity(raw: bytes | None, ident: tuple[int, int]) -> bool:
+#: R823: the record entry of a copy the app made of one of its stores, beside it (a pre-restore snapshot, a rebuild's kept file),
+#: keyed by the copy's own file name; R826: a corpus segment's, by its name without ``.db``.
+COPY_PREFIX = "copy:"
+SEGMENT_PREFIX = "corpus:"
+
+
+def copy_key(copy: Path | str) -> str:
+    return COPY_PREFIX + Path(copy).name
+
+
+def record_copy(copy: Path, source: Path, source_name: str) -> bool:
+    """R823: write the record entry for ``copy``, a copy the app just made of its store ``source`` (``source_name`` in the
+    record), ONLY when the source is proven keyed (this process holds it open under a key, or the record names its very file) AND
+    the copy carries the source's own first 16 bytes, read from one descriptor each, behind a header that is not SQLite's. The
+    entry is bound to the copy's own (device, inode) by a MAC (R828 (1)); no byte of either file is stored. The copy's name, place,
+    size and the main store being encrypted are never evidence. Returns whether it was written; a failed write never fails the
+    copy (it is then rewritten in full by an erase). Never raises."""
+    try:
+        smark, cmark = _mark(source), _mark(copy)
+        if smark is None or cmark is None or smark[2] != cmark[2]:
+            return False  # a plaintext file (SQLite's header) on either side, or another file: no entry
+        from src.database.connect import opened_with_key
+
+        record = _record_path(source)
+        keyed = opened_with_key(smark[:2])
+        if not keyed:
+            doc = _read_record_at(record)
+            keyed = entry_names(doc["stores"].get(source_name), smark, doc)
+        if not keyed or Path(copy).parent != Path(source).parent:
+            return False  # its record is the source's, beside it: a copy elsewhere has no entry
+        if _record_bytes(record) is None:
+            return False  # never creates the record (security reads, row 402): a keyed store has one from its encryption
+        from src.safety.file_lock import atomic_replace, file_lock
+
+        with file_lock(record):
+            doc = _read_record_at(record)
+            entry = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True,
+                     "copy_of": source_name}
+            entry.update(_bound_entry(doc, cmark))
+            doc["stores"][copy_key(copy)] = entry
+            atomic_replace(record, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
+        return True
+    except Exception as exc:  # noqa: BLE001 - bookkeeping never fails the copy
+        log_failure(_LOG, "the at-rest record could not name a copy (an erase rewrites it whole)", exc, level=logging.DEBUG)
+        return False
+
+
+def forget_copy(copy: Path) -> None:
+    """R823 / R828 (4): the entry of ``copy`` goes when the copy is removed or replaced. Never creates the record; never
+    raises."""
+    record = _record_path(Path(copy))
+    if _record_bytes(record) is None:
+        return
+    _write_identity(copy_key(copy), record, None)
+
+
+#: R826: the one folder of the split corpus inside the data folder, and the only file name a segment may have there
+#: (``src/safety/crypto_erase.py`` sweeps exactly these names).
+SEGMENT_DIR = "corpus"
+_SEGMENT_NAME = re.compile(r"^(seg-[1-9][0-9]{0,3})\.db\Z")  # \Z: "seg-1.db\n" is never a segment's name
+
+
+def _segment_entry(path: Path | str, *, must_exist: bool) -> str | None:
+    """The record key ``corpus:seg-<n>`` of the segment at ``path``, or None when the helper must refuse it: a name other than
+    ``seg-<n>.db``, a link (or anything but a regular file with one name) at that name, or a file whose folder is not the data
+    folder's own ``corpus`` folder (a link at the folder's name, or another folder, is refused; the comparison is by device and
+    inode, so the spelling of the path does not matter). Nothing is opened. Never raises."""
+    from src.paths import data_dir_path
+
+    p = Path(path)
+    m = _SEGMENT_NAME.match(p.name)
+    if m is None:
+        return None
+    folder = data_dir_path() / SEGMENT_DIR
+    try:
+        fst = os.lstat(folder)
+        pst = os.lstat(p.parent)
+    except OSError:
+        return None
+    if not (stat.S_ISDIR(fst.st_mode) and stat.S_ISDIR(pst.st_mode)) or (fst.st_dev, fst.st_ino) != (pst.st_dev, pst.st_ino):
+        return None
+    try:
+        st = os.lstat(p)
+    except FileNotFoundError:
+        return None if must_exist else SEGMENT_PREFIX + m.group(1)
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode) or (must_exist and st.st_nlink != 1):
+        return None
+    return SEGMENT_PREFIX + m.group(1)
+
+
+def record_segment(path: Path | str, main: Path | None = None) -> bool:
+    """R826 / R828: write the record entry ``corpus:seg-<n>`` for the corpus segment at ``path`` (``<data>/corpus/seg-<n>.db``),
+    bound to the file's own (device, inode) by a MAC of its first 16 bytes (no byte of the file is stored), in the record beside
+    the main corpus ``main`` (default: the live one). Call it ONLY after the segment was read back with the key, and while that
+    keyed connection is still open: the helper checks that this process holds the very file open under a key
+    (``connect.opened_with_key``) and writes nothing otherwise. Refused (returns False, writes nothing): any name but
+    ``seg-<n>.db``, a link at the name or at the ``corpus`` folder's name, a file with a second name, a file outside the data
+    folder's ``corpus`` folder, a file whose first 16 bytes are SQLite's header. With an entry, an erase destroys the segment's
+    page 1 and says "destroyed"; without one it rewrites the file whole. Returns whether it was written; never raises."""
+    try:
+        name = _segment_entry(path, must_exist=True)
+        if name is None:
+            return False
+        if main is None:
+            from src.api.unlock import main_db_path
+
+            main = main_db_path()
+        mark = _mark(Path(path))
+        if main is None or mark is None:
+            return False
+        st = os.lstat(path)
+        if (st.st_dev, st.st_ino) != mark[:2]:
+            return False  # swapped between the look and the read
+        from src.database.connect import opened_with_key
+
+        if not opened_with_key(mark[:2]):
+            return False  # never read back with the key by this process: no evidence, no entry
+        from src.safety.file_lock import atomic_replace, file_lock
+
+        record = _record_path(Path(main))
+        if _record_bytes(record) is None:
+            return False  # never creates the record: the corpus's encryption wrote it (record_encrypted)
+        with file_lock(record):
+            doc = _read_record_at(record)
+            entry = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True}
+            entry.update(_bound_entry(doc, mark))
+            doc["stores"][name] = entry
+            atomic_replace(record, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
+        return True
+    except Exception as exc:  # noqa: BLE001 - bookkeeping never fails the segment (an erase then rewrites it whole)
+        log_failure(_LOG, "the at-rest record could not name a corpus segment (an erase rewrites it whole)", exc, level=logging.DEBUG)
+        return False
+
+
+def forget_segment(path: Path | str, main: Path | None = None) -> bool:
+    """R826 / R828 (4): remove the entry ``corpus:seg-<n>`` of the segment at ``path`` when the segment is deleted, replaced or
+    decrypted (call it before or after the file goes: a missing file is fine). Refused (returns False, changes nothing): any name
+    but ``seg-<n>.db``, a link at the name or at the ``corpus`` folder's name, a path outside the data folder's ``corpus``
+    folder. Never creates the record or a folder; never opens the segment; never raises."""
+    try:
+        name = _segment_entry(path, must_exist=False)
+        if name is None:
+            return False
+        if main is None:
+            from src.api.unlock import main_db_path
+
+            main = main_db_path()
+        if main is None:
+            return False
+        forget(name, Path(main))
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "the at-rest record could not drop a corpus segment", exc, level=logging.DEBUG)
+        return False
+
+
+def record_names_identity(raw: bytes | None, ident: tuple[int, int], head: bytes | None = None, name: str = "corpus") -> bool:
     """R820 (1)/(3): whether the record's bytes ``raw`` (read by the erase, no-follow, regular file only, at most
     :data:`RECORD_MAX_BYTES`) name the corpus at ``ident`` as encrypted and read back with the key. Anything else is False: no record,
     a malformed one, an entry without an identity (a record from before R820) or with another one."""
@@ -209,16 +542,15 @@ def record_names_identity(raw: bytes | None, ident: tuple[int, int]) -> bool:
         return False
     try:
         doc = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):
         return False
     stores = doc.get("stores") if isinstance(doc, dict) else None
-    entry = stores.get("corpus") if isinstance(stores, dict) else None
-    if not isinstance(entry, dict) or entry.get("read_back_with_key") is not True:
+    entry = stores.get(name) if isinstance(stores, dict) else None
+    # Row 400 (security reads): the file's own first 16 bytes too, read through the erase's kept handle, so a file that took the
+    # same inode later is never named by an older record.
+    if head is None or len(head) < 16 or head[:16] == _SQLITE_MAGIC or not isinstance(doc, dict):
         return False
-    dev, ino = entry.get("dev"), entry.get("ino")
-    if type(dev) is not int or type(ino) is not int:
-        return False
-    return (dev, ino) == tuple(ident)
+    return entry_names(entry, (int(ident[0]), int(ident[1]), bytes(head[:16])), doc)
 
 
 def _names_beside(rows: list[tuple[str, Path]]) -> list[tuple[Path, str]]:
@@ -400,7 +732,10 @@ def _probe(path: Path, key: str) -> dict[str, Any]:
         try:
             conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
             ver = conn.execute("PRAGMA cipher_version").fetchone()
-            out = {"state": "encrypted", "key_checked": True, "cipher": ver[0] if ver else None}
+            # Security reads (row 400): a file swapped to plaintext between the header read and this open is opened by SQLite
+            # itself, which has no cipher: never "encrypted" then, and never cached.
+            out = ({"state": "encrypted", "key_checked": True, "cipher": ver[0]} if ver and ver[0]
+                   else {"state": "unreadable", "reason": "io"})
         except Exception as exc:  # noqa: BLE001 - as above
             out = {"state": "busy"} if _is_busy(exc) else {"state": "unreadable", "reason": _reason(exc) if isinstance(exc, OSError) else "io"}
         finally:
@@ -413,7 +748,77 @@ def _probe(path: Path, key: str) -> dict[str, Any]:
     return out
 
 
-def _store_row(name: str, path: Path, key: str | None, probe_ok: bool) -> dict[str, Any]:
+def _evidence(name: str, path: Path, record: dict[str, Any]) -> str | None:
+    """R821 (1)/(2): what makes a store with a header that is not SQLite's "encrypted" rather than "looks encrypted": ``"key"`` when
+    this process read the very file under a key (the corpus: :func:`src.database.connect.opened_with_key`), ``"record"`` when this
+    installation's record names its (device, inode) as read back with the key (R820), else None. The header alone never is. A
+    ``stat``, a set lookup and, for the record, one 16-byte read through :func:`_mark`'s shared, held reader (never an open and
+    close of the store's file: R789)."""
+    ident = _identity(path)
+    if ident is None:
+        return None
+    if name == "corpus":
+        from src.database.connect import opened_with_key
+
+        if opened_with_key(ident):
+            return "key"
+    return "record" if entry_names(record["stores"].get(name), _mark(path), record) else None
+
+
+def claim_for(main: Path | None = None) -> str:
+    """R821 (1)/(2)/(5): what may be SAID about the corpus at rest, for every line shown to a person or written to a report (the lock
+    screen, the lock-state answer, the benchmark and performance reports): ``"encrypted"`` only with evidence (:func:`_evidence`: a
+    keyed read held in this process, or this installation's record naming the very file), ``"looks_encrypted"`` for a header that is
+    not SQLite's and nothing more, ``"plaintext"`` for SQLite's own header, ``"absent"``, or ``"unknown"`` (not read). Never the lock
+    gate's control word: "unlocked-encrypted" says a key is held, not that it opened the file. A header read through the kept
+    descriptor (R789), a ``stat`` and the record: no store is opened. Never raises."""
+    return claim_with_evidence(main)[0]
+
+
+def claim_with_evidence(main: Path | None = None) -> tuple[str, str | None]:
+    """:func:`claim_for` and what it rests on: ``"key"``, ``"record"``, ``"header"`` (looks encrypted), or None (no claim of
+    encryption). Never raises."""
+    try:
+        rows = stores(main)
+        if not rows:
+            return "unknown", None
+        name, path = rows[0]
+        state, _reason = _read_header(path)
+        if state != "encrypted":
+            return (state if state in ("plaintext", "absent") else "unknown"), None
+        ev = _evidence(name, path, read_record(path))
+        return ("encrypted", ev) if ev is not None else ("looks_encrypted", "header")
+    except Exception:  # noqa: BLE001 - a claim that cannot be made is "unknown", never a guess
+        return "unknown", None
+
+
+def lock_state_claim(lock_state: str, main: Path | None = None) -> str:
+    """The lock gate's word for a REPORT (R821 (5)): ``unlocked-encrypted`` only with evidence (:func:`claim_for`), else
+    ``unlocked-looks-encrypted``; every other word as it is ("locked" says only that the app holds no key)."""
+    if lock_state != "unlocked-encrypted":
+        return lock_state
+    return lock_state if claim_for(main) == "encrypted" else "unlocked-looks-encrypted"
+
+
+def _with_evidence(row: dict[str, Any], name: str, path: Path, record: dict[str, Any]) -> dict[str, Any]:
+    """R821 (1): a row whose header is not SQLite's and that no key opened here is "encrypted" only with :func:`_evidence`, and says
+    which; otherwise it is ``looks_encrypted`` ("looks encrypted; not yet checked with your key"), never "encrypted"."""
+    if row["state"] != "encrypted":
+        return row
+    if row.get("key_checked") is True:
+        row["evidence"] = "key"
+        return row
+    ev = _evidence(name, path, record)
+    if ev is None:
+        row["state"] = "looks_encrypted"
+        row["evidence"] = "header"
+    else:
+        row["evidence"] = ev
+    return row
+
+
+def _store_row(name: str, path: Path, key: str | None, probe_ok: bool, record: dict[str, Any] | None = None) -> dict[str, Any]:
+    record = record if record is not None else {"stores": {}}
     state, reason = _read_header(path)
     row: dict[str, Any] = {"store": name, "state": state}
     if reason is not None:
@@ -421,15 +826,15 @@ def _store_row(name: str, path: Path, key: str | None, probe_ok: bool) -> dict[s
     if state != "encrypted" or name == "corpus":
         # The corpus is the file the app is open with (an unlocked encrypted app opened it with the key it holds): it is not
         # opened a second time here, where a probe could straddle a swap of the library.
-        return row
+        return _with_evidence(row, name, path, record)
     if key is None or not probe_ok:
         row["key_checked"] = False
-        return row
+        return _with_evidence(row, name, path, record)
     row.update(_probe(path, key))
     if row["state"] in ("busy", "unreadable"):
         # The header says encrypted; only the check with the passphrase did not run to its end. Never "still unencrypted" (row 153).
         row["key_checked"] = False
-    return row
+    return _with_evidence(row, name, path, record)
 
 
 def status(main: Path | None = None) -> dict[str, Any]:
@@ -452,7 +857,7 @@ def status(main: Path | None = None) -> dict[str, Any]:
     record = read_record(rows[0][1]) if rows else {"stores": {}}
     probe_ok = key is not None and _PROBE_LOCK.acquire(timeout=PROBE_WAIT_S)
     try:
-        out_rows = _rows_of(rows, key, probe_ok)
+        out_rows = _rows_of(rows, key, probe_ok, record)
     finally:
         if probe_ok:
             _PROBE_LOCK.release()
@@ -463,11 +868,15 @@ def status(main: Path | None = None) -> dict[str, Any]:
     busy = [r["store"] for r in out_rows if r["state"] == "busy"]
     not_this_key = [r["store"] for r in out_rows if r["state"] == "not_this_key"]
     unchecked = [r["store"] for r in out_rows if r.get("key_checked") is False]
+    looks = [r["store"] for r in out_rows if r["state"] == "looks_encrypted"]
     return {
         "corpus_encrypted": corpus_encrypted,
         # With a key held, never said over a store it was not tried on (a swap in progress): "encrypted" by its header is not
-        # "encrypted with yours". With no key held (locked) there is nothing to try, and the headers alone answer, as the rows say.
-        "complete": corpus_encrypted and not pending and not busy and not not_this_key and not (key is not None and unchecked),
+        # "encrypted with yours". With no key held (locked) there is nothing to try: R821, a store is "encrypted" there only by this
+        # installation's record, and one that only LOOKS encrypted (its header) keeps "complete" false.
+        "complete": corpus_encrypted and not pending and not busy and not not_this_key and not looks
+        and not (key is not None and unchecked),
+        "looks_encrypted": looks,
         "key_held": key is not None,
         "pending": pending,
         "busy": busy,
@@ -484,9 +893,52 @@ def _pending_of(rows: list[dict[str, Any]]) -> list[str]:
     return [r["store"] for r in rows if r["state"] == "plaintext" or (r["state"] == "unreadable" and "key_checked" not in r)]
 
 
-def _rows_of(rows: list[tuple[str, Path]], key: str | None, probe_ok: bool) -> list[dict[str, Any]]:
+def _rows_of(rows: list[tuple[str, Path]], key: str | None, probe_ok: bool, record: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """One row per store (a function of its own: the loop is not inside ``status``'s ``try``, R163)."""
-    return [_store_row(name, path, key, probe_ok) for name, path in rows]
+    return [_store_row(name, path, key, probe_ok, record) for name, path in rows]
+
+
+def prove_corpus(key: str, main: Path | None = None) -> bool:
+    """R821 (1), the security reads (row 400): prove with ``key`` that the corpus is encrypted, when the status has no KEYED
+    evidence of it (it only looks encrypted, or rests on the record alone), and record that very file. Under the probe lock: its
+    mark (device, inode, first 16 bytes) is taken before and after a read-only keyed probe that bypasses the probe cache, and the
+    record is written with THAT mark only when the two agree, so a swap of the corpus in between records nothing. Returns whether
+    the corpus is proven (True at once when this process already holds a keyed read of it). Never raises."""
+    if not key:
+        return False
+    try:
+        rows = stores(main)
+        if not rows:
+            return False
+        corpus = rows[0][1]
+        from src.database.connect import opened_with_key
+
+        ident = _identity(corpus)
+        if ident is not None and opened_with_key(ident):
+            return True
+        if not _PROBE_LOCK.acquire(timeout=PROBE_WAIT_S):
+            return False
+        try:
+            before = _mark(corpus)
+            if before is None:
+                return False
+            cache_key = _cache_key(corpus)
+            if cache_key is not None:
+                _probed.pop(cache_key, None)  # a cached answer opens nothing: this one must open the file
+            if _probe(corpus, key).get("state") != "encrypted" or _mark(corpus) != before:
+                return False
+            _write_identity("corpus", _record_path(corpus), before)
+            return True
+        finally:
+            _PROBE_LOCK.release()
+    except Exception as exc:  # noqa: BLE001 - not proven is "not proven", never an error here
+        log_failure(_LOG, "the corpus could not be checked with the key", exc, key, level=logging.DEBUG)
+        return False
+
+
+def _corpus_needs_proof(st: dict[str, Any]) -> bool:
+    rows = st.get("stores") or []
+    return bool(rows) and rows[0].get("state") in ("encrypted", "looks_encrypted") and rows[0].get("evidence") != "key"
 
 
 def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[..., dict] | None = None) -> dict[str, Any]:
@@ -502,6 +954,12 @@ def finish_pending(key: str, main: Path | None = None, *, encrypt: Callable[...,
     from src.scheduler.runner import exclusive_window
 
     st = status(main)
+    if _corpus_needs_proof(st):
+        # R821 (1), the security reads (row 400): nothing is finished under ``key`` until the key is shown to open the corpus here,
+        # never on its header or on the record alone; a corpus that does not open with it finishes nothing.
+        if not prove_corpus(key, main):
+            return {"finished": [], "still_pending": list(st["pending"])}
+        st = status(main)
     if st["corpus_encrypted"]:
         remove_leftover_replaced(main, key=key)
     if st["corpus_encrypted"] and st["busy"]:

@@ -1,6 +1,6 @@
 """A staged backup member another program holds says "in use, try again", never "no key opens it" (row 156).
 
-The restore decrypts a staged SQLCipher member by trying each passphrase it was given (``stream_backup._export_plaintext_with_keys``),
+The restore opens a staged SQLCipher member in place by trying each passphrase it was given (``stream_backup._adopt_encrypted_member``, row 410-A),
 and the lane merge ATTACHes a staged lane member the same way (``lane_merge._attach``). A member another program holds right now fails
 every key alike with SQLite's busy code, and both used to answer "none of the available passphrases open it": on a store whose
 passphrase cannot be recovered, a person told that may doubt the one key they have. A lock is not about the key, so both now stop at
@@ -13,7 +13,7 @@ import sqlite3
 
 import pytest
 
-from src.backup import lane_merge, stream_backup
+from src.backup import lane_merge, staged_key, stream_backup
 from src.backup.volumes import VolumeError, member_in_use
 from src.database import connect as connect_mod
 from src.database.connect import connect
@@ -36,16 +36,18 @@ def member(tmp_path):
 
 @pytest.fixture()
 def opens(monkeypatch):
-    """Every open the restore makes, with a short busy timeout (the restore's default is 30 s; the answer is the same)."""
-    seen: list[str | None] = []
-    real = connect_mod.connect
+    """Every keyed open the restore makes (row 410-A: the member is adopted in place, ``staged_key._open_with``), with a
+    short busy timeout (the restore's default is 5 s; the answer is the same). Records which passphrase each open used."""
+    seen: list[bytes] = []
+    real = staged_key._open_with
 
-    def quick(p, **kw):
-        seen.append(kw.get("key"))
-        kw["timeout"] = 0.05
-        return real(p, **kw)
+    def counted(path, secret, page_size, **kw):
+        if not seen or seen[-1] != secret:
+            seen.append(secret)
+        return real(path, secret, page_size, **kw)
 
-    monkeypatch.setattr(connect_mod, "connect", quick)
+    monkeypatch.setattr(staged_key, "BUSY_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(staged_key, "_open_with", counted)
     return seen
 
 
@@ -56,77 +58,60 @@ def _held(p, key=_KEY):
     return holder
 
 
-def test_a_held_staged_member_is_in_use_and_no_second_key_is_tried(member, opens, tmp_path):
+def test_a_held_staged_member_is_in_use_and_no_second_key_is_tried(member, opens):
     holder = _held(member)
     try:
         with pytest.raises(VolumeError) as refused:
-            stream_backup._export_plaintext_with_keys(member, tmp_path / "plain.db", [_OTHER, _KEY])
+            stream_backup._adopt_encrypted_member(member, [_OTHER, _KEY])
     finally:
         holder.rollback()
         holder.close()
     assert str(refused.value) == member_in_use("custody_log.db")
     assert "none of the available" not in str(refused.value)
-    assert opens == [_OTHER], "a lock is not about the key: the second key is not tried"
+    assert opens == [_OTHER.encode()], "a lock is not about the key: the second key is not tried"
+    assert not staged_key.is_keyed(member)
 
 
-def test_positive_control_wrong_keys_on_a_free_member_still_say_no_key_opens_it(member, opens, tmp_path):
+def test_positive_control_wrong_keys_on_a_free_member_still_say_no_key_opens_it(member, opens):
     with pytest.raises(VolumeError) as refused:
-        stream_backup._export_plaintext_with_keys(member, tmp_path / "plain.db", [_OTHER])
+        stream_backup._adopt_encrypted_member(member, [_OTHER])
     assert "none of the available passphrases open it" in str(refused.value)
+    assert not staged_key.is_keyed(member)
 
 
-def test_the_right_key_on_a_free_member_exports_it(member, opens, tmp_path):
-    stream_backup._export_plaintext_with_keys(member, tmp_path / "plain.db", [_OTHER, _KEY])
-    c = sqlite3.connect(str(tmp_path / "plain.db"))
+def test_the_right_key_on_a_free_member_adopts_it_in_place(member, opens):
+    before = member.read_bytes()[:16]
+    stream_backup._adopt_encrypted_member(member, [_OTHER, _KEY])
     try:
-        assert c.execute("SELECT count(*) FROM t").fetchone() == (0,)
+        assert staged_key.key_for(member).origin == "member"
+        assert member.read_bytes()[:16] == before != b"SQLite format 3\x00", "never exported, never rewritten in clear"
+        c = staged_key.open_staged(member)
+        try:
+            assert c.execute("SELECT count(*) FROM t").fetchone() == (0,)
+        finally:
+            c.close()
     finally:
-        c.close()
+        staged_key.forget(member)
 
 
-def test_a_busy_error_raised_outside_the_key_check_is_in_use_too(monkeypatch, tmp_path):
-    err = sqlite3.OperationalError("database is locked")
-    err.sqlite_errorcode = 5
+def test_a_file_failure_is_named_by_its_class_and_never_its_words(monkeypatch, tmp_path):
+    def denied(*_a, **_kw):
+        raise PermissionError("/secret/path denied")
 
-    def held(*_a, **_kw):
-        raise err
-
-    tried: list[str] = []
-
-    def held_counted(p, **kw):
-        tried.append(kw.get("key"))
-        return held(p, **kw)
-
-    monkeypatch.setattr(connect_mod, "connect", held_counted)
+    monkeypatch.setattr(staged_key, "_open_with", denied)
     with pytest.raises(VolumeError) as refused:
-        stream_backup._export_plaintext_with_keys(tmp_path / "x.db", tmp_path / "y.db", ["k1", "k2"])
-    assert str(refused.value) == member_in_use("x.db")
-    assert tried == ["k1"]
+        stream_backup._adopt_encrypted_member(tmp_path / "x.db", ["k1"])
+    assert "PermissionError" in str(refused.value) and "/secret/path" not in str(refused.value)
 
 
-def test_a_lock_taken_after_the_key_opened_is_in_use_too(member, monkeypatch, tmp_path):
-    """A holder that takes the member between the key check and the export gets the same answer."""
-    real = connect_mod.connect
-    err = sqlite3.OperationalError("database is locked")
-    err.sqlite_errorcode = 5
-
-    class _Busy:
-        def __init__(self, conn):
-            self._c = conn
-
-        def execute(self, *a):
-            return self._c.execute(*a)
-
-        def cursor(self):
-            raise err
-
-        def close(self):
-            self._c.close()
-
-    monkeypatch.setattr(connect_mod, "connect", lambda p, **kw: _Busy(real(p, **kw)))
+def test_a_driver_failure_is_not_named(monkeypatch, tmp_path):
+    """A file the driver cannot open at all reads as no key opening it, never with the driver's words."""
+    p = tmp_path / "x.db"
+    p.write_bytes(b"horse-battery" * 100)
     with pytest.raises(VolumeError) as refused:
-        stream_backup._export_plaintext_with_keys(member, tmp_path / "plain.db", [_KEY])
-    assert str(refused.value) == member_in_use("custody_log.db")
+        stream_backup._adopt_encrypted_member(p, ["k1"])
+    assert "none of the available passphrases open it" in str(refused.value)
+    assert "horse-battery" not in str(refused.value) and "OperationalError" not in str(refused.value)
 
 
 def test_a_held_lane_member_is_in_use_at_attach(tmp_path):

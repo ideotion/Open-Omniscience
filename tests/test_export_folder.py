@@ -486,7 +486,14 @@ def test_the_dated_folder_is_discoverable_from_the_drive_AND_from_itself(tmp_pat
     assert [Path(c["path"]).name for c in from_folder] == [first.name]
 
 
-def test_a_folder_written_by_the_export_reads_back_byte_for_byte(tmp_path):
+def _content(con) -> list:
+    """Every schema object and every table's rows in rowid order (sqlcipher3's connection has no iterdump)."""
+    schema = con.execute("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").fetchall()
+    rows = [con.execute(f'SELECT * FROM "{name}" ORDER BY rowid').fetchall() for typ, name, _ in schema if typ == "table"]
+    return [schema, rows]
+
+
+def test_a_folder_written_by_the_export_reads_back_whole(tmp_path):
     """The round trip at fixture scale: what the export wrote is what comes back.
 
     The REMOVABLE-DRIVE half of this is the operator's (a second read of every byte off
@@ -505,7 +512,25 @@ def test_a_folder_written_by_the_export_reads_back_byte_for_byte(tmp_path):
     staged = read_stream_backup(dest, _PASS, tmp_path / "staging")
     out = Path(staged.staging_dir) / "corpus.db" if hasattr(staged, "staging_dir") else None
     assert out is not None and out.exists(), staged
-    assert out.read_bytes() == before, "the corpus did not survive the round trip"
+    # The read seals a plaintext member under a key held in memory (R829 A2, R834), so the staged file's own bytes are not
+    # the source's: what must come back whole is its content, read through that key, and the plaintext never on disk.
+    from src.backup import staged_key
+
+    try:
+        assert not out.read_bytes().startswith(b"SQLite format 3"), "the staged corpus was left in plaintext"
+        con = staged_key.open_staged(out)
+        try:
+            back = _content(con)
+        finally:
+            con.close()
+    finally:
+        staged_key.forget_under(tmp_path / "staging")
+    src_con = sqlite3.connect(corpus)
+    try:
+        assert back == _content(src_con), "the corpus did not survive the round trip"
+    finally:
+        src_con.close()
+    assert corpus.read_bytes() == before, "the export changed its source"
 
 
 # --------------------------------------------------------------------------- #

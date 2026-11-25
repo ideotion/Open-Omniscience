@@ -628,6 +628,31 @@ def test_the_keyword_counters_equal_the_mentions_after_a_carry(backup, tmp_path,
     assert not drift, f"counters disagree with the mentions they count: {drift[:5]}"
 
 
+def test_the_scoped_reconcile_of_a_carried_import_finds_nothing_to_repair_and_matches_the_sweep(backup, tmp_path, monkeypatch):
+    """Row 424 on a real carry: the import stage reconciles only the keywords the imported articles mention. Their carried
+    deltas must already be exact (no drift to repair), and the scoped pass must leave every keyword as the sweep would."""
+    from src.analytics.store import (
+        reconcile_keyword_counters,
+        reconcile_keyword_counters_for_articles,
+    )
+
+    target = tmp_path / "t.db"
+    _schema(target)
+    out = _restore(backup, target, tmp_path / "w.db", carry=True, monkeypatch=monkeypatch)
+    engine, s = _session(tmp_path / "w.db")
+    try:
+        scoped = reconcile_keyword_counters_for_articles(s, out["inserted"], budget_s=0)
+        assert scoped["keywords_in_scope"] > 0 and scoped["complete"] is True
+        assert scoped["drift_repaired"] == 0, scoped
+        after_scoped = sorted(s.execute(text("SELECT id, mention_count, article_count FROM keywords")).fetchall())
+        swept = reconcile_keyword_counters(s, budget_s=0, restart=True)
+        assert swept["drift_repaired"] == 0
+        assert sorted(s.execute(text("SELECT id, mention_count, article_count FROM keywords")).fetchall()) == after_scoped
+    finally:
+        s.close()
+        engine.dispose()
+
+
 def test_carried_rows_leave_no_provenance_but_their_articles_do(backup, tmp_path, monkeypatch):
     """~92 provenance rows per article would cost more than the rows they describe; a
     carried row's provenance is its article's, which is recorded."""

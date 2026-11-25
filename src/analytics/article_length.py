@@ -33,8 +33,8 @@ from __future__ import annotations
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.analytics.quarantine_scope import not_counted
 from src.analytics.managed import UNSEGMENTED
+from src.analytics.quarantine_scope import not_counted
 from src.database.models import Article, ArticleLink, Source
 from src.database.stand_in import not_a_stand_in_article
 

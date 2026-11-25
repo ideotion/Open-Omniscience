@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.database.models import ScreeningPending
+from tests.js_source_helper import function_body, python_function_source
 from tests.test_bulletin_facts import _corpus as _bulletin_corpus
 from tests.test_bulletin_facts import _period
 from tests.test_source_article_counts import SINCE, s  # noqa: F401 - s is a fixture
@@ -126,8 +127,8 @@ def test_search_fed_figures_disclose_and_lists_keep_every_result():
     ins = (ROOT / "src/api/insights.py").read_text(encoding="utf-8")
     assert ins.count("split_not_screened(db, ids)") == 6, "keywords, www, sentiment, sources, coordination, graph"
     assert ins.count('"not_counted_yet"') >= 5
-    facets = ins[ins.index("def insights_corpus_source_language_facets") :]
-    assert "split_not_screened" not in facets[: facets.index("\n@router")], "the LIST's filter options keep every result"
+    facets = python_function_source(ins, "insights_corpus_source_language_facets")
+    assert "split_not_screened" not in facets, "the LIST's filter options keep every result"
     links = (ROOT / "src/api/link_analysis.py").read_text(encoding="utf-8")
     assert "split_not_screened(db, ids)" in links and '"not_counted_yet": not_yet' in links
     an = (ROOT / "src/static/app-analysis.js").read_text(encoding="utf-8")
@@ -137,8 +138,60 @@ def test_search_fed_figures_disclose_and_lists_keep_every_result():
     corpus = (ROOT / "src/static/app-corpus.js").read_text(encoding="utf-8")
     assert corpus.count("anNotCountedYetHtml(d)") == 2
     shell = (ROOT / "src/static/app-shell.js").read_text(encoding="utf-8")
-    show = shell[shell.index("function showTab(") :]
-    assert "ooNotCountedTabLine(name)" in show[: show.index("\n    }\n")]
+    assert "ooNotCountedTabLine(name)" in function_body(shell, "showTab")
     home = (ROOT / "src/static/app-home.js").read_text(encoding="utf-8")
     for key in ("of which quarantined: {n}", "of which not screened yet: {n}", "of which not analysed yet: {n}"):
         assert key in home
+
+
+def test_a_queued_article_that_is_already_quarantined_is_counted_once(s):
+    """A restore can queue an article that arrives quarantined: the breakdown names it as quarantined only."""
+    from src.analytics.quarantine_scope import not_counted_tally
+    from src.database.models import Article
+
+    q = s.query(Article).filter(Article.quarantined.is_(True)).first()
+    assert q is not None, "the fixture carries a quarantined article"
+    plain = s.query(Article).filter(Article.quarantined.isnot(True)).first()
+    _queue(s, [q.id, plain.id])
+    assert not_counted_tally(s) == {"not_screened": 1}
+
+
+def test_the_late_review_sites_say_what_they_left_out():
+    """Source pins for the read of the final head: the Related and Competitive panels and the mind map draw the line,
+    framing and the commodity chart take the slice, and the Library's line is a breakdown of a status total."""
+    an = (ROOT / "src/static/app-analysis.js").read_text(encoding="utf-8")
+    assert "anNotCountedYetHtml(cd && typeof cd.not_counted_yet" in an
+    assert an.count("anNotCountedYetHtml(cs) + _anCompetitiveHtml(") == 1
+    assert "anNotCountedYetHtml(d.cs) + _anCompetitiveHtml(" in an
+    assert "const controls = anNotCountedYetHtml(g) +" in an
+    ins = (ROOT / "src/api/insights.py").read_text(encoding="utf-8")
+    assert 'graph = {**graph, "not_counted_yet": _not_yet}' in ins
+    fr = (ROOT / "src/api/framing.py").read_text(encoding="utf-8")
+    assert "split_not_screened(db, ids)" in fr and '"not_counted_yet": not_yet' in fr
+    co = (ROOT / "src/api/commodity.py").read_text(encoding="utf-8")
+    assert "split_not_screened(db, list(ids or []))" in co and "SELECT article_id FROM screening_pending" in co
+    shell = (ROOT / "src/static/app-shell.js").read_text(encoding="utf-8")
+    assert 'const status = name === "library";' in shell
+    ai = (ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")
+    assert ai.count("_aiNotCountedYetHtml(d) + ") == 2, "the framing table and its empty state both say what they left out"
+    mk = (ROOT / "src/static/app-markets.js").read_text(encoding="utf-8")
+    assert 'anNotCountedYetHtml(d) : "")' in mk
+    assert 'F("{n} articles", {n: num(all)})' in shell, "the Library breakdown follows its total"
+
+
+def test_the_import_report_names_the_scope_of_each_screening_figure():
+    """Plan 2026-11-25 (c): this run's queue reads as "from this import", the corpus-wide count as "in your corpus"."""
+    from src.backup.import_reports import render_import_report_markdown
+
+    md = render_import_report_markdown({"screening": {"queued_from_this_import": 5, "batches": [],
+                                                      "not_screened_in_your_corpus": 3}})
+    assert "5 articles from this import were queued" in md
+    assert "3 articles in your corpus were not screened yet" in md and "not just this import" in md
+    old = render_import_report_markdown({"screening": {"queued": 2, "not_screened": 2}})
+    assert "2 articles from this import" in old, "an older report's bare keys still read"
+    unread = render_import_report_markdown({"screening": {"queued_from_this_import": 1, "batches": []}})
+    assert "The number of articles in your corpus not screened yet could not be read." in unread, (
+        "an unread corpus count is said, never left out or printed as 0")
+    none_left = render_import_report_markdown({"screening": {"queued_from_this_import": 1, "batches": [],
+                                                             "not_screened_in_your_corpus": 0}})
+    assert "in your corpus" not in none_left

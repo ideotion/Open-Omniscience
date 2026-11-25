@@ -734,7 +734,7 @@ def test_a_checkpoint_runs_its_post_swap_stages_over_every_batch_the_group_carri
         assert c["counter"] == c["live"], (
             f"{domain}: counter {c['counter']} over {c['live']} articles after the checkpoint")
     # R830 (row 408 PR 3): the checkpoint queues them for the background screening instead of scanning in its window.
-    assert rep["screening"]["queued"] == 4, (
+    assert rep["screening"]["queued_from_this_import"] == 4, (
         "the checkpoint's screening queue skipped the held item's new articles")
     assert state["held_event_mirrored"], (
         "the held item's calendar event never reached the durable event mirror")

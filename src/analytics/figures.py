@@ -25,8 +25,8 @@ from typing import Any
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
-from src.analytics.quarantine_scope import not_counted
 from src.analytics.managed import normalize_lang
+from src.analytics.quarantine_scope import not_counted
 from src.database.models import Article, Source
 from src.database.stand_in import not_a_stand_in_article
 

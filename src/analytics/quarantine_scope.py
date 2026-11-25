@@ -43,7 +43,7 @@ NOT_QUARANTINED_SQL = " AND article_id NOT IN (SELECT id FROM articles WHERE qua
 
 
 #: :data:`NOT_QUARANTINED_SQL` plus the articles still queued for screening (R830): the slice every aggregate takes.
-NOT_COUNTED_SQL = NOT_QUARANTINED_SQL + " AND article_id NOT IN (SELECT article_id FROM screening_pending)"
+NOT_COUNTED_SQL = NOT_QUARANTINED_SQL + " AND article_id NOT IN (SELECT article_id FROM screening_pending)"  # nosec B608 # two module constants, never input
 
 
 def quarantined_ids_select():
@@ -90,7 +90,11 @@ def not_counted_tally(session: Session) -> dict[str, int]:
     from src.database.models import ScreeningPending
 
     try:
-        n = int(session.execute(select(func.count()).select_from(ScreeningPending)).scalar() or 0)
+        # A queued article that is already quarantined (a restore can bring one) is counted as quarantined, never
+        # also as "not screened yet", so a breakdown never names one article twice.
+        n = int(session.execute(
+            select(func.count()).select_from(ScreeningPending).where(not_quarantined(ScreeningPending.article_id))
+        ).scalar() or 0)
     except Exception:  # noqa: BLE001 - an unreadable count is not a zero: say nothing
         return {}
     return {"not_screened": n}

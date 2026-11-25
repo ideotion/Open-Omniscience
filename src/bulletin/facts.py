@@ -307,7 +307,8 @@ def disclosures(session, period: Period) -> dict:
 
         out["not_screened_in_period"] = int(
             session.query(func.count(Article.id))
-            .filter(and_(_CLOCK >= lo, _CLOCK < hi, Article.id.in_(pending_ids_select())))
+            .filter(and_(lo <= _CLOCK, hi > _CLOCK, Article.id.in_(pending_ids_select()),
+                         Article.quarantined.is_not(True)))  # a quarantined one is counted once, as quarantined
             .scalar()
             or 0
         )

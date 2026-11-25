@@ -188,7 +188,7 @@ def test_the_merge_queues_what_it_adds_and_the_restore_does_not_screen_in_its_wi
     assert "kick_if_allowed()" in block
     # inside the queue branch, the window screens only what the queue does not hold and the import did not stamp
     k = block.index("default_quarantine_candidates_batch(")
-    assert "_not_stamped([i for i in new_article_ids if i not in queued]" in block[:k]
+    assert "_not_stamped(kept(new_article_ids, lambda i: i not in queued)" in block[:k]
     assert "screening_pending" in merge._MERGE_NOT_CARRIED
 
 

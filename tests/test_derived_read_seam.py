@@ -173,7 +173,9 @@ _CEILING: dict[str, int] = {
     # aggregate already groups by). It is a WRITER that reads the mentions to repair the counters it writes, so it stays on the write model.
     # 24 since 2026-11-14 (R101): the reconcile and the backfill leave a quarantined article's mentions out of the counters they
     # write, one ``not_quarantined(KeywordMention.article_id)`` each on the GROUP BY they already run on the write model.
-    "src/analytics/store.py": 24,
+    # 17 since 2026-11-25 (row 424): the reconcile's GROUP BYs (``_exact_counts``) and the scoped pass's keyword gathering read
+    # the view; only the backfill still reads the write model.
+    "src/analytics/store.py": 17,
     # A user-facing sentence, keyed by its exact English text in the 11 bulletin catalogs
     # (configs/bulletin_i18n); renaming the model in it would orphan every translation.
     "src/bulletin/sections.py": 1,
@@ -295,6 +297,11 @@ _RAW_CEILING: dict[str, int] = {
     "src/monitoring/rollup_benchmark.py": 5,
     "src/monitoring/slowquery.py": 4,
     "src/monitoring/storage.py": 1,
+    # Rows 429/430: the newsletter filter edits a raw sqlite3 COPY of a backup, outside the ORM, deleting rows from the
+    # physical table and recounting the keyword and per-day counters it owns there. The copy may predate the read-seam
+    # view (an older backup), so the writer names its own table: the presence and column checks, the touched-keyword and
+    # touched-day reads taken before its delete, and the two recounts.
+    "src/backup/artifact.py": 9,
     "src/testing/scale_bench.py": 2,
 }
 
