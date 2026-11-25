@@ -1080,7 +1080,10 @@
           '<div><strong>' + d.candidates + "</strong> " + esc(t("concepts have no ring")) + " · "
           + '<span title="' + esc(ooSaidText(d, "method")) + '">'
           + esc(t("two Wikidata requests each, one request every 10 seconds"))
-          + "</span></div>"
+          + "</span>"
+          // Row 422 P6: candidates are picked by the maintained counters; while they await a re-index they say so.
+          + (d.counts && d.counts.basis === "estimated" && typeof basisChip === "function" ? " " + basisChip(d.counts) : "")
+          + "</div>"
           + '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">' + chips() + "</div>");
       } catch (e) {
         const msg = e.message;

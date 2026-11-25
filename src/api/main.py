@@ -231,6 +231,20 @@ def _resume_reindex_backlog_at_boot(articles_pending: int) -> None:
     boot_sequence.request_reindex(articles_pending)
 
 
+def _resume_counter_sweep_at_boot() -> None:
+    """Row 422 P6: with no article left to re-index, ask for the drain anyway when the R22 counter-deferral marker is open.
+
+    An import that left its counter sweep to the drain opened (and committed) the marker before skipping it; a process
+    stopped before the drain's closing sweep leaves it open, so the counters read ``estimated``. The drain, started for
+    the sweep alone through :func:`_resume_reindex_backlog_at_boot` (so under the same opt-outs), reconciles them and
+    closes the marker. Nothing open: nothing asked for."""
+    from src.api.boot_sequence import counters_owed_a_sweep
+
+    if counters_owed_a_sweep():
+        logger.info("keyword counters are owed a sweep left by an interrupted import; asking for the drain")
+        _resume_reindex_backlog_at_boot(0)
+
+
 def _arm_database_check() -> bool:
     """After an unexpected stop, hold collection from THIS call until the data files have been read once
     (database/verify.py). The upkeep's FIRST statement, before its first slow step (the planner statistics can take
@@ -349,6 +363,8 @@ def _run_startup_upkeep() -> None:
                 _bk.get("articles_pending"), _bk.get("batches_pending"),
             )
             _resume_reindex_backlog_at_boot(int(_bk.get("articles_pending") or 0))
+        else:
+            _resume_counter_sweep_at_boot()
     except Exception as exc:  # noqa: BLE001 - a report must never block startup
         log_failure(logger, "re-index backlog check failed", exc, level=logging.WARNING)
     # R830 (row 408 PR 3): imported articles still queued for the junk screening (the app stopped before the background worker

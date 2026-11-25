@@ -340,8 +340,10 @@ def restore_legacy_path(
                     # would otherwise defer for some items and block for hours on others
                     # inside a single run.
                     reindex_imported=not defer_reindex(),
+                    # Row 422 P6: as on the volume path, the drain hand_off_reindex starts closes the counter sweep.
+                    counters_left_to_drain=defer_reindex(),
                 )
-                if defer_reindex():
+                if report.get("keyword_counters", {}).get("left_to_drain") or defer_reindex():
                     hand_off_reindex(report)
                 storage_events.run_ended(
                     note, "ok", articles_merged=report.get("articles_merged"), reindexed=report.get("reindexed")

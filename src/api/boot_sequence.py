@@ -390,6 +390,23 @@ def _queue_keyword_index_heal() -> None:
         log_failure(_LOG, "boot keyword index rebuild not queued", exc, level=logging.INFO)
 
 
+def counters_owed_a_sweep() -> bool:
+    """Whether the durable R22 counter-deferral marker is open with no article left to re-index: a run killed between an
+    import that left its counter sweep to the drain (row 422 P6) and that drain's closing sweep. The drain is then started
+    for the sweep alone, so the counters do not stay ``estimated`` until some later import. Never raises. A marker that
+    cannot be read counts as open (``is_deferral_open``), so the drain is asked for, the harmless direction; a store
+    that cannot be opened at all answers False, and the counters keep the disclosure the marker gives them."""
+    try:
+        from src.analytics.counter_deferral import is_deferral_open
+        from src.database.session import session_scope
+
+        with session_scope() as s:
+            return is_deferral_open(s)
+    except Exception as exc:  # noqa: BLE001 - the marker stays; the next start asks again
+        log_failure(_LOG, "boot could not read the counter-deferral marker", exc, level=logging.INFO)
+        return False
+
+
 def _start_reindex() -> None:
     _queue_title_index()
     with _LOCK:
@@ -401,6 +418,11 @@ def _start_reindex() -> None:
         # a re-index runs, the same rule).
         _queue_day_counts()
         raise _Skipped
+    if pending == 0:
+        # Row 422 P6: the drain asked for with no article pending (an open counter marker) is a counter sweep only: it
+        # re-indexes nothing and moves no epoch, so the two builds that stand back for a re-index are queued as usual.
+        _queue_keyword_index_heal()
+        _queue_day_counts()
     from src.backup.volume_job import start_reindex_drain
 
     started, detail = start_reindex_drain()
