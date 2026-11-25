@@ -31,9 +31,12 @@ the segment's place, and the reader and the writer both refuse it ("older_copy")
 from __future__ import annotations
 
 import contextlib
+import functools
+import json
 import logging
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
+from datetime import UTC, date, datetime
 from typing import Any
 
 from src.database import segment_open
@@ -48,6 +51,7 @@ from src.database.segment_open import (
     create_segment,
     require_writes,
 )
+from src.database.segment_schema import SEGMENT_TABLES, SHARED_REFERENCES
 from src.database.segments import (
     Segment,
     SegmentError,
@@ -83,9 +87,43 @@ class WriterBusy(SegmentError):
 class SegmentTransaction:
     """One write transaction on the open segment (see :meth:`SegmentWriter.transaction`)."""
 
-    def __init__(self, con: Any, seg: Segment) -> None:
+    def __init__(self, con: Any, seg: Segment, shared_con: Any = None) -> None:
         self.con = con
         self.seg = seg
+        self._shared = shared_con
+
+    def add_articles(self, rows: Sequence[Mapping[str, Any]]) -> list[int]:
+        """Insert ``rows`` into the segment's ``articles`` with new ids from its range (an ``id`` in a row is refused), and
+        return the ids in row order. Model defaults fill the columns a row leaves out. Every reference to the shared file is
+        checked first (:func:`check_shared_references`). Raises :class:`SegmentFull` when the range cannot hold them."""
+        if not rows:
+            return []
+        if any("id" in r for r in rows):
+            raise SegmentError("an article's id is given by the segment, never by the caller")
+        ids = self.allocate(len(rows))
+        self._insert("articles", [{**r, "id": i} for r, i in zip(rows, ids, strict=True)])
+        return list(ids)
+
+    def add_rows(self, table: str, rows: Sequence[Mapping[str, Any]]) -> None:
+        """Insert ``rows`` into one of the segment's per-article tables other than ``articles``. Each row's ``article_id``
+        must be an article of THIS segment (a foreign key inside the file, enforced by SQLite) and every reference to the
+        shared file must exist there (:func:`check_shared_references`)."""
+        if table == "articles" or table not in SEGMENT_TABLES:
+            raise SegmentError("not a per-article table of a segment (articles go through add_articles)")
+        if rows:
+            self._insert(table, rows)
+
+    def _insert(self, table: str, rows: Sequence[Mapping[str, Any]]) -> None:
+        _still_in_transaction(self.con)
+        columns = _columns(table)
+        filled = [_with_defaults(table, r) for r in rows]
+        names = sorted({k for r in filled for k in r})
+        unknown = [n for n in names if n not in columns]
+        if unknown:
+            raise SegmentError("a row names a column the segment's table does not have")
+        check_shared_references(self._shared, table, filled)
+        sql = f"INSERT INTO {table} ({', '.join(names)}) VALUES ({', '.join('?' * len(names))})"  # table is one of SEGMENT_TABLES and every name a column of it, both checked above; values are bound
+        self.con.executemany(sql, [tuple(r.get(n) for n in names) for r in filled])
 
     def allocate(self, n: int) -> range:
         """``n`` new article ids from the segment's range, taken in this transaction. Raises :class:`SegmentFull` when the
@@ -102,6 +140,75 @@ class SegmentTransaction:
             raise SegmentFull("the open segment cannot hold that many more articles")
         self.con.execute("UPDATE segment_meta SET next_id = ?", (lo + n,))
         return range(lo, lo + n)
+
+
+@functools.cache
+def _columns(table: str) -> frozenset[str]:
+    from src.database.models import Base
+
+    return frozenset(c.name for c in Base.metadata.tables[table].columns)
+
+
+@functools.cache
+def _defaults(table: str) -> tuple[tuple[str, Any], ...]:
+    """(column, model default) for every column whose default the MODEL supplies (Python side): a raw INSERT would leave it
+    NULL where the ORM would have filled it."""
+    from src.database.models import Base
+
+    out = []
+    for col in Base.metadata.tables[table].columns:
+        d = col.default
+        if d is not None and (getattr(d, "is_scalar", False) or getattr(d, "is_callable", False)):
+            out.append((col.name, d))
+    return tuple(out)
+
+
+def _with_defaults(table: str, row: Mapping[str, Any]) -> dict[str, Any]:
+    out = dict(row)
+    for name, d in _defaults(table):
+        if name not in out:
+            out[name] = d.arg(None) if d.is_callable else d.arg
+    return {k: _stored(v) for k, v in out.items()}
+
+
+def _stored(value: Any) -> Any:
+    """A value as SQLAlchemy stores it on SQLite, so a segment row reads like a shared-file row: a datetime as naive UTC
+    text ``YYYY-MM-DD HH:MM:SS.ffffff``, a date as ``YYYY-MM-DD``."""
+    if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC).replace(tzinfo=None)
+        return value.isoformat(sep=" ", timespec="microseconds")
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
+#: For each shared table a segment row may name: the ids of a JSON list that the shared file does NOT have. One literal
+#: statement per table (no SQL is built from data).
+_MISSING_IN_SHARED: dict[str, str] = {
+    "sources": "SELECT DISTINCT value FROM json_each(?) WHERE value NOT IN (SELECT id FROM sources)",
+    "keywords": "SELECT DISTINCT value FROM json_each(?) WHERE value NOT IN (SELECT id FROM keywords)",
+}
+
+
+def check_shared_references(shared_con: Any, table: str, rows: Sequence[Mapping[str, Any]]) -> None:
+    """THE CHECK THAT STANDS IN FOR THE CROSS-FILE FOREIGN KEYS (R826 §2; ``segment_schema.SHARED_REFERENCES``): every
+    non-NULL id a segment row gives in a column that names a shared-file row must exist in the shared file, which commits
+    those rows BEFORE the segment rows that use them. Refused with :class:`SegmentError` otherwise, before anything is
+    written. A non-integer id is refused too."""
+    for (ref_table, column), shared_table in SHARED_REFERENCES.items():
+        if ref_table != table:
+            continue
+        values = {r[column] for r in rows if r.get(column) is not None}
+        if not values:
+            continue
+        if any(not isinstance(v, int) or isinstance(v, bool) for v in values):
+            raise SegmentError("a row names a shared-file row by something that is not an id")
+        if shared_con is None:
+            raise SegmentError("the shared file is needed to check this row's references")
+        missing = shared_con.execute(_MISSING_IN_SHARED[shared_table], (json.dumps(sorted(values)),)).fetchall()
+        if missing:
+            raise SegmentError("a row names a shared-file row that does not exist; nothing was written")
 
 
 def _still_in_transaction(con: Any) -> None:
@@ -182,7 +289,7 @@ class SegmentWriter:
                 con = self._con
                 con.execute("BEGIN IMMEDIATE")
                 try:
-                    yield SegmentTransaction(con, self.seg)
+                    yield SegmentTransaction(con, self.seg, self._shared)
                     _still_in_transaction(con)
                     con.execute("UPDATE segment_meta SET generation = generation + 1")
                     counters = segment_counters(con)
@@ -226,6 +333,11 @@ def _open_read_write(seg: Segment, key: str | None) -> Any:
     try:
         _check_open(seg, con, path, before, bool(shared_encrypted))
         con.execute("PRAGMA temp_store = MEMORY")  # R825: never a plaintext temporary file
+        con.execute("PRAGMA foreign_keys = ON")  # article_id -> articles, inside the file
+        # The search indexes' sync triggers call the app's own functions (registered on every connection the factory makes),
+        # which SQLite refuses inside a trigger while trusted_schema is off. The schema was just checked to be EXACTLY what
+        # this build makes (no trigger or view of anyone else's), so the triggers that run are the app's own.
+        con.execute("PRAGMA trusted_schema = ON")
         con.isolation_level = None
     except SegmentUnavailable:
         con.close()
