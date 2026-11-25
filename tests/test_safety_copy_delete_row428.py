@@ -414,13 +414,17 @@ def test_only_a_completed_run_checked_whole_marks_the_run_verified():
     body = python_function_source(src, "_drive")
     assert 'completed = self._state == "done"' in body
     tail = body[body.index('completed = self._state == "done"'):]
-    assert 'self._copy_mark = "verified" if _corpus_checked_whole(self._checked_whole_ident) else "unchecked"' in tail
+    assert "if _corpus_checked_whole(self._checked_whole_ident) and self._checked_whole_seq is not None:" in tail
+    assert 'self._copy_mark = ("verified", self._checked_whole_seq)' in tail
+    assert 'self._copy_mark = ("unchecked", _current_copy_seq())' in tail
     note = python_function_source(src, "_note_safety_copy_mark")
-    assert note.index('if mark == "verified":') < note.index("own_net.note_run_verified()") < note.index(
-        "own_net.note_run_unchecked()"
+    assert note.index('if kind == "verified":') < note.index("own_net.note_run_verified(covers)") < note.index(
+        "own_net.note_run_unchecked(covers)"
     )
-    assert src.count("own_net.note_run_verified()") == 1
-    assert "self._note_safety_copy_mark()" in python_function_source(src, "_run_with_keys")
+    assert src.count("own_net.note_run_verified(") == 1
+    run = python_function_source(src, "_run_with_keys")
+    assert run.count("mark = self._take_copy_mark()") == 2, "taken after each _drive, while the run still owns it"
+    assert run.index("mark = self._take_copy_mark()") < run.index("self._note_safety_copy_mark(mark)")
 
 
 def test_the_checked_whole_evidence_is_for_the_same_file_state(monkeypatch):
@@ -452,12 +456,77 @@ def test_the_evidence_is_recorded_only_after_a_whole_file_check_passed():
     src = (_ROOT / "src/backup/import_queue.py").read_text(encoding="utf-8")
     owed = python_function_source(src, "_check_owed_corpus")
     assert 'if not at_start and got.get("state") == "ok":' in owed
-    assert owed.index('got.get("state") == "ok"') < owed.index("self._checked_whole_ident = _live_corpus_identity()")
+    assert owed.index('got.get("state") == "ok"') < owed.index("self._note_checked_whole()")
     done = python_function_source(src, "_after_item")
     assert 'ver.get("file_check") == "full" and ver.get("file_ok") is True' in done
-    assert done.index('if report.get("committed"):') < done.index("self._checked_whole_ident = _live_corpus_identity()")
-    assert src.count("self._checked_whole_ident = _live_corpus_identity()") == 2
-    assert "self._checked_whole_ident = None" in python_function_source(src, "start")
+    assert done.index('if report.get("committed"):') < done.index("self._note_checked_whole()")
+    assert src.count("self._note_checked_whole()") == 2
+    start = python_function_source(src, "start")
+    assert "self._checked_whole_ident = None" in start and "self._checked_whole_seq = None" in start
+    drive = python_function_source(src, "_drive")
+    void = drive[drive.index('if item.get("kind") != "blobs":'):]
+    assert void.index("self._checked_whole_ident = None") < void.index("self._checked_whole_seq = None") < void.index(
+        'item["state"] = "running"'
+    ), "an item that may write the corpus voids an earlier check before it runs"
+
+
+def test_the_evidence_keeps_the_serial_read_when_the_check_passed(monkeypatch):
+    """R843: identity and serial are read together when the check passes; either unreadable means no evidence."""
+    import src.backup.import_queue as iq
+
+    q = iq.ImportQueueManager.__new__(iq.ImportQueueManager)
+    monkeypatch.setattr(iq, "_live_corpus_identity", lambda: (1, 100))
+    monkeypatch.setattr(iq, "_current_copy_seq", lambda: 7)
+    q._note_checked_whole()
+    assert (q._checked_whole_ident, q._checked_whole_seq) == ((1, 100), 7)
+    monkeypatch.setattr(iq, "_current_copy_seq", lambda: None)
+    q._note_checked_whole()
+    assert (q._checked_whole_ident, q._checked_whole_seq) == (None, None)
+    monkeypatch.setattr(iq, "_current_copy_seq", lambda: 7)
+    monkeypatch.setattr(iq, "_live_corpus_identity", lambda: None)
+    q._note_checked_whole()
+    assert (q._checked_whole_ident, q._checked_whole_seq) == (None, None)
+
+
+def test_a_copy_made_after_the_check_is_never_covered_and_the_mark_never_goes_back(folder):
+    """R843: the mark covers the serial read when the whole-file check passed, so a copy made between that check and
+    the run's end stays held; and a later, smaller cover never moves the mark back."""
+    from src.backup import own_net as own
+
+    data, live, _f = folder
+    old, new = _two(folder)
+    at_check = own.current_seq()
+    later = _copy(data, live)
+    own.note_run_verified(at_check)
+    names = {c["name"]: c for c in own.list_copies()["copies"]}
+    assert names[new.name]["deletable"] and not names[later.name]["deletable"]
+    assert own.read_record()[own.VERIFIED_KEY] == {"covers": at_check}
+    own.note_run_verified(at_check - 1)
+    assert own.read_record()[own.VERIFIED_KEY] == {"covers": at_check}, "a mark only moves forward"
+    own.note_run_verified(10**6)
+    assert own.read_record()[own.VERIFIED_KEY] == {"covers": own.current_seq()}, "never above the record's own serial"
+
+
+def test_the_decided_mark_is_taken_once_and_survives_a_new_start(monkeypatch):
+    import src.backup.import_queue as iq
+
+    q = iq.ImportQueueManager.__new__(iq.ImportQueueManager)
+    import threading
+
+    q._lock = threading.RLock()
+    q._copy_mark = ("verified", 3)
+    assert q._take_copy_mark() == ("verified", 3)
+    q._copy_mark = None  # what a new start() does
+    assert q._take_copy_mark() is None
+    wrote = []
+    from src.backup import own_net
+
+    monkeypatch.setattr(own_net, "note_run_verified", lambda c: wrote.append(("v", c)))
+    monkeypatch.setattr(own_net, "note_run_unchecked", lambda c: wrote.append(("u", c)))
+    q._note_safety_copy_mark(("verified", 3))
+    q._note_safety_copy_mark(("unchecked", 5))
+    q._note_safety_copy_mark(None)
+    assert wrote == [("v", 3), ("u", 5)]
 
 
 def test_a_done_run_without_a_whole_check_keeps_the_copies_and_says_why(folder):

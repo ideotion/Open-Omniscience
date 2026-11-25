@@ -354,32 +354,48 @@ BUSY = "A safety copy cannot be deleted while an import, restore, backup, snapsh
 _DELETE_LOCK = threading.Lock()
 
 
-def note_run_verified() -> None:
-    """An import run completed and its corpus was checked: every copy made before now is no longer the copy of the most
-    recent unfinished run. Never raises: an unwritten mark only keeps the newest copy protected."""
+def current_seq() -> int | None:
+    """The last serial given to a copy (0 when none yet), or None when the record cannot be read."""
+    rec = read_record()
+    if rec is None:
+        return 0 if not _record_path().exists() else None
+    seq = rec.get(SEQ_KEY, 0)
+    return seq if isinstance(seq, int) and not isinstance(seq, bool) else None
+
+
+def _mark(key: str, covers: int | None) -> None:
+    """Set ``key`` to ``{"covers": n}``: ``covers`` (the serial the caller read when its evidence held), never above the
+    record's own serial, and never below the mark already there (a mark only moves forward)."""
     from src.safety.file_lock import atomic_replace, file_lock
 
+    path = _record_path()
+    with file_lock(path):
+        cur = _record_for_write()
+        seq = cur.get(SEQ_KEY)
+        top = seq if isinstance(seq, int) and not isinstance(seq, bool) else 0
+        want = top if covers is None else min(int(covers), top)
+        old = cur.get(key)
+        had = old.get("covers") if isinstance(old, dict) else None
+        if isinstance(had, int) and not isinstance(had, bool) and had > want:
+            want = had
+        cur[key] = {"covers": want}
+        atomic_replace(path, json.dumps(cur, sort_keys=True))
+
+
+def note_run_verified(covers: int | None = None) -> None:
+    """An import run completed and its corpus was checked whole: every copy up to serial ``covers`` -- the serial read
+    when that check passed (R843), so a copy made after the check is never covered -- is no longer the copy of the most
+    recent unfinished run. Never raises: an unwritten mark only keeps the newest copies protected."""
     with suppress(Exception):
-        path = _record_path()
-        with file_lock(path):
-            cur = _record_for_write()
-            seq = cur.get(SEQ_KEY)
-            cur[VERIFIED_KEY] = {"covers": seq if isinstance(seq, int) and not isinstance(seq, bool) else 0}
-            atomic_replace(path, json.dumps(cur, sort_keys=True))
+        _mark(VERIFIED_KEY, covers)
 
 
-def note_run_unchecked() -> None:
+def note_run_unchecked(covers: int | None = None) -> None:
     """R843: an import run ended "done" but the corpus it left was not checked whole in that state, so the mark does NOT
-    move; the copies made up to now are noted as held for that reason (:data:`NOT_CHECKED_WHOLE`). Never raises."""
-    from src.safety.file_lock import atomic_replace, file_lock
-
+    move; the copies up to serial ``covers`` (read when the run's end decided) are noted as held for that reason
+    (:data:`NOT_CHECKED_WHOLE`). Never raises."""
     with suppress(Exception):
-        path = _record_path()
-        with file_lock(path):
-            cur = _record_for_write()
-            seq = cur.get(SEQ_KEY)
-            cur[UNCHECKED_KEY] = {"covers": seq if isinstance(seq, int) and not isinstance(seq, bool) else 0}
-            atomic_replace(path, json.dumps(cur, sort_keys=True))
+        _mark(UNCHECKED_KEY, covers)
 
 
 def _hold_reason(record: dict, name: str) -> str:
