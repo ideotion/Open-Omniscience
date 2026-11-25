@@ -128,7 +128,8 @@ def test_http_rewrites_the_plaintext_store_and_never_claims_the_guarantee(tmp_pa
     assert line is not None, run.stdout[-3000:] + run.stderr[-3000:]
     rep = json.loads(line.removeprefix("REPORT "))
     assert rep["encrypted_corpus"] is False
-    assert rep["plaintext_store"] == {"state": "overwritten", "reason": None, "other_names": 1, "deleted": True, "touched": True}, \
+    assert rep["plaintext_store"] == {"state": "overwritten", "reason": None, "other_names": 1, "deleted": True, "touched": True,
+                                   "form": "plain"}, \
         rep["plaintext_store"]
     assert GUARANTEE not in rep["limit"] and crypto_erase._PLAINTEXT_SENTENCE in rep["limit"], rep["limit"]
     assert not db.exists()
@@ -333,7 +334,7 @@ def test_the_clean_note_fails_closed_and_tells_plaintext_from_unknown():
 def test_the_page_fails_closed_and_says_the_store_apart():
     js = Path("src/static/app-backup.js").read_text(encoding="utf-8")
     assert "const plaintext = r.encrypted_corpus !== true;" in js
-    assert "&& !plaintext;" in js, "a plaintext erase is never the clean, crypto-erased result"
+    assert "&& !plaintext && !keyLeft;" in js, "a plaintext erase (or a key left on the disk) is never the clean, crypto-erased result"
     words = [*crypto_erase.PLAIN_STORE_STATE.values(), *crypto_erase.PLAIN_STORE_REASON.values(), crypto_erase.PLAIN_STORE_DELETED,
              crypto_erase.PLAIN_STORE_NOT_DELETED, crypto_erase.PLAIN_STORE_OTHER_NAMES, crypto_erase._PLAINTEXT_SENTENCE,
              crypto_erase._UNKNOWN_SENTENCE, crypto_erase.PLAIN_STORE_REST, crypto_erase.PLAIN_STORE_NOTICE,
