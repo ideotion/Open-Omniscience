@@ -11489,13 +11489,71 @@ def run_restore(
         # counters as `estimated` until a whole sweep lands -- a half-reconciled corpus can
         # never masquerade as exact. Still a NAMED, TIMED stage, so the real number shows up
         # in report["timings"] on the operator's hardware rather than being guessed at.
+        #
+        # SCOPED TO THE IMPORT FIRST (row 424, 2026-11-25). The sweep above cost every item of a queue its whole budget
+        # (18.3 s of a 72 s import on lane O's bench; 30 s, 14 %, of lane S's 212 s restore) to re-verify keywords this
+        # import never touched. The merge moves the counters only through the articles it brings in, so the stage now
+        # reconciles exactly the keywords those articles mention (every batch the swap brought in, as the quarantine scan
+        # below reads them), with the sweep's own arithmetic and stamp. The insurance sweep still runs, from the same
+        # durable cursor and inside what is left of the same budget, but only when the counters are not exact afterwards:
+        # the first import after the freshness window pays it, an import into a corpus swept recently does not, and the
+        # envelope discloses `estimated` until a sweep lands either way. The stage sweeps as it always did when the group
+        # cannot be derived (the scope would miss the earlier held items' articles) and for an import over a quarter of
+        # the corpus, where the sweep is the faster of the two.
         with timings.stage("keyword_counter_reconcile"):
             try:
-                from src.analytics.store import reconcile_keyword_counters
+                import time as _rc_time
+
+                from sqlalchemy import bindparam as _bindparam
+                from sqlalchemy import text as _text
+
+                from src.analytics.store import (
+                    _maint_budget_s,
+                    counter_envelope,
+                    reconcile_keyword_counters,
+                    reconcile_keyword_counters_for_articles,
+                )
                 from src.database.session import session_scope
 
                 with session_scope() as _cnt_sess:
-                    report["keyword_counters"] = reconcile_keyword_counters(_cnt_sess)
+                    _rc_t0 = _rc_time.monotonic()
+                    _rc_ids = (
+                        [
+                            int(r[0])
+                            for r in _cnt_sess.execute(
+                                _text(
+                                    "SELECT row_id FROM merged_rows "
+                                    "WHERE batch_id IN :bs AND table_name = 'articles'"
+                                ).bindparams(_bindparam("bs", expanding=True)),
+                                {"bs": swap_batches},
+                            ).fetchall()
+                        ]
+                        if swap_batches is not None
+                        else None
+                    )
+                    _rc_total = int(_cnt_sess.execute(_text("SELECT COUNT(*) FROM articles")).scalar() or 0)
+                    # A large import mentions most of the vocabulary (measured: 122,000 articles into 186,000 touched
+                    # 302,390 of 376,872 keywords), and there the sweep's range reads beat the scoped pass's id lists
+                    # (5.4 s against 9.7 s), so the scope is used only while the import is under a quarter of the corpus.
+                    if _rc_ids is None or len(_rc_ids) * 4 > _rc_total:
+                        report["keyword_counters"] = reconcile_keyword_counters(_cnt_sess)
+                        report["keyword_counters"]["scope"] = "the whole-corpus sweep: " + (
+                            "the batches this swap brought in could not be derived"
+                            if _rc_ids is None
+                            else "the import is over a quarter of the corpus"
+                        )
+                    else:
+                        # One budget for the stage, as before: the sweep, when it is owed, gets what the scoped pass left.
+                        _rc_budget = _maint_budget_s("OO_RECONCILE_BUDGET_S")
+                        _rc_report = reconcile_keyword_counters_for_articles(_cnt_sess, _rc_ids, budget_s=_rc_budget)
+                        if counter_envelope(_cnt_sess).is_exact():
+                            _rc_report["sweep"] = {"skipped": "the counters are exact"}
+                        elif _rc_budget > 0 and _rc_time.monotonic() - _rc_t0 >= _rc_budget:
+                            _rc_report["sweep"] = {"skipped": "the budget was spent on the imported keywords"}
+                        else:
+                            _rc_left = _rc_budget - (_rc_time.monotonic() - _rc_t0) if _rc_budget > 0 else 0.0
+                            _rc_report["sweep"] = reconcile_keyword_counters(_cnt_sess, budget_s=_rc_left)
+                        report["keyword_counters"] = _rc_report
             except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
                 log_failure(_LOG, "keyword-counter reconcile after restore-merge failed", exc, level=logging.WARNING)
                 report["keyword_counters"] = {"reconciled": False, "error": "see server log"}

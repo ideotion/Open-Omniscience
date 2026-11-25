@@ -2611,14 +2611,25 @@ def reconcile_keyword_counters(
                 .group_by(KeywordMention.keyword_id)
             )
         }
-        # Detect drift within the slice (small-row keyword scan, background only).
+        # Detect drift within the slice (small-row keyword scan, background only), keeping the rows that are wrong.
+        fixes = []
         for kid, cur_m, cur_a in session.query(
             Keyword.id, Keyword.mention_count, Keyword.article_count
         ).filter(Keyword.id > lo, Keyword.id <= hi):
-            if (int(cur_m or 0), int(cur_a or 0)) != agg.get(kid, (0, 0)):
+            want = agg.get(kid, (0, 0))
+            if (int(cur_m or 0), int(cur_a or 0)) != want:
                 drift += 1
-        # Repair the slice: zero + stamp everything in range (a never-mentioned keyword
-        # is also "verified 0 as of now"), then set the keywords that have mentions.
+                fixes.append({"id": kid, "mention_count": want[0], "article_count": want[1]})
+        # Repair the slice: stamp everything in range (a never-mentioned keyword is also
+        # "verified 0 as of now"), and rewrite only the keywords whose counters were wrong.
+        #
+        # ONLY THE WRONG ROWS ARE REWRITTEN (row 424, 2026-11-25). The slice used to zero every
+        # keyword and then set every keyword that has mentions back, one UPDATE per row: 400,000
+        # single-row writes for a 400,000-keyword table whose counters were almost all already
+        # right, and most of the stage's time (measured: the GROUP BY was 2.3 s of an 11.5 s
+        # sweep). The stamp is one range UPDATE, and the rows the drift scan above found wrong
+        # get their exact values; every other row already holds them. The end state is the
+        # same row for row, and no reader can see a zeroed keyword any more.
         #
         # GATED AS ONE UNIT (C8 sweep): the Query.update() below IS gated on its own (it
         # fires do_orm_execute) but bulk_update_mappings is invisible to BOTH write-gate
@@ -2631,26 +2642,11 @@ def reconcile_keyword_counters(
         connection_first(session)
         with write_lock():
             session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
-                {
-                    Keyword.mention_count: 0,
-                    Keyword.article_count: 0,
-                    Keyword.last_reconciled_at: stamp,
-                },
+                {Keyword.last_reconciled_at: stamp},
                 synchronize_session=False,
             )
-            if agg:
-                session.bulk_update_mappings(
-                    Keyword,
-                    [
-                        {
-                            "id": kid,
-                            "mention_count": m,
-                            "article_count": a,
-                            "last_reconciled_at": stamp,
-                        }
-                        for kid, (m, a) in agg.items()
-                    ],
-                )
+            if fixes:
+                session.bulk_update_mappings(Keyword, fixes)
             scanned += len(ids)
             with_mentions += len(agg)
             after_id = hi
@@ -2675,6 +2671,130 @@ def reconcile_keyword_counters(
         "stopped": stopped,
         "resumed_from_id": resumed_from,
         "cursor_id": 0 if complete else after_id,
+        "budget_s": budget,
+    }
+
+
+#: How many article ids one ``IN`` list carries when the scoped reconcile below gathers the keywords those articles mention,
+#: and how many keyword ids one of its exact ``GROUP BY`` reads covers. Both stay far under SQLite's bound-parameter limit.
+_SCOPED_ARTICLE_CHUNK = 5_000
+_SCOPED_KEYWORD_CHUNK = 2_000
+#: The shortest run of consecutive article ids read as one ``BETWEEN`` range rather than added to an ``IN`` list.
+_SCOPED_RUN_MIN = 64
+
+
+def reconcile_keyword_counters_for_articles(
+    session: Session,
+    article_ids: Iterable[int],
+    *,
+    now=None,
+    budget_s: float | None = None,
+) -> dict:
+    """Reconcile EXACTLY the keywords the given articles mention, and nothing else (row 424).
+
+    The import's merge stage changes the counters only through the articles it brings in (the merged keywords land at 0,
+    and a carried article's mentions add their own deltas), so after an import the keywords that can carry a fresh error
+    are the keywords those articles mention. This recomputes each of them with the same arithmetic as
+    :func:`reconcile_keyword_counters` -- ``SUM(count)`` and ``COUNT(DISTINCT article_id)`` over ALL of the keyword's live,
+    unquarantined mentions, not only the imported ones (R101) -- then stamps them and rewrites the ones that were wrong,
+    as one gated unit per chunk. A keyword it touches ends with exactly the counters and stamp the whole-corpus sweep would give it, and a
+    keyword it does not touch keeps its counters and its stamp, so :func:`counter_envelope` stays as honest as before:
+    drift that was already elsewhere is still disclosed as ``estimated`` until a whole sweep lands.
+
+    The cost is the touched keywords' own mentions (an index range each on ``ix_mention_covering``) rather than every
+    mention in the corpus. It never moves the sweep's resume cursor. ``budget_s`` (default ``OO_RECONCILE_BUDGET_S``;
+    0 or negative = unbounded) stops it between chunks, reporting ``complete: false``; a keyword it did not reach keeps
+    the counter its incremental maintenance gave it, which is the state every import before this one left."""
+    import time as _time
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func
+
+    from src.database.writer import connection_first, write_lock
+
+    stamp = now or datetime.now(UTC)
+    budget = budget_s if budget_s is not None else _maint_budget_s("OO_RECONCILE_BUDGET_S")
+    t0 = _time.monotonic()
+
+    aids = sorted({int(a) for a in article_ids})
+    # Every keyword the articles mention, quarantined or not: a quarantined article's keyword is still one whose counter
+    # this import could have moved, and the GROUP BY below is what leaves the quarantined mention out.
+    #
+    # An import's articles are appended, so their ids come in long consecutive runs. A run is read as one BETWEEN range,
+    # which SQLite answers from a covering (article_id, keyword_id) index in one pass; an IN list of the same ids took it
+    # to the non-covering index and a row lookup per mention (measured: 6.6 s against 1.6 s for 122,000 articles). The
+    # ids outside a long run still go in IN lists.
+    kid_set: set[int] = set()
+    loose: list[int] = []
+
+    def _gather(cond) -> None:
+        kid_set.update(int(k) for (k,) in session.query(KeywordMention.keyword_id).filter(cond).distinct())
+
+    i = 0
+    while i < len(aids):
+        j = i
+        while j + 1 < len(aids) and aids[j + 1] == aids[j] + 1 and j + 1 - i < _SCOPED_ARTICLE_CHUNK:
+            j += 1
+        if j - i + 1 >= _SCOPED_RUN_MIN:
+            _gather(KeywordMention.article_id.between(aids[i], aids[j]))
+        else:
+            loose.extend(aids[i : j + 1])
+        i = j + 1
+    for i in range(0, len(loose), _SCOPED_ARTICLE_CHUNK):
+        _gather(KeywordMention.article_id.in_(loose[i : i + _SCOPED_ARTICLE_CHUNK]))
+    kids = sorted(kid_set)
+
+    reconciled = 0
+    with_mentions = 0
+    drift = 0
+    complete = True
+    for i in range(0, len(kids), _SCOPED_KEYWORD_CHUNK):
+        if i and budget > 0 and _time.monotonic() - t0 > budget:
+            complete = False
+            break
+        part = kids[i : i + _SCOPED_KEYWORD_CHUNK]
+        agg = {
+            kid: (int(m or 0), int(a or 0))
+            for kid, m, a in (
+                session.query(
+                    KeywordMention.keyword_id,
+                    func.sum(KeywordMention.count),
+                    func.count(func.distinct(KeywordMention.article_id)),
+                )
+                .filter(KeywordMention.keyword_id.in_(part))
+                .filter(not_quarantined(KeywordMention.article_id))  # R101: a quarantined article counts for nothing
+                .group_by(KeywordMention.keyword_id)
+            )
+        }
+        fixes = []
+        for kid, cur_m, cur_a in session.query(Keyword.id, Keyword.mention_count, Keyword.article_count).filter(
+            Keyword.id.in_(part)
+        ):
+            want = agg.get(kid, (0, 0))
+            if (int(cur_m or 0), int(cur_a or 0)) != want:
+                drift += 1
+                fixes.append({"id": kid, "mention_count": want[0], "article_count": want[1]})
+        # One gated unit, as in the sweep: the stamp fires do_orm_execute but bulk_update_mappings is invisible to both
+        # write-gate hooks (C8). Only the wrong rows are rewritten, as in the sweep. The connection first, then the gate.
+        connection_first(session)
+        with write_lock():
+            session.query(Keyword).filter(Keyword.id.in_(part)).update(
+                {Keyword.last_reconciled_at: stamp}, synchronize_session=False
+            )
+            if fixes:
+                session.bulk_update_mappings(Keyword, fixes)
+            session.commit()
+        reconciled += len(part)
+        with_mentions += len(agg)
+    return {
+        "scope": "keywords the imported articles mention",
+        "articles": len(aids),
+        "keywords_in_scope": len(kids),
+        "keywords": reconciled,
+        "with_mentions": with_mentions,
+        "drift_repaired": int(drift),
+        "as_of": stamp.isoformat(timespec="seconds"),
+        "complete": complete,
         "budget_s": budget,
     }
 
