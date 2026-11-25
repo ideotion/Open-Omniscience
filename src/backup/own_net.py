@@ -479,9 +479,10 @@ def remove_copy(name: str, busy: list[str] | Callable[[], list[str]] | None = No
     writes on the drive meanwhile move the figure too. Never raises."""
     import re
 
-    out: dict = {"removed": False, "name": str(name)}
+    out: dict = {"removed": False, "name": None}
     if not isinstance(name, str) or not re.match(COPY_NAME, name):
-        return {**out, "message": NOT_IDENTIFIED}
+        return {**out, "message": NOT_IDENTIFIED}  # a refused name is never echoed back
+    out["name"] = name
 
     def _running() -> list[str]:
         if callable(busy):

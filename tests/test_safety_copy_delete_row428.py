@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 from pathlib import Path
@@ -338,6 +339,52 @@ def test_the_route_needs_a_confirmation_and_names_what_runs(monkeypatch, folder)
     assert bv.safety_copy_delete(bv.SafetyCopyDeleteBody(name=old.name, confirm=True))["removed"]
     listed = bv.safety_copies_list()
     assert "busy" in listed and all("/" not in c["name"] for c in listed["copies"])
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../x",
+        "pre-restore-20260101T000000Z.db/..",
+        "pre-restore-\u0662\u0660\u0662\u0666\u0661\u0661\u0662\u0665T100001Z.db",  # Arabic-Indic digits
+        "pre-restore-20990101T000000Z.db",  # well formed, not in the record
+        "~seq",
+        "pre-restore-20261125T100001Z.db\x00",
+        "p" * 5000,
+    ],
+)
+def test_the_route_refuses_a_forged_name_without_an_error_or_a_path(monkeypatch, folder, name):
+    """Final-head read of row 428: a name the record does not hold is refused as "could not be identified" through the
+    route itself, never a 500, and neither the data folder's path nor the refused name comes back."""
+    import json as _json
+
+    import src.api.backup_v2 as bv
+    from src.backup import own_net as own
+
+    data, live, _f = folder
+    old, new = _two(folder)
+    monkeypatch.setattr(bv, "_safety_copy_busy", lambda: [])
+    out = bv.safety_copy_delete(bv.SafetyCopyDeleteBody(name=name, confirm=True))
+    assert not out["removed"] and out["message"] == own.NOT_IDENTIFIED
+    text = _json.dumps(out)
+    assert str(data) not in text
+    # Only a well-formed copy name is named back; anything the pattern refuses is never echoed.
+    if out["name"] is None:
+        assert _json.dumps(name)[1:-1] not in text.replace('"message"', "")
+    else:
+        assert out["name"] == name and re.fullmatch(own.COPY_NAME, name)
+    assert old.exists() and new.exists() and live.exists()
+
+
+def test_a_record_key_that_names_a_directory_is_refused_and_kept(folder):
+    from src.backup import own_net as own
+
+    data, _live, _f = folder
+    old, _new = _two(folder)
+    old.unlink()
+    old.mkdir()  # the record still holds the name; the folder entry is now a directory
+    out = own.remove_copy(old.name)
+    assert not out["removed"] and out["message"] == own.NOT_IDENTIFIED and old.is_dir()
 
 
 def test_the_busy_check_counts_an_unreadable_source_as_running(monkeypatch):
