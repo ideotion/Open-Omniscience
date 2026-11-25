@@ -27,8 +27,8 @@ from src.backup.stream_backup import BUILDING_NAME, read_stream_backup
 from src.backup.volumes import MANIFEST_MAX_BYTES as VOLUMES_MANIFEST_MAX_BYTES
 from src.backup.volumes import MANIFEST_NAME
 from tests.js_source_helper import python_function_source
-from tests.test_stream_backup import _backup, _make_corpus
 from tests.staged_db import same_database
+from tests.test_stream_backup import _backup, _make_corpus
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="pipes and /dev/zero")
 

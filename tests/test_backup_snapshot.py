@@ -111,10 +111,7 @@ class Store:
 def _rows(path: Path) -> int:
     from src.backup.staged_key import db_errors, open_staged
 
-    if not staged_key_is_keyed(path):
-        con = sqlite3.connect(path)
-    else:
-        con = open_staged(path)  # a staged copy the restore sealed (R829 A)
+    con = open_staged(path) if staged_key_is_keyed(path) else sqlite3.connect(path)  # sealed by the restore (R829 A)
     try:
         return int(con.execute("SELECT COUNT(*) FROM articles").fetchone()[0])
     except db_errors() as exc:

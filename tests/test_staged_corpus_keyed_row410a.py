@@ -32,7 +32,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from src.backup import artifact, staged_key
 from src.backup.artifact import BACKUP_SCHEMA, cleanup_staging, read_artifact, read_volume_backup
-from src.backup.stream_backup import CorpusSource, _no_freeze, read_stream_backup, write_stream_backup
+from src.backup.stream_backup import (
+    CorpusSource,
+    _no_freeze,
+    read_stream_backup,
+    write_stream_backup,
+)
 from src.reporting.evidence import canonical_bytes
 
 _HEADER = b"SQLite format 3\x00"

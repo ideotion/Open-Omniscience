@@ -33,6 +33,7 @@ spliced into the local chain.
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import glob
 import heapq
@@ -43,7 +44,6 @@ import os
 import re
 import secrets
 import sqlite3
-import contextvars
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
@@ -2831,10 +2831,8 @@ def merge_corpus(
             # A keyed ``inc`` decrypts every page it reads again: with the default cache a read in index order costs up
             # to 8.5x the plaintext one (measured, row 410), and it costs nothing more once ``inc`` has its own cache.
             # An attached schema keeps the default unless it is told, whatever ``main`` has.
-            try:
+            with suppress(Exception):  # a tuning PRAGMA must never break a merge
                 con.execute(f"PRAGMA inc.cache_size=-{int(cache_mb) * 1024}")
-            except Exception:  # noqa: BLE001 - a tuning PRAGMA must never break a merge
-                pass
         # The source joins key on (domain, feed_key): ``_merge_sources`` registers the incoming keys as a SQL function
         # (``oo_inc_feed_key``, derived by the ONE feed normaliser) before its first statement.
         con.execute("BEGIN IMMEDIATE")

@@ -30,6 +30,7 @@ from pathlib import Path
 
 import pytest
 
+from src.backup.staged_key import open_staged
 from src.backup.stream_backup import (
     BUILDING_NAME,
     CorpusSource,
@@ -43,7 +44,6 @@ from src.backup.stream_backup import (
 )
 from src.backup.volumes import MANIFEST_NAME, VolumeError, VolumeStopped, load_manifest
 from src.safety.crypto import EncryptionError
-from src.backup.staged_key import open_staged
 from tests.staged_db import same_database
 
 VOL = 65536  # small volumes so a tiny corpus spans many

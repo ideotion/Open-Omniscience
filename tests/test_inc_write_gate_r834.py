@@ -113,9 +113,8 @@ def test_a_failed_walk_refuses_before_the_staged_copy_is_written(tmp_path, monke
 
     monkeypatch.setattr(sb, "validate_sqlite_file", failing_walk)
     try:
-        with pytest.raises(MergeError) as refused:
-            with _quick_check_alongside(inc):
-                merge_corpus(inc, work, _META, cache_mb=8)
+        with pytest.raises(MergeError) as refused, _quick_check_alongside(inc):
+            merge_corpus(inc, work, _META, cache_mb=8)
         assert "integrity check failed" in str(refused.value)
         assert _digest(inc) == before, "the staged copy was written before its walk's verdict"
     finally:
@@ -168,13 +167,12 @@ def test_a_long_walk_never_holds_the_merges_commits(tmp_path, monkeypatch, seale
     monkeypatch.setattr(connect_mod, "connect", functools.partial(connect_mod.connect, timeout=0.3))
     try:
         if locked:
-            with pytest.raises(Exception, match="locked"):
-                with _quick_check_alongside(inc):
-                    assert reading.wait(5)
-                    try:
-                        merge_corpus(inc, work, _META, cache_mb=1)
-                    finally:
-                        merged.set()
+            with pytest.raises(Exception, match="locked"), _quick_check_alongside(inc):
+                assert reading.wait(5)
+                try:
+                    merge_corpus(inc, work, _META, cache_mb=1)
+                finally:
+                    merged.set()
         else:
             with _quick_check_alongside(inc):
                 assert reading.wait(5)
