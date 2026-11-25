@@ -498,6 +498,9 @@ def remove_copy(name: str, busy: list[str] | Callable[[], list[str]] | None = No
         got = _recorded((record or {}).get(name))
         if record is None or got is None:
             return {**out, "message": NOT_IDENTIFIED}
+        # From here the file is named by the record's own key (equal to the request's name, which already matched
+        # COPY_NAME): the path the delete opens never comes from the request itself.
+        name = next(k for k in record if k == name)
         if _held_back(record, name):
             return {**out, "message": LATEST_UNFINISHED}
         now_busy = _running()
