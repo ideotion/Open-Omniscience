@@ -3505,28 +3505,29 @@ def quick_crypto_erase(
 def _fold_held_shorts(report: dict, generation: int) -> None:
     """Row 332 (security read A, Opus read): a kept descriptor's whole rewrite that stopped short in a late pass (the reserve, an
     error) counts in the report as "partially overwritten", each once, and the clean guarantee is never said beside it, as the
-    uninstall watcher says it (``held_short``). The closing pass after the report is made can only log it. Never raises."""
-    try:
-        with _HELD_LOCK:
-            said = _HELD_SHORT_SAID.setdefault(generation, set())
-            new = {fd: v for fd, v in _HELD_SHORT.get(generation, {}).items() if fd not in said}
-            said.update(new)
-        if not new:
-            return
-        report["partially_overwritten"] = report.get("partially_overwritten", 0) + len(new)
-        report["partial_bytes_done"] = report.get("partial_bytes_done", 0) + sum(w for w, _t in new.values())
-        report["partial_bytes_known"] = report.get("partial_bytes_known", 0) + sum(t for _w, t in new.values())
-        limit = report.get("limit")
-        if not isinstance(limit, str) or _PARTIAL_SENTENCE in limit or report.get("drive_absent"):
-            return  # R809: the absent drive's sentence stands alone
-        if limit.endswith(_LIMIT_NOTE):
-            report["limit"] = limit[: -len(_LIMIT_NOTE)] + _PARTIAL_SENTENCE + " " + _DEFENCE_TAIL.lstrip()
-        elif report.get("drive_lost"):
-            report["limit"] = limit + " " + _PARTIAL_SENTENCE  # R809: the drive's sentence is said first
-        else:
-            report["limit"] = _PARTIAL_SENTENCE + " " + limit
-    except Exception:  # noqa: BLE001 - an erase result is never lost to its own bookkeeping  # nosec B110
-        pass
+    uninstall watcher says it (``held_short``). The closing pass after the report is made can only log it. No loop runs under the
+    lock or a handler (src/utils/interrupts.py)."""
+    with _HELD_LOCK:
+        shorts = dict(_HELD_SHORT.get(generation, {}))
+        said = _HELD_SHORT_SAID.setdefault(generation, set())
+        already = set(said)
+    new = {fd: v for fd, v in shorts.items() if fd not in already}
+    if not new:
+        return
+    with _HELD_LOCK:
+        said.update(new)
+    report["partially_overwritten"] = report.get("partially_overwritten", 0) + len(new)
+    report["partial_bytes_done"] = report.get("partial_bytes_done", 0) + sum(w for w, _t in new.values())
+    report["partial_bytes_known"] = report.get("partial_bytes_known", 0) + sum(t for _w, t in new.values())
+    limit = report.get("limit")
+    if not isinstance(limit, str) or _PARTIAL_SENTENCE in limit or report.get("drive_absent"):
+        return  # R809: the absent drive's sentence stands alone
+    if limit.endswith(_LIMIT_NOTE):
+        report["limit"] = limit[: -len(_LIMIT_NOTE)] + _PARTIAL_SENTENCE + " " + _DEFENCE_TAIL.lstrip()
+    elif report.get("drive_lost"):
+        report["limit"] = limit + " " + _PARTIAL_SENTENCE  # R809: the drive's sentence is said first
+    else:
+        report["limit"] = _PARTIAL_SENTENCE + " " + limit
 
 
 def finish_holder_check(report: dict, generation: int) -> str:
