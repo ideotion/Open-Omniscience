@@ -194,6 +194,9 @@ class StagedArtifact:
     # What each of ``key_passphrases`` was given as, in the same order: "corpus", "backup", or "backup and corpus" (one
     # passphrase given as both). Names, never a secret: the import report says which one a still-encrypted key needs.
     key_passphrase_roles: tuple[str, ...] = field(default=(), repr=False, compare=False)
+    #: Row 432: the fixed words of a custody log refused for its schema when it was staged (it is then left out, as the
+    #: merge leaves out one it refuses itself); ``None`` when there was none or it was kept.
+    custody_refused: str | None = None
 
     def member_paths(self, role: str, *, keep_links: bool = False) -> list[tuple[str, Path]]:
         """``(name, staged path)`` of each member of ``role``, its name spelled with "/" whatever build wrote it (:func:`member_name`).
@@ -442,7 +445,7 @@ def _delete_in(cur: sqlite3.Cursor, table: str, col: str, ids: list[int]) -> Non
         cur.execute(f"DELETE FROM {table} WHERE {col} IN ({q})", chunk)  # noqa: S608  # nosec B608 # table/col validated against _SAFE_TABLE; values are bound params
 
 
-def _drop_newsletter_articles(db_path: Path) -> int:
+def _drop_newsletter_articles(db_path: Path, *, foreign: bool = False) -> int:
     """Remove imported-newsletter articles from a corpus snapshot copy (a staged copy the import keyed is opened with
     its key, R829 A).
 
@@ -451,8 +454,16 @@ def _drop_newsletter_articles(db_path: Path) -> int:
     column — all FKs to articles.id use that name), so the restore's foreign_key_check
     finds no orphans. The empty source rows are LEFT (harmless; a future re-import of
     fixed .eml re-attaches to them). Returns the number of articles dropped.
+
+    ``foreign=True`` (a backup being IMPORTED): the copy's triggers and views are dropped first
+    (:func:`staged_key.disarm_staged`, row 432), whatever path led here, so no DELETE below runs a body the backup
+    wrote. The export path keeps them: there the copy is our own snapshot, and its search-index triggers are what
+    purge the newsletters' words before the ``optimize`` merge.
     """
-    from src.backup.staged_key import check_staged_schema, open_staged
+    from src.backup.staged_key import check_staged_schema, disarm_staged, open_staged
+
+    if foreign:
+        disarm_staged(db_path)  # row 432: raises on anything it could not remove; nothing is deleted then
 
     con = open_staged(db_path, read_only=False)  # keyed when the import sealed it (R829 A)
     try:
@@ -1302,10 +1313,28 @@ def seal_staged_members(staged: StagedArtifact, stage_a_timings: dict[str, float
 
     if staged.hash_failures:
         return
+    from src.backup import staged_key
+    from src.monitoring.secret_scrub import record_text
+
     t0 = time.monotonic()
-    _seal_staged(staged.corpus_path)
+    try:
+        _seal_staged(staged.corpus_path)
+        _disarm_staged(staged.corpus_path)
+    except staged_key.StagedKeyError as exc:
+        raise ArtifactError(record_text(exc)) from None  # fixed words of its own, scrubbed as every record is
     if staged.custody_path is not None:
-        _seal_staged(staged.custody_path)
+        try:
+            _seal_staged(staged.custody_path)
+            _disarm_staged(staged.custody_path)
+        except staged_key.StagedSchemaRefused as exc:
+            # Row 432: the custody log is refused and left out, the import goes on, in the words the merge uses when it
+            # refuses one itself (merge_custody); a damaged or unsealable one still stops the import, as before.
+            staged.custody_refused = record_text(exc)
+            staged.custody_path.unlink(missing_ok=True)
+            staged_key.forget(staged.custody_path)
+            staged.custody_path = None
+        except staged_key.StagedKeyError as exc:
+            raise ArtifactError(record_text(exc)) from None
     if stage_a_timings is not None:
         stage_a_timings["seal"] = round(time.monotonic() - t0, 3)
 
@@ -1323,10 +1352,24 @@ def _seal_staged(path: Path) -> None:
         staged_key.seal_plaintext(path)
     except staged_key.NotADatabase:
         return  # nothing a database holds is in it; the validation refuses it in its own words
-    except staged_key.StagedKeyError as exc:
-        from src.monitoring.secret_scrub import record_text
 
-        raise ArtifactError(record_text(exc)) from None  # fixed words of its own, scrubbed as every record is
+
+def _disarm_staged(path: Path) -> None:
+    """Drop every trigger and view the backup's copy carries (row 432, :func:`staged_key.disarm_staged`), once it is
+    staged and before anything writes to it. A file that is not a keyed copy or a plaintext SQLite file is left: the
+    validation refuses it in its own words."""
+    from src.backup import staged_key
+    from src.database.connect import is_encrypted_file
+
+    if not path.is_file() or path.is_symlink():
+        return
+    if not staged_key.is_keyed(path) and is_encrypted_file(path) is not False:
+        return
+    try:
+        staged_key.disarm_staged(path)
+    except staged_key.NotADatabase:
+        return  # it does not read as a database: the validation refuses it in its own words, before any merge
+    # Anything else (a drop that failed part-way, a refused schema) propagates as a StagedKeyError: never "nothing to drop".
 
 
 def cleanup_staging(staged: StagedArtifact) -> None:

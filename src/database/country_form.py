@@ -257,6 +257,46 @@ def writing_in(form: Form) -> Iterator[None]:
         _WRITING_IN.reset(token)
 
 
+#: One article's write pins the form it read first (row 433). Per context, so it never crosses threads or writes.
+_PINNED: contextvars.ContextVar[dict[str, Form] | None] = contextvars.ContextVar("oo_country_form_pinned", default=None)
+
+
+@contextlib.contextmanager
+def form_pinned_for_this_write() -> Iterator[None]:
+    """Inside this block, the country of every value bound into a statement is converted in the form read for the first
+    one, instead of reading the form again for each value.
+
+    For one writer's unit of work (one article's index pass, row 433): :class:`CountryCode` asked :func:`store_form` once
+    per bound VALUE, and each ask resolved the data folder and took the settings lock twice; that was 13% of the drain
+    writer's time, measured on 2k articles (row 431). Only binds use the kept answer (:func:`_form_for_bind`): a bind runs
+    while its statement executes, so on a connection the caller holds, after R788's recheck on that connection
+    (:func:`recheck_on_new_connection`), and while that connection stays open no migration can start, so later binds in
+    the block could only have read the same. Every other caller of :func:`store_form` reads as before. Nothing is kept
+    when the block ends, and nothing is shared between threads or blocks: the next block reads again. A refusal
+    (:class:`MigrationUnfinished`, :class:`StoreFormUnreadable`) is never kept, so the next bind raises it again.
+    :func:`writing_in` still wins inside the block. A block inside a block keeps the outer block's answer."""
+    if _PINNED.get() is not None:
+        yield
+        return
+    token = _PINNED.set({})
+    try:
+        yield
+    finally:
+        _PINNED.reset(token)
+
+
+def pins_form_for_each_call(fn):
+    """Run each call of ``fn`` inside :func:`form_pinned_for_this_write` (one article's index pass is one block)."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with form_pinned_for_this_write():
+            return fn(*args, **kwargs)
+
+    return wrapper
+
+
 def store_form() -> Form:
     """The live store's country form (cached in-process by the settings store; a restore or a
     migration drops the entry), unless a block says it is writing a side file (:func:`writing_in`).
@@ -274,6 +314,22 @@ def store_form() -> Form:
         if getattr(exc, "held", False):
             raise StoreFormUnreadable(held_message()) from None
         raise StoreFormUnreadable(f"the country form of the store could not be read ({type(exc).__name__})") from None
+
+
+def _form_for_bind() -> Form:
+    """:func:`store_form` for a value being bound into a statement. Inside :func:`form_pinned_for_this_write` the first
+    answer is kept for the rest of the block; outside it, exactly :func:`store_form`."""
+    forced = _WRITING_IN.get()
+    if forced is not None:
+        return forced
+    pinned = _PINNED.get()
+    if pinned is None:
+        return store_form()
+    form = pinned.get("form")
+    if form is None:
+        form = store_form()  # a refusal raises here and is not kept, so the next bind asks again
+        pinned["form"] = form
+    return form
 
 
 def alpha2_order(column):
@@ -378,7 +434,7 @@ class CountryCode(TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is None or not isinstance(value, str):
             return value
-        if store_form() != "alpha3":
+        if _form_for_bind() != "alpha3":
             return value  # an alpha-2 store is written exactly as it always was
         from src.catalog.countries import to_iso3
 

@@ -86,6 +86,7 @@ import ast
 import logging
 import os
 import time
+import weakref
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -1428,11 +1429,39 @@ def _keyword_facts(session, card) -> dict:
         "matched": True,
         "key": key,
         "keywords": out,
+        # Row 422 P6: the per-keyword watermark is not touched while a deferred re-index (or an import that left
+        # its counter sweep to the drain) holds the counters, so the envelope says whether they are exact now.
+        "counts": _counter_basis_once(session),
         "note": (
-            "Counters are the maintained corpus-wide totals (exact by construction, with "
-            "the reconcile watermark stated); a NULL watermark means never verified, not wrong."
+            "Counters are the maintained corpus-wide totals, with the reconcile watermark stated; "
+            "a NULL watermark means never verified, not wrong. `counts.basis` is `estimated` while "
+            "a re-index or an import has left them to be reconciled."
         ),
     }
+
+
+_UNSET = object()
+# Keyed weakly by the audit session, so the memo dies with it.
+_COUNTER_BASIS_MEMO: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _counter_basis_once(session) -> dict | None:
+    """:func:`_counter_basis`, read once per audit session rather than once per card (it counts the keyword index)."""
+    try:
+        memo = _COUNTER_BASIS_MEMO.get(session, _UNSET)
+    except TypeError:  # a session that cannot be weakly referenced: read it every time
+        return _counter_basis(session)
+    if memo is _UNSET:
+        memo = _counter_basis(session)
+        _COUNTER_BASIS_MEMO[session] = memo
+    return memo
+
+
+def _counter_basis(session) -> dict | None:
+    """The maintained counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
+    from src.analytics.store import counter_basis_or_none
+
+    return counter_basis_or_none(session)
 
 
 # --------------------------------------------------------------------------- #

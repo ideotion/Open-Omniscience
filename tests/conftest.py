@@ -334,6 +334,23 @@ def _serving_gate_open_for_in_process_clients():
 
 
 @pytest.fixture(autouse=True)
+def _no_failed_open_held_over():
+    """Row 435: a ``sqlite3.connect`` that raises never reports its handle, so ``src.database.connect`` counts it as an open in
+    flight for ``_AUDIT_STALE_S`` (60 s) and every reader sweep of that minute closes nothing (by design: an open that may be
+    taking a lock is never raced). In one process that is the next minute of the app; in a test process it is the next tests on
+    the same worker, which then see descriptors outlive their close (row 310's sweep tests, the R826 "never named" test) for a
+    reason none of them made. The test that left it is the one it is cleared after; what a test does inside itself is unchanged."""
+    yield
+    connect = sys.modules.get("src.database.connect")
+    # a test may stand a stand-in object in for the module (test_secret_scrub_floor_and_forms): only the real one holds pending opens
+    lock, pending = getattr(connect, "_hdr_lock", None), getattr(connect, "_audit_pending", None)
+    if lock is None or pending is None:
+        return
+    with lock:
+        pending.clear()
+
+
+@pytest.fixture(autouse=True)
 def _erase_latch_reset():
     """R802: an erase latches its folder for the rest of the PROCESS (nothing writes into it or makes it again until a restart). A
     test process runs many erases, each of its own folder; this gives the next test a process that has erased nothing."""

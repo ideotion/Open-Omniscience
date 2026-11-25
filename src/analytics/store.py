@@ -34,6 +34,7 @@ from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
 from src.analytics.quarantine_scope import not_quarantined
+from src.database.country_form import pins_form_for_each_call
 from src.database.derived_views import KeywordMentionRead, require_mentions_view
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
 from src.database.stand_in import not_a_stand_in_article_id
@@ -884,6 +885,7 @@ def _index_article_www(
     }
 
 
+@pins_form_for_each_call  # row 433: one read of the store's country form per article, not one per bound country
 def index_article(
     session: Session,
     article: Article,
@@ -3723,6 +3725,24 @@ def reconcile_article_language(
         "last_id": last_id,
         "done": remaining == 0,
     }
+
+
+def counter_basis_or_none(session: Session) -> dict | None:
+    """:func:`counter_envelope` as a dict, for a surface that shows the counters beside other content (row 422 P6).
+
+    Read inside a SAVEPOINT, so a failure (a store without the marker's table, a locked page) leaves the caller's
+    transaction usable and answers None (no basis shown). A deadline or a memory floor is the caller's to honour and is
+    raised, never swallowed."""
+    from src.database.maintenance import StatementTimeout
+
+    try:
+        with session.begin_nested():
+            return counter_envelope(session).to_dict()
+    except StatementTimeout:
+        raise
+    except Exception as exc:  # noqa: BLE001 - a surface never fails on its disclosure
+        log_failure(_LOG, "counter basis not read", exc, level=logging.DEBUG)
+        return None
 
 
 def counter_envelope(session: Session, *, window_hours: int | None = None, now=None):
