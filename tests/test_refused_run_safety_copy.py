@@ -249,8 +249,7 @@ def test_the_folder_path_is_shown_on_screen_and_never_stored(tmp_path, monkeypat
 
 def test_a_removed_copy_takes_its_at_rest_record_entry_with_it_and_a_kept_one_keeps_it(folder, monkeypatch):
     """R823 / R828 (4): when the R833 removal deletes the copy, its entry in the at-rest record goes with it, so the record never
-    names a file that is gone (a later file at that name would otherwise inherit "encrypted"); a copy that is kept keeps its
-    entry."""
+    names a file that is gone; a copy that is kept keeps its entry."""
     from src.backup import own_net as own
     from src.database import at_rest_state
 
@@ -267,3 +266,21 @@ def test_a_removed_copy_takes_its_at_rest_record_entry_with_it_and_a_kept_one_ke
     con.commit()
     assert not own.remove_if_refused_before_activation(kept)["removed"]
     assert forgot == [removed], "a kept copy keeps its entry"
+
+
+def test_a_record_that_cannot_be_updated_never_fails_the_removal(folder, monkeypatch):
+    """The at-rest bookkeeping is best effort: a forget that raises still reports the copy removed (it is gone), never an
+    error that would read as "kept"."""
+    from src.backup import own_net as own
+    from src.database import at_rest_state
+
+    data, live, _con = folder
+
+    def _boom(p):
+        raise OSError("record locked")
+
+    monkeypatch.setattr(at_rest_state, "forget_copy", _boom)
+    net = _make_net(data, live)
+    own.note_made(net)
+    out = own.remove_if_refused_before_activation(net)
+    assert out["removed"] and out["message"] == own.REMOVED and not net.exists()

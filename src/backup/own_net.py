@@ -229,6 +229,8 @@ def remove_if_refused_before_activation(net: Path) -> dict:
             st = os.stat(net.name, dir_fd=dfd, follow_symlinks=False)
             if not stat.S_ISREG(st.st_mode) or _file_id(st) != own.file:
                 return {**out, "message": KEPT_NOT_THE_FILE}
+            # By name through the folder handle, right after the identity check: there is no unlink-by-inode, and nothing in
+            # the app renames a file onto a pre-restore name, so the gap between the stat and the unlink is accepted.
             os.unlink(net.name, dir_fd=dfd)
         finally:
             os.close(dfd)
