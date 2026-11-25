@@ -100,6 +100,7 @@ PAGE1 = 4096; CHUNK = 8 * 1024 * 1024; RESERVE = 64 * 1024 * 1024   # R805 (c)3,
 _ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb") + tuple(plan.get("enc_names") or ())
 # The -wal and the -journal are overwritten WHOLE (R708): every commit that touched page 1 left a copy of it, salt
 # included, in a WAL frame or the journal far past their first 4 KiB. Only the -shm index (no page data) is head-only.
+DUCK_KDF = next(n for n in _ENC if n.endswith(".kdf"))   # the columnar cache's salt sidecar, the one columnar file holding the salt (R840)
 def header_only(name):
     return name in _ENC or any(name == b + "-shm" for b in _ENC)
 # R839 / R840 (row 438): files with another name elsewhere, each once by (device, inode). "keyed": the app's key material, a store's
@@ -117,7 +118,7 @@ def keyed_path(p):   # the app's own by what it is: a file of its keys folder (v
     # and their logs, only where the app keeps them (the data folder itself): a store name deeper down is never the app's by its name alone
     # (the main file only: a log or log index with another name is never tied to its store here, R840; security read of row 438)
     if key_path(p): return True
-    return at_top(p) and os.path.basename(p) in _SQL + ("analytics.duckdb.kdf",)
+    return at_top(p) and os.path.basename(p) in _SQL + (DUCK_KDF,)
 def at_top(p):
     return bool(wd) and os.path.dirname(os.path.abspath(p)) == os.path.abspath(wd)
 def store_log(p):   # a log of one of the app's stores, where the app keeps them: one with another name may hold articles (R840)
@@ -660,7 +661,7 @@ if sd and os.path.isdir(sd):
     for nm in ("analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb"):
         fp = os.path.join(sd, nm)
         if there(fp):
-            if overwrite(fp, True, nm == "analytics.duckdb.kdf") is False: sd_failed += 1   # only the salt sidecar is written whatever its other name (R840)
+            if overwrite(fp, True, nm == DUCK_KDF) is False: sd_failed += 1   # only the salt sidecar is written whatever its other name (R840)
             try: os.remove(fp); sd_wiped += 1
             except OSError: pass
     rec("wiped columnar store %s (%d files, header-only%s)" % (tok(sd), sd_wiped, "; %d not overwritten, THE ERASE MAY BE INCOMPLETE" % sd_failed if sd_failed else ""))
