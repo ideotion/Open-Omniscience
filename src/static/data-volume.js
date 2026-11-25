@@ -144,6 +144,17 @@
     unlistable: "The app cannot list your data folder."
   };
 
+  function paintWhole(host, folders) {
+    host.setAttribute("data-i18n-dyn", "");
+    var parts = tr("Folders with the app’s own names ({folders}) are removed whole, even if you put files of your own in them.",
+      { folders: "\u0001" }).split("\u0001");
+    var names = document.createElement("bdi");
+    names.setAttribute("translate", "no");
+    names.setAttribute("dir", "ltr");
+    names.appendChild(document.createTextNode(folders.join(", ")));
+    host.replaceChildren(document.createTextNode(parts[0]), names, document.createTextNode(parts.slice(1).join("")));
+  }
+
   function renderScope(sc) {
     if (!sc || !sc.broad || document.getElementById("data-scope-notice")) return;
     var n = el("div", "card-caveat data-scope-notice");
@@ -159,6 +170,17 @@
     var body = el("p", "", tr("An emergency wipe or a secure uninstall removes only this app’s own files there, and leaves the folder and everything else in it."));
     body.style.margin = "0 0 4px";
     n.appendChild(body);
+    // R836 S1: the folders an erase removes whole, named by the server from the code's own list (data_scope.WHOLE_DIRS), never
+    // typed here, so the sentence cannot drift from what the erase does; the names stay as the app writes them (translate="no").
+    // Repainted on a language switch (data-i18n-dyn + the oo:langchange listener below).
+    if (Array.isArray(sc.whole_folders) && sc.whole_folders.length) {
+      var whole = el("p", "");
+      whole.style.margin = "0 0 4px";
+      whole.setAttribute("data-i18n-dyn", "");
+      paintWhole(whole, sc.whole_folders);
+      document.addEventListener("oo:langchange", function () { paintWhole(whole, sc.whole_folders); });
+      n.appendChild(whole);
+    }
     var adv = el("p", "", tr("To keep the app’s data apart, quit the app, move its files into a folder of their own and point OO_DATA_DIR at it."));
     adv.style.margin = "0 0 8px";
     n.appendChild(adv);

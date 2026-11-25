@@ -36,7 +36,7 @@ def _fill(data: Path) -> None:
     (data / "keys" / "custody_ed25519.pem").write_bytes(b"PRIVATE")
     (data / "open_omniscience.db").write_bytes(b"S" * 8192)
     (data / "wiki_dumps").mkdir()
-    (data / "wiki_dumps" / "part.xml").write_bytes(b"x" * 100)
+    (data / "wiki_dumps" / "enwiki-latest-pages-articles.xml.bz2").write_bytes(b"x" * 100)
 
 
 @pytest.fixture
@@ -55,7 +55,8 @@ def running_app(tmp_path, monkeypatch):
     errorlog.install()
     logging.getLogger("oo.test.r802").warning("before the erase")
     assert (data / "app_errors.jsonl").exists(), "the journal writes into the data folder while it is there"
-    held = data / "wiki_dumps" / "later" / "part.bin"  # a path a writer kept from before the erase
+    # a path a writer kept from before the erase; only its folder is made (row 378: a shaped folder holding nothing foreign)
+    held = data / "wiki_dumps" / "part.bin"
     stop = threading.Event()
     counts = {"warnings": 0}
 

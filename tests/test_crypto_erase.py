@@ -769,7 +769,7 @@ def test_an_erase_in_a_folder_the_app_does_not_own_removes_only_the_app_s_files(
     (home / "session_history.jsonl.lock").write_bytes(b"")
     (home / "calendar_feed_imports.json").write_text("[]", encoding="utf-8")
     (home / "wiki_dumps").mkdir()
-    (home / "wiki_dumps" / "enwiki.xml.bz2").write_bytes(b"dump" * 10)
+    (home / "wiki_dumps" / "enwiki-latest-pages-articles.xml.bz2").write_bytes(b"dump" * 10)
     (home / "models").mkdir()
     (home / "models" / "my_own_llm.bin").write_bytes(b"weights")
     (home / "Documents").mkdir()
@@ -793,7 +793,8 @@ def test_an_erase_in_a_folder_the_app_does_not_own_removes_only_the_app_s_files(
     assert (home / ".bashrc").read_text(encoding="utf-8") == "export X=1"
     assert (home / "notes.txt").is_symlink() and link_target.read_bytes() == b"outside"
     assert report["left_untouched"] == [".bashrc", "Documents", "notes.txt"]
-    assert report["left_common_names"] == ["keys", "models"]
+    # row 378 (R836): models is judged entry by entry now; the operator's file in it is left and counted, never named
+    assert report["left_common_names"] == ["keys"] and report["shaped_left"] == {"models": 1}
     assert report["not_removed"] == []
     assert "open_omniscience.db" in report["headers_destroyed"]
     assert set(report["keys_destroyed"]) == {"custody_ed25519.pem"}
@@ -818,8 +819,8 @@ def test_an_app_folder_is_still_removed_whole(tmp_path):
     folder.mkdir()
     (folder / "open_omniscience.db").write_bytes(b"S" * 8192)
     (folder / "something-new.bin").write_bytes(b"x" * 10)
-    (folder / "models").mkdir()
-    (folder / "models" / "w.bin").write_bytes(b"w")
+    (folder / "models" / "ollama" / "blobs").mkdir(parents=True)  # row 378: the app's own models entry (R837)
+    (folder / "models" / "ollama" / "blobs" / "w.bin").write_bytes(b"w")
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
     assert report["scope"] == "data-folder" and report["scope_reason"] is None
     assert not folder.exists() and report["left_untouched"] == []

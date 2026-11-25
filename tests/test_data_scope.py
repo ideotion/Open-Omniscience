@@ -201,7 +201,8 @@ def test_the_watchdog_endpoint_carries_the_scope(home, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(home))
     unlock._data_folder_scope.cache_clear()
     out = unlock.data_volume_state()
-    assert out["data_folder_scope"] == {"broad": True, "reason": "home"}
+    # R836 S1: the folders an erase removes whole, from the code's own list (never a path)
+    assert out["data_folder_scope"] == {"broad": True, "reason": "home", "whole_folders": list(data_scope.WHOLE_DIRS)}
     assert str(home) not in json.dumps(out), "this endpoint answers before unlock: never the path"
     unlock._data_folder_scope.cache_clear()
 

@@ -510,7 +510,8 @@ def test_every_step_init_db_runs_is_named_before_it_runs():
     called = {n for stmt in fn.body for n in _callee_names(stmt) if n.startswith("ensure_")}
     assert ensures == called and len(ensures) >= 30, "a name for every self-heal init_db calls, and nothing else"
     assert "ensure_derived_views:after_align" in named and "ensure_derived_views" in named
-    assert named[0] == "import:models" and named[-1] == "ensure_derived_views:after_align"
+    # R826 stage 2: the segment files open after every schema step, as init_db's last one.
+    assert named[0] == "import:models" and named[-2:] == ["ensure_derived_views:after_align", "_open_segments"]
 
 
 def _problems_after(old: str, new: str, *, count: int = 1):

@@ -108,9 +108,15 @@ def overwrite(p, head_only):   # True once every byte it was to write is written
         except FileNotFoundError: return True                          # gone already: nothing left to overwrite
         except OSError: unreached(p); return False                     # could not be looked at: never counted as handled
         if not stat.S_ISREG(st.st_mode): return True   # a link is never written through, nor a FIFO or a device
+        fd = os.open(p, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+        look = (st.st_dev, st.st_ino)
+        try: st = os.fstat(fd)   # the file opened, never a link swapped in after the look (O_NOFOLLOW), and only a regular one
+        except OSError: os.close(fd); raise
+        if not stat.S_ISREG(st.st_mode): os.close(fd); return True
+        if (st.st_dev, st.st_ino) != look: os.close(fd); return False   # another file swapped in after the look: never written, not counted
         n = st.st_size
         limit = min(n, PAGE1) if head_only else n
-        with open(p, "r+b", buffering=0) as f:
+        with os.fdopen(fd, "r+b", buffering=0) as f:
             w = 0
             while w < limit:
                 c = os.urandom(min(CHUNK, limit - w)); f.write(c); w += len(c)
@@ -284,6 +290,67 @@ def keys_state(kd):
                 if not re.fullmatch(ks.get("pending_re", "(?!)"), n) or lkind(os.path.join(kd, nm, n)) != "file": return "foreign"
         elif nm not in ks.get("names", ()) or lkind(os.path.join(kd, nm)) != "file": return "foreign"
     return "app"
+# Row 378 (R836, R837): the shaped folders (the plan's ``shaped_spec``, from src/safety/data_scope.py SHAPED_DIRS) are never
+# walked or removed whole: only their first-level entries that fit one of the app's shapes go, a folder with a second-level rule
+# only while it holds nothing else at its own first level; anything else (a link, a name that fits no shape) is left and
+# counted, never followed, never named, and a folder that still holds such items stays, and the data folder with it.
+sh = plan.get("shaped_spec") or {}
+def second_ok(p, shape):   # True, False, or None: it or an entry of it could not be looked at ("could not check", R798)
+    sec = shape.get("second")
+    if not sec: return True
+    try: kinds = [(n, lkind(os.path.join(p, n))) for n in os.listdir(p)]
+    except OSError: return None
+    if any(k == "unlisted" for _n, k in kinds): return None
+    return all(n in sec["dirs"] and k == "dir" or n in sec["files"] and k == "file" for n, k in kinds)
+def shape_of(folder, n, k):
+    if k not in ("file", "dir"): return None   # a link, a junction or anything else is never matched by shape
+    for s_ in sh.get(folder, ()):
+        if s_["kind"] == k and re.fullmatch(s_["re"], n, re.ASCII): return s_
+    return None
+def shaped(folder):   # (the app's entries in it, how many entries are left, state)
+    p = os.path.join(wd, folder)
+    k = lkind(p)
+    if k == "unlisted": unlisted_dirs.append(p)
+    if k != "dir": return [], 0, k
+    try: names = sorted(os.listdir(p))
+    except FileNotFoundError: return [], 0, "absent"
+    except OSError: unlisted_dirs.append(p); return [], 0, "unlisted"   # the folder, never an entry's name (R806)
+    mine = []; n_left = 0; unchecked = False
+    for n in names:
+        q = os.path.join(p, n); kk = lkind(q)
+        s_ = shape_of(folder, n, kk)
+        ok = True if s_ is None else second_ok(q, s_)
+        if kk == "unlisted" or ok is None: unchecked = True; continue   # "could not check" (R798): never taken, counted or named
+        if s_ is None or not ok: n_left += 1; continue
+        mine.append(q)
+    if unchecked: unlisted_dirs.append(p)
+    return mine, n_left, "partial" if unchecked else "dir"
+def variant(nm):   # a shaped folder's name with an ending the app strips (wiki_dumps.tmp): never the app's in a shared folder
+    c = re.sub(only["strip"], "", nm) if only else nm
+    for suf in (only or {}).get("suffixes", ()):
+        if c.endswith(suf): c = c[:-len(suf)]
+    return c != nm and c in sh
+def shaped_roots():
+    out = []
+    for f in sh:
+        out += shaped(f)[0]
+    return out
+def shaped_dir(nm): return nm in sh and lkind(os.path.join(wd, nm)) == "dir"
+# Row 378 (coordinator's ruling amending R837): Hugging Face's sign-in token files, credentials, go first with the key material.
+# In a data folder the app owns they are taken by their exact names whatever else the Hugging Face home holds; in one it does not
+# own, only in a home that fits the rule. A token file seen and left, or not overwritten and removed, is said in the log.
+hf_left = []
+def hf_tokens():
+    out = []
+    for f in ("models", "cache"):
+        home = os.path.join(wd, f, "huggingface")
+        if lkind(os.path.join(wd, f)) != "dir" or lkind(home) != "dir": continue   # never through a link
+        present = [os.path.join(home, n) for n in plan.get("hf_token_files") or () if lkind(os.path.join(home, n)) == "file"]
+        if not present: continue
+        s_ = shape_of(f, "huggingface", "dir")
+        if s_ is None or (only and second_ok(home, s_) is not True): hf_left.append(f + "/huggingface"); continue
+        out += present
+    return out
 kstate = keys_state(os.path.join(wd, "keys")) if (wd and not only and ks) else "absent"
 keys_foreign = kstate in ("foreign", "unlisted")
 keys_link = bool(wd) and lkind(os.path.join(wd, "keys")) == "link"   # never followed; the app's keys may be where it points
@@ -312,22 +379,32 @@ def not_apps(kd):   # how many entries of keys the app did not write (a count on
     return n
 def roots():
     if not only and keys_foreign:
-        try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if nm != "keys"]
+        try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if nm != "keys" and not shaped_dir(nm)]
         except FileNotFoundError: tops = []
         except OSError as e: unlisted(e); tops = []
-        return app_keys(os.path.join(wd, "keys")) + tops   # the app's key material first
-    if not only: return [wd]
-    try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if ours(nm)]
+        return app_keys(os.path.join(wd, "keys")) + hf_tokens() + tops + shaped_roots()   # the app's key material first
+    if not only: return hf_tokens() + [wd] + shaped_roots()
+    try: tops = [os.path.join(wd, nm) for nm in sorted(os.listdir(wd)) if ours(nm) and not shaped_dir(nm) and not variant(nm)]
     except FileNotFoundError: tops = []
     except OSError as e: unlisted(e); tops = []
-    return app_keys(os.path.join(wd, "keys")) + tops   # R807 (3): in shared scope too, exact names only, never a suffix
+    return app_keys(os.path.join(wd, "keys")) + hf_tokens() + tops + shaped_roots()   # R807 (3): in shared scope too, exact names only, never a suffix
 if wd and not os.path.isdir(wd) and there(wd):
     rec("could not check the data folder %s: THE ERASE MAY BE INCOMPLETE" % tok(wd))   # there, but not a folder it can look at
 if kstate == "unlisted":
     unlisted(OSError(13, "could not list the keys folder", os.path.join(wd, "keys")))
 if wd and os.path.isdir(wd):
     seen = wiped = not_overwritten = 0
-    for top in roots():
+    all_roots = roots()
+    touched = set()
+    for top in all_roots:
+        rel = os.path.relpath(top, wd).replace("\\", "/").split("/") if top != wd else []
+        if len(rel) >= 2 and rel[0] in sh and lkind(os.path.join(wd, rel[0])) != "dir": continue   # its folder is no longer a folder (a link on the way): left
+        if len(rel) == 3 and rel[0] in sh and lkind(os.path.join(wd, rel[0], rel[1])) != "dir": continue
+        if len(rel) == 2 and rel[0] in sh:
+            touched.add(rel[0])
+            kk = lkind(top)
+            if kk in ("file", "dir", "other") and shape_of(rel[0], rel[1], kk) is None: continue   # no longer what it was judged
+        if len(rel) == 3 and rel[0] in sh and lkind(top) != "file": continue   # a token file no longer a file (or a link on the way): left
         if top != wd and (linkish(top) or not os.path.isdir(top)):
             k = sqlite_kind(os.path.basename(top))
             if k and linkish(top): held_stat["seen"] += 1; held_stat["missed"] += 1   # a linked store file is never followed
@@ -337,8 +414,12 @@ if wd and os.path.isdir(wd):
             try: os.remove(top); wiped += 1
             except OSError: pass
             continue
+        s2 = shape_of(rel[0], rel[1], "dir") if len(rel) == 2 and rel[0] in sh else None
+        if s2 is not None and second_ok(top, s2) is not True: continue   # row 378 (R837): no longer only what its rule allows: left
+        if top != wd and linkish(top): continue   # swapped for a link after the look: never walked through
         for root, dirs, names in os.walk(top, onerror=unlisted):
-            dirs[:] = [d for d in dirs if not linkish(os.path.join(root, d))]
+            # row 378: a shaped folder is never walked whole from the data folder (its app entries are roots of their own)
+            dirs[:] = [d for d in dirs if not linkish(os.path.join(root, d)) and not (top == wd and root == wd and d in sh)]
             for nm in names:
                 seen += 1; fp = os.path.join(root, nm)
                 k = sqlite_kind(nm)
@@ -347,7 +428,7 @@ if wd and os.path.isdir(wd):
                 if not overwrite(fp, header_only(nm)): not_overwritten += 1
                 try: os.remove(fp); wiped += 1
                 except OSError: pass
-        if top != wd: shutil.rmtree(top, ignore_errors=True)
+        if top != wd and (s2 is None or second_ok(top, s2) is True): shutil.rmtree(top, ignore_errors=True)
     if held_stat["seen"]:
         try: check_other_holders()
         except Exception:                     # never let the check stop the rest of the wipe or the audit log
@@ -393,32 +474,72 @@ if wd and os.path.isdir(wd):
             else:
                 rec("free disk space overwritten: %d bytes; %d bytes were left unwritten so the disk would not fill, and anything "
                     "in that part was not overwritten" % (scrubbed, RESERVE))
+    # Row 378: each shaped folder emptied of the app's entries goes (only an empty one), each one still there is measured again
+    shaped_kept = {}
+    for f in sh:
+        if lkind(os.path.join(wd, f)) != "dir": continue
+        if not only or f in touched:   # in a folder the app does not own, never an operator's own empty folder it took nothing from
+            try: os.rmdir(os.path.join(wd, f)); continue
+            except OSError: pass
+        m_, l_, st_ = shaped(f)
+        if st_ not in ("dir", "unlisted", "partial"): continue
+        if only and f not in touched and not (l_ or m_ or st_ != "dir"): continue
+        shaped_kept[f] = (l_, len(m_), st_)
+    for f in ("models", "cache"):   # a token file the early pass took that is still there (its overwrite or removal failed)
+        home = os.path.join(wd, f, "huggingface")
+        if lkind(home) == "dir" and any(lkind(os.path.join(home, n)) == "file" for n in plan.get("hf_token_files") or ()):
+            hf_left.append(f + "/huggingface")
+    if hf_left:
+        rec("a Hugging Face sign-in token may remain in %s of %s: it can be revoked in the Hugging Face account; "
+            "THE ERASE MAY BE INCOMPLETE" % (", ".join(sorted(set(hf_left))), tok(wd)))
+    def shaped_note():
+        n_ = sum(v[0] for v in shaped_kept.values())
+        if n_:
+            rec("left items in the app's %s folders of %s, because the app did not create them or wrote them under an older name "
+                "(count: %d): THE ERASE OF THE DATA FOLDER IS NOT COMPLETE"
+                % (", ".join(f for f, v in shaped_kept.items() if v[0]), tok(wd), n_))
+        if any(v[1] for v in shaped_kept.values()):
+            rec("some of the app's own entries in its %s folders of %s could not be removed; THE ERASE MAY BE INCOMPLETE"
+                % (", ".join(f for f, v in shaped_kept.items() if v[1]), tok(wd)))
+    kd = os.path.join(wd, "keys")
+    keep_names = set(shaped_kept)
     if only:
-        kd = os.path.join(wd, "keys")
         for d in (os.path.join(kd, ks.get("pending", ".pending")), kd):
             if lkind(d) == "dir":
                 try: os.rmdir(d)              # only when empty: what is left in it is not the app's
                 except OSError: pass
-        try: left = len(os.listdir(wd))
+        try: left = len([nm for nm in os.listdir(wd) if nm not in keep_names])
         except OSError: left = -1
         rec("wiped the app's own files in %s, a folder it does not own (%s), and left the folder and %d other entries"
             % (tok(wd), only.get("reason"), left))
-    elif keys_foreign:
-        kd = os.path.join(wd, "keys")
-        for d in (os.path.join(kd, ks.get("pending", ".pending")), kd):
-            if lkind(d) == "dir":
-                try: os.rmdir(d)              # only when empty: what is left in it is not the app's
-                except OSError: pass
-        if lkind(kd) == "absent":
+        shaped_note()
+    elif keys_foreign or shaped_kept:
+        if keys_foreign:
+            for d in (os.path.join(kd, ks.get("pending", ".pending")), kd):
+                if lkind(d) == "dir":
+                    try: os.rmdir(d)              # only when empty: what is left in it is not the app's
+                    except OSError: pass
+            if lkind(kd) != "absent": keep_names.add("keys")
+        if not keep_names:
             shutil.rmtree(wd, ignore_errors=True)   # nothing of the operator's was left after all
         else:
-            left = not_apps(kd)
-            if left is None:
-                rec("kept the data folder %s because its keys folder could not be checked; the app's own files in it were wiped"
-                    % tok(wd))
-            else:
-                rec("kept the data folder %s because it holds items the app did not create (count: %d) (in its keys folder); "
-                    "the app's own files in it were wiped" % (tok(wd), left))
+            try: tops_ = sorted(os.listdir(wd))
+            except OSError as e: unlisted(e); tops_ = []
+            for nm in tops_:
+                if nm in keep_names: continue
+                q = os.path.join(wd, nm)
+                if lkind(q) == "dir": shutil.rmtree(q, ignore_errors=True); continue
+                try: os.remove(q)             # a link is removed, never followed
+                except OSError: pass
+            if "keys" in keep_names:
+                left = not_apps(kd)
+                if left is None:
+                    rec("kept the data folder %s because its keys folder could not be checked; the app's own files in it were wiped"
+                        % tok(wd))
+                else:
+                    rec("kept the data folder %s because it holds items the app did not create (count: %d) (in its keys folder); "
+                        "the app's own files in it were wiped" % (tok(wd), left))
+            shaped_note()
     else:
         shutil.rmtree(wd, ignore_errors=True)
     removed_now = not only and not there(wd)   # R802: measured right after the wipe's own removal
@@ -430,9 +551,9 @@ if wd and os.path.isdir(wd):
     # R802 (5): measured after the wipe's last write, and said truthfully: a data folder removed whole that is there again was written to after.
     back = removed_now and there(wd)
     # R806: kept on purpose (for keys alone) is never "could not be removed"; anything else left at its top is, and is said so
-    try: rest = [nm for nm in os.listdir(wd) if nm != "keys"] if (keys_foreign and there(wd)) else []
+    try: rest = [nm for nm in os.listdir(wd) if nm not in keep_names] if (keep_names and there(wd)) else []
     except OSError: rest = [None]
-    kept = not only and not removed_now and not (keys_foreign and there(wd) and not rest)
+    kept = not only and not removed_now and not (keep_names and there(wd) and not rest)
     # the app's own key files or private copies still there (an unlink that failed), and a .pending link never entered
     keys_left = [p for p in app_keys(os.path.join(wd, "keys")) if lkind(p) != "absent"]
     pending_link = lkind(os.path.join(wd, "keys", ks.get("pending", ".pending"))) == "link"
@@ -454,7 +575,7 @@ if wd and os.path.isdir(wd):
             "it afterwards. Restart the computer, then remove that folder." % tok(wd))
     elif kept:
         rec("the data folder %s itself could not be removed, so something may be left in it: check it and remove it by hand" % tok(wd))
-    if gone or not_overwritten or back or kept or keys_link or keys_left or pending_link or not server_gone:
+    if gone or not_overwritten or back or kept or keys_link or keys_left or pending_link or shaped_kept or hf_left or not server_gone:
         rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
             % (tok(wd), wiped, seen, not_overwritten, scrubbed))
     else:
@@ -635,6 +756,20 @@ def _app_only(scope: dict | None) -> dict | None:
     return {**owned_spec(shared=True), "reason": scope.get("reason")}
 
 
+def _shaped_spec(scope: dict | None) -> dict:
+    """Row 378 (R836, R837): the first-level shapes of the shaped folders for the watcher (src/safety/data_scope.py), without the
+    bare generic names in a broad data folder."""
+    from src.safety.data_scope import shaped_spec
+
+    return shaped_spec(shared=bool(scope and scope.get("broad")))
+
+
+def _hf_token_files() -> tuple[str, ...]:
+    from src.safety.data_scope import HF_TOKEN_FILES
+
+    return HF_TOKEN_FILES
+
+
 def _keys_spec() -> dict:
     """R806 (2): what the watcher needs to tell the app's ``keys`` folder by its content (src/safety/data_scope.py)."""
     from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING, KEYS_PENDING_RE
@@ -654,6 +789,8 @@ def _default_spawn(plan: dict, server_pid: int) -> None:
         "enc_names": _lane_names(),  # row 30: the lane databases, header-only like the corpus
         "app_only": _app_only(plan.get("data_scope")),  # R711: a broad data folder is wiped by the app's own names only
         "keys_spec": _keys_spec(),  # R806 (2): keys is the app's by its content, read by the watcher when it wipes
+        "shaped_spec": _shaped_spec(plan.get("data_scope")),  # row 378 (R836): the shaped folders, judged entry by entry
+        "hf_token_files": list(_hf_token_files()),  # row 378: wiped first, with the key material
         "audit_log": plan.get("audit_log"),
     }
     if "__PID_PROBE__" in _WATCHER_SRC:
