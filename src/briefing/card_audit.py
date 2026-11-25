@@ -1428,11 +1428,25 @@ def _keyword_facts(session, card) -> dict:
         "matched": True,
         "key": key,
         "keywords": out,
+        # Row 422 P6: the per-keyword watermark is not touched while a deferred re-index (or an import that left
+        # its counter sweep to the drain) holds the counters, so the envelope says whether they are exact now.
+        "counts": _counter_basis(session),
         "note": (
-            "Counters are the maintained corpus-wide totals (exact by construction, with "
-            "the reconcile watermark stated); a NULL watermark means never verified, not wrong."
+            "Counters are the maintained corpus-wide totals, with the reconcile watermark stated; "
+            "a NULL watermark means never verified, not wrong. `counts.basis` is `estimated` while "
+            "a re-index or an import has left them to be reconciled."
         ),
     }
+
+
+def _counter_basis(session) -> dict | None:
+    """The counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
+    try:
+        from src.analytics.store import counter_envelope
+
+        return counter_envelope(session).to_dict()
+    except Exception:  # noqa: BLE001 - an audit section never fails on its disclosure
+        return None
 
 
 # --------------------------------------------------------------------------- #

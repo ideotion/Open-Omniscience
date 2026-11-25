@@ -232,3 +232,52 @@ def test_every_deferring_commit_path_passes_the_flag_from_the_same_switch():
         call = _call_args(fn)
         assert "counters_left_to_drain=defer_reindex()" in call, fn.__qualname__
         assert "reindex_imported=not defer_reindex()" in call, fn.__qualname__
+
+
+def _open_marker() -> None:
+    from src.backup.merge import _leave_counters_to_drain
+
+    assert _leave_counters_to_drain() is not None
+
+
+def test_the_graph_and_ring_gap_surfaces_say_estimated_while_the_sweep_is_owed(client):
+    """Condition (c): the user-visible readers of the maintained counters outside /top and /supergroups carry the
+    envelope, so a deferred sweep reads ``estimated`` there too."""
+    _open_marker()
+    for url in ("/api/insights/graph?level=family", "/api/insights/graph?level=supergroup", "/api/insights/ring-gaps"):
+        r = client.get(url)
+        assert r.status_code == 200, (url, r.text[:300])
+        assert (r.json().get("counts") or {}).get("basis") == "estimated", url
+    windowed = client.get("/api/insights/graph?level=family&days=7").json()
+    assert "counts" not in windowed, "a windowed graph reads the mentions, not the counters"
+
+
+def test_a_warmed_top_carries_the_same_envelope(client):
+    from src.api import insights
+    from src.database.session import session_scope
+
+    _open_marker()
+    insights._read_cache.clear()
+    with session_scope() as s:
+        insights.warm_cache(s)
+    body = client.get("/api/insights/top?group=true&limit=20").json()
+    assert (body.get("counts") or {}).get("basis") == "estimated"
+
+
+def test_the_card_audit_and_engine_report_state_the_counters_basis():
+    from types import SimpleNamespace
+
+    from src.analytics.engine_report import _counter_basis as engine_basis
+    from src.briefing.card_audit import _keyword_facts
+    from src.database.session import session_scope
+
+    _open_marker()
+    with session_scope() as s:
+        assert engine_basis(s)["basis"] == "estimated"
+        facts = _keyword_facts(s, SimpleNamespace(key="anything-not-a-keyword-p6"))
+    assert facts["matched"] is False  # an unmatched key has no counters to disclose
+    import inspect
+
+    from src.briefing import card_audit
+
+    assert '"counts": _counter_basis(session)' in inspect.getsource(card_audit._keyword_facts)

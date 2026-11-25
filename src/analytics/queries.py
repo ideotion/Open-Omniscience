@@ -1323,6 +1323,16 @@ def _counter_rows_without_pending(session, q, want: int) -> list:
     return [(k, int(mm or 0), max(0, int(aa or 0))) for k, mm, aa in rows]
 
 
+def _counter_basis(session) -> dict | None:
+    """The maintained counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
+    try:
+        from src.analytics.store import counter_envelope
+
+        return counter_envelope(session).to_dict()
+    except Exception:  # noqa: BLE001 - a view never fails on its disclosure
+        return None
+
+
 def top_terms(
     session,
     *,
@@ -4387,6 +4397,8 @@ def layered_graph(
             "edges": _overlap_edges(nodes, sets),
             "method": "shared-article overlap between keyword FAMILIES (top members each)",
             "caveat": "Families group surface forms of one entity; overlap counts articles, not causation.",
+            # Row 422 P6: the corpus-wide node sizes come from the maintained counters, so their basis travels.
+            **({} if days else {"counts": _counter_basis(session)}),
         }
 
     if level == "supergroup":
@@ -4426,6 +4438,7 @@ def layered_graph(
             "edges": _overlap_edges(nodes, sets, min_overlap=1),
             "method": "shared-article overlap between SUPER-GROUPS (curated groups of families); top unassigned families shown for context",
             "caveat": "Super-groups are the user's own curation; overlap counts articles, not causation.",
+            "counts": _counter_basis(session),
         }
 
     return {"level": level, "nodes": [], "edges": [], "error": f"unknown level {level!r}"}

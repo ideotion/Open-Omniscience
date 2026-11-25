@@ -427,6 +427,16 @@ def _generic_terms(session: Session, *, top_per_lang: int = 15, cap: int = 40000
     }
 
 
+def _counter_basis(session: Session) -> dict | None:
+    """The counters' honesty envelope (``exact``/``estimated``), or None when it cannot be read."""
+    try:
+        from src.analytics.store import counter_envelope
+
+        return counter_envelope(session).to_dict()
+    except Exception:  # noqa: BLE001 - a report block never fails on its disclosure
+        return None
+
+
 def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles: int = 25) -> dict:
     """Compute the efficacy + performance report (bounded, read-only, no score)."""
     from src.analytics.equivalence import is_ring_term, load_rings
@@ -507,6 +517,9 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
         "schema": "oo-keyword-engine-1",
         "generated_at": datetime.now(UTC).isoformat(),
         "method": "Counts + bounded samples over the live corpus. No score; each block states its method.",
+        # Row 422 P6: mention_distribution reads the maintained counters, which read `estimated` while a re-index
+        # or an import has left them to be reconciled.
+        "counts": _counter_basis(session),
         "composition": {
             "keywords": int(total),
             "entities": int(entities),
