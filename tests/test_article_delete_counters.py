@@ -266,3 +266,76 @@ def test_the_attach_undo_checks_and_deletes_its_empty_sources_under_one_gate_hol
     for line in body.splitlines()[1:]:
         if line.strip() and not line.lstrip().startswith("#"):
             assert line.startswith(" " * 8), f"left the gate's block before the commit: {line!r}"
+
+
+# ---------------------------------------------------------------- row 430: the copy's per-day keyword counts
+
+
+def _day_rows(con) -> dict[tuple[str, int], int]:
+    return {(str(d), int(k)): int(m) for d, k, m in con.execute("SELECT observed_on, keyword_id, mentions FROM keyword_day_counts")}
+
+
+def _day_truth(con) -> dict[tuple[str, int], int]:
+    return {
+        (str(d), int(k)): int(m)
+        for d, k, m in con.execute(
+            "SELECT observed_on, keyword_id, SUM(count) FROM keyword_mentions WHERE observed_on IS NOT NULL"
+            " AND article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1) GROUP BY observed_on, keyword_id"
+        )
+    }
+
+
+def test_the_backup_copy_without_newsletters_carries_no_newsletter_day_counts(tmp_path):
+    """Row 430: the copy's ``keyword_day_counts`` is rebuilt for the days the newsletters' mentions fell on, so the file
+    holds no per-day count of a mention it left out, and the days' stale marks the delete trigger set are cleared."""
+    from src.analytics.day_counts import install
+    from src.backup.artifact import _drop_newsletter_articles
+
+    path = tmp_path / "snap.db"
+    db = _session(str(path))
+    _seed_newsletters(db)
+    with db.get_bind().begin() as conn:
+        install(conn)
+        # A built table: every day of every mention, as the build writes it.
+        conn.exec_driver_sql(
+            "INSERT INTO keyword_day_counts (observed_on, keyword_id, mentions) SELECT observed_on, keyword_id, SUM(count)"
+            " FROM keyword_mentions WHERE observed_on IS NOT NULL"
+            " AND article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1) GROUP BY observed_on, keyword_id"
+        )
+    db.close()
+    db.get_bind().dispose()
+
+    con = sqlite3.connect(str(path))
+    before = _day_rows(con)
+    assert before, "the seed has dated mentions"
+    con.close()
+
+    assert _drop_newsletter_articles(path) == 5
+    con = sqlite3.connect(str(path))
+    try:
+        after, truth = _day_rows(con), _day_truth(con)
+        assert after == truth
+        assert after != before, "the newsletters' mentions were counted before"
+        assert con.execute("SELECT COUNT(*) FROM keyword_day_dirty").fetchone()[0] == 0
+    finally:
+        con.close()
+
+
+def test_a_day_the_copy_never_built_is_left_for_its_build(tmp_path):
+    from src.backup.artifact import _recount_days
+
+    con = sqlite3.connect(str(tmp_path / "c.db"))
+    con.executescript(
+        "CREATE TABLE articles (id INTEGER PRIMARY KEY, quarantined BOOLEAN);"
+        "CREATE TABLE keyword_mentions (keyword_id INTEGER, article_id INTEGER, count INTEGER, observed_on DATE);"
+        "CREATE TABLE keyword_day_counts (observed_on DATE, keyword_id INTEGER, mentions INTEGER);"
+        "CREATE TABLE keyword_day_dirty (observed_on DATE PRIMARY KEY);"
+        "INSERT INTO articles VALUES (1, 0);"
+        "INSERT INTO keyword_mentions VALUES (7, 1, 3, '2024-03-01');"
+        "INSERT INTO keyword_day_dirty VALUES ('2024-03-01');"
+    )
+    tables = ["articles", "keyword_mentions", "keyword_day_counts", "keyword_day_dirty"]
+    _recount_days(con.cursor(), tables, ["2024-03-01"])
+    assert con.execute("SELECT COUNT(*) FROM keyword_day_counts").fetchone()[0] == 0, "nothing written for an unbuilt day"
+    assert con.execute("SELECT COUNT(*) FROM keyword_day_dirty").fetchone()[0] == 1, "its mark stays for the build"
+    con.close()

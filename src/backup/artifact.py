@@ -507,6 +507,55 @@ def _recount_keywords(cur: sqlite3.Cursor, keyword_ids: list[int]) -> None:
         )
 
 
+def _days_of_articles(cur: sqlite3.Cursor, tables: list[str], art_ids: list[int]) -> list[str]:
+    """The ``observed_on`` days of the given articles' mentions, read before the mentions are deleted (row 430). Empty
+    when the copy holds no per-day keyword counts to correct, or no mention table of the app's shape."""
+    if not {"keyword_mentions", "keyword_day_counts"} <= set(tables):
+        return []
+    if "observed_on" not in {c[1] for c in cur.execute("PRAGMA table_info(keyword_mentions)")}:
+        return []
+    out: set[str] = set()
+    for i in range(0, len(art_ids), 900):
+        chunk = art_ids[i : i + 900]
+        q = ",".join("?" * len(chunk))
+        out.update(
+            str(r[0])
+            for r in cur.execute(
+                f"SELECT DISTINCT observed_on FROM keyword_mentions WHERE article_id IN ({q}) AND observed_on IS NOT NULL",  # noqa: S608  # nosec B608 # q is only ?-placeholders
+                chunk,
+            )
+        )
+    return sorted(out)
+
+
+def _recount_days(cur: sqlite3.Cursor, tables: list[str], days: list[str]) -> None:
+    """Rebuild the per-day keyword counts of the given days in a snapshot copy from its remaining mentions (row 430).
+
+    ``keyword_day_counts`` holds ``SUM(count)`` per day and keyword. Left as it was, a backup taken without newsletters
+    would still carry, per keyword and day, the counts of the newsletter mentions it left out. A restore never merges
+    this table (it is rebuilt after the epoch bump), so this is about what the FILE holds, not about a wrong figure on
+    screen. Each day is rebuilt WHOLE with the table's own arithmetic (``src/analytics/day_counts.py``: the sum over
+    mentions whose article is not quarantined, R101), and its stale mark, which the delete trigger set, is cleared."""
+    if not days:
+        return
+    cols = {c[1] for c in cur.execute("PRAGMA table_info(keyword_day_counts)")}
+    if not {"observed_on", "keyword_id", "mentions"} <= cols:
+        return
+    art_cols = {c[1] for c in cur.execute("PRAGMA table_info(articles)")}
+    live = " AND article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)" if "quarantined" in art_cols else ""
+    for day in days:
+        if cur.execute("SELECT 1 FROM keyword_day_counts WHERE observed_on = ? LIMIT 1", (day,)).fetchone() is None:
+            continue  # a day the table never built holds nothing to correct, and stays for its own build to write
+        cur.execute("DELETE FROM keyword_day_counts WHERE observed_on = ?", (day,))
+        cur.execute(
+            "INSERT INTO keyword_day_counts (observed_on, keyword_id, mentions) "  # noqa: S608  # nosec B608 # live is one of two module literals
+            f"SELECT observed_on, keyword_id, SUM(count) FROM keyword_mentions WHERE observed_on = ?{live} GROUP BY keyword_id",
+            (day,),
+        )
+        if "keyword_day_dirty" in tables:
+            cur.execute("DELETE FROM keyword_day_dirty WHERE observed_on = ?", (day,))
+
+
 def _merge_fts_index(con) -> bool:
     """Make the search index forget the deleted articles' text. ``article_fts`` is an external-content
     FTS5 table: deleting an article writes a delete marker and leaves its postings and its terms in the
@@ -558,6 +607,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
         return 0
     tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]
     touched = _keywords_of_articles(cur, tables, art_ids)
+    days = _days_of_articles(cur, tables, art_ids)
     for t in tables:
         if t == "articles" or not _SAFE_TABLE.match(t):
             continue
@@ -566,6 +616,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
             _delete_in(cur, t, "article_id", art_ids)
     _delete_in(cur, "articles", "id", art_ids)
     _recount_keywords(cur, touched)
+    _recount_days(cur, tables, days)
     _merge_fts_index(con)
     con.commit()
     if vacuum:
