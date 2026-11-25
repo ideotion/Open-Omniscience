@@ -7623,7 +7623,11 @@ def _holding_drain_starts(fn: Any) -> Any:
     def _wrapped(*args: Any, **kwargs: Any) -> Any:
         if not kwargs.get("commit"):
             return fn(*args, **kwargs)
-        from src.jobs.background import hold_starts_for_restore, release_restore_hold, start_held_jobs
+        from src.jobs.background import (
+            hold_starts_for_restore,
+            release_restore_hold,
+            start_held_jobs,
+        )
 
         opened = False
         try:

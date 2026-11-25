@@ -10,6 +10,7 @@ or the app began shutting down since).
 from __future__ import annotations
 
 import ast
+import contextlib
 import threading
 import time
 from pathlib import Path
@@ -101,10 +102,8 @@ def test_the_race_no_drain_runs_between_the_restores_check_and_its_end(registry)
 
     def hammer():
         while not stop_hammer.is_set():
-            try:
+            with contextlib.suppress(RuntimeError):
                 job.start()
-            except RuntimeError:
-                pass
 
     try:
         for _ in range(15):
