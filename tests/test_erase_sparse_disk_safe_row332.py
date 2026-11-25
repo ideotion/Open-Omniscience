@@ -240,7 +240,7 @@ def test_the_watcher_never_fills_a_hole(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_T_OUT", str(out))
     text = _watch(tmp_path, {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log")}, _MEASURE)
     assert "partially overwritten" not in text and "salt pages destroyed" in text, text
-    assert int(out.read_text()) <= before + 64, (before, out.read_text())  # measured after its rewrite, before its delete
+    assert int(out.read_text(encoding="utf-8")) <= before + 64, (before, out.read_text(encoding="utf-8"))  # measured after its rewrite, before its delete
 
 
 # ---- Revision 3: a file the erase could not overwrite at all makes the result "may be incomplete", counted once
