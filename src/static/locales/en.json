@@ -5836,6 +5836,7 @@
   "The corpus as a sky.": "The corpus as a sky.",
   "The corpus as a sky: {plotted} galaxies plotted by {measure}, {unplaced} not observed yet. The largest is {top}. The ranked table below carries every value.": "The corpus as a sky: {plotted} galaxies plotted by {measure}, {unplaced} not observed yet. The largest is {top}. The ranked table below carries every value.",
   "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.": "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.",
+  "The corpus has not been checked whole since this safety copy was made. It can be deleted once a later import has completed and the whole corpus has been checked.": "The corpus has not been checked whole since this safety copy was made. It can be deleted once a later import has completed and the whole corpus has been checked.",
   "The corpus is open. You can return to the Console.": "The corpus is open. You can return to the Console.",
   "The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.": "The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.",
   "The corpus itself begins at {x}, so the series starts there.": "The corpus itself begins at {x}, so the series starts there.",

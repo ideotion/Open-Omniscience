@@ -73,7 +73,10 @@ ACTIVATED = "activated"
 #: checked. Serials, never the clock: a clock stepped back must never make a later copy look older than the mark.
 SEQ_KEY = "~seq"
 VERIFIED_KEY = "~last-verified-run"
-_RESERVED = (SEQ_KEY, VERIFIED_KEY)
+#: R843: ``{"covers": <seq>}``, the highest serial when the last import run ended "done" WITHOUT a whole-file check of the
+#: corpus it left (``note_run_unchecked``). It frees nothing; it only says why the copies it covers are still held.
+UNCHECKED_KEY = "~last-done-unchecked"
+_RESERVED = (SEQ_KEY, VERIFIED_KEY, UNCHECKED_KEY)
 #: The exact name of a safety copy: ``pre-restore-<UTC stamp>.db``. ASCII digits only; \Z: a name ending in a newline is
 #: never one.
 COPY_NAME = r"^pre-restore-[0-9]{8}T[0-9]{6}Z\.db\Z"
@@ -341,6 +344,10 @@ LATEST_UNFINISHED = (
     "This safety copy was made after the last import that completed and was checked. It can be deleted once a later "
     "import has completed and been checked."
 )
+NOT_CHECKED_WHOLE = (
+    "The corpus has not been checked whole since this safety copy was made. It can be deleted once a later import has "
+    "completed and the whole corpus has been checked."
+)
 NOT_DELETED = "The safety copy could not be deleted."
 BUSY = "A safety copy cannot be deleted while an import, restore, backup, snapshot or erase is running."
 
@@ -359,6 +366,31 @@ def note_run_verified() -> None:
             seq = cur.get(SEQ_KEY)
             cur[VERIFIED_KEY] = {"covers": seq if isinstance(seq, int) and not isinstance(seq, bool) else 0}
             atomic_replace(path, json.dumps(cur, sort_keys=True))
+
+
+def note_run_unchecked() -> None:
+    """R843: an import run ended "done" but the corpus it left was not checked whole in that state, so the mark does NOT
+    move; the copies made up to now are noted as held for that reason (:data:`NOT_CHECKED_WHOLE`). Never raises."""
+    from src.safety.file_lock import atomic_replace, file_lock
+
+    with suppress(Exception):
+        path = _record_path()
+        with file_lock(path):
+            cur = _record_for_write()
+            seq = cur.get(SEQ_KEY)
+            cur[UNCHECKED_KEY] = {"covers": seq if isinstance(seq, int) and not isinstance(seq, bool) else 0}
+            atomic_replace(path, json.dumps(cur, sort_keys=True))
+
+
+def _hold_reason(record: dict, name: str) -> str:
+    """Why a held-back copy is held: the corpus was not checked whole since a run that ended "done" (R843), or the copy
+    is newer than the last run that completed and was checked."""
+    got = _recorded(record.get(name))
+    mark = record.get(UNCHECKED_KEY)
+    covers = mark.get("covers") if isinstance(mark, dict) else None
+    if got is not None and isinstance(covers, int) and not isinstance(covers, bool) and covers >= got[2]:
+        return NOT_CHECKED_WHOLE
+    return LATEST_UNFINISHED
 
 
 def _int(x: Any) -> bool:
@@ -450,7 +482,7 @@ def list_copies() -> dict:
                 "bytes": st.st_size,
                 "made_at": datetime.fromtimestamp(got[1] / 1e9, UTC).isoformat(timespec="seconds"),
                 "deletable": not _held_back(record, name),
-                "reason": LATEST_UNFINISHED if _held_back(record, name) else None,
+                "reason": _hold_reason(record, name) if _held_back(record, name) else None,
                 "plaintext": _plaintext(dfd, name, (st.st_dev, st.st_ino)),
             })
     except OSError:
@@ -503,7 +535,7 @@ def remove_copy(name: str, busy: list[str] | Callable[[], list[str]] | None = No
         # COPY_NAME): the path the delete opens never comes from the request itself.
         name = next(k for k in record if k == name)
         if _held_back(record, name):
-            return {**out, "message": LATEST_UNFINISHED}
+            return {**out, "message": _hold_reason(record, name)}
         now_busy = _running()
         if now_busy:
             return {**out, "message": BUSY, "busy": now_busy}

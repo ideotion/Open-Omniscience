@@ -5836,6 +5836,7 @@
   "The corpus as a sky.": "संग्रह एक आकाश के रूप में।",
   "The corpus as a sky: {plotted} galaxies plotted by {measure}, {unplaced} not observed yet. The largest is {top}. The ranked table below carries every value.": "संग्रह एक आकाश के रूप में: {measure} के अनुसार {plotted} आकाशगंगाएँ अंकित, {unplaced} अभी तक नहीं देखी गईं। सबसे बड़ी {top} है। नीचे की क्रमित तालिका में हर मान है।",
   "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.": "कॉर्पस बैकअप की पुष्टि नहीं हो सकी — बड़ी डेटा फ़ाइलों से पहले ही रोका जा रहा है, ताकि आपको कभी ऐसा आंशिक बैकअप न मिले जो पूर्ण दिखे।",
+  "The corpus has not been checked whole since this safety copy was made. It can be deleted once a later import has completed and the whole corpus has been checked.": "यह सुरक्षा प्रति बनने के बाद से कॉर्पस की पूरी जाँच नहीं हुई है। किसी बाद के आयात के पूरा होने और पूरे कॉर्पस की जाँच होने के बाद इसे हटाया जा सकता है।",
   "The corpus is open. You can return to the Console.": "कॉर्पस खुला है। आप कंसोल पर लौट सकते हैं।",
   "The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.": "कॉर्पस एन्क्रिप्टेड वॉल्यूम और पैरिटी के रूप में लिखा जाता है। पैरिटी (भ्रष्टाचार पुनर्प्राप्ति) के लिए analysis एक्स्ट्रा (numpy) आवश्यक है; अन्यथा बैकअप केवल वॉल्यूम है।",
   "The corpus itself begins at {x}, so the series starts there.": "कोष स्वयं {x} से आरंभ होता है, इसलिए शृंखला वहीं से शुरू होती है।",

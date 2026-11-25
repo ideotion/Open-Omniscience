@@ -5836,6 +5836,7 @@
   "The corpus as a sky.": "语料库如天空。",
   "The corpus as a sky: {plotted} galaxies plotted by {measure}, {unplaced} not observed yet. The largest is {top}. The ranked table below carries every value.": "语料库如天空：按 {measure} 绘制了 {plotted} 个星系，{unplaced} 个尚未观测到。最大的是 {top}。下方的排序表包含全部数值。",
   "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.": "无法确认语料库备份——将在处理大型数据文件之前中止，以免你得到一份看似完整的残缺备份。",
+  "The corpus has not been checked whole since this safety copy was made. It can be deleted once a later import has completed and the whole corpus has been checked.": "自创建此安全副本以来，语料库尚未经过完整检查。在之后的某次导入完成并且整个语料库经过检查后才可删除。",
   "The corpus is open. You can return to the Console.": "语料库已打开。可以返回控制台。",
   "The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.": "语料库以加密卷加校验的方式写入。校验（损坏恢复）需要 analysis 扩展（numpy）；否则备份仅为卷。",
   "The corpus itself begins at {x}, so the series starts there.": "语料库本身始于 {x}，因此序列从该处开始。",

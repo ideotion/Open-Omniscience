@@ -5836,6 +5836,7 @@
   "The corpus as a sky.": "কর্পাসটি একটি আকাশ হিসেবে।",
   "The corpus as a sky: {plotted} galaxies plotted by {measure}, {unplaced} not observed yet. The largest is {top}. The ranked table below carries every value.": "কর্পাসটি একটি আকাশ হিসেবে: {measure} অনুসারে {plotted}টি ছায়াপথ অঙ্কিত, {unplaced}টি এখনও পর্যবেক্ষণ করা হয়নি। বৃহত্তমটি হল {top}। নিচের ক্রমযুক্ত সারণিতে প্রতিটি মান আছে।",
   "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.": "কর্পাস ব্যাকআপ নিশ্চিত করা যায়নি — বড় ডেটা ফাইলগুলির আগেই থামানো হচ্ছে, যাতে আপনি কখনও এমন আংশিক ব্যাকআপ না পান যা সম্পূর্ণ বলে মনে হয়।",
+  "The corpus has not been checked whole since this safety copy was made. It can be deleted once a later import has completed and the whole corpus has been checked.": "এই সুরক্ষা কপি তৈরির পর থেকে কর্পাস সম্পূর্ণ যাচাই করা হয়নি। পরবর্তী কোনো আমদানি সম্পূর্ণ হয়ে পুরো কর্পাস যাচাই হলে এটি মোছা যাবে।",
   "The corpus is open. You can return to the Console.": "কর্পাস খোলা। আপনি কনসোলে ফিরে যেতে পারেন।",
   "The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.": "কর্পাস এনক্রিপ্টেড ভলিউম ও প্যারিটি হিসেবে লেখা হয়। প্যারিটি (দুর্নীতি পুনরুদ্ধার) analysis অতিরিক্ত (numpy) প্রয়োজন; অন্যথায় ব্যাকআপ শুধুই ভলিউম।",
   "The corpus itself begins at {x}, so the series starts there.": "কর্পাস নিজেই {x}-এ শুরু হয়, তাই সিরিজটি সেখান থেকেই শুরু হয়।",

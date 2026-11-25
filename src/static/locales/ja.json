@@ -5836,6 +5836,7 @@
   "The corpus as a sky.": "空としてのコーパス。",
   "The corpus as a sky: {plotted} galaxies plotted by {measure}, {unplaced} not observed yet. The largest is {top}. The ranked table below carries every value.": "空としてのコーパス：{measure} により {plotted} 銀河を描画、{unplaced} は未観測です。最大は {top} です。下の順位表がすべての値を保持しています。",
   "The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete.": "コーパスのバックアップを確認できませんでした — 完全に見える不完全なバックアップが残らないよう、大容量ファイルの前で中止します。",
+  "The corpus has not been checked whole since this safety copy was made. It can be deleted once a later import has completed and the whole corpus has been checked.": "この安全コピーの作成以降、コーパス全体はまだ確認されていません。後のインポートが完了し、コーパス全体が確認された後に削除できます。",
   "The corpus is open. You can return to the Console.": "コーパスは開いています。コンソールに戻れます。",
   "The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.": "コーパスは暗号化ボリュームとパリティとして書き込まれます。パリティ（破損時の復旧）にはanalysisエクストラ（numpy）が必要です。なければバックアップはボリュームのみです。",
   "The corpus itself begins at {x}, so the series starts there.": "コーパス自体が {x} に始まるため、系列もそこから始まります。",

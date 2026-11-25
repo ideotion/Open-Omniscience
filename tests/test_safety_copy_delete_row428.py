@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from tests.js_source_helper import function_body, python_function_source
+from tests.os_scope import scope_os
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -262,7 +263,7 @@ def test_a_failed_delete_says_so_with_the_reason_and_keeps_the_list_accurate(fol
     def refuse(*a, **k):
         raise PermissionError(13, "Permission denied")
 
-    monkeypatch.setattr(own.os, "unlink", refuse)
+    scope_os(monkeypatch, own, unlink=refuse)
     out = own.remove_copy(old.name)
     assert not out["removed"] and out["message"] == own.NOT_DELETED and out["reason"] == "Permission denied"
     assert old.exists() and old.name in own.read_record()
@@ -279,17 +280,16 @@ def test_a_failed_delete_names_the_os_reason_and_never_a_path(folder, monkeypatc
     old, _new = _two(folder)
     data = folder[0]
     where = str(data)
-    real_unlink = own.os.unlink
 
     def refuse_unlink(*a, **k):
         raise PermissionError(13, "Permission denied", str(data / old.name))
 
-    monkeypatch.setattr(own.os, "unlink", refuse_unlink)
-    out = own.remove_copy(old.name)
+    with monkeypatch.context() as m:
+        scope_os(m, own, unlink=refuse_unlink)
+        out = own.remove_copy(old.name)
     assert out["reason"] == "Permission denied"
     text = _json.dumps(out)
     assert where not in text and "/" not in text.replace(old.name, "")
-    monkeypatch.setattr(own.os, "unlink", real_unlink)
 
     def refuse_open():
         raise PermissionError(13, "Permission denied", where)
@@ -407,11 +407,80 @@ def test_the_routes_are_post_for_the_delete_and_never_a_bulk_one():
     assert not [p for p, _m in routes if "safety-cop" in p and ("all" in p or "bulk" in p)]
 
 
-def test_only_a_completed_run_marks_the_run_verified():
+def test_only_a_completed_run_checked_whole_marks_the_run_verified():
+    """R843: "done" alone never moves the mark. The end of a run moves it only through _corpus_checked_whole with the
+    identity this run recorded after a whole-file check, and otherwise notes the run as unchecked."""
     src = (_ROOT / "src/backup/import_queue.py").read_text(encoding="utf-8")
     body = python_function_source(src, "_drive")
     assert 'completed = self._state == "done"' in body
-    assert body.index('completed = self._state == "done"') < body.index("own_net.note_run_verified()")
+    tail = body[body.index('completed = self._state == "done"'):]
+    assert 'self._copy_mark = "verified" if _corpus_checked_whole(self._checked_whole_ident) else "unchecked"' in tail
+    note = python_function_source(src, "_note_safety_copy_mark")
+    assert note.index('if mark == "verified":') < note.index("own_net.note_run_verified()") < note.index(
+        "own_net.note_run_unchecked()"
+    )
+    assert src.count("own_net.note_run_verified()") == 1
+    assert "self._note_safety_copy_mark()" in python_function_source(src, "_run_with_keys")
+
+
+def test_the_checked_whole_evidence_is_for_the_same_file_state(monkeypatch):
+    """R843: positive evidence only. No identity recorded by this run (no whole-file check ran), an identity of an
+    earlier file state, an activation record still owed, or a record that cannot be read: none moves the mark."""
+    import src.backup.import_queue as iq
+    import src.backup.merge as merge
+
+    live = {"ident": (1, 100)}
+    monkeypatch.setattr(iq, "_live_corpus_identity", lambda: live["ident"])
+    monkeypatch.setattr(merge, "unverified_activation", lambda: None)
+    assert iq._corpus_checked_whole((1, 100)) is True
+    assert iq._corpus_checked_whole(None) is False, "a done run with no whole-file check leaves the mark"
+    assert iq._corpus_checked_whole((1, 99)) is False, "a pass on an earlier file state never counts"
+    live["ident"] = None
+    assert iq._corpus_checked_whole((1, 100)) is False, "an unreadable live file is no evidence"
+    live["ident"] = (1, 100)
+    monkeypatch.setattr(merge, "unverified_activation", lambda: {"since": "x", "token": "t"})
+    assert iq._corpus_checked_whole((1, 100)) is False, "a check still owed is no evidence"
+
+    def broken():
+        raise OSError("unreadable")
+
+    monkeypatch.setattr(merge, "unverified_activation", broken)
+    assert iq._corpus_checked_whole((1, 100)) is False
+
+
+def test_the_evidence_is_recorded_only_after_a_whole_file_check_passed():
+    src = (_ROOT / "src/backup/import_queue.py").read_text(encoding="utf-8")
+    owed = python_function_source(src, "_check_owed_corpus")
+    assert 'if not at_start and got.get("state") == "ok":' in owed
+    assert owed.index('got.get("state") == "ok"') < owed.index("self._checked_whole_ident = _live_corpus_identity()")
+    done = python_function_source(src, "_after_item")
+    assert 'ver.get("file_check") == "full" and ver.get("file_ok") is True' in done
+    assert done.index('if report.get("committed"):') < done.index("self._checked_whole_ident = _live_corpus_identity()")
+    assert src.count("self._checked_whole_ident = _live_corpus_identity()") == 2
+    assert "self._checked_whole_ident = None" in python_function_source(src, "start")
+
+
+def test_a_done_run_without_a_whole_check_keeps_the_copies_and_says_why(folder):
+    """R843: the run ended "done" but nothing checked the corpus whole: the mark stays where it was, the copy made since
+    stays held, and its row says the corpus has not been checked whole since it was made."""
+    from src.backup import own_net as own
+
+    data, live, _f = folder
+    old, new = _two(folder)
+    before = own.read_record()[own.VERIFIED_KEY]
+    third = _copy(data, live)
+    own.note_run_unchecked()
+    rec = own.read_record()
+    assert rec[own.VERIFIED_KEY] == before, "the mark did not move"
+    names = {c["name"]: c for c in own.list_copies()["copies"]}
+    assert names[old.name]["deletable"]
+    for held in (new.name, third.name):
+        assert not names[held]["deletable"] and names[held]["reason"] == own.NOT_CHECKED_WHOLE
+    out = own.remove_copy(third.name)
+    assert not out["removed"] and out["message"] == own.NOT_CHECKED_WHOLE and third.exists()
+    fourth = _copy(data, live)
+    names = {c["name"]: c for c in own.list_copies()["copies"]}
+    assert names[fourth.name]["reason"] == own.LATEST_UNFINISHED, "a copy made after that run is held for its own reason"
 
 
 def test_the_page_offers_one_delete_per_copy_built_without_markup():
