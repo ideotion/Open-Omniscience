@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "526bdb658369e9a9e05dc0b91f959d0d3dd9fa860a0694addf71064962e8dac8",
+  "digest": "e8076d9af32726c650289089ea46180c56ea896321646c82fe7db634d02434ec",
   "log": [
     {
       "version": 1,
@@ -148,7 +148,13 @@
     },
     {
       "version": 3,
-      "digest": "526bdb658369e9a9e05dc0b91f959d0d3dd9fa860a0694addf71064962e8dac8",
+      "digest": "51925ad8d427405b683c17591ddce9a1dc6c2d966773b12dbcfa7d85c084c900",
+      "kind": "same",
+      "note": "row 424: the import's counter reconcile is scoped and reads the mentions view; no code that writes an article's mentions or tags changed"
+    },
+    {
+      "version": 3,
+      "digest": "e8076d9af32726c650289089ea46180c56ea896321646c82fe7db634d02434ec",
       "kind": "same",
       "note": "Row 433: index_article reads the store's country form once per article instead of once per bound country value; the conversion of every value is unchanged (identical-rows test in tests/test_country_form_pin_row433.py)."
     }

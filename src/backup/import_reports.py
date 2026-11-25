@@ -388,13 +388,21 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
     if isinstance(scr, dict):
         lines.append("## Junk screening")
         lines.append("")
+        # Each figure names its scope: this import's queue, then the corpus-wide count (older reports carry the bare keys).
+        from_run = scr.get("queued_from_this_import", scr.get("queued"))
+        in_corpus = scr.get("not_screened_in_your_corpus", scr.get("not_screened"))
         lines.append(
-            f"- {_fmt_count(scr.get('queued'))} of the newly-imported articles were queued for the junk screening, which runs "
+            f"- {_fmt_count(from_run)} articles from this import were queued for the junk screening, which runs "
             "in the background once the import has finished. Until an article is screened it stays readable and searchable, "
             "and the keyword figures, trends and other aggregates leave it out."
         )
-        if isinstance(scr.get("not_screened"), int) and scr["not_screened"] > 0:
-            lines.append(f"- {_fmt_count(scr['not_screened'])} articles not screened yet when this report was written.")
+        if isinstance(in_corpus, int) and in_corpus > 0:
+            lines.append(
+                f"- {_fmt_count(in_corpus)} articles in your corpus were not screened yet when this report was written "
+                "(across the whole corpus, not just this import)."
+            )
+        elif in_corpus is None:  # an unread count is said, never left out or printed as 0 (R775)
+            lines.append("- The number of articles in your corpus not screened yet could not be read.")
         lines.append("")
 
     qs = report.get("quarantine_summary")

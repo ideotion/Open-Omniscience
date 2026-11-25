@@ -58,6 +58,10 @@ def route(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(runlog, "run", no_journal)
     monkeypatch.setattr(r, "read_artifact", lambda data, passphrase=None: SimpleNamespace(corpus_path=tmp_path / "c.db"))
     monkeypatch.setattr(r, "cleanup_staging", lambda staged: None)
+    # Row 436: the restore's closing restart would start the index heal on the suite's shared store, where a store no
+    # earlier test initialised reads as an open marker. The heal's warning then lands after the record under test, and its
+    # job is still running when the next restore asks for the gate. Nothing here restarts.
+    monkeypatch.setattr(r, "start_jobs_stopped_for_restore", lambda: None)
     legacy = tmp_path / "old.bak"
     legacy.write_bytes(b"read_artifact is stubbed")
     caplog.set_level(logging.DEBUG, logger="api.backup_v2")
@@ -83,6 +87,8 @@ def test_a_failed_legacy_restore_logs_its_failure_with_the_passphrase_out_and_st
     assert PASS not in message
     assert f"legacy restore failed: RuntimeError: the merge could not open the corpus with {REDACTED}" in message
     assert "Traceback (most recent call last)" in message, "the traceback is still in the record, as text"
+    leaked = [rec.name for rec in caplog.records if PASS in f"{rec.getMessage()}\n{rec.exc_text or ''}"]
+    assert not leaked, f"the passphrase is in no record of any logger: {leaked}"
 
 
 def test_a_legacy_restore_without_a_passphrase_logs_the_failure_as_it_is(route, monkeypatch, caplog):
@@ -94,7 +100,11 @@ def test_a_legacy_restore_without_a_passphrase_logs_the_failure_as_it_is(route, 
     monkeypatch.setattr(r, "run_restore", boom)
     with pytest.raises(HTTPException):
         r.restore_legacy_path(str(legacy), None)
-    assert "legacy restore failed: RuntimeError: the merge could not open the corpus" in caplog.records[-1].getMessage()
+    # Found by its logger, never by its position: another logger's record may land after it (row 436).
+    records = [rec for rec in caplog.records if rec.name == "api.backup_v2"]
+    assert len(records) == 1, [rec.getMessage() for rec in records]
+    assert records[0].levelno == logging.ERROR
+    assert "legacy restore failed: RuntimeError: the merge could not open the corpus" in records[0].getMessage()
 
 
 # --------------------------------------------------------------------------- #

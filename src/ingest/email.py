@@ -1646,14 +1646,17 @@ def delete_imported_newsletters(session: Session) -> dict:
     Reversible only via a prior backup (the caller nudges "back up first"). Counts only;
     takes the single-writer gate so it never races a scrape/import write.
 
-    A removal that stops between two chunks (the process ends) has removed the earlier chunks whole and left the counters stale until
-    the removal is run again, which finds the articles that are left, or the counter sweep (``reconcile_keyword_counters``) runs.
+    Each chunk moves the keyword counters by its own mentions in its own transaction (row 429), so a removal that stops between two
+    chunks (the process ends) has removed the earlier chunks whole with their keyword counters right; the per-source article counter
+    stays stale until the removal is run again, which finds the articles that are left. The whole refresh afterwards stays as the repair
+    of any drift older than the removal.
     A chunk that FAILS (a delete, or its strict epoch bump) is rolled back, the counters are refreshed for the chunks already
     removed, and :class:`NewsletterRemovalStopped` is raised with the counts, in fixed words (queue item 58): the route answers
     with those words, never a bare 500. The counters failing after every chunk is removed is said in the answer
     (``counts_refreshed``), not raised: the removal itself is done.
     """
     from src.analytics.corpus_epoch import bump_corpus_epoch
+    from src.analytics.store import remove_deleted_articles_from_keyword_counters
     from src.database.models import Base
     from src.database.writer import connection_first, write_lock
 
@@ -1682,6 +1685,10 @@ def delete_imported_newsletters(session: Session) -> dict:
         try:
             connection_first(session)  # the last chunk's commit gave the connection back: check one out BEFORE the gate
             with write_lock():
+                # Row 429: the chunk's mentions leave the keyword counters in the chunk's own transaction, read before they are
+                # deleted, so a removal that stops between two chunks leaves every committed chunk's counters right, and a
+                # failed chunk rolls its counter move back with its delete.
+                remove_deleted_articles_from_keyword_counters(session, chunk)
                 for t in dep_tables:
                     session.execute(t.delete().where(t.c.article_id.in_(chunk)))
                 session.execute(articles_tbl.delete().where(articles_tbl.c.id.in_(chunk)))

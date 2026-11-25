@@ -9486,6 +9486,10 @@ def _prune_snapshots(keep: int = _SNAPSHOT_KEEP) -> list[str]:
             removed.append(p.name)
         except OSError:  # pragma: no cover
             pass
+        else:
+            from src.database import at_rest_state
+
+            at_rest_state.forget_copy(p)  # R823 / R828 (4): its record entry goes with it
     return removed
 
 
@@ -9579,6 +9583,10 @@ def prune_pre_restore_snapshots_by_age(max_age_hours: float | None = None) -> li
             removed.append(p.name)
         except OSError:  # pragma: no cover
             pass
+        else:
+            from src.database import at_rest_state
+
+            at_rest_state.forget_copy(p)  # R823 / R828 (4): its record entry goes with it
     return removed
 
 
@@ -11352,6 +11360,11 @@ def run_restore(
         with timings.stage("pre_restore_snapshot"):
             if _reuse is None:
                 snapshot_preserving(live_db_path(), snapshot, allow_file_copy=exclusive)
+                from src.database import at_rest_state
+
+                # R823: named in the record only when the live corpus is proven keyed and the copy carries its very salt; else
+                # an erase rewrites it whole (a corpus-sized write), never head-only on a guess
+                at_rest_state.record_copy(snapshot, live_db_path(), "corpus")
                 _remember_run_snapshot(snapshot)
                 report["pre_restore_snapshot"] = str(snapshot)
             elif _net_here is not None:
@@ -11636,13 +11649,42 @@ def run_restore(
         # counters as `estimated` until a whole sweep lands -- a half-reconciled corpus can
         # never masquerade as exact. Still a NAMED, TIMED stage, so the real number shows up
         # in report["timings"] on the operator's hardware rather than being guessed at.
+        #
+        # SCOPED TO THE IMPORT FIRST (row 424, 2026-11-25). The sweep above cost every item of a queue its whole budget
+        # (18.3 s of a 72 s import on lane O's bench; 30 s, 14 %, of lane S's 212 s restore) to re-verify keywords this
+        # import never touched. The merge moves the counters only through the articles it brings in, so the stage now
+        # reconciles exactly the keywords those articles mention (every batch the swap brought in, as the quarantine scan
+        # below reads them), with the sweep's own arithmetic and stamp. The insurance sweep still runs, from the same
+        # durable cursor and inside what is left of the same budget, unless the counters are exact afterwards AND a whole
+        # sweep landed within the freshness window (the envelope cannot see a keyword stored at 0 over real mentions,
+        # which only a whole sweep reaches): the first import after the window pays it, an import into a corpus swept
+        # recently does not, and the envelope discloses `estimated` until a sweep lands either way. The stage sweeps as it always did when the group
+        # cannot be derived (the scope would miss the earlier held items' articles) and for an import over a quarter of
+        # the corpus, where the sweep is the faster of the two.
         with timings.stage("keyword_counter_reconcile"):
             try:
-                from src.analytics.store import reconcile_keyword_counters
+                from sqlalchemy import bindparam as _bindparam
+                from sqlalchemy import text as _text
+
+                from src.analytics.store import reconcile_counters_after_import
                 from src.database.session import session_scope
 
                 with session_scope() as _cnt_sess:
-                    report["keyword_counters"] = reconcile_keyword_counters(_cnt_sess)
+                    _rc_ids = (
+                        [
+                            int(r[0])
+                            for r in _cnt_sess.execute(
+                                _text(
+                                    "SELECT row_id FROM merged_rows "
+                                    "WHERE batch_id IN :bs AND table_name = 'articles'"
+                                ).bindparams(_bindparam("bs", expanding=True)),
+                                {"bs": swap_batches},
+                            ).fetchall()
+                        ]
+                        if swap_batches is not None
+                        else None
+                    )
+                    report["keyword_counters"] = reconcile_counters_after_import(_cnt_sess, _rc_ids)
             except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
                 log_failure(_LOG, "keyword-counter reconcile after restore-merge failed", exc, level=logging.WARNING)
                 report["keyword_counters"] = {"reconciled": False, "error": "see server log"}
@@ -11700,7 +11742,11 @@ def run_restore(
                                 _q_sess, article_ids=unqueued, write=True
                             )
                             report["quarantine_summary"]["batches"] = q_batches
-                        report["screening"] = {"queued": len(queued), "batches": q_batches, **not_counted_tally(_q_sess)}
+                        # Each figure names its scope (Plan, 2026-11-25): this run's queue beside the corpus-wide count.
+                        _corpus_tally = not_counted_tally(_q_sess)
+                        report["screening"] = {"queued_from_this_import": len(queued), "batches": q_batches}
+                        if "not_screened" in _corpus_tally:  # unread is absent, never 0
+                            report["screening"]["not_screened_in_your_corpus"] = _corpus_tally["not_screened"]
                         kick_if_allowed()
                     elif new_article_ids:
                         report["quarantine_summary"] = default_quarantine_candidates_batch(
