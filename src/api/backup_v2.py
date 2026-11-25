@@ -1989,8 +1989,8 @@ def _safety_copy_busy() -> list[str]:
     def _erase() -> bool:
         from src.api import safety
 
-        # an erase running, or one that ran: the app must be restarted after it (R805)
-        return safety._ERASE_LOCK.locked() or safety._PANIC_DONE.is_set()
+        # an erase running (the panic wipe or the full overwrite), or one that ran: the app must be restarted after it (R805)
+        return safety._PANIC_RUNNING.is_set() or safety._ERASE_LOCK.locked() or safety._PANIC_DONE.is_set()
 
     ask("an import", _import_running)
     ask("an import or restore", exclusive_window_open)
@@ -2028,4 +2028,5 @@ def safety_copy_delete(body: SafetyCopyDeleteBody) -> dict:
         raise HTTPException(status_code=400, detail="confirm=true is required: this deletes a safety copy of your corpus.")
     from src.backup import own_net
 
-    return own_net.remove_copy(body.name, busy=_safety_copy_busy())
+    # the function itself: asked first, and again under the delete's own lock just before the file is opened
+    return own_net.remove_copy(body.name, busy=_safety_copy_busy)

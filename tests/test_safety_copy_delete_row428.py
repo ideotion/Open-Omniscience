@@ -57,9 +57,13 @@ def _copy(data: Path, live: Path, *, record: bool = True) -> Path:
 
 
 def _two(folder):
-    """An older copy and a newer one; the newer is the most recent unfinished run's until a run is verified."""
+    """An older copy, then an import run that completed and was checked, then a newer copy (a run that did not finish)."""
+    from src.backup import own_net as own
+
     data, live, _f = folder
-    return _copy(data, live), _copy(data, live)
+    old = _copy(data, live)
+    own.note_run_verified()
+    return old, _copy(data, live)
 
 
 def test_the_record_holds_the_copy_identity_and_never_a_byte_of_it(folder):
@@ -70,7 +74,7 @@ def test_the_record_holds_the_copy_identity_and_never_a_byte_of_it(folder):
     entry = own.read_record()[net.name]
     st = os.stat(net)
     assert entry["file"] == [st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns]
-    assert isinstance(entry["made_ns"], int) and entry["state"] == own.MADE
+    assert isinstance(entry["made_ns"], int) and entry["state"] == own.MADE and entry["seq"] == 1
     raw = (data / own.RECORD_NAME).read_bytes()
     assert net.read_bytes()[:16] not in raw
     own.note_activation(net)
@@ -89,6 +93,7 @@ def test_the_list_offers_recorded_copies_counts_the_others_and_holds_back_the_ne
     assert stray.name not in names
     assert names[old.name]["deletable"] and names[old.name]["reason"] is None
     assert not names[new.name]["deletable"] and names[new.name]["reason"] == own.LATEST_UNFINISHED
+    assert own.read_record()[own.VERIFIED_KEY] == {"covers": 1}
     assert names[old.name]["plaintext"] is True, "a SQLite header is read as plaintext; nothing is ever called encrypted"
     assert names[old.name]["bytes"] == old.stat().st_size and names[old.name]["made_at"].endswith("+00:00")
 
@@ -100,20 +105,80 @@ def test_the_newest_copy_is_freed_only_by_a_run_that_completed_and_was_checked_a
     assert own.remove_copy(new.name)["message"] == own.LATEST_UNFINISHED and new.exists()
     own.note_run_verified()
     out = own.remove_copy(new.name)
-    assert out["removed"] and out["message"] == own.DELETED and not new.exists()
+    assert out["removed"] and out["message"] in (own.DELETED, own.DELETED_FREED) and not new.exists()
     assert old.exists(), "one copy per click"
 
 
-def test_a_deleted_copy_takes_its_record_and_at_rest_entries_and_measures_what_it_freed(folder):
+def test_a_deleted_copy_takes_its_record_and_at_rest_entries_and_measures_what_it_freed(folder, monkeypatch):
     from src.backup import own_net as own
 
     _data, _live, forgotten = folder
     old, _new = _two(folder)
-    size = old.stat().st_blocks * 512
+    reads = iter([1000, 5096])
+    monkeypatch.setattr(own, "_free_bytes", lambda dfd: next(reads))
     out = own.remove_copy(old.name)
     assert out["removed"] and not old.exists()
     assert old.name not in own.read_record() and forgotten == [old.name]
-    assert out["bytes_freed"] == size
+    assert out["freed"] == 4096 and out["message"] == own.DELETED_FREED, "the drive's own free space, before and after"
+
+
+@pytest.mark.parametrize("reads", [[5000, 5000], [5000, 4000], [None, 9000], [9000, None]])
+def test_a_delete_that_freed_nothing_measurable_claims_no_figure(folder, monkeypatch, reads):
+    """A cloned copy shares blocks with the corpus, another program may hold it, other writes move the drive: no figure is
+    made up then (R785)."""
+    from src.backup import own_net as own
+
+    old, _new = _two(folder)
+    it = iter(reads)
+    monkeypatch.setattr(own, "_free_bytes", lambda dfd: next(it))
+    out = own.remove_copy(old.name)
+    assert out["removed"] and out["freed"] is None and out["message"] == own.DELETED
+
+
+def test_a_clock_stepped_back_never_frees_a_later_copy(folder, monkeypatch):
+    """Serials, not the clock: a copy made after the mark stays held back even when the clock now reads earlier."""
+    from src.backup import own_net as own
+
+    data, live, _f = folder
+    _copy(data, live)
+    own.note_run_verified()
+    monkeypatch.setattr(own.time, "time_ns", lambda: 1)  # the clock far in the past
+    later = _copy(data, live)
+    assert own.remove_copy(later.name)["message"] == own.LATEST_UNFINISHED and later.exists()
+
+
+def test_a_copy_made_outside_the_queue_never_frees_an_unfinished_runs_copy(folder):
+    """A restore outside the import queue never sets the mark: a stopped run's copy and every copy after it stay held."""
+    from src.backup import own_net as own
+
+    stopped = _two(folder)[1]
+    data, live, _f = folder
+    other = _copy(data, live)
+    listed = {c["name"]: c["deletable"] for c in own.list_copies()["copies"]}
+    assert listed[stopped.name] is False and listed[other.name] is False
+
+
+def test_an_unreadable_record_is_never_overwritten_by_the_mark_or_a_state(folder):
+    from src.backup import own_net as own
+
+    data, live, _f = folder
+    old, _new = _two(folder)
+    rec = data / own.RECORD_NAME
+    rec.write_text("{damaged", encoding="utf-8")
+    own.note_run_verified()
+    assert rec.read_text(encoding="utf-8") == "{damaged"
+    with pytest.raises(OSError):
+        own._set_state(old.name, own.ACTIVATED)
+    assert rec.read_text(encoding="utf-8") == "{damaged"
+
+
+def test_what_runs_is_asked_again_under_the_delete_lock(folder):
+    from src.backup import own_net as own
+
+    old, _new = _two(folder)
+    answers = iter([[], ["a backup"]])
+    out = own.remove_copy(old.name, busy=lambda: next(answers))
+    assert out["message"] == own.BUSY and old.exists()
 
 
 def test_a_copy_given_another_name_since_it_was_made_is_not_identified_and_kept(folder):
@@ -209,6 +274,20 @@ def test_the_words_are_an_ordinary_delete():
     for msg in (own.DELETED, own.NOT_IDENTIFIED, own.LATEST_UNFINISHED, own.NOT_DELETED, own.BUSY):
         low = msg.lower()
         assert not any(w in low for w in ("erased", "destroy", "securely", "wiped", "shred")), msg
+
+
+def test_a_panic_wipe_while_it_runs_counts_as_an_erase(monkeypatch):
+    import src.api.backup_v2 as bv
+    from src.api import safety
+
+    safety._PANIC_RUNNING.set()
+    try:
+        assert "an erase" in bv._safety_copy_busy()
+    finally:
+        safety._PANIC_RUNNING.clear()
+    src = (_ROOT / "src/api/safety.py").read_text(encoding="utf-8")
+    panic = python_function_source(src, "panic")
+    assert panic.index("_PANIC_RUNNING.set()") < panic.index("panic_wipe(confirm=True)") < panic.index("_PANIC_RUNNING.clear()")
 
 
 def test_the_route_needs_a_confirmation_and_names_what_runs(monkeypatch, folder):

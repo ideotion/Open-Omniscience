@@ -54,6 +54,7 @@ import secrets
 import stat
 import threading
 import time
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -67,11 +68,15 @@ from src.paths import data_dir
 RECORD_NAME = "import-safety-copies.json"
 MADE = "made"
 ACTIVATED = "activated"
-#: The record's one key that is not a copy's name: when the last import run completed and was checked
-#: (``{"ns": <time.time_ns()>}``). A copy made before it belongs to a run at or before that one.
+#: The record's two keys that are not a copy's name. ``SEQ_KEY``: the last serial given to a copy (each copy's entry carries
+#: its own ``seq``). ``VERIFIED_KEY``: ``{"covers": <seq>}``, the highest serial when the last import run completed and was
+#: checked. Serials, never the clock: a clock stepped back must never make a later copy look older than the mark.
+SEQ_KEY = "~seq"
 VERIFIED_KEY = "~last-verified-run"
-#: The exact name of a safety copy: ``pre-restore-<UTC stamp>.db``.
-COPY_NAME = r"^pre-restore-\d{8}T\d{6}Z\.db\Z"  # \Z: a name ending in a newline is never one
+_RESERVED = (SEQ_KEY, VERIFIED_KEY)
+#: The exact name of a safety copy: ``pre-restore-<UTC stamp>.db``. ASCII digits only; \Z: a name ending in a newline is
+#: never one.
+COPY_NAME = r"^pre-restore-[0-9]{8}T[0-9]{6}Z\.db\Z"
 
 REMOVED = "safety copy removed: the import was refused before any change"
 
@@ -162,25 +167,48 @@ def read_record() -> dict | None:
     return got if isinstance(got, dict) else None
 
 
-def _set_state(name: str, state: str | None, extra: dict | None = None) -> None:
+def _record_for_write() -> dict:
+    """The record to rewrite: ``{}`` only when there is none; a record that is there but cannot be read raises ``OSError``,
+    so a write never replaces the other copies' entries with nothing (row 428 security read)."""
+    path = _record_path()
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    try:
+        got = json.loads(raw)
+    except ValueError as exc:
+        raise OSError("the safety-copy record could not be read; it is left as it is") from exc
+    if not isinstance(got, dict):
+        raise OSError("the safety-copy record could not be read; it is left as it is")
+    return got
+
+
+def _set_state(name: str, state: str | None, extra: dict | None = None, *, new_seq: bool = False) -> None:
     """Write ``state`` for ``name`` (None removes the entry), dropping the entries of copies no longer in the folder. The
-    entry keeps what was recorded when the copy was made (row 428: its identity), plus ``extra``. Raises ``OSError`` when
-    the record cannot be written."""
+    entry keeps what was recorded when the copy was made (row 428: its identity), plus ``extra``; ``new_seq`` gives it the
+    next serial. Raises ``OSError`` when the record cannot be read or written."""
     from src.safety.file_lock import atomic_replace, file_lock
     from src.utils.interrupts import kept_items
 
     path = _record_path()
     with file_lock(path):
-        cur = read_record() or {}
+        cur = _record_for_write()
         folder = path.parent
         # kept_items: a filtered comprehension in a frame of its own, never under this file lock's cleanup (src/utils/interrupts.py)
         out = kept_items(
-            cur, lambda k, v: isinstance(v, dict) and k != name and (k == VERIFIED_KEY or (folder / k).exists())
+            cur, lambda k, v: k != name and (k in _RESERVED or (isinstance(v, dict) and (folder / k).exists()))
         )
         if state is not None:
             old = cur.get(name)
-            out[name] = {**(old if isinstance(old, dict) else {}), **(extra or {}), "state": state,
-                         "at": datetime.now(UTC).isoformat(timespec="seconds")}
+            entry = {**(old if isinstance(old, dict) else {}), **(extra or {}), "state": state,
+                     "at": datetime.now(UTC).isoformat(timespec="seconds")}
+            if new_seq:
+                seq = cur.get(SEQ_KEY)
+                seq = (seq if isinstance(seq, int) and not isinstance(seq, bool) and seq >= 0 else 0) + 1
+                out[SEQ_KEY] = seq
+                entry["seq"] = seq
+            out[name] = entry
         atomic_replace(path, json.dumps(out, sort_keys=True))
 
 
@@ -195,7 +223,7 @@ def note_made(net: Path) -> None:
             return
         live = live_state()
         # Row 428: what identifies the copy later, for a removal by hand after a restart (never a byte of it).
-        _set_state(net.name, MADE, {"file": list(_file_id(st)), "made_ns": time.time_ns()})
+        _set_state(net.name, MADE, {"file": list(_file_id(st)), "made_ns": time.time_ns()}, new_seq=True)
         with _LOCK:
             _OWN[str(net)] = _Own(str(net), _file_id(st), live)
     except Exception:  # noqa: BLE001 - unrecorded = kept, the safe side
@@ -283,7 +311,7 @@ def leftovers() -> dict:
     files of the exact ``pre-restore-<UTC stamp>.db`` shape only; never follows a link. Never raises."""
     import re
 
-    shape = re.compile(r"^pre-restore-\d{8}T\d{6}Z\.db$")
+    shape = re.compile(COPY_NAME)
     count, total, names = 0, 0, []
     try:
         for entry in os.scandir(data_dir()):
@@ -307,9 +335,10 @@ def leftovers() -> dict:
 # --------------------------------------------------------------------------------------------------------------------------
 
 DELETED = "Safety copy deleted."
+DELETED_FREED = "Safety copy deleted. Free space on that drive went up by {size}."
 NOT_IDENTIFIED = "This safety copy could not be identified, so nothing was deleted. You can delete it by hand from your data folder."
 LATEST_UNFINISHED = (
-    "This is the safety copy of the most recent import that was refused or did not finish. It can be deleted once a later "
+    "This safety copy was made after the last import that completed and was checked. It can be deleted once a later "
     "import has completed and been checked."
 )
 NOT_DELETED = "The safety copy could not be deleted."
@@ -326,38 +355,39 @@ def note_run_verified() -> None:
     with suppress(Exception):
         path = _record_path()
         with file_lock(path):
-            cur = read_record() or {}
-            cur[VERIFIED_KEY] = {"ns": time.time_ns()}
+            cur = _record_for_write()
+            seq = cur.get(SEQ_KEY)
+            cur[VERIFIED_KEY] = {"covers": seq if isinstance(seq, int) and not isinstance(seq, bool) else 0}
             atomic_replace(path, json.dumps(cur, sort_keys=True))
 
 
-def _recorded(entry: Any) -> tuple[tuple[int, ...], int] | None:
-    """``(file identity, made_ns)`` of a record entry made with both, else None."""
+def _int(x: Any) -> bool:
+    return isinstance(x, int) and not isinstance(x, bool)
+
+
+def _recorded(entry: Any) -> tuple[tuple[int, ...], int, int] | None:
+    """``(file identity, made_ns, seq)`` of a record entry made with all three, else None."""
     if not isinstance(entry, dict):
         return None
-    f, made = entry.get("file"), entry.get("made_ns")
-    if not (isinstance(f, list) and len(f) == 5 and all(isinstance(x, int) and not isinstance(x, bool) for x in f)):
+    f, made, seq = entry.get("file"), entry.get("made_ns"), entry.get("seq")
+    if not (isinstance(f, list) and len(f) == 5 and all(_int(x) for x in f)):
         return None
-    if not isinstance(made, int) or isinstance(made, bool):
+    if not (isinstance(made, int) and not isinstance(made, bool) and isinstance(seq, int) and not isinstance(seq, bool)):
         return None
-    return tuple(f), made
+    return tuple(f), made, seq
 
 
-def _protected_name(record: dict) -> str | None:
-    """The copy of the most recent import that was refused or did not finish, when no import completed and was checked after
-    it: the copy made last, unless the last verified run ended after it was made."""
-    newest: tuple[int, str] | None = None
-    for k, v in record.items():
-        got = _recorded(v)
-        if got is not None and (newest is None or got[1] > newest[0]):
-            newest = (got[1], k)
-    if newest is None:
-        return None
+def _held_back(record: dict, name: str) -> bool:
+    """Whether ``name`` may not be deleted yet: every copy made after the last import run that completed and was checked
+    (a serial above the mark's), so the copy of the most recent refused or unfinished run is always among them, whatever
+    else made a copy since (a restore outside the import queue never sets the mark). A record without a serial for it
+    holds it back too."""
+    got = _recorded(record.get(name))
+    if got is None:
+        return True
     mark = record.get(VERIFIED_KEY)
-    verified = mark.get("ns") if isinstance(mark, dict) else None
-    if isinstance(verified, int) and not isinstance(verified, bool) and verified > newest[0]:
-        return None
-    return newest[1]
+    covers = mark.get("covers") if isinstance(mark, dict) else None
+    return not (isinstance(covers, int) and not isinstance(covers, bool) and covers >= got[2])
 
 
 def _plaintext(dfd: int, name: str, ident: tuple[int, int]) -> bool | None:
@@ -394,7 +424,6 @@ def list_copies() -> dict:
 
     shape = re.compile(COPY_NAME)
     record = read_record() or {}
-    protected = _protected_name(record)
     out: dict = {"copies": [], "unrecorded": 0, "count": 0, "bytes": 0}
     try:
         dfd = _open_folder()
@@ -420,8 +449,8 @@ def list_copies() -> dict:
                 "name": name,
                 "bytes": st.st_size,
                 "made_at": datetime.fromtimestamp(got[1] / 1e9, UTC).isoformat(timespec="seconds"),
-                "deletable": name != protected,
-                "reason": LATEST_UNFINISHED if name == protected else None,
+                "deletable": not _held_back(record, name),
+                "reason": LATEST_UNFINISHED if _held_back(record, name) else None,
                 "plaintext": _plaintext(dfd, name, (st.st_dev, st.st_ino)),
             })
     except OSError:
@@ -431,24 +460,49 @@ def list_copies() -> dict:
     return out
 
 
-def remove_copy(name: str, busy: list[str] | None = None) -> dict:
+def _free_bytes(dfd: int) -> int | None:
+    """The free space the user can write on the data folder's drive, read through its handle; None when not readable."""
+    try:
+        v = os.statvfs(dfd)
+    except (OSError, AttributeError, TypeError):
+        return None
+    return int(v.f_bavail) * int(v.f_frsize)
+
+
+def remove_copy(name: str, busy: list[str] | Callable[[], list[str]] | None = None) -> dict:
     """Delete the ONE safety copy ``name`` (R835 (b)). ``busy`` names what is running (an import, restore, backup, snapshot
-    or erase); anything named refuses. ``{"removed": True, "name", "bytes_freed": n | None, "message": DELETED}`` or
-    ``{"removed": False, "name", "message": <why>, "reason": <the OS's reason, for a failed delete>}``. Never raises."""
+    or erase), or is a function that does, asked again just before the file is opened; anything named refuses.
+    ``{"removed": True, "name", "freed": n | None, "message": DELETED or DELETED_FREED}`` or ``{"removed": False, "name",
+    "message": <why>, "reason": <the OS's reason, for a failed delete>}``. ``freed`` is how much the drive's free space went
+    up across the delete, measured (R785), and None when it did not go up or could not be read: a copy sharing blocks with
+    the corpus (a cloned file), another name for it, or another program holding it open frees less than its size, and other
+    writes on the drive meanwhile move the figure too. Never raises."""
     import re
 
     out: dict = {"removed": False, "name": str(name)}
     if not isinstance(name, str) or not re.match(COPY_NAME, name):
         return {**out, "message": NOT_IDENTIFIED}
-    if busy:
-        return {**out, "message": BUSY, "busy": list(busy)}
+
+    def _running() -> list[str]:
+        if callable(busy):
+            try:
+                return list(busy())
+            except Exception:  # noqa: BLE001 - unreadable = running
+                return ["unknown"]
+        return list(busy or [])
+
+    if _running():
+        return {**out, "message": BUSY, "busy": _running()}
     with _DELETE_LOCK:
         record = read_record()
         got = _recorded((record or {}).get(name))
         if record is None or got is None:
             return {**out, "message": NOT_IDENTIFIED}
-        if _protected_name(record) == name:
+        if _held_back(record, name):
             return {**out, "message": LATEST_UNFINISHED}
+        now_busy = _running()
+        if now_busy:
+            return {**out, "message": BUSY, "busy": now_busy}
         try:
             dfd = _open_folder()
         except OSError as exc:
@@ -468,16 +522,14 @@ def remove_copy(name: str, busy: list[str] | None = None) -> dict:
                 at = os.stat(name, dir_fd=dfd, follow_symlinks=False)
                 if (at.st_dev, at.st_ino) != (held.st_dev, held.st_ino):
                     return {**out, "message": NOT_IDENTIFIED}
+                before = _free_bytes(dfd)
                 try:
                     os.unlink(name, dir_fd=dfd)
                 except OSError as exc:
                     return {**out, "message": NOT_DELETED, "reason": exc.strerror or type(exc).__name__}
-                after = os.fstat(fd)
-                blocks = getattr(after, "st_blocks", None)
-                # R785: measured, not assumed: the held file's own allocated blocks, freed only once its last name is gone.
-                freed = (int(blocks) * 512 if after.st_nlink == 0 else 0) if blocks is not None else None
             finally:
                 os.close(fd)
+            after = _free_bytes(dfd)
         finally:
             os.close(dfd)
         with _LOCK:
@@ -488,4 +540,6 @@ def remove_copy(name: str, busy: list[str] | None = None) -> dict:
             from src.database import at_rest_state
 
             at_rest_state.forget_copy(data_dir() / name)  # R828 (4): its at-rest record entry goes with the file
-    return {**out, "removed": True, "bytes_freed": freed, "message": DELETED}
+    # R785: measured, not assumed: the drive's own free space, before the delete and after the file's last handle closed.
+    freed = (after - before) if (before is not None and after is not None and after > before) else None
+    return {**out, "removed": True, "freed": freed, "message": DELETED_FREED if freed else DELETED}

@@ -3260,8 +3260,8 @@
         toast(t("The safety copy could not be deleted.") + " " + (e.message || e), "err");
       }
       if (r && r.removed) {
-        toast(typeof r.bytes_freed === "number"
-          ? tf("Safety copy deleted: {size} freed.", { size: humanBytes(r.bytes_freed) })
+        toast(typeof r.freed === "number" && r.freed > 0
+          ? tf("Safety copy deleted. Free space on that drive went up by {size}.", { size: humanBytes(r.freed) })
           : t("Safety copy deleted."));
       } else if (r) {
         toast(t(String(r.message || "The safety copy could not be deleted.")) + (r.reason ? " " + String(r.reason) : ""), "err");
