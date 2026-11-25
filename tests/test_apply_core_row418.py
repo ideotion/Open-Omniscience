@@ -299,7 +299,7 @@ def test_the_stamp_text_is_the_construct_it_replaced_and_stores_the_same_rows(mo
         )
 
     names = ("article_id", "engine", "inputs", "stamped_at", "stage_version", "carried_from_batch")
-    rendered = str(construct(**{n: 0 for n in names}).compile(dialect=sqlite.dialect(paramstyle="named")))
+    rendered = str(construct(**dict.fromkeys(names, 0)).compile(dialect=sqlite.dialect(paramstyle="named")))
     assert rendered.replace(":param_1", "NULL") == str(store._stamp_upsert(model))
 
     now = datetime(2026, 11, 24, 22, 1, 2, 345678, tzinfo=UTC)
