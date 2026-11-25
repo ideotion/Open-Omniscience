@@ -36,7 +36,6 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import errno
-import functools
 import itertools
 import logging
 import os
@@ -185,6 +184,11 @@ _LINKED_WRITTEN_SENTENCE = (
 _LINKED_LEFT_SENTENCE = (
     "Some files also had another name elsewhere on the disk, so they were not overwritten, only removed from here: their contents "
     "may remain under that other name, and the erase is not complete (count: {n})."
+)
+_LINKED_KEYS_SENTENCE = (
+    "Some key files also had another name elsewhere on the disk and could not be shown to be this installation's own, so they "
+    "were not overwritten, only removed from here: their contents may still be readable through that other name, and the erase "
+    "is not complete (count: {n})."
 )
 _LINKED_REFUSED_SENTENCE = (
     "Some copies that may hold articles and the salt of their key were left, because they also had another name elsewhere on the "
@@ -420,18 +424,20 @@ _ERASE_ROOT: contextvars.ContextVar[Path | None] = contextvars.ContextVar("_ERAS
 _LINK_NOTES: contextvars.ContextVar[dict[str, set] | None] = contextvars.ContextVar("_LINK_NOTES", default=None)
 
 
-def _note_link(st: os.stat_result | None, *, keyed: bool = False, refused: bool = False) -> None:
-    """R839 / R840: a regular file with more than one name, read through the kept handle (``fstat``), noted for the report."""
+def _note_link(st: os.stat_result | None, *, keyed: bool = False, refused: bool = False, key: bool = False) -> None:
+    """R839 / R840 / R841: a regular file with more than one name, read through the kept handle (``fstat``), noted for the report:
+    ``key`` a key file not verified to be this installation's own (never written, its name here removed)."""
     notes = _LINK_NOTES.get()
-    if notes is not None and st is not None and stat.S_ISREG(st.st_mode) and st.st_nlink > 1:
-        notes["refused" if refused else "keyed" if keyed else "left"].add((st.st_dev, st.st_ino))
+    if notes is not None and st is not None and stat.S_ISREG(st.st_mode) and st.st_nlink != 1:
+        notes["key" if key else "refused" if refused else "keyed" if keyed else "left"].add((st.st_dev, st.st_ino))
 
 
 def _link_counts(notes: dict[str, set]) -> dict[str, int]:
     """The report's counts (R839/R840), each file once: one overwritten in any pass is never also said as left or refused."""
     keyed = notes["keyed"]
     refused = notes["refused"] - keyed
-    return {"written": len(keyed), "left": len(notes["left"] - keyed - refused), "refused": len(refused)}
+    key = notes.get("key", set()) - keyed
+    return {"written": len(keyed), "left": len(notes["left"] - keyed - refused - key), "refused": len(refused), "keys": len(key)}
 
 
 def _masked(paths: list[str], root: Path | None = None) -> list[str]:
@@ -448,7 +454,7 @@ def _masked(paths: list[str], root: Path | None = None) -> list[str]:
         return ["(path withheld)"] * len(paths)
 
 
-def _overwrite(path: Path, *, keyed: bool, refused: bool = False, head_bytes: int | None = None, zeros: bool = False, at: _At | None = None) -> bool | None:
+def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], refused: bool = False, head_bytes: int | None = None, zeros: bool = False, at: _At | None = None) -> bool | None:
     """Overwrite ``path`` in place with random data, then fsync. When ``head_bytes``
     is given only that prefix is overwritten (the crypto-erase salt-page case);
     otherwise the whole file is overwritten in bounded chunks (small files only —
@@ -483,8 +489,15 @@ def _overwrite(path: Path, *, keyed: bool, refused: bool = False, head_bytes: in
         except OSError:
             os.close(fd)
             raise
-        if st.st_nlink > 1:
-            _note_link(st, keyed=keyed, refused=refused and not keyed)  # ``refused``: the caller leaves its name too (R840)
+        if st.st_nlink != 1:  # row 380 (R810 (4)): a link count that cannot be read (0) counts as more than one
+            if callable(keyed):
+                # R841 (row 438 / R810 (3)): a key file with another name is written only when verified, through this descriptor's
+                # fstat (its identity), to be this installation's own; never on a guess
+                own = keyed(st)
+                _note_link(st, keyed=own, key=not own)
+                keyed = own
+            else:
+                _note_link(st, keyed=keyed, refused=refused and not keyed)  # ``refused``: the caller leaves its name too (R840)
             if not keyed:
                 os.close(fd)
                 return None  # R839: another name holds this file; never written through this one
@@ -1669,22 +1682,168 @@ def _destroy_keys_folder(keys_dir: Path, track, keys_destroyed: list[str], unlis
     that holds anything the app did not write, :func:`_destroy_app_keys_in_foreign` is used instead: exact names only (R807 (3)).
     A function of its own with no handler, called inside the caller's ``with``: CPython 3.13 leaves a loop's back-edge outside the
     exception table of the block around it, so the loops live here (R163; tests/test_loop_heads_reach.py)."""
+    hold = _KeysHold.open(keys_dir)  # row 380 (R810 (1)): the folder opened once, no-follow, and walked by its handle
+    try:
+        return _destroy_keys_held(keys_dir, track, keys_destroyed, unlisted, unreached, hold)
+    finally:
+        hold.close()
+
+
+def _destroy_keys_held(keys_dir: Path, track, keys_destroyed: list[str], unlisted, unreached, hold: _KeysHold) -> tuple[int, int]:
+    """The body of :func:`_destroy_keys_folder`, its loops in a frame with no handler around them (src/utils/interrupts.py)."""
     seen = wiped = 0
     for name in _KEY_FILES:
-        s, overwritten, w = track(keys_dir / name)
+        s, overwritten, w = hold.track(track, keys_dir, name)
         seen += s
         wiped += w
         if s and overwritten:
             keys_destroyed.append(name)
-    if _kind(keys_dir, unreached) == "dir":
-        for root, dirs, names in os.walk(keys_dir, onerror=unlisted):
+    if hold.fd is not None:
+        s, w = _keys_walk_fd(hold, hold.fd, keys_dir, track, unlisted, depth=0)
+        seen += s
+        wiped += w
+        _rmtree_held(hold, keys_dir)
+    elif _kind(keys_dir, unreached) == "dir":
+        for root, dirs, names in os.walk(keys_dir, onerror=unlisted):  # no folder handles here (Windows): by path, as before
             dirs[:] = [d for d in dirs if _kind(Path(root, d), unreached) == "dir"]  # a link or a junction never entered
             for name in names:
-                s, _overwritten, w = track(Path(root) / name)
+                s, _overwritten, w = track(Path(root) / name, keyed=hold.verify)
                 seen += s
                 wiped += w
         shutil.rmtree(keys_dir, ignore_errors=True)
     return seen, wiped
+
+
+class _KeysHold:
+    """Row 380 / R841: the ``keys`` folder held by one no-follow handle for the key step (``fd``, None where folders cannot be
+    held: Windows, or a folder that could not be opened, when the walk goes by path as before), and the verification that a key
+    file with another name is this installation's own: every one of its names is in this folder or its ``.pending`` (the app links
+    a private copy into place, so its own key has two names there for a moment). A name anywhere else cannot be shown to be this
+    installation's (no copy of its public key is kept apart from the key file itself), so such a file is never written."""
+
+    def __init__(self, fd: int | None) -> None:
+        self.fd = fd
+
+    @classmethod
+    def open(cls, keys_dir: Path) -> _KeysHold:
+        if os.open not in os.supports_dir_fd or os.name != "posix":
+            return cls(None)
+        try:
+            pre = os.lstat(keys_dir)
+            fd = os.open(keys_dir, _DIR_FLAGS)
+        except OSError:
+            return cls(None)
+        st = os.fstat(fd)
+        if not stat.S_ISDIR(pre.st_mode) or (st.st_dev, st.st_ino) != (pre.st_dev, pre.st_ino):
+            _close_quietly(fd)  # swapped between the look and the open: never walked through this handle
+            return cls(None)
+        return cls(fd)
+
+    def close(self) -> None:
+        if self.fd is not None:
+            _close_quietly(self.fd)
+            self.fd = None
+
+    def track(self, track, keys_dir: Path, name: str):
+        if self.fd is None:
+            return track(keys_dir / name, keyed=self.verify)
+        return track(keys_dir / name, keyed=self.verify, at=_At(self.fd, name))
+
+    def verify(self, st: os.stat_result) -> bool:
+        """Whether every name of the file ``st`` describes is in the held folder or its ``.pending`` (never followed)."""
+        if self.fd is None:
+            return False  # nothing held to count the names in: unverified, never written on a guess
+        ident = (st.st_dev, st.st_ino)
+        found = _names_of(self.fd, ident)
+        pfd, _err = _open_below(self.fd, (".pending",))
+        if pfd is not None:
+            try:
+                found += _names_of(pfd, ident)
+            finally:
+                _close_quietly(pfd)
+        return found == st.st_nlink
+
+
+def _names_of(dfd: int, ident: tuple[int, int]) -> int:
+    """How many entries of the folder held by ``dfd`` are the file ``ident`` (looked at no-follow). Never raises."""
+    try:
+        names = os.listdir(dfd)
+    except OSError:
+        return 0
+    return len(kept(names, lambda n: _ident_at(dfd, n) == ident))
+
+
+def _ident_at(dfd: int, name: str) -> tuple[int, int] | None:
+    try:
+        st = os.lstat(name, dir_fd=dfd)
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino) if stat.S_ISREG(st.st_mode) else None
+
+
+def _keys_walk_fd(hold: _KeysHold, dfd: int, folder: Path, track, unlisted, *, depth: int) -> tuple[int, int]:
+    """Every file below the folder held by ``dfd``, by handle (row 380): files tracked through ``_At``, folders opened no-follow
+    from their parent's handle (a link or a junction is never entered), a folder that cannot be listed handed to ``unlisted``."""
+    seen = wiped = 0
+    try:
+        names = sorted(os.listdir(dfd))
+    except OSError as exc:
+        if unlisted is not None:
+            unlisted(exc)
+        return seen, wiped
+    for name in names:
+        kind = _kind(folder / name, None, _At(dfd, name))
+        if kind == "dir" and depth < 8:
+            s, w = _keys_sub(hold, dfd, folder, name, track, unlisted, depth=depth)
+        elif kind == "file":
+            s, _o, w = track(folder / name, keyed=hold.verify, at=_At(dfd, name))
+        else:
+            if kind != "absent" and unlisted is not None:  # R810 (1): a link, a FIFO, a device: never written, said as could not check
+                unlisted(OSError(errno.EINVAL, "not a regular file", str(folder / name)))
+            continue
+        seen += s
+        wiped += w
+    return seen, wiped
+
+
+def _keys_sub(hold: _KeysHold, dfd: int, folder: Path, name: str, track, unlisted, *, depth: int) -> tuple[int, int]:
+    sub, err = _open_below(dfd, (name,))
+    if sub is None:
+        if unlisted is not None and err is not None:
+            unlisted(err)
+        return 0, 0
+    try:
+        return _keys_walk_fd(hold, sub, folder / name, track, unlisted, depth=depth + 1)
+    finally:
+        _close_quietly(sub)
+
+
+def _rmtree_held(hold: _KeysHold, keys_dir: Path) -> None:
+    """The keys folder removed once its files are gone, its entries through the held handle (never a path a link could redirect),
+    then the folder's own name, only when it is still the folder held."""
+    if hold.fd is None:
+        return
+    try:
+        names = sorted(os.listdir(hold.fd))
+    except OSError:
+        names = []
+    _unlink_held(hold.fd, names)
+    with contextlib.suppress(OSError):
+        now = os.lstat(keys_dir)
+        held = os.fstat(hold.fd)
+        if (now.st_dev, now.st_ino) == (held.st_dev, held.st_ino):
+            os.rmdir(keys_dir)
+
+
+def _unlink_held(dfd: int, names: list[str]) -> None:
+    """Each entry of the folder held by ``dfd`` removed through it: a folder by :func:`_rmtree_at` (never across a drive), anything
+    else unlinked (a link removed, never followed). Never raises."""
+    for name in names:
+        if _kind(Path(name), None, _At(dfd, name)) == "dir":
+            _rmtree_at(dfd, name)
+            continue
+        with contextlib.suppress(OSError):
+            os.unlink(name, dir_fd=dfd)
 
 
 def _destroy_app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str], unlisted=None, unreached=None) -> tuple[int, int]:
@@ -1693,16 +1852,25 @@ def _destroy_app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str
     the app's own key files go, by their exact names (``data_scope.APP_KEY_NAMES``), and the private copies in a real ``.pending``
     folder, by their one name shape; everything else is left byte for byte, and neither folder is removed unless that left it
     empty. A ``keys`` that is a link, a junction or not a folder is never entered: nothing in it is the app's to reach."""
+    if _kind(keys_dir, unreached) != "dir":
+        return 0, 0
+    hold = _KeysHold.open(keys_dir)  # R841: a key file with another name is written only when verified to be this installation's
+    try:
+        return _app_keys_in_foreign(keys_dir, track, keys_destroyed, unlisted, unreached, hold)
+    finally:
+        hold.close()
+
+
+def _app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str], unlisted, unreached, hold: _KeysHold) -> tuple[int, int]:
+    """The body of :func:`_destroy_app_keys_in_foreign`, its loops in a frame with no handler around them."""
     from src.safety.data_scope import APP_KEY_NAMES, KEYS_PENDING, KEYS_PENDING_RE
 
     seen = wiped = 0
-    if _kind(keys_dir, unreached) != "dir":
-        return seen, wiped
     for name in (*_KEY_FILES, *sorted(APP_KEY_NAMES - set(_KEY_FILES))):  # the corpus signer's pair first, as in the app's own folder
         p = keys_dir / name
         if _kind(p, unreached) != "file":
             continue  # a link or a folder under one of the app's names was not written by the app: left, never followed
-        s, overwritten, w = track(p)
+        s, overwritten, w = track(p, keyed=hold.verify)
         seen += s
         wiped += w
         if s and overwritten and name in _KEY_FILES:
@@ -1712,7 +1880,7 @@ def _destroy_app_keys_in_foreign(keys_dir: Path, track, keys_destroyed: list[str
         for e in _listing(pending, unlisted):
             p = Path(e.path)
             if re.fullmatch(KEYS_PENDING_RE, e.name) and _kind(p, unreached) == "file":
-                s, _overwritten, w = track(p)
+                s, _overwritten, w = track(p, keyed=hold.verify)
                 seen += s
                 wiped += w
         with contextlib.suppress(OSError):
@@ -1905,7 +2073,7 @@ def _kept_in_keys(keys_dir: Path) -> int:
     return n
 
 
-def _shred(path: Path, *, keyed: bool, head_bytes: int | None = None, zeros: bool = False, unreached=None,
+def _shred(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], head_bytes: int | None = None, zeros: bool = False, unreached=None,
            at: _At | None = None) -> tuple[bool, bool | None, bool]:
     """Overwrite then unlink ``path``. Returns ``(seen, overwritten, unlinked)``:
     ``seen`` is whether the file existed, ``overwritten`` whether the destructive
@@ -3331,7 +3499,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # another file before the pin below is read.
     keyed_before = _keyed_evidence_kept(paths.get("main_db"), generation) if close_own_pool and not drive_absent else None
     own_open = _close_own_pool() if close_own_pool else 0  # R805 (a): after the latch, so no new connection opens on the store
-    links: dict[str, set] = {"keyed": set(), "left": set(), "refused": set()}
+    links: dict[str, set] = {"keyed": set(), "left": set(), "refused": set(), "key": set()}
     _LINK_NOTES.set(links)  # R839/R840: put back by quick_crypto_erase when the erase ends
     _ERASE_ROOT.set(base)  # every log line of this erase is masked against its own data folder, never src.paths.data_dir
     # R711. Is the data folder the app's own? One the app did not choose that also holds other files (the operator's home folder, a
@@ -3399,7 +3567,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             _LOG.error("CRYPTO-ERASE: the data drive changed during the erase; nothing more on it was erased")
         return drive_stopped
 
-    def _track(p: Path, *, keyed: bool, head_bytes: int | None = None, at: _At | None = None) -> tuple[bool, bool | None, bool]:
+    def _track(p: Path, *, keyed: bool | Callable[[os.stat_result], bool], head_bytes: int | None = None, at: _At | None = None) -> tuple[bool, bool | None, bool]:
         s, overwritten, w = (_shred(p, keyed=keyed, head_bytes=head_bytes, unreached=_unreached) if at is None
                              else _shred(p, keyed=keyed, head_bytes=head_bytes, unreached=_unreached, at=at))
         if s and overwritten is False:  # None: not written because another name holds it (R839), said on its own line
@@ -3646,9 +3814,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         if keys_off:
             _s = _w = 0  # R809 / R812: the keys folder is on the drive that is not there, or that changed
         elif keys_foreign or app_only:  # R807 (3): in shared scope the app's key files are matched by exact name, never by suffix
-            _s, _w = _destroy_app_keys_in_foreign(keys_dir, functools.partial(_track, keyed=True), keys_destroyed, _unlisted, _unreached)
+            _s, _w = _destroy_app_keys_in_foreign(keys_dir, _track, keys_destroyed, _unlisted, _unreached)
         else:
-            _s, _w = _destroy_keys_folder(keys_dir, functools.partial(_track, keyed=True), keys_destroyed, _unlisted, unreached=_unreached)
+            _s, _w = _destroy_keys_folder(keys_dir, _track, keys_destroyed, _unlisted, unreached=_unreached)
     seen += _s
     wiped += _w
     # 2b) Row 378 (coordinator on R837): Hugging Face's sign-in token files in the app's own Hugging Face homes are credentials,
@@ -4133,6 +4301,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         + (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
         + (_HF_TOKEN_LEFT_SENTENCE.format(folders=", ".join(hf_token_left)) + " " if hf_token_left else "")
         + (_LINKED_REFUSED_SENTENCE.format(n=link_counts["refused"]) + " " if link_counts["refused"] else "")
+        + (_LINKED_KEYS_SENTENCE.format(n=link_counts["keys"]) + " " if link_counts["keys"] else "")
         + (_LINKED_LEFT_SENTENCE.format(n=link_counts["left"]) + " " if link_counts["left"] else "")
         + (_LINKED_WRITTEN_SENTENCE.format(n=link_counts["written"]) + " " if link_counts["written"] else "")
         + (_SHAPED_LEFT_SENTENCE.format(folders=", ".join(f for f, v in shaped_left.items() if v["left"]), n=shaped_items) + " "

@@ -107,11 +107,26 @@ def header_only(name):
 # "refused": a segment of the split corpus (no record is checked here, so it is never positively the app's), not written; here its
 # name goes with the folder (the walk removes the folder whole; its other name reaches the file either way) and the log says a copy
 # that may hold articles and their salt was left. The link count is read by fstat on the handle about to be written, at the moment of the decision.
-linked = {"keyed": set(), "left": set(), "refused": set()}
+# R841: "key": a file under a key name with another name somewhere the app does not write its keys (every name of the app's own key
+# is in keys or keys/.pending): never written, this name removed, and the log says its contents may still be readable through the other.
+linked = {"keyed": set(), "left": set(), "refused": set(), "key": set()}
 SEG = re.compile(r"seg-[1-9][0-9]{0,3}\.db(-wal|-shm|-journal)?")
-def keyed_path(p):   # the app's own by what it is: a file of its keys folder, or a store whose page 1 holds the salt
-    r = os.path.relpath(p, wd).replace("\\", "/") if wd else ""
-    return r.startswith("keys/") or header_only(os.path.basename(p))
+def key_path(p):
+    return bool(wd) and os.path.relpath(p, wd).replace("\\", "/").startswith("keys/")
+def keyed_path(p):   # the app's own by what it is: a file of its keys folder (verified, R841), or a store whose page 1 holds the salt
+    return key_path(p) or header_only(os.path.basename(p))
+def key_names(ident):   # R841: how many names the file has in keys and keys/.pending, each looked at never following a link
+    n = 0
+    kd = os.path.join(wd, "keys")
+    for d in (kd, os.path.join(kd, ks.get("pending", ".pending") if ks else ".pending")):
+        if lkind(d) != "dir": continue
+        try: names = os.listdir(d)
+        except OSError: continue
+        for nm in names:
+            try: s_ = os.lstat(os.path.join(d, nm))
+            except OSError: continue
+            if stat.S_ISREG(s_.st_mode) and (s_.st_dev, s_.st_ino) == ident: n += 1
+    return n
 def segment_path(p):
     r = os.path.relpath(p, wd).replace("\\", "/").split("/") if wd else []
     return len(r) == 2 and r[0] == "corpus" and SEG.fullmatch(r[1]) is not None
@@ -127,12 +142,14 @@ def overwrite(p, head_only, keyed=False):   # True once every byte it was to wri
         except OSError: os.close(fd); return False
         if not stat.S_ISREG(fs.st_mode): os.close(fd); return True
         if (fs.st_dev, fs.st_ino) != (st.st_dev, st.st_ino): os.close(fd); return False   # another file swapped in after the look: never written, not counted
-        if fs.st_nlink > 1:
+        if fs.st_nlink != 1:   # R810 (1): a count that cannot be read (0) counts as more than one
             ident = (fs.st_dev, fs.st_ino)
             if not keyed:
                 os.close(fd)
                 if segment_path(p): linked["refused"].add(ident); return "refused"
                 linked["left"].add(ident); return "left"
+            if key_path(p) and key_names(ident) != fs.st_nlink:   # R841: a name elsewhere: not shown to be this installation's key
+                os.close(fd); linked["key"].add(ident); return "key"
             linked["keyed"].add(ident)
         n = fs.st_size
         limit = min(n, PAGE1) if head_only else n
@@ -514,8 +531,12 @@ if wd and os.path.isdir(wd):
     if hf_left:
         rec("a Hugging Face sign-in token may remain in %s of %s: it can be revoked in the Hugging Face account; "
             "THE ERASE MAY BE INCOMPLETE" % (", ".join(sorted(set(hf_left))), tok(wd)))
-    lk = {"keyed": len(linked["keyed"]), "refused": len(linked["refused"] - linked["keyed"]),
-          "left": len(linked["left"] - linked["keyed"] - linked["refused"])}
+    lk = {"keyed": len(linked["keyed"]), "refused": len(linked["refused"] - linked["keyed"]), "key": len(linked["key"] - linked["keyed"]),
+          "left": len(linked["left"] - linked["keyed"] - linked["refused"] - linked["key"])}
+    if lk["key"]:
+        rec("files under the app's key names in %s also had another name elsewhere on the disk and could not be shown to be this "
+            "installation's own keys, so they were not overwritten, only removed: their contents may still be readable through that "
+            "other name (count: %d): THE ERASE IS NOT COMPLETE" % (tok(wd), lk["key"]))
     if lk["refused"]:
         rec("copies that may hold articles and the salt of their key were left in %s, because they also had another name elsewhere "
             "on the disk and could not be shown to be the app's own (count: %d): THE ERASE IS NOT COMPLETE" % (tok(wd), lk["refused"]))
@@ -608,7 +629,7 @@ if wd and os.path.isdir(wd):
             "it afterwards. Restart the computer, then remove that folder." % tok(wd))
     elif kept:
         rec("the data folder %s itself could not be removed, so something may be left in it: check it and remove it by hand" % tok(wd))
-    if gone or not_overwritten or back or kept or keys_link or keys_left or pending_link or shaped_kept or hf_left or lk["left"] or lk["refused"] or not server_gone:
+    if gone or not_overwritten or back or kept or keys_link or keys_left or pending_link or shaped_kept or hf_left or lk["left"] or lk["refused"] or lk["key"] or not server_gone:
         rec("wiped data %s (%d/%d files, %d not overwritten; THE ERASE MAY BE INCOMPLETE; %d scrub bytes)"
             % (tok(wd), wiped, seen, not_overwritten, scrubbed))
     else:

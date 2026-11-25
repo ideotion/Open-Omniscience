@@ -81,7 +81,7 @@ def test_a_file_with_another_name_is_written_only_when_keyed(tmp_path):
         crypto_erase._LINK_NOTES.reset(token)
     ident = (f.stat().st_dev, f.stat().st_ino)
     assert notes["left"] == {ident} and notes["keyed"] == {ident}
-    assert crypto_erase._link_counts(notes) == {"written": 1, "left": 0, "refused": 0}, "a file written once is never said as left"
+    assert crypto_erase._link_counts(notes) == {"written": 1, "left": 0, "refused": 0, "keys": 0}, "a file written once is never said as left"
 
 
 @posix_only
@@ -124,7 +124,7 @@ def test_an_other_file_with_a_second_name_is_never_written_and_said(tmp_path, wa
     report = _erase(data)
     assert outside.read_bytes() == before, "never written in 5b or step 6"
     assert not data.exists(), "its name in the data folder is removed"
-    assert report["linked_files"] == {"written": 0, "left": 1, "refused": 0}
+    assert report["linked_files"] == {"written": 0, "left": 1, "refused": 0, "keys": 0}
     assert crypto_erase._LINKED_LEFT_SENTENCE.format(n=1) in report["limit"]
     assert "zq-" not in json.dumps(report, default=str), "no file name (R806)"
     assert not any("annotations" in f for f in report["overwrite_failures"]), "not a failed overwrite: its own line"
@@ -158,17 +158,92 @@ def test_a_hugging_face_token_with_a_second_name_is_not_written_and_said(tmp_pat
 
 
 @posix_only
-def test_a_key_file_with_a_second_name_is_overwritten_and_said(tmp_path):
+def test_a_foreign_file_hard_linked_under_a_key_name_is_never_written(tmp_path, monkeypatch):
+    """R841 (2): a file under a key name with another name somewhere the app does not keep its keys cannot be shown to be this
+    installation's own key: never written, its name here removed, counted and said, and the erase is not complete."""
     data = _own(tmp_path)
     (data / "keys").mkdir()
+    outside = _outside(tmp_path)
+    before = outside.read_bytes()
+    os.link(outside, data / "keys" / "custody_ed25519.pem")
+    report = _erase(data)
+    assert outside.read_bytes() == before, "byte-identical through its other name"
+    assert not (data / "keys" / "custody_ed25519.pem").exists(), "its name here is removed"
+    assert report["linked_files"]["keys"] == 1 and report["linked_files"]["written"] == 0
+    assert crypto_erase._LINKED_KEYS_SENTENCE.format(n=1) in report["limit"]
+    assert crypto_erase._LIMIT_NOTE not in report["limit"] and "zq-" not in json.dumps(report)
+
+
+@posix_only
+def test_a_foreign_file_hard_linked_under_a_key_name_in_a_shared_folder_is_never_written(tmp_path, monkeypatch):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path / "home"))
+    home = tmp_path / "home"
+    (home / "keys").mkdir(parents=True)
+    (home / "holiday.jpg").write_bytes(b"jpeg")
+    outside = _outside(tmp_path)
+    before = outside.read_bytes()
+    os.link(outside, home / "keys" / "custody_ed25519.pem")
+    report = _erase(home)
+    assert outside.read_bytes() == before
+    assert report["linked_files"]["keys"] == 1
+
+
+def _pending_name(key: str) -> str:
+    return f"{key}.123.456.0123456789ab.new"
+
+
+@posix_only
+def test_an_own_key_with_a_second_name_in_its_pending_folder_is_overwritten_through_both_names(tmp_path):
+    """R841 (1): the app links a private copy into place, so its own key has a second name in keys/.pending for a moment; every
+    name of it is in the keys folder, so it is verified and overwritten in the key-material-first pass."""
+    data = _own(tmp_path)
+    (data / "keys" / ".pending").mkdir(parents=True)
     key = data / "keys" / "custody_ed25519.pem"
     key.write_bytes(b"K" * 64)
-    twin = tmp_path / "key-twin"
-    os.link(key, twin)
-    report = _erase(data)
-    assert twin.read_bytes() != b"K" * 64, "key material first: overwritten whatever its other name"
-    assert report["linked_files"]["written"] >= 1
-    assert crypto_erase._LINKED_WRITTEN_SENTENCE.format(n=report["linked_files"]["written"]) in report["limit"]
+    os.link(key, data / "keys" / ".pending" / _pending_name("custody_ed25519.pem"))
+    fd = os.open(key, os.O_RDONLY)  # the inode itself, whichever name the erase writes it through
+    try:
+        report = _erase(data)
+        assert os.pread(fd, 64, 0) != b"K" * 64, "overwritten"
+    finally:
+        os.close(fd)
+    assert not (data / "keys").exists()
+    assert report["linked_files"]["written"] == 1 and report["linked_files"]["keys"] == 0
+    assert crypto_erase._LINKED_KEYS_SENTENCE.format(n=1) not in report["limit"]
+
+
+@posix_only
+def test_the_verify_read_is_on_the_descriptor_that_is_then_written(tmp_path, monkeypatch):
+    """R841 (6): the verification and the write are on one held descriptor: a name swapped for another file between them changes
+    nothing about which file is written (the one verified), and the file swapped in is never written."""
+    data = _own(tmp_path)
+    (data / "keys" / ".pending").mkdir(parents=True)
+    key = data / "keys" / "custody_ed25519.pem"
+    key.write_bytes(b"K" * 64)
+    os.link(key, data / "keys" / ".pending" / _pending_name("custody_ed25519.pem"))
+    held = os.open(key, os.O_RDONLY)
+    swap = tmp_path / "zq-swap"
+    swap.write_bytes(b"S" * 64)
+    swapped: list[int] = []
+    real = crypto_erase._KeysHold.verify
+
+    def verify(self, st):
+        ok = real(self, st)
+        if not swapped and (st.st_dev, st.st_ino) == (os.fstat(held).st_dev, os.fstat(held).st_ino):
+            os.replace(swap, key)  # the name now leads to another file, after the descriptor was opened and verified
+            swapped.append(os.open(key, os.O_RDONLY))
+        return ok
+
+    monkeypatch.setattr(crypto_erase._KeysHold, "verify", verify)
+    try:
+        _erase(data)
+        assert swapped, "the verification ran"
+        assert os.pread(held, 64, 0) != b"K" * 64, "the file verified is the file written"
+        assert os.pread(swapped[0], 64, 0) == b"S" * 64, "the file swapped in is never written"
+    finally:
+        os.close(held)
+        for f in swapped:
+            os.close(f)
 
 
 @posix_only
@@ -360,19 +435,37 @@ def test_the_watcher_never_writes_an_other_file_with_a_second_name(tmp_path):
 
 
 @posix_only
-def test_the_watcher_overwrites_the_app_s_store_and_keys_whatever_their_other_name(tmp_path):
+def test_the_watcher_overwrites_the_app_s_store_whatever_its_other_name_and_a_verified_key(tmp_path):
     data = _own(tmp_path)
-    (data / "keys").mkdir()
+    (data / "keys" / ".pending").mkdir(parents=True)
     key = data / "keys" / "custody_ed25519.pem"
     key.write_bytes(b"K" * 64)
+    os.link(key, data / "keys" / ".pending" / _pending_name("custody_ed25519.pem"))
     store = data / "open_omniscience.db"
     store.write_bytes(b"S" * 8192)
-    k2, s2 = tmp_path / "key-twin", tmp_path / "store-twin"
-    os.link(key, k2)
+    s2 = tmp_path / "store-twin"
     os.link(store, s2)
-    log = _run_watcher(tmp_path, data)
-    assert k2.read_bytes() != b"K" * 64 and s2.read_bytes()[:4096] != b"S" * 4096
+    fd = os.open(key, os.O_RDONLY)
+    try:
+        log = _run_watcher(tmp_path, data)
+        assert os.pread(fd, 64, 0) != b"K" * 64, "the app's own key (every name in keys): overwritten"
+    finally:
+        os.close(fd)
+    assert s2.read_bytes()[:4096] != b"S" * 4096
     assert "overwritten all the same (count: 2)" in log
+
+
+@posix_only
+def test_the_watcher_never_writes_a_foreign_file_under_a_key_name(tmp_path):
+    data = _own(tmp_path)
+    (data / "keys").mkdir()
+    outside = _outside(tmp_path)
+    before = outside.read_bytes()
+    os.link(outside, data / "keys" / "custody_ed25519.pem")
+    log = _run_watcher(tmp_path, data)
+    assert outside.read_bytes() == before, "byte-identical through its other name"
+    assert "could not be shown to be this installation's own keys" in log and "(count: 1): THE ERASE IS NOT COMPLETE" in log
+    assert "zq-" not in log
 
 
 @posix_only
@@ -387,14 +480,43 @@ def test_the_watcher_says_a_segment_with_a_second_name_was_left(tmp_path):
     assert "copies that may hold articles and the salt of their key were left" in log and "(count: 1)" in log
 
 
+@posix_only
+def test_a_link_in_the_keys_folder_is_never_followed_and_is_could_not_check(tmp_path):
+    """Row 380 (R810 (1)): a link in the keys folder is never written through, and the result is never clean (the folder then
+    holds something the app did not write: R806's exact-name pass, which leaves it; one that appears during the walk by the
+    folder's handle is said as could not check)."""
+    data = _own(tmp_path)
+    (data / "keys").mkdir()
+    (data / "keys" / "custody_ed25519.pem").write_bytes(b"K" * 64)
+    outside = _outside(tmp_path)
+    before = outside.read_bytes()
+    os.symlink(outside, data / "keys" / "evidence_ed25519.pem")
+    report = _erase(data)
+    assert outside.read_bytes() == before
+    assert report["folder_kept_foreign"] is True and crypto_erase._LIMIT_NOTE not in report["limit"], "never a clean result"
+    assert "zq-" not in json.dumps(report)
+
+
+@posix_only
+def test_the_watcher_never_follows_a_link_at_a_key_name(tmp_path):
+    data = _own(tmp_path)
+    (data / "keys").mkdir()
+    outside = _outside(tmp_path)
+    before = outside.read_bytes()
+    os.symlink(outside, data / "keys" / "custody_ed25519.pem")
+    _run_watcher(tmp_path, data)
+    assert outside.read_bytes() == before
+
+
 # -- the strings ----------------------------------------------------------------------------------------------------------------
 
 
-def test_the_three_sentences_ship_in_every_language():
+def test_the_four_sentences_ship_in_every_language():
     root = Path(__file__).resolve().parents[1] / "src" / "static" / "locales"
     js = (Path(__file__).resolve().parents[1] / "src" / "static" / "app-backup.js").read_text(encoding="utf-8")
-    keys = [s.replace("app's", "app’s") for s in (crypto_erase._LINKED_REFUSED_SENTENCE, crypto_erase._LINKED_LEFT_SENTENCE,
-                                                  crypto_erase._LINKED_WRITTEN_SENTENCE)]
+    keys = [s.replace("app's", "app’s").replace("installation's", "installation’s") for s in (
+        crypto_erase._LINKED_REFUSED_SENTENCE, crypto_erase._LINKED_LEFT_SENTENCE, crypto_erase._LINKED_WRITTEN_SENTENCE,
+        crypto_erase._LINKED_KEYS_SENTENCE)]
     for k in keys:
         assert k in js, "the UI line is the report's sentence"
     for f in sorted(root.glob("*.json")):
