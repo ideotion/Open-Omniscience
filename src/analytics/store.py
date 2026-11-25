@@ -34,6 +34,7 @@ from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
 from src.analytics.managed import normalize_lang
 from src.analytics.quarantine_scope import not_quarantined
+from src.database.country_form import pins_form_for_each_call
 from src.database.derived_views import KeywordMentionRead, require_mentions_view
 from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
 from src.database.stand_in import not_a_stand_in_article_id
@@ -884,6 +885,7 @@ def _index_article_www(
     }
 
 
+@pins_form_for_each_call  # row 433: one read of the store's country form per article, not one per bound country
 def index_article(
     session: Session,
     article: Article,
