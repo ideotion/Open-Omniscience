@@ -1267,6 +1267,16 @@ async def health_check():
         erased = False
     if erased:
         out.update(status="data-erased", data_erased=True, detail=ERASED_WORDS)
+    try:
+        from src.database.segment_open import current_status
+
+        segments = current_status()
+    except Exception:  # noqa: BLE001 - health never fails on this question
+        segments = None
+    if segments and (segments.get("total") or segments.get("registry") == "unreadable"):
+        # R826 stage 2: "N of M segments" open, and each unavailable one by number and reason code; a registry that could
+        # not be read says so (total null), never 0. Absent for a corpus with no segment file (every corpus today).
+        out["segments"] = segments
     return out
 
 

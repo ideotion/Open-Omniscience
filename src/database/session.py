@@ -731,6 +731,22 @@ def init_db() -> None:
             _stamp.get("diffs") or _stamp.get("floor"),
         )
 
+    # R826 stage 2: the split corpus's segment files, opened in the background. HERE, at the end of every init_db, because
+    # every path that opens the store calls it: the boot, the unlock, and each disposal-then-reopen (restore, repair, merge,
+    # rebuild). A start that opened them anywhere else would leave an unlocked or restored corpus with none open, which
+    # reads as a corpus without segments. Nothing starts when no segment is registered; it never fails the init.
+    _init_step("_open_segments")
+    _open_segments()
+
+
+def _open_segments() -> None:
+    try:
+        from src.database.segment_open import start_background_open
+
+        start_background_open()
+    except Exception as exc:  # noqa: BLE001 - a segment that cannot open is "unavailable", never a failed start
+        logging.getLogger(__name__).debug("corpus segments not opened (%s)", type(exc).__name__)
+
 
 def get_session() -> SASession:
     """Return a new session. Caller is responsible for closing it.
@@ -1096,6 +1112,15 @@ def _forget_keyed_reads() -> None:
         logging.getLogger(__name__).debug("keyed-read evidence not cleared (%s)", type(exc).__name__)
 
 
+def _close_segments() -> None:
+    try:
+        from src.database.segment_open import close_all
+
+        close_all()
+    except Exception as exc:  # noqa: BLE001 - a disposal never fails on the segments; their read-only connections write nothing on close
+        logging.getLogger(__name__).debug("corpus segments not closed (%s)", type(exc).__name__)
+
+
 def dispose_engine() -> dict[str, Any]:
     """Dispose the engine's connection pool (call on app shutdown), and say what the pool held when it did.
 
@@ -1113,6 +1138,7 @@ def dispose_engine() -> dict[str, Any]:
     # out now goes back to the replaced pool and is freed with it, a close no patched close sees (src/database/drive_pin.py). It never
     # raises.
     _drive_pin.pin_if_gone()
+    _close_segments()  # R826 stage 2: a lock, an erase or a restore never leaves a segment open under the old key
     global _LEFT_BEHIND
     seen = pool_checkouts()
     engine.dispose()

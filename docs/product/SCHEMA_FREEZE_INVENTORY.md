@@ -1883,7 +1883,7 @@ not listed). "ORM" marks a name that is also a model table above.
 | `osm_names` | virtual |  | `src/osm/places.py` |
 | `osm_rtree` | virtual |  | `src/osm/view.py` |
 | `segment_meta` | table |  | `src/database/segments.py` |
-| `t` | table |  | `src/monitoring/merge_diag.py` |
+| `t` | table |  | `src/database/segment_open.py`, `src/monitoring/merge_diag.py` |
 | `wiki_lane_fts` | virtual |  | `src/wiki/lane_search.py` |
 
 ## 5. Format identifiers
