@@ -177,3 +177,17 @@ def test_the_late_review_sites_say_what_they_left_out():
     mk = (ROOT / "src/static/app-markets.js").read_text(encoding="utf-8")
     assert 'anNotCountedYetHtml(d) : "")' in mk
     assert 'F("{n} articles", {n: num(all)})' in shell, "the Library breakdown follows its total"
+
+
+def test_the_import_report_names_the_scope_of_each_screening_figure():
+    """Plan 2026-11-25 (c): this run's queue reads as "from this import", the corpus-wide count as "in your corpus"."""
+    from src.backup.import_reports import render_import_report_markdown
+
+    md = render_import_report_markdown({"screening": {"queued_from_this_import": 5, "batches": [],
+                                                      "not_screened_in_your_corpus": 3}})
+    assert "5 articles from this import were queued" in md
+    assert "3 articles in your corpus were not screened yet" in md and "not just this import" in md
+    old = render_import_report_markdown({"screening": {"queued": 2, "not_screened": 2}})
+    assert "2 articles from this import" in old, "an older report's bare keys still read"
+    unread = render_import_report_markdown({"screening": {"queued_from_this_import": 1, "batches": []}})
+    assert "in your corpus" not in unread, "an unread corpus count is absent, never 0"

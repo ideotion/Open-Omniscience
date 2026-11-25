@@ -11623,7 +11623,11 @@ def run_restore(
                                 _q_sess, article_ids=unqueued, write=True
                             )
                             report["quarantine_summary"]["batches"] = q_batches
-                        report["screening"] = {"queued": len(queued), "batches": q_batches, **not_counted_tally(_q_sess)}
+                        # Each figure names its scope (Plan, 2026-11-25): this run's queue beside the corpus-wide count.
+                        _corpus_tally = not_counted_tally(_q_sess)
+                        report["screening"] = {"queued_from_this_import": len(queued), "batches": q_batches}
+                        if "not_screened" in _corpus_tally:  # unread is absent, never 0
+                            report["screening"]["not_screened_in_your_corpus"] = _corpus_tally["not_screened"]
                         kick_if_allowed()
                     elif new_article_ids:
                         report["quarantine_summary"] = default_quarantine_candidates_batch(
