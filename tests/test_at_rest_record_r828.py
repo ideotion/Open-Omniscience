@@ -124,7 +124,7 @@ def test_a_record_that_cannot_be_overwritten_is_left_never_destroyed(tmp_path, m
 
     monkeypatch.setattr(os, "open", refuse)
     assert crypto_erase._take_record(folder)[1] == "left"
-    assert rec.exists()
+    assert not rec.exists(), "still unlinked when its name holds the same file (Opus read, row 400), and said as left"
 
 
 def test_a_record_that_cannot_be_unlinked_is_left_never_destroyed(tmp_path, monkeypatch):
@@ -151,7 +151,7 @@ def test_a_link_at_the_record_s_name_is_never_written(tmp_path):
     target = tmp_path / "elsewhere.json"
     target.write_bytes(b"{}")
     (folder / at_rest_state.RECORD_NAME).symlink_to(target)
-    assert crypto_erase._take_record(folder) == (None, "absent")
+    assert crypto_erase._take_record(folder) == (None, "left"), "something is at the name: never said as absent"
     assert target.read_bytes() == b"{}"
 
 
@@ -475,3 +475,111 @@ def test_the_plaintext_path_takes_the_record_before_its_logs(tmp_path, monkeypat
     assert report["at_rest_record"] == "destroyed"
     assert order[0] == ("head", True), "the first page first, the record still there"
     assert ("whole", False) in order and ("whole", True) not in order, "the record is gone before the log is rewritten"
+
+
+# ---------------------------------------------------------------- the reads of PR #2387 (row 400)
+
+
+def test_a_record_too_large_or_not_a_regular_file_is_left_never_absent(tmp_path):
+    folder = tmp_path / "f"
+    folder.mkdir()
+    rec = folder / at_rest_state.RECORD_NAME
+    rec.write_bytes(b" " * (at_rest_state.RECORD_MAX_BYTES + 1))
+    assert crypto_erase._take_record(folder) == (None, "left")
+    rec.unlink()
+    os.mkfifo(rec)
+    assert crypto_erase._take_record(folder) == (None, "left")
+
+
+def test_the_record_s_leftover_write_copies_are_overwritten_and_removed(tmp_path):
+    folder = tmp_path / "f"
+    folder.mkdir()
+    tmp = folder / (at_rest_state.RECORD_NAME + ".tmp.123.456")
+    before = b'{"version": 1, "binding_key": "' + os.urandom(32).hex().encode() + b'"}'
+    tmp.write_bytes(before)
+    kept = _Kept(tmp)
+    mine = folder / "notes.tmp.1"
+    mine.write_bytes(b"not the app's")
+    crypto_erase._take_record(folder)
+    assert not tmp.exists() and kept.read() != before
+    assert mine.read_bytes() == b"not the app's"
+
+
+@posix_only
+def test_a_plaintext_path_that_stops_before_its_record_step_leaves_the_record_to_the_record_pass(tmp_path, monkeypatch):
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    main = data / crypto_erase._MAIN_DB
+    main.write_bytes(os.urandom(8192))
+    rec = main.parent / at_rest_state.RECORD_NAME
+    before = b'{"version": 1, "stores": {}}'
+    rec.write_bytes(before)
+    kept = _Kept(rec)
+    real_resolve = crypto_erase._resolve
+    monkeypatch.setattr(crypto_erase, "_resolve", lambda d: {**real_resolve(d), "main_db": main})
+    monkeypatch.setattr(crypto_erase, "_open_and_unlink_plain_at",
+                        lambda db, pin, generation, missed, taken: crypto_erase._untouched("unidentified"))
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert report["at_rest_record"] == "destroyed", "overwritten in the record pass, never left to step 6's unlink alone"
+    assert kept.read() != before
+
+
+@sqlcipher_only
+def test_the_shm_head_is_zeroed_after_the_record(tmp_path, monkeypatch):
+    data = tmp_path / "OOS data"
+    data.mkdir()
+    main = data / crypto_erase._MAIN_DB
+    _encrypted_db(main)
+    connect(main, key=_PW).close()
+    rec = _record(main)
+    shm = main.with_name(main.name + "-shm")
+    shm.write_bytes(os.urandom(32 * 1024))
+    real_resolve = crypto_erase._resolve
+    monkeypatch.setattr(crypto_erase, "_resolve", lambda d: {**real_resolve(d), "main_db": main})
+    seen: list[bool] = []
+    real_overwrite = crypto_erase._overwrite
+
+    def overwrite(p, *a, **k):
+        if Path(p) == shm:
+            seen.append(rec.exists())
+        return real_overwrite(p, *a, **k)
+
+    monkeypatch.setattr(crypto_erase, "_overwrite", overwrite)
+    crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert seen and True not in seen, "the coordinator's order: page 1, the record, then the -shm"
+
+
+def test_a_crafted_deeply_nested_record_never_raises(tmp_path):
+    main = tmp_path / "open_omniscience.db"
+    main.write_bytes(os.urandom(4096))
+    rec = tmp_path / at_rest_state.RECORD_NAME
+    rec.write_bytes(b"[" * 60000)
+    assert at_rest_state._read_record_at(rec)["stores"] == {}
+    assert at_rest_state._holds_legacy(rec.read_bytes()) is False
+    assert at_rest_state.record_names_identity(rec.read_bytes(), _ident(main), main.read_bytes()[:16]) is False
+    at_rest_state.forget("corpus", main)
+
+
+def test_the_record_names_no_file_swapped_in_after_the_keyed_read(tmp_path, monkeypatch):
+    main = tmp_path / "open_omniscience.db"
+    main.write_bytes(os.urandom(8192))
+    expect = at_rest_state._mark(main)
+    main.unlink()
+    main.write_bytes(os.urandom(8192))  # another file at the name since the keyed read
+    monkeypatch.setattr(at_rest_state, "stores", lambda m=None: [("corpus", main)])
+    at_rest_state.record_encrypted("corpus", main, expect=expect)
+    entry = at_rest_state.read_record(main)["stores"]["corpus"]
+    assert "mac" not in entry and "ino" not in entry, "no identity: never evidence"
+
+
+@sqlcipher_only
+def test_a_plaintext_file_at_the_probe_is_never_encrypted(tmp_path):
+    import sqlite3
+
+    p = tmp_path / "custody_log.db"
+    con = sqlite3.connect(p)
+    con.execute("CREATE TABLE t(x)")
+    con.commit()
+    con.close()
+    out = at_rest_state._probe(p, _PW)
+    assert out["state"] != "encrypted"

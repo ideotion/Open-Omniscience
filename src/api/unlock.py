@@ -209,7 +209,8 @@ def doctor() -> dict:
                 try:
                     ver = c.execute("PRAGMA cipher_version").fetchone()
                     c.execute("SELECT count(*) FROM sqlite_master").fetchone()
-                    out = {"state": "encrypted", "evidence": "key", "cipher": ver[0] if ver else None}
+                    if ver and ver[0]:  # a plaintext file swapped in since the header read opens without a cipher: never "encrypted"
+                        out = {"state": "encrypted", "evidence": "key", "cipher": ver[0]}
                 finally:
                     c.close()
             except Exception:  # noqa: BLE001 - attestation must not raise

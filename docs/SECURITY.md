@@ -988,7 +988,10 @@ imply a protection we cannot deliver.
   update rewrites a record that still holds one. Every write of the record replaces its file, so its EARLIER versions sit in
   freed disk blocks that no rewrite or erase reaches: on an install that ran one of those builds, such a block may still hold
   a salt. Full-disk encryption is the remedy, as for every freed block. The erase never writes a record that has a second
-  name (a hard link): that write would land in the other file, and the result says "key material may remain". Outside the
+  name (a hard link): that write would land in the other file, and the result says "key material may remain". LIMIT (security
+  reads, row 400): the MAC's key sits in the record beside it, so the record proves nothing against someone who can WRITE the
+  data folder; such a person can also replace the files themselves. A locked app holds no secret to sign it with. Its
+  leftover write copies (`.tmp.*`) are destroyed with it. Outside the
   data folder, a record written by this process during an erase is not held off by the erase's latch. A header that is not SQLite's, alone,
   is "looks encrypted; not yet checked with your key"; SQLite's own header is "not encrypted", whatever the record says.
   The lock word ("unlocked-encrypted", "locked") stays a control word, never a claim: reports say

@@ -84,9 +84,11 @@ def read_record(main: Path | None = None) -> dict[str, Any]:
     return _read_record_at(_record_path(rows[0][1]))
 
 
-def record_encrypted(name: str, main: Path | None = None) -> None:
+def record_encrypted(name: str, main: Path | None = None, expect: tuple[int, int, bytes] | None = None) -> None:
     """Add ``name`` to the record, atomically and under the record's lock (``file_lock``, then ``atomic_replace``). Called only after the store was encrypted AND read
-    back with the key. A failure to write is logged by class and never undoes the encryption: the status reads the files."""
+    back with the key. ``expect``: the store's :func:`_mark` taken BEFORE that keyed read (security reads, row 400); the entry is
+    bound to the file only when the file is still that one, else it carries no identity (never evidence). A failure to write is
+    logged by class and never undoes the encryption: the status reads the files."""
     rows = stores(main)
     if not rows:
         return
@@ -100,6 +102,8 @@ def record_encrypted(name: str, main: Path | None = None) -> None:
             doc["stores"][name] = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True}
             store = dict(rows).get(name)
             mark = _mark(store) if store is not None else None
+            if mark is not None and expect is not None and mark != expect:
+                mark = None  # another file at the name since the keyed read: no identity, so never evidence
             if mark is not None:  # R820 (4) / R828 (1): the identity of the file read back with the key, bound by a MAC (R789)
                 doc["stores"][name].update(_bound_entry(doc, mark))
             atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
@@ -209,7 +213,7 @@ def _holds_legacy(raw: bytes | None) -> bool:
     """Whether the record's bytes still carry a field R828 forbids (an entry written before it)."""
     try:
         doc = json.loads(raw.decode("utf-8")) if raw else None
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):
         return False
     stores = doc.get("stores") if isinstance(doc, dict) else None
     return isinstance(stores, dict) and any(isinstance(v, dict) and any(f in v for f in _NEVER_KEPT) for v in stores.values())
@@ -317,7 +321,7 @@ def _read_record_at(path: Path) -> dict[str, Any]:
     raw = _record_bytes(path)
     try:
         doc = json.loads(raw.decode("utf-8")) if raw else None
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):  # a crafted record never raises out of here (security reads, row 400)
         return {"version": RECORD_VERSION, "stores": {}}
     if not isinstance(doc, dict) or not isinstance(doc.get("stores"), dict):
         return {"version": RECORD_VERSION, "stores": {}}
@@ -376,7 +380,7 @@ def record_names_identity(raw: bytes | None, ident: tuple[int, int], head: bytes
         return False
     try:
         doc = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):
         return False
     stores = doc.get("stores") if isinstance(doc, dict) else None
     entry = stores.get("corpus") if isinstance(stores, dict) else None
@@ -566,7 +570,10 @@ def _probe(path: Path, key: str) -> dict[str, Any]:
         try:
             conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
             ver = conn.execute("PRAGMA cipher_version").fetchone()
-            out = {"state": "encrypted", "key_checked": True, "cipher": ver[0] if ver else None}
+            # Security reads (row 400): a file swapped to plaintext between the header read and this open is opened by SQLite
+            # itself, which has no cipher: never "encrypted" then, and never cached.
+            out = ({"state": "encrypted", "key_checked": True, "cipher": ver[0]} if ver and ver[0]
+                   else {"state": "unreadable", "reason": "io"})
         except Exception as exc:  # noqa: BLE001 - as above
             out = {"state": "busy"} if _is_busy(exc) else {"state": "unreadable", "reason": _reason(exc) if isinstance(exc, OSError) else "io"}
         finally:
@@ -583,7 +590,8 @@ def _evidence(name: str, path: Path, record: dict[str, Any]) -> str | None:
     """R821 (1)/(2): what makes a store with a header that is not SQLite's "encrypted" rather than "looks encrypted": ``"key"`` when
     this process read the very file under a key (the corpus: :func:`src.database.connect.opened_with_key`), ``"record"`` when this
     installation's record names its (device, inode) as read back with the key (R820), else None. The header alone never is. A
-    ``stat`` and a set lookup: no store is opened here (R789)."""
+    ``stat``, a set lookup and, for the record, one 16-byte read through :func:`_mark`'s shared, held reader (never an open and
+    close of the store's file: R789)."""
     ident = _identity(path)
     if ident is None:
         return None

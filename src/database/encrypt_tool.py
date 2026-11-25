@@ -406,6 +406,8 @@ def encrypt_store(
         )
     if report.get("skipped") == "file does not exist":
         return report
+    # Security reads (row 400): the file's identity before the keyed read that proves it, compared again when the record is written.
+    expect = at_rest_state._mark(Path(path))
     if report.get("skipped") == "already encrypted":
         from src.database.connect import StoreHeldError
 
@@ -415,7 +417,7 @@ def encrypt_store(
             raise EncryptToolError(ALREADY_ENCRYPTED_IN_USE) from None
         except Exception:  # noqa: BLE001 - any other failure to read it with this key means it is not this key's store
             raise EncryptToolError(NOT_THIS_KEY) from None
-    at_rest_state.record_encrypted(name, main)
+    at_rest_state.record_encrypted(name, main, expect=expect)
     return report
 
 
