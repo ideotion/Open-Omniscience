@@ -248,7 +248,7 @@ finding things, or it finds so much that every answer is the same answer).
    Enforced in test_ui_invariants (#2b) + tests/test_ring_dial.py.
 3. **Top bar elements have constant footprints**: `.act-host` keeps its 160 px
    slot even when empty; `#llm` and `#health` have fixed min-widths; nothing on
-   the right may shift as fetch hosts/labels change.
+   the right may shift as fetch hosts/labels change. The import pill (`#imp-pill`, row 440) is the cluster's FIRST item at a fixed width.
 4. **AMENDED by §2 (ruled 2026-06-14, SHIPPED #143): vitals moved OUT of the
    chrome into the task-manager window's System tab** (`#tm-system`); the top bar
    keeps a PERSISTENT task-manager access (`#tm-open`, since `#activity` is hidden

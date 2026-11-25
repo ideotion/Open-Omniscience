@@ -2302,6 +2302,9 @@ def test_the_watermark_after_an_absent_id_lags_the_last_finished_article_and_nev
         pass
 
     db = restore_seams
+    # Row 423: the id watermark is the resume cursor of the ASCENDING fallback order, taken when an engine identity cannot be computed
+    # (newest first, the stamps are the cursor and an absent id goes last). Forced here, so this test still pins that cursor.
+    monkeypatch.setattr(merge_mod, "_backlog_www_engine", lambda: "<unknown>")
     _real_articles_above_the_stand_in(db, [1501, 1502, 1503])
     batch = _merged_batch(db, [1501, 1502, 1503])
     db.query(Article).filter(Article.id == 1503).delete(synchronize_session=False)  # the absent id is the LAST of the list
@@ -2322,7 +2325,7 @@ def test_the_watermark_after_an_absent_id_lags_the_last_finished_article_and_nev
     assert _batch_status(db, batch) == "merged"
     monkeypatch.setattr(store, "index_article", real_index_article)
     out = reindex_imported_articles(batch, workers=0, commit_batch=1)  # the resume
-    assert out["reindexed"] == 1, out  # 1501 is stamped by the first run, 1503 names no article
+    assert out["reindexed"] == 1, out  # 1501 is behind the watermark, 1503 names no article
     assert db.query(KeywordMention).filter_by(article_id=1502).count() > 0
     assert _batch_status(db, batch) == "reindexed"
 
