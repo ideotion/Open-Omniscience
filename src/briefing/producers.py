@@ -23,6 +23,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func
 
+from src.analytics.quarantine_scope import not_counted
 from src.analytics.queries import resolve_keyword
 from src.briefing.card import Card, frame, frames_text, numeric_frames
 from src.database.derived_views import KeywordMentionRead
@@ -71,7 +72,9 @@ _YOUNG_CORPUS_ARTICLES = 200
 
 
 def _corpus_articles(session) -> int:
-    return int(session.query(func.count(Article.id)).scalar() or 0)
+    """The articles the cards count (R831): quarantined ones and those still queued for screening are left out, so a young
+    corpus is judged by its articles, not by pages the screening has not reached."""
+    return int(session.query(func.count(Article.id)).filter(not_counted(Article.id)).scalar() or 0)
 
 
 def _is_young(session, *, article_count: int | None = None) -> bool:
@@ -968,7 +971,7 @@ def diet_self_audit(session) -> list[Card]:
     rows = (
         session.query(Source.name, func.count(Article.id))
         .join(Article, Article.source_id == Source.id)
-        .filter(Article.created_at >= cutoff)
+        .filter(Article.created_at >= cutoff, not_counted(Article.id))  # R831
         .group_by(Source.id)
         .all()
     )
@@ -1348,7 +1351,7 @@ def capacity_implausible(session) -> list[Card]:
     raw_rows = (
         session.query(Source.id, Source.name, Source.domain, Source.source_type, func.count(Article.id))
         .join(Article, Article.source_id == Source.id)
-        .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
+        .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff, not_counted(Article.id))  # R831
         .group_by(Source.id)
         .all()
     )
@@ -2014,7 +2017,7 @@ def coverage_advisor(session) -> list[Card]:
     cells = (
         session.query(Source.country, Source.language, func.count(Article.id))
         .join(Article, Article.source_id == Source.id)
-        .filter(Article.created_at >= cutoff)
+        .filter(Article.created_at >= cutoff, not_counted(Article.id))  # R831
         .group_by(Source.country, Source.language)
         .all()
     )

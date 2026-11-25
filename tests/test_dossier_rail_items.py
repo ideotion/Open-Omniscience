@@ -95,3 +95,29 @@ def test_only_a_real_article_id_passes_the_export_filter():
     rails = [{"key": "news", "items": [{"id": 1}, {"id": True}, {"id": 2.0}, {"id": "2"}, {"id": 2}, "x"]}]
     out = DE._items_in_bundle(rails, {1, 2})[0]
     assert [a["id"] for a in out["items"]] == [1, 2] and out["items_not_in_bundle"] == 4
+
+
+def test_a_rail_whose_articles_are_all_held_keeps_listing_them_and_counts_none(db, seeded, lanes):  # noqa: F811
+    """Row 415 read (R831): lists keep every article. A source whose joined articles are all queued for screening
+    or quarantined still lists them on its rail; only the rail's count leaves them out."""
+    from src.database.models import Article, ScreeningPending
+
+    db.add(ScreeningPending(article_id=seeded["a2"]))
+    db.get(Article, seeded["a3"]).quarantined = True
+    db.commit()
+    d = DO.qid_dossier(db, ZED, "en")
+    wiki, law = _rail(d, "wikipedia"), _rail(d, "law")
+    assert [a["id"] for a in wiki["items"]] == [seeded["a2"]] and wiki["articles"] == 0
+    assert [a["id"] for a in law["items"]] == [seeded["a3"]] and law["articles"] == 0
+    assert d["not_counted_yet"] == 1
+
+
+def test_a_queued_article_already_quarantined_is_not_named_as_waiting_for_screening(db, seeded, lanes):  # noqa: F811
+    """Row 415 read: a restore can bring back a queued article that is quarantined; it stays out after screening, so
+    "not counted yet … until they are screened" would name it wrongly (the tally counts it as quarantined only)."""
+    from src.database.models import Article, ScreeningPending
+
+    db.add(ScreeningPending(article_id=seeded["a2"]))
+    db.get(Article, seeded["a2"]).quarantined = True
+    db.commit()
+    assert DO.qid_dossier(db, ZED, "en")["not_counted_yet"] == 0

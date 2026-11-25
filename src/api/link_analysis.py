@@ -49,13 +49,15 @@ def stats(db: Session = Depends(get_db)) -> dict:
     S2.4 guard: three COUNT/COUNT(DISTINCT) over the whole ArticleLink table — at
     scale each is a corpus-scaled scan, so it runs under the admission cap +
     statement deadline (never a frozen worker; a runaway aborts to 503)."""
+    from src.analytics.quarantine_scope import not_counted
     from src.api.heavy import guarded_read
 
+    counted = not_counted(ArticleLink.article_id)  # R831: two index-only subqueries per scan
     return guarded_read(db, "links-stats", lambda: {
-        "external_links": db.query(func.count(ArticleLink.id)).scalar() or 0,
-        "distinct_links": db.query(func.count(func.distinct(ArticleLink.normalized_url))).scalar()
+        "external_links": db.query(func.count(ArticleLink.id)).filter(counted).scalar() or 0,
+        "distinct_links": db.query(func.count(func.distinct(ArticleLink.normalized_url))).filter(counted).scalar()
         or 0,
-        "articles_with_links": db.query(func.count(func.distinct(ArticleLink.article_id))).scalar()
+        "articles_with_links": db.query(func.count(func.distinct(ArticleLink.article_id))).filter(counted).scalar()
         or 0,
     })
 
@@ -77,6 +79,7 @@ def top_cited(
     # chunks (it materialised all of it into Python until 2026-09-26, an OOM risk at
     # scale); the by=url path is a corpus-scaled GROUP BY. guarded_read caps concurrency,
     # and its statement deadline interrupts a runaway scan, on time or on memory.
+    from src.analytics.quarantine_scope import not_counted
     from src.api.heavy import guarded_read
 
     key = f"top-cited|{by}|{window_days}|{min_citations}|{limit}"
@@ -89,7 +92,7 @@ def top_cited(
                 func.count(func.distinct(ArticleLink.article_id)).label("citations"),
                 func.max(ArticleLink.url).label("sample_url"),
                 func.max(ArticleLink.link_text).label("sample_text"),
-            )
+            ).filter(not_counted(ArticleLink.article_id))  # R831
             if cutoff is not None:
                 q = q.join(Article, ArticleLink.article_id == Article.id).filter(
                     func.coalesce(Article.published_at, Article.created_at) >= cutoff
@@ -119,7 +122,9 @@ def top_cited(
         # article id that is already there.
         from src.database.query import keyset_scan
 
-        pairs = db.query(ArticleLink.id, ArticleLink.normalized_url, ArticleLink.article_id)
+        pairs = db.query(ArticleLink.id, ArticleLink.normalized_url, ArticleLink.article_id).filter(
+            not_counted(ArticleLink.article_id)  # R831
+        )
         if cutoff is not None:
             pairs = pairs.join(Article, ArticleLink.article_id == Article.id).filter(
                 func.coalesce(Article.published_at, Article.created_at) >= cutoff
