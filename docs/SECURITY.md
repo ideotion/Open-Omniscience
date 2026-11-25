@@ -1074,9 +1074,12 @@ imply a protection we cannot deliver.
   file system cannot say, it writes the logical size; and before every chunk it checks the drive's free space and stops rather
   than leave less than 64 MiB free (every chunk, since a copy-on-write file system takes new blocks even for a rewrite in
   place). A rewrite that stops there, or on an error, is logged and reported as "partially overwritten" (bytes done of bytes
-  known, never "destroyed"), the result is "may be incomplete", and the file is still deleted. Salt pages are written first and
-  are never held to that reserve; nor are key files or the logs that hold copies of a salt page (a store's, a copy's, a
-  segment's, or one rewritten again in the late pass), which still skip holes. There is no time limit on a rewrite apart from
+  known, never "destroyed"), the result is "may be incomplete", and the file is still deleted. The first page of every file
+  (a salt page wherever the file is an encrypted database: a segment, a copy, the anchors database) is written before any reserve
+  check, and the file is synced before its data regions are read; key files (in a shared folder too), sign-in token files and
+  the logs that hold copies of a salt page (a store's, a copy's, a segment's, or one rewritten again in the late pass) are never
+  held to the reserve, though they still skip holes; a segment body rewritten again in the late pass stays held to it. Where the
+  drive's free space cannot be read through the file (Windows), the folder's is read. There is no time limit on a rewrite apart from
   the existing bound on the late rewrite of held files (R792). A file either erase could not overwrite at all (a read-only key
   file, a salt page whose write failed) makes the result "may be incomplete" too (`not_overwritten` in the panic report, a
   visible caveat ×12), counted once: a partial rewrite and a file it could not look at are said only under their own reason.

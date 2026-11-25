@@ -332,3 +332,81 @@ def test_the_first_page_fallback_never_waits_on_a_fifo(tmp_path, monkeypatch):
         pytest.fail("the fallback blocked on a FIFO at the store's name")
     rec = out["rec"]
     assert rec["header"] is None and rec["state"] != "first_page", rec
+
+
+# ---- security read B: the first page before any reserve check; held bodies stay capped; Windows free space
+def test_on_a_full_disk_a_capped_rewrite_still_writes_the_first_page(tmp_path, monkeypatch):
+    blob = tmp_path / "anchors.db"
+    body = b"E" * (2 * MiB)
+    blob.write_bytes(body)
+    monkeypatch.setattr(crypto_erase, "_fd_free_bytes", lambda fd: 0)
+    monkeypatch.setattr(crypto_erase.shutil, "disk_usage", lambda p: (_ for _ in ()).throw(OSError(5, "no")))
+    fd = _held(blob)
+    try:
+        assert crypto_erase._overwrite(blob, keyed=False) is False  # stopped: partially overwritten, never True
+        after = os.pread(fd, 2 * MiB, 0)
+    finally:
+        os.close(fd)
+    assert after[:4096] != body[:4096] and after[4096:] == body[4096:]
+
+
+def test_a_held_segment_body_stays_held_to_the_reserve_in_the_closing_pass(tmp_path, monkeypatch):
+    blob = tmp_path / "seg-1.db"
+    body = b"B" * (2 * MiB)
+    blob.write_bytes(body)
+    monkeypatch.setattr(crypto_erase, "_fd_free_bytes", lambda fd: 0)
+    monkeypatch.setattr(crypto_erase.shutil, "disk_usage", lambda p: (_ for _ in ()).throw(OSError(5, "no")))
+    fd = os.open(blob, os.O_RDWR)
+    generation = crypto_erase.new_hold_generation()
+    with crypto_erase._HELD_LOCK:
+        crypto_erase._HELD[generation] = [(fd, "whole", 4 * MiB)]
+        crypto_erase._WHOLE_HEADS[generation] = {fd}
+    probe = os.open(blob, os.O_RDONLY)
+    try:
+        crypto_erase.rescrub_held(close=True, generation=generation, settle=False)
+        after = os.pread(probe, 2 * MiB, 0)
+    finally:
+        os.close(probe)
+    assert after[:4096] != body[:4096] and after[4096:] == body[4096:]  # page 1 only: the body kept the reserve
+
+
+def test_free_space_falls_back_to_the_folder_where_fstatvfs_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(crypto_erase, "_fd_free_bytes", lambda fd: None)
+    fd = os.open(tmp_path, os.O_RDONLY)
+    try:
+        assert crypto_erase._free_space(fd, str(tmp_path)) == crypto_erase.shutil.disk_usage(tmp_path).free
+        assert crypto_erase._free_space(fd, None) is None
+    finally:
+        os.close(fd)
+
+
+def test_shared_scope_key_files_are_never_held_to_the_reserve():
+    src = Path(crypto_erase.__file__).read_text(encoding="utf-8")
+    assert "_destroy_app_keys_in_foreign(keys_dir, _track_key," in src
+    assert "_hf_token_pass(base, walk_fd, shared=app_only, track=_track_key)" in src
+
+
+_HEAD_ON_REMOVE = r"""
+import os
+_rm2 = os.remove
+def _remove2(p, *a, **k):
+    if os.path.basename(p) == "seg-1.db":
+        with open(p, "rb") as f: head = f.read(16)
+        with open(os.environ["OO_T_HEAD"], "wb") as f: f.write(head)
+    return _rm2(p, *a, **k)
+os.remove = _remove2
+"""
+
+
+def test_the_watcher_writes_a_segment_s_first_page_on_a_full_disk(tmp_path, monkeypatch):
+    """Security reads A and B: a corpus segment (an encrypted database the watcher rewrites whole) loses its salt page first, even
+    when the disk is too full for the rest; the rest is said as partially overwritten."""
+    data = tmp_path / "home" / "jane.doe" / "oo-data"
+    (data / "corpus").mkdir(parents=True)
+    salt = b"SALT-0123456789A"
+    (data / "corpus" / "seg-1.db").write_bytes(salt + b"C" * (2 * MiB))
+    out = tmp_path / "head.bin"
+    monkeypatch.setenv("OO_T_HEAD", str(out))
+    text = _watch(tmp_path, {"wipe_data_dir": str(data), "audit_log": str(tmp_path / "audit.log")}, _FULL_DISK + _HEAD_ON_REMOVE)
+    assert out.read_bytes() != salt, text
+    assert "partially overwritten <data>/.../seg-1.db (4096 of" in text and "salt pages destroyed" not in text, text

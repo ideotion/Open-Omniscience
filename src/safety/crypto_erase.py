@@ -573,12 +573,13 @@ def _overwrite_whole(path: Path, fd: int, *, linked: os.stat_result | None, refu
     ``capped`` is False, then fsync. Closes ``fd``. A file with another name is noted as written only once every byte of it is
     (Opus read, row 438); a stop is "partially overwritten" and False."""
     try:
-        written, total, stop = _rewrite_fd(fd, zeros=zeros, capped=capped)
+        written, total, stop = _rewrite_fd(fd, zeros=zeros, capped=capped, where=str(path.parent))
     finally:
         os.close(fd)
     if stop:
         _note_link(linked, refused=refused)  # never said as overwritten, so its other name may still hold it
-        _note_partial(path, written, total, stop)
+        if written > 0:  # nothing written is "not overwritten" (Revision 3), never "partially" (security read A)
+            _note_partial(path, written, total, stop)
         return False
     _note_link(linked, keyed=True)  # None (one name): nothing to note
     return True
@@ -629,8 +630,18 @@ def _fd_free_bytes(fd: int) -> int | None:
     return st.f_bavail * st.f_frsize
 
 
+def _free_space(fd: int, where: str | None) -> int | None:
+    """The free bytes of the drive ``fd`` is on: ``fstatvfs`` on the descriptor, else (Windows has no ``fstatvfs``; security read B,
+    row 332) ``shutil.disk_usage`` of the folder ``where`` the file is in; None when neither can be read."""
+    free = _fd_free_bytes(fd)
+    if free is None and where is not None:
+        with contextlib.suppress(OSError):
+            free = shutil.disk_usage(where).free
+    return free
+
+
 def _rewrite_fd(fd: int, *, zeros: bool = False, capped: bool = True, limit: int | None = None,
-                deadline: float | None = None) -> tuple[int, int, str | None]:
+                deadline: float | None = None, where: str | None = None) -> tuple[int, int, str | None]:
     """R815 / R797: rewrite in place every byte of the open regular file ``fd`` that holds data, then fsync; every other name of
     the same file is covered by the same write. The regions come from :func:`_data_regions`; where they cannot be read, the logical
     size is rewritten; either way the rewrite stops before the drive's free space would fall under :data:`_DISK_RESERVE`. Returns
@@ -639,7 +650,10 @@ def _rewrite_fd(fd: int, *, zeros: bool = False, capped: bool = True, limit: int
 
     Row 332 (R797 (a)): ``capped`` False (key material, and the logs that hold copies of the salt page) is never held to the
     reserve, though it too skips holes. ``limit`` stops at that many bytes from the start (a held file's size when it was kept);
-    ``deadline`` (time.monotonic) stops a held file's rewrite at its bound, said as ``"deadline"``."""
+    ``deadline`` (time.monotonic) stops a held file's rewrite at its bound, said as ``"deadline"``. The first page (a salt page
+    wherever the file is an encrypted database) is written before any reserve check, so a nearly full drive never leaves it (security
+    read B). ``where`` is the file's folder, for the free space where ``fstatvfs`` cannot be read. The file is synced before its data
+    regions are read, so data not yet flushed is never taken for a hole."""
     written = total = 0
     stop: str | None = None
     try:
@@ -647,6 +661,8 @@ def _rewrite_fd(fd: int, *, zeros: bool = False, capped: bool = True, limit: int
         if not stat.S_ISREG(st.st_mode):
             return 0, 0, "write_failed"
         size = st.st_size if limit is None else min(st.st_size, limit)
+        with contextlib.suppress(OSError):
+            os.fsync(fd)  # security read B: a file system may report dirty, unflushed data as a hole (OpenZFS 2.2.0-2.2.1)
         regions = _data_regions(fd, size)
         regions = [(0, size)] if regions is None else regions
         regions = [(start, min(end, size)) for start, end in regions if start < size]
@@ -661,12 +677,16 @@ def _rewrite_fd(fd: int, *, zeros: bool = False, capped: bool = True, limit: int
                     stop = "deadline"
                     break
                 n = min(_CHUNK, end - pos)
-                # Every chunk, both ways: the logical size may reach holes, and on a copy-on-write file system (APFS, btrfs, ZFS)
-                # even a rewrite in place takes new blocks.
-                free = _fd_free_bytes(fd) if capped else None
-                if capped and (free is None or free - n < _DISK_RESERVE):
-                    stop = "reserve"
-                    break
+                head = pos < _SQLCIPHER_PAGE1
+                if head:
+                    n = min(n, _SQLCIPHER_PAGE1 - pos)  # the first page alone, never held to the reserve (R797 (a))
+                # Every other chunk, both ways: the logical size may reach holes, and on a copy-on-write file system (APFS, btrfs,
+                # ZFS) even a rewrite in place takes new blocks.
+                if capped and not head:
+                    free = _free_space(fd, where)
+                    if free is None or free - n < _DISK_RESERVE:
+                        stop = "reserve"
+                        break
                 done = os.write(fd, bytes(n) if zeros else os.urandom(n))
                 if done <= 0:
                     raise OSError("nothing written")
@@ -1642,9 +1662,12 @@ def rescrub_held(*, close: bool, generation: int | None = None, settle: bool = T
         gens = list(_HELD) if generation is None else [generation]
         taken = {g: len(_HELD.get(g, ())) for g in gens}
         held = [e for g in gens for e in _HELD.get(g, [])[: taken[g]]]
+        # Security read B (row 332): the segment bodies among them, taken before a closing pass forgets them, so they stay held to
+        # the disk reserve
+        bodies = {fd for g in gens for fd in _WHOLE_HEADS.get(g, set())}
         if close:
             _forget_held(taken)
-        done = _rewrite_held(held, close=close, deadline=deadline)
+        done = _rewrite_held(held, close=close, deadline=deadline, bodies=bodies)
     return done
 
 
@@ -1667,7 +1690,8 @@ def held_count(generation: int | None = None) -> int:
     return sum(len(v) for v in list(_HELD.values()))
 
 
-def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: float | None = None) -> int:
+def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: float | None = None,
+                  bodies: set[int] | None = None) -> int:
     done = 0
     # The salt-bearing heads first, as the watcher's rewrite_kept does: a long log must not use the whole bound before a main
     # file's first page is reached.
@@ -1680,8 +1704,7 @@ def _rewrite_held(held: list[tuple[int, str, int]], *, close: bool, deadline: fl
             if kind == "whole":
                 # R797 (row 332): only what holds data, never a hole; a log holds copies of the salt page, so it is never held to the
                 # disk reserve (a); a segment's body rewritten whole (no evidence) is data, held to it like any other (b)
-                bodies = set().union(*list(_WHOLE_HEADS.values()))
-                w_done, w_total, w_stop = _rewrite_fd(fd, capped=fd in bodies, limit=cap, deadline=deadline)
+                w_done, w_total, w_stop = _rewrite_fd(fd, capped=fd in (bodies or ()), limit=cap, deadline=deadline)
                 if w_stop == "deadline":
                     raise TimeoutError
                 if w_stop:
@@ -2718,12 +2741,13 @@ def _let_go(fd: int) -> None:
             os.close(fd)
 
 
-def _rewrite_copy(p: Path, fd: int, ident: tuple[int, int], dfd: int | None = None) -> tuple[str, bool]:
+def _rewrite_copy(p: Path, fd: int, ident: tuple[int, int], dfd: int | None = None, *, side: bool = False) -> tuple[str, bool]:
     """R823 / R797: a database copy without evidence, rewritten in full through the descriptor :func:`_copy_take` judged it by (its
     data regions, the disk reserve kept: :func:`_rewrite_fd`), then its name unlinked if it still holds that file. Returns the state
     (``"overwritten"``, ``"partially_overwritten"``: a stop part-way, never more, or ``"not_overwritten"``) and whether the name
-    went. Never raises."""
-    written, _total, stop = _rewrite_fd(fd)
+    went. Never raises. ``side`` (a copy's -wal or -journal, which may hold copies of its salt page; security read A, row 332): never
+    held to the disk reserve (R797 (a))."""
+    written, _total, stop = _rewrite_fd(fd, capped=not side, where=str(p.parent))
     _let_go(fd)
     # A stop part-way (the disk reserve, a failed write) keeps the name, so what is left is never an unlinked body no later erase
     # can find (security read, row 402)
@@ -3941,7 +3965,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         if keys_off:
             _s = _w = 0  # R809 / R812: the keys folder is on the drive that is not there, or that changed
         elif keys_foreign or app_only:  # R807 (3): in shared scope the app's key files are matched by exact name, never by suffix
-            _s, _w = _destroy_app_keys_in_foreign(keys_dir, _track, keys_destroyed, _unlisted, _unreached)
+            _s, _w = _destroy_app_keys_in_foreign(keys_dir, _track_key, keys_destroyed, _unlisted, _unreached)
         else:
             _s, _w = _destroy_keys_folder(keys_dir, _track_key, keys_destroyed, _unlisted, unreached=_unreached)
     seen += _s
@@ -3950,7 +3974,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     #    so they go here with the other secrets, never only in the slow step 6.
     hf_token_left: list[str] = []
     if not keys_off:
-        _s, _w, hf_token_left = _hf_token_pass(base, walk_fd, shared=app_only, track=_track)
+        _s, _w, hf_token_left = _hf_token_pass(base, walk_fd, shared=app_only, track=_track_key)
         seen += _s
         wiped += _w
 
@@ -4092,7 +4116,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
             # Known by its name only, never positively (R839 as amended): another name keeps it unwritten, its own name removed.
             s, overwritten, w = _shred(
                 p, keyed=False, head_bytes=None if mode == "whole" else _SQLCIPHER_PAGE1, zeros=mode == "zeros", unreached=_unreached,
-                capped=mode != "whole",  # R797 (a): a copy's log holds salt pages, written whole, never held to the reserve
+                # a copy's .json side file holds no salt: held to the reserve (R797 (b)); its logs go through _copy_take
             )
             seen += s
             wiped += w
@@ -4159,7 +4183,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         if _under(c[0], base) and copies_off_now:
             _let_go(c[1])  # Windows: never a handle left open on a changed drive (security read, row 402)
     for p, fd, ident, cdfd, side in [c for c in plain_copies if not (_under(c[0], base) and copies_off_now)]:  # R812 (c)
-        copy_state, gone = _rewrite_copy(p, fd, ident, cdfd)  # R823: never counted in "Wiped n/n"
+        copy_state, gone = _rewrite_copy(p, fd, ident, cdfd, side=side)  # R823: never counted in "Wiped n/n"
         if not gone and copy_state == "overwritten":
             copies_left["_left"].add(ident)  # rewritten through its handle; step 6 only removes the name
         elif not gone:
@@ -4424,8 +4448,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         # R797 (c), row 332: the files a whole rewrite stopped short on (disk reserve, error), as bytes done of bytes known; each
         # is in overwrite_failures too, and any one makes the result "may be incomplete".
         "partially_overwritten": shorts["partially_overwritten"],
-        "partial_bytes_done": sum(w for _p, w, _t in partials),
-        "partial_bytes_known": sum(t for _p, _w, t in partials),
+        "partial_bytes_done": sum(w for w, _t in {p: (w, t) for p, w, t in partials}.values()),  # each file once (its last pass)
+        "partial_bytes_known": sum(t for _w, t in {p: (w, t) for p, w, t in partials}.values()),
         # Revision 3: the files it could not overwrite, other than a partial rewrite or a file it could not look at; any one makes
         # the result "may be incomplete".
         "not_overwritten": shorts["not_overwritten"],
