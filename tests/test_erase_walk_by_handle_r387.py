@@ -195,3 +195,62 @@ def test_a_handle_that_cannot_be_taken_never_stops_the_walk(tmp_path, monkeypatc
     finally:
         os.close(fd)
     assert got is None and err is not None and err.errno == 24
+
+
+def test_another_name_of_a_refused_copy_is_still_rewritten(tmp_path):
+    """Security read: a refused copy is kept by its NAME (row 402), never by its identity: an app file that is another name of it
+    is rewritten under that name as before."""
+    data = _folder(tmp_path)
+    other = data / "sub" / "notes.json"
+    other.write_bytes(b"PLAINTEXTSECRET" * 2000)
+    os.link(other, data / "pre-restore-20261114T090000Z.db")  # a copy the erase refuses: it has a second name
+    fd = os.open(other, os.O_RDONLY)
+    try:
+        crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+        body = os.pread(fd, 30000, 0)
+    finally:
+        os.close(fd)
+    assert b"PLAINTEXTSECRET" not in body
+
+
+def test_the_removal_never_empties_a_folder_on_another_device(tmp_path, monkeypatch):
+    data = _folder(tmp_path)
+    (data / "sub" / "drive").mkdir()
+    (data / "sub" / "drive" / "theirs.txt").write_bytes(b"on another drive")
+    real_fstat = os.fstat
+    drive_ino = os.stat(data / "sub" / "drive").st_ino
+
+    class _Other:
+        def __init__(self, st):
+            self.st_dev, self.st_ino, self.st_nlink, self.st_mode = st.st_dev + 1, st.st_ino, st.st_nlink, st.st_mode
+
+    scope_os(monkeypatch, crypto_erase, fstat=lambda f: _Other(real_fstat(f)) if real_fstat(f).st_ino == drive_ino else real_fstat(f))
+    fd = os.open(data, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        crypto_erase._rmtree_at(fd, "sub")
+    finally:
+        os.close(fd)
+    assert (data / "sub" / "drive" / "theirs.txt").read_bytes() == b"on another drive"
+    assert not (data / "sub" / "notes.json").exists()
+
+
+def test_a_data_folder_swapped_for_a_link_is_never_said_removed(tmp_path, monkeypatch):
+    data = _folder(tmp_path)
+    aside = tmp_path / "moved aside"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    real = crypto_erase._erase_roots
+    moved: list[bool] = []
+
+    def roots(base, **kw):
+        if not moved:
+            moved.append(True)
+            os.rename(data, aside)
+            data.symlink_to(elsewhere, target_is_directory=True)
+        return real(base, **kw)
+
+    monkeypatch.setattr(crypto_erase, "_erase_roots", roots)
+    report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
+    assert not (aside / "sub").exists(), "the held folder is emptied through its handle"
+    assert report.get("removed") is False and report.get("folder_moved") is True
+    assert elsewhere.is_dir()

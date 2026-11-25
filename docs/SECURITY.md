@@ -895,9 +895,9 @@ imply a protection we cannot deliver.
   the folder's handle held from the probe (every folder opened by name from it with `O_NOFOLLOW | O_DIRECTORY`, every file looked
   at, written and unlinked by name through its folder's handle; the folder itself is removed only while its path still leads to
   that very folder), so a drive or folder swapped mid-walk is never reached by its path; a folder on no marked drive gets the same
-  handle. A folder below on another device (a drive mounted there mid-walk) is never entered and is named as not checked; a data
-  folder moved away mid-erase is emptied through its handle and never said to be removed; a refused database copy is known by
-  its identity, so no path a swap gives it gets it written; when no handle can be held the log says the walks go by path.
+  handle. A folder below on another device (a drive mounted there mid-walk) is never entered or emptied and is named as not checked
+  (the removal is the app's own walk by handle, never `shutil.rmtree`); a data folder moved away (or swapped for a link) mid-erase is emptied through its handle and never said to be removed; a refused database copy is kept by its name as the walk spells
+  it, so a swap never gets it written (another name of it is still rewritten under that name); when no handle can be held the log says the walks go by path.
   THE WINDOW THAT REMAINS: on Windows (no folder handle here) the walks go by path, so a drive swapped between a re-check
   and the writes after it is reached by its path; on every platform the keys step still looks up its named files by path, and a folder of
   database copies is opened by its path (then used through that handle), each right after a re-check. An id the erase forgot is never

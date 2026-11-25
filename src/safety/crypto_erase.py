@@ -2493,7 +2493,45 @@ def _remove_app_folders(roots: list[Path], dfd: int | None = None, *, files: boo
             if at is None:
                 shutil.rmtree(root, ignore_errors=True)
             else:
-                shutil.rmtree(at.name, ignore_errors=True, dir_fd=at.dfd)
+                _rmtree_at(at.dfd, at.name)
+
+
+def _rmtree_at(dfd: int, name: str) -> None:
+    """Row 387 (security reads): ``shutil.rmtree(name, dir_fd=dfd)`` that never crosses into another device: a folder below on
+    another device (a drive mounted there) is left whole, never emptied. A link is removed, never followed. Never raises."""
+    try:
+        dev = os.fstat(dfd).st_dev
+        fd = os.open(name, _DIR_FLAGS, dir_fd=dfd)
+    except OSError:
+        return
+    try:
+        if os.fstat(fd).st_dev != dev:
+            return
+        for entry in os.listdir(fd):
+            try:
+                st = os.stat(entry, dir_fd=fd, follow_symlinks=False)
+            except OSError:
+                continue
+            if stat.S_ISDIR(st.st_mode):
+                _rmtree_at(fd, entry)
+                continue
+            with contextlib.suppress(OSError):
+                os.unlink(entry, dir_fd=fd)
+    except OSError:
+        return
+    finally:
+        _close_quietly(fd)
+    with contextlib.suppress(OSError):
+        os.rmdir(name, dir_fd=dfd)
+
+
+def _same_folder(base: Path, dfd: int) -> bool:
+    """Row 387: whether ``base`` (followed, as the hold was taken on its real path) still leads to the folder held by ``dfd``."""
+    try:
+        held, now = os.fstat(dfd), os.stat(base)
+    except OSError:
+        return False
+    return (held.st_dev, held.st_ino) == (now.st_dev, now.st_ino)
 
 
 def _held_present(dfd: int) -> bool:
@@ -2514,8 +2552,8 @@ def _remove_base(base: Path, dfd: int | None) -> bool:
         with contextlib.suppress(OSError):
             shutil.rmtree(base, ignore_errors=True)
         return not _present(base)
-    if _kind(base) == "link":
-        return False  # rmtree refuses one: left as before
+    if _kind(base) == "link" and _same_folder(base, dfd):
+        return False  # the data folder is a link to the held folder: left, as rmtree left it
     _remove_app_folders([base / e.name for e in _listing(base, None, dfd)], dfd, files=True)
     try:
         held, now = os.fstat(dfd), os.lstat(base)
@@ -3031,7 +3069,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         if not head_ok.get(db):
             continue
         with contextlib.suppress(OSError):
-            st = os.lstat(db)
+            st = os.stat(db)  # the file, also where the database is configured through a link
             salt_gone.add((st.st_dev, st.st_ino))
 
     # Close every lane pool now that its salt is gone, and before step 5 drops the passphrase. A pooled SQLCipher connection holds
@@ -3148,9 +3186,17 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # Held by real path: the configured database may reach the data folder by another spelling (a link, ``..``) than the walks
     # use (security read, row 402).
     copies_kept_paths: set[str] = set()
+    # Row 387 (security reads): by its name as spelled too. The walks by handle name a file by the data folder's path and the names
+    # below it, whatever that path leads to now, so after a swap its real path may no longer match; the spelling still does. By
+    # name only, never by identity: another name of the same file (an app file) is still rewritten under that name (row 402).
+    copies_kept_names: set[Path] = set()
+
+    def _keep_name(path: Path) -> None:
+        copies_kept_paths.add(os.path.realpath(path))
+        copies_kept_names.add(path)
 
     def _kept(path: Path) -> bool:
-        return bool(copies_kept_paths) and os.path.realpath(path) in copies_kept_paths
+        return path in copies_kept_names or bool(copies_kept_paths) and os.path.realpath(path) in copies_kept_paths
 
     # A segment keeps its name until its outcome (:func:`_corpus_settle`): 5b and step 6 never write it by path either.
     copies_left["_left"].update(f["ident"] for f in corpus_sweep.get("files", []))
@@ -3178,11 +3224,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                     overwrite_failures.append(str(p.parent))
                     # by its NAME only: its other name may be the app's own (the rebuild's kept link to a live lane file), which the
                     # later steps still reach under that name (security read, row 402)
-                    copies_kept_paths.add(os.path.realpath(p))
-                    if took.get("ident"):
-                        # and by its identity: a walk by handle after a swap reaches it under a path its real path no longer
-                        # matches (security read, row 387)
-                        copies_left["_left"].add(took["ident"])
+                    _keep_name(p)
                     continue
                 if not took["head_ok"]:
                     overwrite_failures.append(str(p.parent))
@@ -3252,8 +3294,10 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     if not _off_drive():
         _corpus_settle(corpus_sweep, record_raws)
     # A segment rewritten only in part keeps its name for every later step too: never written by path, never unlinked (row 402).
-    copies_kept_paths.update(os.path.realpath(base / CORPUS_DIR / f["name"]) for f in corpus_sweep.get("files", [])
-                             if f["kind"] == "head" and f.get("state") in ("partially_overwritten", "not_overwritten"))
+    for f in corpus_sweep.get("files", []):
+        if f["kind"] != "head" or f.get("state") not in ("partially_overwritten", "not_overwritten"):
+            continue
+        _keep_name(base / CORPUS_DIR / f["name"])
     if corpus_sweep.get("dfd") is not None:
         with contextlib.suppress(OSError):
             os.close(corpus_sweep["dfd"])  # the folder's handle; the files' own stay with this wipe's kept descriptors (R789)
@@ -3268,8 +3312,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         if not gone and copy_state == "overwritten":
             copies_left["_left"].add(ident)  # rewritten through its handle; step 6 only removes the name
         elif not gone:
-            copies_kept_paths.add(os.path.realpath(p))  # short of a full rewrite: its name kept
-            copies_left["_left"].add(ident)  # and by identity (security read, row 387)
+            _keep_name(p)  # short of a full rewrite: its name kept
         if side and copy_state == "overwritten":
             continue  # a copy's log: part of its copy, counted only when it falls short
         into = {"overwritten": copies_overwritten, "partially_overwritten": copies_partially_overwritten}.get(
@@ -3365,7 +3408,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     else:
         removed_at_rmtree = _remove_base(base, walk_fd)
         # security read (row 387): the folder the erase started on is still there, at no path it had: never "removed"
-        folder_moved = not removed_at_rmtree and walk_fd is not None and _held_present(walk_fd) and not _present(base)  # before any log line: one that makes it again then reads "came back", never "not removed"
+        folder_moved = not removed_at_rmtree and walk_fd is not None and _held_present(walk_fd) and not _same_folder(base, walk_fd)  # before any log line: one that makes it again then reads "came back", never "not removed"
     # Kept ON PURPOSE: in shared scope for the entries that are not the app's (R711), else for a keys folder that is not (R806).
     # R809: the drive went away while this erase ran: partially erased, the rest could not be checked (R797 / R798), never "removed".
     # A drive reclassified as not identified before the first write was never written on: that alone is said, never "lost" too.
