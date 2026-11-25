@@ -265,3 +265,53 @@ def test_a_link_swapped_in_after_the_lstat_is_caught_by_the_identity_check(data,
         segment_write.SegmentWriter.open(shared, seg)
     assert e.value.reason in ("changed_while_opening", "not_a_segment_file")
     assert other.read_bytes() == before
+
+
+@posix_only
+def test_an_existing_only_open_refuses_a_hard_link(tmp_path):
+    """A file with a second name is refused too: the open must be of the file named, never one also named elsewhere."""
+    from src.database.connect import connect
+
+    real = tmp_path / "real.db"
+    con = connect(real)
+    con.execute("CREATE TABLE t(x)")
+    con.commit()
+    con.close()
+    second = tmp_path / "seg-1.db"
+    os.link(real, second)
+    with pytest.raises(FileNotFoundError):
+        connect(second, existing_no_follow=True)
+    os.unlink(second)
+    connect(real, existing_no_follow=True).close()
+
+
+@posix_only
+def test_a_shared_row_not_yet_committed_is_refused(data, shared):
+    """The shared rows a segment row names must be committed first: a row inside the shared file's open transaction could
+    still roll back after the segment commits."""
+    w = segment_write.open_writer(shared)
+    try:
+        shared.execute("BEGIN")
+        shared.execute("INSERT INTO sources (id, name, domain) VALUES (8, 't', 't.test')")
+        with pytest.raises(SegmentError), w.transaction() as t:
+            t.add_articles([_article(1, source_id=8)])
+        shared.execute("ROLLBACK")
+        assert w._con.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 0
+    finally:
+        w.close()
+
+
+@posix_only
+def test_a_schema_changed_under_an_open_writer_is_not_written(data, shared):
+    """The exact-schema check runs once at open; a schema changed afterwards (by another writer of the folder) is refused at
+    the next transaction, so a trigger nobody checked never runs with trusted_schema on."""
+    w = segment_write.open_writer(shared)
+    try:
+        other = sqlite3.connect(data / "corpus" / "seg-1.db", isolation_level=None)
+        other.execute("CREATE TABLE intruder(x)")
+        other.close()
+        with pytest.raises(SegmentError), w.transaction() as t:
+            t.add_articles([_article(1)])
+        assert w._con.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 0
+    finally:
+        w.close()

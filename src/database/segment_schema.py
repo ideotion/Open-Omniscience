@@ -17,6 +17,11 @@ file (``articles.source_id`` -> ``sources``, ``keyword_mentions.keyword_id`` -> 
 SQLite; :data:`SHARED_REFERENCES` lists every such column, and ``segment_write.insert_rows`` enforces it in code: the
 shared row must exist (committed before the segment rows that use it) or the segment write is refused. References inside
 the segment (``article_id`` -> ``articles``) stay constraints.
+
+THE DELETE SIDE IS NOT COVERED YET. A shared-file delete (a source removed, a keyword pruned) cascades only inside the
+shared file and meets no constraint from segment rows, so it could leave segment rows naming nothing. Writes stay off
+(the off switch in ``segment_open``) until those delete paths look through every segment (stage 4): a condition on turning them on,
+not something this module can enforce.
 """
 
 from __future__ import annotations

@@ -893,8 +893,12 @@ def _existing_no_follow_target(p: Path) -> str:
 
     SQLite CANNOT be told here not to follow a link: its no-follow is an ``sqlite3_open_v2`` flag (SQLITE_OPEN_NOFOLLOW) that
     Python's drivers do not pass, and it has no URI parameter (``nofollow=1`` is silently ignored, measured on both drivers).
-    So the link refusal is the ``lstat`` just before the open, and a link swapped in during that instant is caught by the
-    caller's identity check after the open (``segment_open._check_open``: the name must still lead to the checked inode)."""
+    So the link refusal is the ``lstat`` just before the open. That is NOT airtight: a link swapped in after the ``lstat`` and
+    swapped back out before the caller's identity check (``segment_open._check_open``, which re-reads the NAME, not the
+    file the connection holds) goes unseen, and a hot journal at the name is rolled into the link's target by the open
+    itself. Doing that needs write access to the file's folder, which already lets that writer change the file directly,
+    so it gains nothing; the caller's checks on the connection (schema, identity row, generation) still bound what such a
+    file can be."""
     uri = _read_only_uri(p.parent.resolve() / p.name)
     if not uri.endswith("?mode=ro"):  # pragma: no cover - the helper above always ends so
         raise ValueError("unexpected database URI form")
@@ -902,13 +906,16 @@ def _existing_no_follow_target(p: Path) -> str:
 
 
 def _refuse_unless_regular(p: Path) -> None:
-    """The name must be a regular file itself (never a link, a folder or anything else) before an existing-only open."""
+    """The name must be a regular file itself (never a symbolic link, a folder or anything else) with one name only (never
+    a hard link to a file named elsewhere) before an existing-only open."""
     try:
         st = os.lstat(p)
     except FileNotFoundError:
         raise FileNotFoundError(f"{p.name} does not exist: this open never creates a file") from None
     if not stat.S_ISREG(st.st_mode):
         raise FileNotFoundError(f"{p.name} is not a regular file: this open never follows a link")
+    if st.st_nlink != 1:
+        raise FileNotFoundError(f"{p.name} has another name: this open never follows a link")
 
 
 #: SQLite's primary "busy" and "locked" result codes (an extended code, such as SQLITE_BUSY_SNAPSHOT, is masked to its primary).

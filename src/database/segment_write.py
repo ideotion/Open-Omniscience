@@ -122,7 +122,7 @@ class SegmentTransaction:
         if unknown:
             raise SegmentError("a row names a column the segment's table does not have")
         check_shared_references(self._shared, table, filled)
-        sql = f"INSERT INTO {table} ({', '.join(names)}) VALUES ({', '.join('?' * len(names))})"  # table is one of SEGMENT_TABLES and every name a column of it, both checked above; values are bound
+        sql = f"INSERT INTO {table} ({', '.join(names)}) VALUES ({', '.join('?' * len(names))})"  # noqa: S608  # nosec B608 # table from SEGMENT_TABLES, names checked against its columns above; values bound
         self.con.executemany(sql, [tuple(r.get(n) for n in names) for r in filled])
 
     def allocate(self, n: int) -> range:
@@ -206,6 +206,9 @@ def check_shared_references(shared_con: Any, table: str, rows: Sequence[Mapping[
             raise SegmentError("a row names a shared-file row by something that is not an id")
         if shared_con is None:
             raise SegmentError("the shared file is needed to check this row's references")
+        if getattr(shared_con, "in_transaction", False):
+            # A shared row inside an open transaction could still roll back after the segment commits; it must be committed.
+            raise SegmentError("the shared rows a segment names must be committed first; nothing was written")
         missing = shared_con.execute(_MISSING_IN_SHARED[shared_table], (json.dumps(sorted(values)),)).fetchall()
         if missing:
             raise SegmentError("a row names a shared-file row that does not exist; nothing was written")
@@ -229,6 +232,9 @@ class SegmentWriter:
         self._owner: int | None = None  # the thread inside a transaction, so a nested call raises instead of hanging
         self._closed = False
         self._owed = owed  # a generation the file has and the registry does not yet
+        # The schema version the exact-schema check saw. Each transaction re-reads it, so a schema changed under the open
+        # writer (a trigger added by another writer of the folder) never runs with trusted_schema on.
+        self._schema_version = con.execute("PRAGMA schema_version").fetchone()[0]
 
     @classmethod
     def open(cls, shared_con: Any, seg: Segment, *, key: str | None = None) -> SegmentWriter:
@@ -289,6 +295,8 @@ class SegmentWriter:
                 con = self._con
                 con.execute("BEGIN IMMEDIATE")
                 try:
+                    if con.execute("PRAGMA schema_version").fetchone()[0] != self._schema_version:
+                        raise SegmentError("the segment's schema changed after it was checked; it is not written")
                     yield SegmentTransaction(con, self.seg, self._shared)
                     _still_in_transaction(con)
                     con.execute("UPDATE segment_meta SET generation = generation + 1")
