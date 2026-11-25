@@ -435,6 +435,78 @@ def test_a_unique_key_the_app_does_not_make_is_refused_in_fixed_words(tmp_path, 
     assert (_digest(src), _digest(tgt)) == before, "a refused restore wrote something"
 
 
+def _rebuild_without_rowid(con: sqlite3.Connection, table: str) -> None:
+    """``table`` rebuilt WITHOUT ROWID with the same columns, rows and indexes (its id is its primary key)."""
+    sql = con.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone()[0]
+    idx = [r[0] for r in con.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL", (table,))]
+    con.execute(f'ALTER TABLE "{table}" RENAME TO oo_old')
+    con.execute(sql.rstrip().rstrip(";") + " WITHOUT ROWID")
+    con.execute(f'INSERT INTO "{table}" SELECT * FROM oo_old')
+    con.execute("DROP TABLE oo_old")
+    for i in idx:
+        con.execute(i)
+
+
+@pytest.mark.parametrize("shape", ["law_without_rowid", "alternates_without_rowid", "rowid_column", "oid_column", "nocase_key"])
+def test_a_staged_table_the_copy_cannot_follow_is_refused_in_fixed_words(tmp_path, template, shape):
+    """Second read of row 439: a WITHOUT ROWID table (or a column taking a row id's name) cannot be followed back by row id, and a key
+    compared under NOCASE decides collisions differently from the BINARY copy. Each is refused before a row moves, in the restore's
+    fixed sentence, never as a raw driver error, never converted differently from the file."""
+    from src.backup.country_codes import STAGED_KEYS_DIFFER
+    from src.backup.merge import MergeError
+
+    src, tgt = tmp_path / "src.db", tmp_path / "tgt.db"
+    shutil.copy(template, src)
+    shutil.copy(template, tgt)
+    con = sqlite3.connect(src)
+    con.execute("INSERT INTO law_documents (jurisdiction, title, url, watched) VALUES ('fr', 'Loi', 'https://u/1', 1)")
+    con.execute("INSERT INTO law_documents (jurisdiction, title, url, watched) VALUES ('FRA', 'Loi', 'HTTPS://U/1', 1)")
+    if shape == "law_without_rowid":
+        _rebuild_without_rowid(con, "law_documents")
+    elif shape == "alternates_without_rowid":
+        _rebuild_without_rowid(con, "metadata_alternates")
+    elif shape in ("rowid_column", "oid_column"):
+        con.execute(f"ALTER TABLE law_documents ADD COLUMN {shape.split('_')[0]} INTEGER")
+    else:
+        name = con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'law_documents' AND sql LIKE '%UNIQUE%'"
+        ).fetchone()[0]
+        con.execute(f'DROP INDEX "{name}"')
+        con.execute("CREATE UNIQUE INDEX ix_nc ON law_documents (jurisdiction, url COLLATE NOCASE)")
+    con.commit()
+    con.close()
+    before = _digest(src), _digest(tgt)
+    with pytest.raises(MergeError) as err:
+        merge_corpus(src, tgt, _META)
+    assert str(err.value) == STAGED_KEYS_DIFFER
+    assert (_digest(src), _digest(tgt)) == before, "a refused restore wrote something"
+
+
+def test_a_backup_brought_through_the_whole_migration_chain_is_accepted(tmp_path):
+    """The key check runs on a staged file the restore has already brought to the schema head (prepare_staged_corpus upgrades it
+    before merge_corpus reads a row). A file made by the migration chain alone, from its first revision, matches the app's keys:
+    a genuine older backup, upgraded, is never refused by this check."""
+    from src.backup.country_codes import COUNTRY_COLUMNS, _check_staged_keys, _columns_of, _table_exists
+    from src.database.migrate import upgrade_database_file
+
+    p = tmp_path / "chain.db"
+    sqlite3.connect(p).close()
+    upgrade_database_file(p)
+    con = sqlite3.connect(":memory:")
+    try:
+        con.execute("ATTACH DATABASE ? AS inc", (str(p),))
+        checked = 0
+        for table, cols in sorted(COUNTRY_COLUMNS.items()):
+            if _table_exists(con, "inc", table):
+                present = [c for c in cols if c in _columns_of(con, "inc", table)]
+                if present:
+                    _check_staged_keys(con, "inc", table, present)
+                    checked += 1
+        assert checked and _table_exists(con, "inc", "law_documents")
+    finally:
+        con.close()
+
+
 def test_the_copy_is_built_from_the_apps_own_names_never_the_files(tmp_path, template):
     """No DDL text the plan runs carries a name read from the staged file: traced, every CREATE names only fixed identifiers."""
     from src.backup.country_codes import plan_staged_country_codes

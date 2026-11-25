@@ -544,21 +544,40 @@ def _staged_unique_sets(con: sqlite3.Connection, schema: str, table: str) -> lis
     """The staged file's unique keys on ``table``, read through the table-valued pragmas with every name BOUND, so no name from the
     file's catalogue is ever part of SQL text. Names are case-folded as SQLite folds them; a column over an expression reads as
     None and a partial index carries a ``("partial",)`` marker, so either one differs from every key the app declares and the file
-    is refused, never copied as text."""
+    is refused, never copied as text. A key column compared under any collation but BINARY (declared on the column or on the
+    index) carries a ``("collation",)`` marker for the same reason: the copy decides collisions as BINARY, as the app's store does."""
     out: list[tuple[object, ...]] = []
     for name, unique, partial in con.execute(
         'SELECT name, "unique", partial FROM pragma_index_list(?, ?)', (table, schema)
     ).fetchall():
         if not int(unique or 0):
             continue
-        cols: list[object] = [
-            (r[0].lower() if isinstance(r[0], str) else None)
-            for r in con.execute("SELECT name FROM pragma_index_info(?, ?) ORDER BY seqno", (name, schema)).fetchall()
-        ]
+        cols: list[object] = []
+        for col, coll in con.execute(
+            "SELECT name, coll FROM pragma_index_xinfo(?, ?) WHERE key = 1 ORDER BY seqno", (name, schema)
+        ).fetchall():
+            cols.append(col.lower() if isinstance(col, str) else None)
+            if str(coll or "BINARY").upper() != "BINARY":
+                cols.append(("collation",))  # the copy compares BINARY, as the app's own store does
         if int(partial or 0):
             cols.append(("partial",))
         out.append(tuple(cols))
     return out
+
+
+_ROWID_NAMES = frozenset({"rowid", "_rowid_", "oid"})
+
+
+def _require_rowid(con: sqlite3.Connection, schema: str, table: str) -> None:
+    """Refuse a staged ``table`` whose rows the copy cannot follow by row id: a WITHOUT ROWID table, or one with a column that
+    takes a row id's name (it would shadow the real one). The copies are joined back to the file's rows by ``rowid``; every table
+    the app makes has one. ``table`` is one of the app's own names."""
+    if {c.lower() for c in _columns_of(con, schema, table)} & _ROWID_NAMES:
+        raise StagedKeysDiffer(STAGED_KEYS_DIFFER)
+    try:
+        con.execute(f'SELECT rowid FROM {schema}."{table}" LIMIT 0').fetchall()  # noqa: S608  # nosec B608 # the app's own table name
+    except Exception:  # noqa: BLE001 - sqlite3's or the cipher driver's "no such column": the table has no row id
+        raise StagedKeysDiffer(STAGED_KEYS_DIFFER) from None
 
 
 def _check_staged_keys(con: sqlite3.Connection, schema: str, table: str, columns: list[str]) -> list[tuple[str, ...]]:
@@ -661,6 +680,7 @@ def plan_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -
         scanned += len(columns)
         uniques = _check_staged_keys(con, schema, table, columns)
         if uniques or table == "law_documents":
+            _require_rowid(con, schema, table)
             # law_documents always: the law alternates follow a document by (jurisdiction, url) as converted.
             copy = _copy_key_columns(con, schema, table, columns, uniques, ("url",) if table == "law_documents" else ())
             for column in columns:
@@ -705,6 +725,7 @@ def plan_staged_country_codes(con: sqlite3.Connection, *, schema: str = "inc") -
         from src.backup.provenance import ALTERNATE_SPECS
 
         holders = sorted(t for t in ALTERNATE_SPECS if any(alternate_country_keys(t)))
+        _require_rowid(con, schema, "metadata_alternates")
         con.execute(f"CREATE TEMP TABLE {_ALTERNATES_COPY} (rid INTEGER PRIMARY KEY, id, table_name, identity, fields)")  # noqa: S608  # fixed names
         if holders:
             marks = ", ".join("?" for _ in holders)
