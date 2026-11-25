@@ -77,6 +77,9 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     # R739: the maps merge reads ``_OsmRefused.reason``, one of the module's own fixed counter names (``refused_unreadable`` ...),
     # to count a refused country; the exception carries no text from the backup, and nothing is logged or stored but that name
     "src/backup/lane_merge.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},
+    # R826 stage 2: the segment opener reads ``SegmentUnavailable.reason``, one of the module's own fixed reason codes
+    # (``REASONS``), to say why a segment is unavailable; the exception carries no driver text, path or key, and nothing is logged
+    "src/database/segment_open.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},
     # Row 256 (R702 part 2): SQLAlchemy's pool record's own ``info`` dict, holding the lane's generation number for the open (stamped
     # at connect, compared at checkin); it carries an int, never words, and nothing is logged. Row 271: the same dict holds the
     # (device, inode) of the file the open reached (stamped at connect, read at checkout and detach): two ints, never words
