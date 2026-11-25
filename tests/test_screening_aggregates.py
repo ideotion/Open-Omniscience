@@ -142,3 +142,33 @@ def test_search_fed_figures_disclose_and_lists_keep_every_result():
     home = (ROOT / "src/static/app-home.js").read_text(encoding="utf-8")
     for key in ("of which quarantined: {n}", "of which not screened yet: {n}", "of which not analysed yet: {n}"):
         assert key in home
+
+
+def test_a_queued_article_that_is_already_quarantined_is_counted_once(s):
+    """A restore can queue an article that arrives quarantined: the breakdown names it as quarantined only."""
+    from src.analytics.quarantine_scope import not_counted_tally
+    from src.database.models import Article
+
+    q = s.query(Article).filter(Article.quarantined.is_(True)).first()
+    assert q is not None, "the fixture carries a quarantined article"
+    plain = s.query(Article).filter(Article.quarantined.isnot(True)).first()
+    _queue(s, [q.id, plain.id])
+    assert not_counted_tally(s) == {"not_screened": 1}
+
+
+def test_the_late_review_sites_say_what_they_left_out():
+    """Source pins for the read of the final head: the Related and Competitive panels and the mind map draw the line,
+    framing and the commodity chart take the slice, and the Library's line is a breakdown of a status total."""
+    an = (ROOT / "src/static/app-analysis.js").read_text(encoding="utf-8")
+    assert "anNotCountedYetHtml(cd && typeof cd.not_counted_yet" in an
+    assert an.count("anNotCountedYetHtml(cs) + _anCompetitiveHtml(") == 1
+    assert "anNotCountedYetHtml(d.cs) + _anCompetitiveHtml(" in an
+    assert "const controls = anNotCountedYetHtml(g) +" in an
+    ins = (ROOT / "src/api/insights.py").read_text(encoding="utf-8")
+    assert 'graph = {**graph, "not_counted_yet": _not_yet}' in ins
+    fr = (ROOT / "src/api/framing.py").read_text(encoding="utf-8")
+    assert "split_not_screened(db, ids)" in fr and '"not_counted_yet": not_yet' in fr
+    co = (ROOT / "src/api/commodity.py").read_text(encoding="utf-8")
+    assert "split_not_screened(db, list(ids or []))" in co and "SELECT article_id FROM screening_pending" in co
+    shell = (ROOT / "src/static/app-shell.js").read_text(encoding="utf-8")
+    assert 'const status = name === "library";' in shell

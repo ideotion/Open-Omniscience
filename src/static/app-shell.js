@@ -132,12 +132,17 @@
         : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
       const num = (n) => (typeof fmtNum === "function") ? fmtNum(n, 0) : String(n);
       const parts = [], hovers = [];
+      // The Library's figures are status totals over every stored article (R831(2)), so its line is a
+      // breakdown of what they hold, as on Home, never a "left out".
+      const status = name === "library";
+      if (status && typeof nc.quarantined === "number" && nc.quarantined > 0)
+        parts.push(F("of which quarantined: {n}", {n: num(nc.quarantined)}));
       if (typeof nc.not_screened === "number" && nc.not_screened > 0) {
-        parts.push(F("{n} articles not screened yet", {n: num(nc.not_screened)}));
+        parts.push(F(status ? "of which not screened yet: {n}" : "{n} articles not screened yet", {n: num(nc.not_screened)}));
         hovers.push(ooNotCountedHover("screened"));
       }
       if (typeof nc.not_analysed === "number" && nc.not_analysed > 0) {
-        parts.push(F("{n} articles not analysed yet", {n: num(nc.not_analysed)}));
+        parts.push(F(status ? "of which not analysed yet: {n}" : "{n} articles not analysed yet", {n: num(nc.not_analysed)}));
         hovers.push(ooNotCountedHover("analysed"));
       }
       let el = page.querySelector(":scope > .oo-not-counted");

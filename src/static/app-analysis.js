@@ -1034,7 +1034,8 @@
     function _anRelatedHtml(cd, ld) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const clusters = (cd && cd.clusters) || [], links = (ld && ld.items) || [];
-      let html = `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">`
+      // Both payloads count the same corpus, so either one says how many results were left out.
+      let html = anNotCountedYetHtml(cd && typeof cd.not_counted_yet === "number" ? cd : ld) + `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">`
         + `<button class="secondary tiny" data-on-click="branchSelectedRelated()">${esc(t("Branch selected into a new corpus →"))}</button>`
         + ` <span id="an-rel-selcount" class="muted" style="font-size:11px"></span></div>`
         + `<div class="hint"><b>${clusters.length}</b> ${esc(t("Near-identical clusters"))}`
@@ -1261,7 +1262,9 @@
       if (graph) _anMM.graph = graph;
       const g = _anMM.graph || {};
       const all = (g.nodes || []);
-      const controls = `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">`
+      // A selection still queued for screening is left off the map: say so, so it never reads as
+      // "too few keywords" (R830 group D).
+      const controls = anNotCountedYetHtml(g) + `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">`
         + `<button class="ghost tiny${(!_anMM.cloud && !_anMM.concept) ? " on" : ""}" data-on-click="anMMset({cloud:false,concept:false})">${esc(t("Mind-map"))}</button>`
         + `<button class="ghost tiny${_anMM.cloud ? " on" : ""}" data-on-click="anMMset({cloud:true,concept:false})">${esc(t("Cloud"))}</button>`
         // Offered only when the term IS in a ring the corpus carries more than one form
@@ -2905,7 +2908,7 @@
       const _nc = (draw) => (d) => anNotCountedYetHtml(d) + draw(d);
       [["an-www", "www", _nc(_anWwwHtml)], ["an-links", "links", _nc(_anLinksHtml)],
        ["an-sentiment", "sentiment", _nc(_anSentimentHtml)], ["an-sources", "sources", _nc(_anSourcesHtml)],
-       ["an-competitive", "competitive", (d) => _anCompetitiveHtml(d.cs, d.fr, d.query)]].forEach(([id, k, draw]) => {
+       ["an-competitive", "competitive", (d) => anNotCountedYetHtml(d.cs) + _anCompetitiveHtml(d.cs, d.fr, d.query)]].forEach(([id, k, draw]) => {
         const el = $(id), d = _anPanelsLast[k];
         if (el && d) el.innerHTML = draw(d);
       });
@@ -2961,7 +2964,7 @@
       // A NEWER RUN OVER ANOTHER CORPUS OWNS THE PANEL (its own render is on the way).
       if (_anLastParams && _anLastParams.toString() !== key) return;
       _anPanelsLast.competitive = { cs, fr, query };
-      host.innerHTML = _anCompetitiveHtml(cs, fr, query);
+      host.innerHTML = anNotCountedYetHtml(cs) + _anCompetitiveHtml(cs, fr, query);
       _anCompetitive.key = key;   // cache AFTER a successful render (retry on error)
     }
     // The Competitive tab from its two payloads, so a LANGUAGE SWITCH redraws it with no

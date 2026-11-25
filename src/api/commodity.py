@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from src.analytics.quarantine_scope import split_not_screened
 from src.commodity.correlation import correlate_price_with_counts
 from src.commodity.csv_import import parse_price_csv
 from src.commodity.units import UnitError, convert_price
@@ -204,6 +205,9 @@ def correlation(
         "SELECT substr(published_at, 1, 10) AS d, COUNT(*) AS c FROM articles"
         " WHERE published_at IS NOT NULL"
     )
+    # R830/R831: a count drawn against the price curve is a figure, so quarantined articles and
+    # articles still queued for screening are left out of it, and the query path says how many.
+    not_yet = 0
     if query:
         try:
             # These ids become the article-count series drawn against the price
@@ -212,6 +216,7 @@ def correlation(
             ids = search_ids(db, query, exclude_quarantined=True)
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=http_detail(exc, "Invalid query: ")) from exc
+        ids, not_yet = split_not_screened(db, list(ids or []))
         if not ids:
             article_counts: dict[date, int] = {}
         else:
@@ -227,8 +232,12 @@ def correlation(
     else:
         article_counts = {
             date.fromisoformat(d): int(c)
-            for d, c in db.execute(text(f"{base} GROUP BY substr(published_at, 1, 10)"))
+            for d, c in db.execute(text(
+                f"{base} AND id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)"  # nosec B608 # a module constant and fixed SQL, never input
+                " AND id NOT IN (SELECT article_id FROM screening_pending)"
+                " GROUP BY substr(published_at, 1, 10)"
+            ))
         }
 
     result = correlate_price_with_counts(price_points, article_counts, method=method)
-    return {"symbol": symbol, "query": query, **result.to_dict()}
+    return {"symbol": symbol, "query": query, **result.to_dict(), "not_counted_yet": not_yet}

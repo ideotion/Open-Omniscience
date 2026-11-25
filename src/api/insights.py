@@ -1420,7 +1420,7 @@ def insights_corpus_keywords(
         res["capped"] = total > resolved
         res["method"] = "Keyword counts across the matched articles, ordered by how many mention each term."
         res["caveat"] = (
-            f"Counts only, never a score — scoped to the top {len(ids)} matched "
+            f"Counts only, never a score — scoped to the top {resolved} matched "
             "article(s) by relevance."
         )
         # The same sentence as a keyable FRAME + its data (M14), so the client renders it
@@ -1428,7 +1428,9 @@ def insights_corpus_keywords(
         res["caveat_i18n"] = (
             "Counts only, never a score — scoped to the top {n} matched article(s) by relevance."
         )
-        res["caveat_vars"] = {"n": len(ids)}
+        # The top ``resolved`` by relevance, of which ``not_counted_yet`` are still queued and left out
+        # of the counts (said on its own line), so the number names the set the reader sees.
+        res["caveat_vars"] = {"n": resolved}
         # S3 (keyword -> super-group navigation): ONE batched reverse lookup for the
         # whole page of terms — the reverse index is cached per process, so this is
         # in-memory lookups, never an N+1 query per row. Plural membership renders as
@@ -4310,11 +4312,16 @@ def insights_graph(
         # Cache by the exact id set so re-opening the same analysis mindmap is instant --
         # and by the label language, whose translations the nodes now carry (M7).
         _tl = _tlang(target_lang)
-        return _deadlined(
+        graph = _deadlined(
             db, _ckey("graph-articles", ids=",".join(map(str, ids)), tl=_tl),
             lambda: rm.article_graph(db, article_ids=ids, target_lang=_tl),
             on_timeout=lambda exc: _graph_degraded(exc, level="article", n_articles=len(ids)),
         )
+        # Say how many results the map left out, so a corpus still queued for screening does not
+        # read as one with too few keywords (a copy: the cached graph is shared across callers).
+        if _not_yet and isinstance(graph, dict):
+            graph = {**graph, "not_counted_yet": _not_yet}
+        return graph
     if level not in ("keyword", "family", "supergroup"):
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
     if level == "keyword" and not (term or "").strip():
