@@ -146,12 +146,14 @@ def _set_state(name: str, state: str | None) -> None:
     """Write ``state`` for ``name`` (None removes the entry), dropping the entries of copies no longer in the folder.
     Raises ``OSError`` when the record cannot be written."""
     from src.safety.file_lock import atomic_replace, file_lock
+    from src.utils.interrupts import kept_items
 
     path = _record_path()
     with file_lock(path):
         cur = read_record() or {}
         folder = path.parent
-        out = {k: v for k, v in cur.items() if isinstance(v, dict) and (folder / k).exists() and k != name}
+        # kept_items: a filtered comprehension in a frame of its own, never under this file lock's cleanup (src/utils/interrupts.py)
+        out = kept_items(cur, lambda k, v: isinstance(v, dict) and (folder / k).exists() and k != name)
         if state is not None:
             out[name] = {"state": state, "at": datetime.now(UTC).isoformat(timespec="seconds")}
         atomic_replace(path, json.dumps(out, sort_keys=True))
