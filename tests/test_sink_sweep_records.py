@@ -25,9 +25,9 @@ ROOT = Path(__file__).resolve().parents[1]
 #: ``refusal_detail``/``retry_after_of`` are the wiki walk's class (and HTTP status) classifiers, which never read the message;
 #: ``is_corruption`` answers a bool from the driver's ``sqlite_errorcode`` (``damage.corruption_of`` keeps a fixed label, never the text).
 #: ``stop_reason_of``/``stop_text_of`` (R768) return one of the transport watch's four fixed reason tokens and the fixed note rebuilt from
-#: it, never the exception's own words.
+#: it, never the exception's own words. ``_seal_refusal`` (R829 A) returns one of ``staged_key``'s fixed sentences.
 CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
-         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "bounded_error", "engine_text", "is_pool_timeout", "is_corruption",
+         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "bounded_error", "engine_text", "is_pool_timeout", "is_corruption", "_seal_refusal",
          "stop_reason_of", "stop_text_of",
          # row 236: the local-AI clients' error text -- record_text with every address in it masked (its other call sites are classified)
          "error_text"}
@@ -127,6 +127,7 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/wiki/lane_search.py": {"getattr reaches how, a way round the scan of the log calls": 1},
     "src/backup/runlog.py": {"getattr reaches attr, a way round the scan of the log calls": 1},
     "src/backup/folder_backup.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # R787: reads the errno of the OSError from placing one artifact member to tell a name this system cannot hold (refused, that member only) from any other failure (raised); its words are not used
+    "src/backup/staged_key.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # R829 A: ``_seal_refusal`` reads whether the driver says the disk is full or the file locked, to pick one of its fixed sentences; its words are stored and logged nowhere
     "src/database/drive_pin.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},  # row 390: reads whether a SQLite or DuckDB error says the connection is ALREADY closed (nothing left to close or delete) rather than not knowing (pinned); its words are stored and logged nowhere
     "src/safety/crypto_erase.py": {"the caught exception 'exc' is used outside a scrubbing call": 4},  # R798 (row 333): ``_absent`` reads the class and errno of a failed lstat or stat to tell "not there" from "could not be looked at", and ``_listing`` hands a failed listing to the R798 callback, which takes only its ``filename`` (the folder, for the report and a masked log line); its words are not used
 }

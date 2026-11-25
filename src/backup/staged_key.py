@@ -57,6 +57,7 @@ class NotADatabase(StagedKeyError):
 
 #: Why a staged database that opened could not be sealed: it could not be read to its end.
 DAMAGED = "the backup's corpus is damaged: it could not be read in full, so nothing was imported"
+DISK_FULL = "there was not enough free disk space to stage the backup's corpus, so nothing was imported"
 
 
 @dataclass(frozen=True, eq=False)
@@ -113,6 +114,14 @@ def forget_under(folder: os.PathLike[str] | str) -> int:
     return len(gone)
 
 
+def forget_all() -> int:
+    """Drop every staged key (the erase's step 5: the app holds no key afterwards). Returns how many."""
+    with _lock:
+        n = len(_registry)
+        _registry.clear()
+    return n
+
+
 def _driver():
     from sqlcipher3 import dbapi2 as sqc
 
@@ -132,6 +141,10 @@ def _harden(conn: Any, schema: str | None = None) -> None:
     whose size does not fit its page is an error rather than a read past it."""
     conn.execute("PRAGMA trusted_schema = OFF")
     conn.execute("PRAGMA cell_size_check = ON")
+    conn.execute("PRAGMA writable_schema = OFF")
+    setconfig = getattr(conn, "setconfig", None)  # the standard driver (3.12+); SQLCipher's driver exposes no db_config
+    if setconfig is not None:
+        setconfig(sqlite3.SQLITE_DBCONFIG_DEFENSIVE, True)
     if schema is None:
         conn.execute("PRAGMA mmap_size = 0")
     else:
@@ -169,6 +182,7 @@ def _open_with(
         conn.set_key(secret)  # the C API, never SQL text
         if page_size is not None:
             conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
+        _harden(conn)  # before the first read of the file
         conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
     except sqc.Error as exc:
         if conn is not None:
@@ -255,6 +269,12 @@ def attach_staged(conn: Any, path: os.PathLike[str] | str, alias: str) -> bool:
     # 'x' traces as ``select 'x'``, in both drivers), so none may watch the ATTACH: the merge's own statement timer is
     # installed per step, after this, and anything else watching is switched off here rather than handed the key.
     conn.set_trace_callback(None)
+    # ``cell_size_check`` is connection-wide and costs the host nothing: on before the ATTACH reads the file. NOT
+    # ``trusted_schema``: it is connection-wide too, and the host's own triggers (the working copy's search index) call
+    # the app's registered functions, which SQLite then refuses as "unsafe use" (security read, PR #2390). The host
+    # keeps the setting a plaintext ATTACH gives it; the attached file's triggers and views are names the app makes
+    # (``check_staged_schema``, run before any row of it is read), and a trigger's body reaches only its own file's tables.
+    conn.execute("PRAGMA cell_size_check = ON")
     try:
         with sqlite_opening():  # R789
             conn.execute(f'ATTACH DATABASE ? AS "{alias}" KEY ?', (str(path), key.secret))
@@ -263,7 +283,7 @@ def attach_staged(conn: Any, path: os.PathLike[str] | str, alias: str) -> bool:
             with suppress(Exception):
                 conn.execute(f"PRAGMA cipher_default_page_size = {int(old[0])}")
     try:
-        _harden(conn, alias)
+        conn.execute(f'PRAGMA "{alias}".mmap_size = 0')
         conn.execute(f'SELECT count(*) FROM "{alias}".sqlite_master').fetchone()  # noqa: S608  # nosec B608 # alias asserted an identifier above
     except BaseException:
         with suppress(Exception):
@@ -312,6 +332,19 @@ def _raw_secret() -> bytes:
     return b"x'" + secrets.token_bytes(32).hex().encode("ascii") + b"'"
 
 
+def _seal_refusal(exc: BaseException) -> str:
+    """One of this module's fixed sentences for a seal the driver failed; the driver's words only choose it. A full
+    disk or another program's lock is not a damaged backup. Otherwise the file opened but could not be read to its
+    end: damaged, refused here, before hours of merging that its integrity check would refuse at the end anyway, and
+    never left on disk in plaintext for that time."""
+    words = str(exc).lower()
+    if "full" in words:
+        return DISK_FULL
+    if "locked" in words or "busy" in words:
+        return "another program is using the staged copy of the backup"
+    return DAMAGED
+
+
 def seal_plaintext(path: os.PathLike[str] | str) -> None:
     """A2: re-key a plaintext staged file into a SQLCipher copy under a random in-memory key, put the copy at the same
     name, unlink the plaintext (and its ``-wal``/``-shm``), and register the key.
@@ -336,6 +369,7 @@ def seal_plaintext(path: os.PathLike[str] | str) -> None:
             src.execute("SELECT count(*) FROM sqlite_master").fetchone()
         except sqc.DatabaseError:
             raise NotADatabase from None
+        check_staged_schema(src)  # a foreign file: refused before the export reads a row or replays its schema
         page_size = int(src.execute("PRAGMA page_size").fetchone()[0])
         auto_vacuum = int(src.execute("PRAGMA auto_vacuum").fetchone()[0])
         create_new(sealed, mode=0o600).close()
@@ -355,21 +389,19 @@ def seal_plaintext(path: os.PathLike[str] | str) -> None:
             src.close()
         with suppress(OSError):
             sealed.unlink()
-        if isinstance(exc, NotADatabase):
+        if isinstance(exc, NotADatabase | StagedKeyError):
             raise
         if isinstance(exc, sqc.DatabaseError | sqlite3.DatabaseError):
-            # It opened but could not be read to its end: damaged. Refused here, before hours of merging that its
-            # integrity check would refuse at the end anyway, and never left on disk in plaintext for that time.
-            raise StagedKeyError(DAMAGED) from None
+            raise StagedKeyError(_seal_refusal(exc)) from None
         raise
     src.close()
     with open(sealed, "rb") as fh:  # the copy reaches the disk before the plaintext goes
         os.fsync(fh.fileno())
     os.replace(sealed, p)
+    register(p, StagedKey(secret=secret, page_size=page_size, origin="ephemeral"))  # before anything else can fail
     for suffix in ("-wal", "-shm", "-journal"):
         with suppress(FileNotFoundError):
             p.with_name(p.name + suffix).unlink()
-    register(p, StagedKey(secret=secret, page_size=page_size, origin="ephemeral"))
 
 
 # --------------------------------------------------------------------------- the schema of a foreign file
@@ -377,10 +409,6 @@ def seal_plaintext(path: os.PathLike[str] | str) -> None:
 _OBJ_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-#: Triggers and virtual tables older builds made that this one no longer does, so an old backup still carries them.
-#: Found from the history of every ``CREATE TRIGGER|VIEW|VIRTUAL TABLE`` in ``src/database``, ``src/analytics``,
-#: ``src/backup`` and ``migrations`` (2026-11-24): the first search index's names. Everything current is read from the
-#: live schema instead, so it is never listed twice.
 #: ``name -> type`` of every trigger, view and virtual table the app makes in a corpus, this build's and older ones'
 #: (``articles_fts`` and its triggers). A fixed list, never read from the live store, so the check of a foreign file
 #: does not depend on the state of the user's own one; ``tests/test_staged_schema_objects_r834.py`` fails when the
@@ -423,14 +451,27 @@ def _known_objects() -> dict[str, str]:
 _VTAB_MODULES = ("fts5", "fts5vocab")
 
 
+_VIRTUAL_TEXT = re.compile(r"\s*CREATE\s+VIRTUAL\s+TABLE\b", re.IGNORECASE)
+#: The module of a virtual table, read from its text with comments removed: ``CREATE VIRTUAL TABLE <name> USING <m>``.
+_USING = re.compile(
+    r"\s*CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:\"[^\"]*\"|`[^`]*`|\[[^\]]*\]|[\w.]+)\s+USING\s+(\w+)",
+    re.IGNORECASE,
+)
+
+
+def _without_comments(sql: str) -> str:
+    """``sql`` with its comments replaced by a space (SQLite's own rule: a comment is whitespace)."""
+    return re.sub(r"/\*.*?(?:\*/|$)|--[^\n]*", " ", sql, flags=re.DOTALL)
+
+
 def check_staged_schema(conn: Any, schema: str = "main") -> None:
     """Refuse a staged file whose schema holds anything the app does not make itself (R826 b, R829 A1): a trigger,
     view or virtual table of a name the app never creates, a virtual table on another module, or an object of a type
     SQLite does not make. Reads only ``sqlite_master``; raises :class:`StagedKeyError` with fixed words."""
     assert schema.isidentifier(), schema
     known = _known_objects()
-    rows = conn.execute(f'SELECT type, name, sql FROM "{schema}".sqlite_master').fetchall()  # noqa: S608  # nosec B608 # schema asserted an identifier above
-    for typ, name, sql in rows:
+    rows = conn.execute(f'SELECT type, name, sql, rootpage FROM "{schema}".sqlite_master').fetchall()  # noqa: S608  # nosec B608 # schema asserted an identifier above
+    for typ, name, sql, rootpage in rows:
         typ = str(typ)
         lname = str(name or "").lower()
         if typ not in ("table", "index", "trigger", "view"):
@@ -441,8 +482,10 @@ def check_staged_schema(conn: Any, schema: str = "main") -> None:
                     f"the backup's corpus holds a {typ} this app does not make; it was not read"
                 )
             continue
-        if typ == "table" and sql and re.match(r"\s*CREATE\s+VIRTUAL\s+TABLE", str(sql), re.IGNORECASE):
-            using = re.search(r"\bUSING\s+(\w+)", str(sql), re.IGNORECASE)
+        # A table with no root page is virtual, whatever its SQL text looks like: a comment inside the text
+        # (``CREATE /*x*/ VIRTUAL TABLE``) still loads as a virtual table, so the text is never what decides.
+        if typ == "table" and (not rootpage or _VIRTUAL_TEXT.match(_without_comments(str(sql or "")))):
+            using = _USING.match(_without_comments(str(sql or "")))
             module = using.group(1).lower() if using else ""
             if module not in _VTAB_MODULES or known.get(lname) != "table":
                 raise StagedKeyError(

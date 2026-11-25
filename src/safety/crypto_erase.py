@@ -2268,6 +2268,12 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                 forget_stores()
             except Exception:  # noqa: BLE001 - bookkeeping only; the wipe goes on
                 pass
+            try:
+                from src.backup.staged_key import forget_all
+
+                forget_all()  # an import's staged keys (R829 A): the app holds no key after an erase
+            except Exception:  # noqa: BLE001 - bookkeeping only; the wipe goes on
+                pass
         passphrase_cleared = True
         # Again, now the key is gone: the close above ran while the key was still held, so a persisted refresh that read it before
         # then, or recorded its store meanwhile, would go on serving the erased corpus's rows under its key (open-on-main row 85).

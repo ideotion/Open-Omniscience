@@ -9263,10 +9263,16 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
     its ancestors' chains, so on a 1-million-article backup that was gigabytes: two
     imports on a 7 GB machine were killed in this stage at 5.6 and 6.0 GB, after hours
     of merging, before the swap."""
-    from src.backup.staged_key import open_staged
+    from src.backup.staged_key import StagedKeyError, check_staged_schema, open_staged
 
     src = open_staged(staged_custody)  # keyed when the import sealed it (R829 A3)
     try:
+        try:
+            check_staged_schema(src)  # foreign input: no row of it is read past an object the app does not make
+        except StagedKeyError as exc:
+            from src.monitoring.secret_scrub import record_text
+
+            return {"entries": 0, "imported": 0, "duplicate": 0, "chains": [], "refused": record_text(exc)}  # fixed words
         src_tables = {
             r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }

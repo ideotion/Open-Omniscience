@@ -2666,6 +2666,9 @@ def read_stream_backup(
             return staged
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
+            from src.backup.staged_key import forget_under
+
+            forget_under(staging)  # its keys go with the folder (R829 A)
             raise
 
 

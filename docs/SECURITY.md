@@ -785,9 +785,11 @@ imply a protection we cannot deliver.
   process's memory, never written and never derived from a passphrase, and its plaintext file is unlinked (not
   overwritten: the window is the extraction and checks, and storage that remaps blocks keeps old ones either way). The key
   reaches SQLite only through the C API or a bound `ATTACH ... KEY ?` with no statement trace watching (a trace expands
-  bound values into its text); a crash leaves a file nobody can read, which the boot sweep removes. Every connection to
-  a staged file runs with `trusted_schema` off and `cell_size_check` on, and a schema holding a trigger, view or virtual
-  table the app does not make is refused before any row is read. Public members (lanes, wiki dumps, maps, models) stay
+  bound values into its text); a crash leaves a file nobody can read, which the boot sweep removes. Every connection opened
+  on a staged file runs with `trusted_schema` off and `cell_size_check` on (the merge's connection, which attaches it,
+  keeps `trusted_schema` as its own search-index triggers need it), and a schema holding a trigger, view or virtual
+  table the app does not make, judged against a fixed list and never by the user's own store, is refused before any
+  row is read, sealed or filtered. Public members (lanes, wiki dumps, maps, models) stay
   plaintext inside the private folder. The erase treats every staging file as a file with no evidence of its identity:
   its head goes in the pass above and it is rewritten in full, after the key-material pass. A folder the app cannot list is reported as not destroyed. No step writes through a link or into a FIFO, socket or device, and no symlinked folder or
   junction is entered (the app's own databases, if linked into place, are erased where they really are, and so is a

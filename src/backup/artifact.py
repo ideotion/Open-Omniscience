@@ -452,10 +452,11 @@ def _drop_newsletter_articles(db_path: Path) -> int:
     finds no orphans. The empty source rows are LEFT (harmless; a future re-import of
     fixed .eml re-attaches to them). Returns the number of articles dropped.
     """
-    from src.backup.staged_key import open_staged
+    from src.backup.staged_key import check_staged_schema, open_staged
 
     con = open_staged(db_path, read_only=False)  # keyed when the import sealed it (R829 A)
     try:
+        check_staged_schema(con)  # before a DELETE could fire a trigger the backup carried (R829 A1)
         return _drop_newsletter_rows(con)
     finally:
         con.close()
@@ -902,6 +903,9 @@ def read_volume_backup(
         return staged
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
+        from src.backup.staged_key import forget_under
+
+        forget_under(staging)  # its keys go with the folder (R829 A)
         raise
     finally:
         unregister_active_staging(staging)
@@ -1062,6 +1066,9 @@ def read_artifact(
         return staged
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
+        from src.backup.staged_key import forget_under
+
+        forget_under(staging)  # its keys go with the folder (R829 A)
         raise
 
 
