@@ -2535,7 +2535,7 @@
     /* The top-bar import pill: a FIXED width (invariant #3), so 0% to 100% or a
        finished mark never moves its neighbours; it is the first item of the status
        cluster, so its coming and going moves nothing to its right. */
-    .imp-pill { display:inline-flex; align-items:center; gap:5px; width:68px; flex:0 0 68px; box-sizing:border-box;
+    .imp-pill { display:inline-flex; align-items:center; gap:5px; width:76px; flex:0 0 76px; box-sizing:border-box;
       padding:1px 8px 1px 4px; border:1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
       border-radius:999px; background:var(--panel2); color:var(--fg); font:inherit; font-size:12px;
       font-variant-numeric:tabular-nums; cursor:pointer; min-height:0; box-shadow:none; white-space:nowrap; overflow:hidden; }
@@ -2549,7 +2549,7 @@
     .imp-pill-ok { border-color:color-mix(in srgb, var(--ok) 50%, var(--border)); }
     .imp-pill-ok .imp-ring-fg, .imp-pill-ok .imp-pill-arrow { stroke:var(--ok); color:var(--ok); }
     .imp-pill-warn { border-color:color-mix(in srgb, var(--warn) 55%, var(--border)); }
-    .imp-pill-warn .imp-ring-fg, .imp-pill-warn .imp-pill-arrow { stroke:var(--warn); color:var(--warn); }
+    .imp-pill-warn .imp-ring-fg, .imp-pill-warn .imp-pill-arrow { stroke:var(--warn); color:var(--warn-fg); }
     .imp-pill-err, .imp-pill-unread { border-color:color-mix(in srgb, var(--err) 55%, var(--border)); border-style:dashed; }
     .imp-pill-err .imp-ring-fg, .imp-pill-err .imp-pill-arrow,
     .imp-pill-unread .imp-pill-arrow { stroke:var(--err); color:var(--err); }

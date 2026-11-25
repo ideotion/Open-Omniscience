@@ -2253,7 +2253,7 @@ def test_ui_invariants():
     assert "#llm { min-width" in html, "LLM pill needs a fixed footprint"
     # 3 (row 440): the import pill keeps a FIXED width and is the FIRST element of the status
     # cluster, so a changing number, or the pill appearing or leaving, moves nothing to its right.
-    assert ".imp-pill { display:inline-flex; align-items:center; gap:5px; width:68px; flex:0 0 68px;" in html, (
+    assert ".imp-pill { display:inline-flex; align-items:center; gap:5px; width:76px; flex:0 0 76px;" in html, (
         "the top-bar import pill needs a fixed footprint (CLAUDE.md #3, row 440)"
     )
     _cluster = re.sub(r"<!--.*?-->", "", html.split('id="statusCluster">', 1)[1], flags=re.S)
