@@ -181,6 +181,7 @@ class Snapshot:
     reachable: bool = False
     version: str = ""
     lock_state: str = ""
+    at_rest_claim: str = ""  # R821: what may be said at rest ("encrypted" only with evidence); lock_state is the gate's word
     locked: bool = False
     online: bool | None = None
     collecting: bool = False
@@ -220,6 +221,7 @@ def take_snapshot(port: int, fetch: Fetch = api) -> Snapshot:
     lock = fetch(port, "GET", "/api/system/lock-state")
     if isinstance(lock, dict) and "_error" not in lock:
         snap.lock_state = str(lock.get("state") or "")
+        snap.at_rest_claim = str(lock.get("at_rest_claim") or "")
         snap.locked = bool(lock.get("locked"))
     vit = fetch(port, "GET", "/api/system/vitals")
     if isinstance(vit, dict) and "_error" not in vit:
@@ -335,7 +337,10 @@ def _lock_key(snap: Snapshot) -> str:
         return "locked"
     if snap.lock_state == "unlocked-plaintext":
         return "plain"
-    return "encrypted" if snap.lock_state else ""
+    if snap.lock_state != "unlocked-encrypted":
+        return ""  # a word this panel does not know claims nothing
+    # R821: the gate's word says a key is held, never that it opened the file: "encrypted" only on the server's evidence
+    return "encrypted" if snap.at_rest_claim == "encrypted" else "looks"
 
 
 def _lock_text(snap: Snapshot) -> tuple[str, str] | None:
@@ -346,6 +351,8 @@ def _lock_text(snap: Snapshot) -> tuple[str, str] | None:
         return _t("Unlocked (the database is not encrypted)."), "ok"
     if key == "encrypted":
         return _t("Unlocked (encrypted)."), "ok"
+    if key == "looks":
+        return _t("Unlocked (looks encrypted; not yet checked with your key)."), "ok"
     return None
 
 
@@ -503,7 +510,8 @@ def _rule(title: str, width: int, right: str = "") -> str:
 
 def _status_line(snap: Snapshot) -> str:
     key = _lock_key(snap)
-    lock = {"locked": _t("Locked: open the UI to unlock"), "plain": _t("not encrypted"), "encrypted": _t("encrypted")}.get(key, "?")
+    lock = {"locked": _t("Locked: open the UI to unlock"), "plain": _t("not encrypted"), "encrypted": _t("encrypted"),
+            "looks": _t("looks encrypted")}.get(key, "?")
     net = {True: _t("online"), False: _t("offline"), None: "?"}[snap.online]
     coll = _t("collecting") if snap.collecting else _t("collection stopped")
     cpu = f"{snap.cpu_percent:.0f} %" if snap.cpu_percent is not None else "?"

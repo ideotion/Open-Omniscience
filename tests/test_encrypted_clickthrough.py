@@ -87,7 +87,8 @@ def test_the_probe_falls_back_to_lock_state_when_doctor_is_503_while_locked(runn
     monkeypatch.setattr(runner, "_get_json", fake_get_json)
     row = runner._probe_at_rest("C", "http://127.0.0.1:8000", "before-walk")
 
-    assert row["detected"] == "encrypted", row
+    # R821: a locked store's header only LOOKS encrypted; "encrypted" for --require-encrypted needs the keyed doctor reading
+    assert row["detected"] == "looks_encrypted", row
     assert row["via"] == "lock-state"
     assert row["lock_state"] == "locked"
     assert "doctor" in row["reason"] and "lock-state" in row["reason"]

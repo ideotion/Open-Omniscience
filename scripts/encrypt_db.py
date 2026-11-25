@@ -40,8 +40,25 @@ def main() -> int:
         print(f"no database at {p} yet -- first launch will create it encrypted")
         return 1
     if state:
-        print(f"{p.name} is already encrypted")
-        return 0
+        # R821 (3): the header alone never says "already encrypted". This installation's record naming this very file does; without
+        # it, nothing is changed and nothing is claimed.
+        from src.database import at_rest_state
+
+        if at_rest_state.claim_for(p) == "encrypted":
+            # Security reads (row 400): the corpus alone is not the whole answer; an earlier run that stopped part-way (R742) can
+            # leave the custody log or a lane in plaintext, or one that only looks encrypted.
+            st = at_rest_state.status(p)
+            if st.get("complete"):
+                print(f"{p.name} is encrypted, per this installation's record; nothing to do")
+                return 0
+            left = sorted({*st.get("pending", []), *st.get("looks_encrypted", []), *st.get("busy", [])})
+            print(f"{p.name} is encrypted, per this installation's record, but these stores are not shown encrypted: "
+                  + (", ".join(left) or "(could not be told)"))
+            print("Open the app, unlock it, and finish with Settings -> Safety -> 'Encrypt this corpus'.")
+            return 1
+        print(f"{p.name} looks encrypted, but this cannot be told from here: nothing was changed.")
+        print("Open the app and unlock it once with your passphrase (that checks it), then run this again.")
+        return 1
 
     print("Stop the app first. A running app keeps what it built from the plaintext file, and the")
     print("temporary files that hold it, until it restarts. While it runs, use Settings -> Safety ->")

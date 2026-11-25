@@ -153,6 +153,11 @@ def _drive_failure_sentence(report: dict) -> str:
 _KEYS_LEFT_SENTENCE = (
     "Some of the app's own key files could not be removed from the keys folder, so the erase may be incomplete: remove them by hand."
 )
+#: R828 (2): the app's at-rest record could not be overwritten and removed; never said as destroyed.
+_RECORD_LEFT_SENTENCE = (
+    "The app's at-rest record could not be overwritten and removed, so key material may remain on the disk: the erase may be "
+    "incomplete."
+)
 _DEFENCE_TAIL = (
     " A byte-overwrite pass is defence-in-depth only — it does NOT guarantee unrecoverability on "
     "SSD/flash or copy-on-write filesystems (wear-levelling / snapshots may retain old blocks)."
@@ -531,50 +536,124 @@ def _untouched(reason: str) -> dict:
             "header": None, "form": "unknown"}
 
 
-def _read_record_fd(dfd: int) -> bytes | None:
-    """R820 (3): the bytes of the at-rest record in the folder held by ``dfd``: opened no-follow through that handle, a regular file
-    only, at most :data:`src.database.at_rest_state.RECORD_MAX_BYTES` (a longer one is not the app's: None); then removed, as the
-    app's own file the erase destroys. Never creates anything; never raises (None)."""
+def _take_record(folder: Path, dfd: int | None = None) -> tuple[bytes | None, str]:
+    """R820 (3) / R828 (2): the at-rest record beside a store, in the erase's key-material pass: read (no-follow, a regular file
+    only, at most :data:`src.database.at_rest_state.RECORD_MAX_BYTES`), then OVERWRITTEN in place and fsynced, then unlinked, before
+    any bulk work. Through the folder handle ``dfd`` when one is kept, else by path. Returns ``(bytes, outcome)``: the bytes only
+    when the file was the app's size; ``outcome`` is ``"absent"`` (no regular file of the app's size at the name: a link or anything
+    else there is never followed or written), ``"destroyed"`` (overwritten AND unlinked) or ``"left"`` (either failed, or another
+    file took its place between the look and the open: never said as destroyed). Never creates anything; never raises."""
+    temps = _drop_record_lock(folder, dfd)
+    raw, outcome = _take_record_file(folder, dfd)
+    # a write copy left behind is key material possibly remaining: said as left, never as destroyed or absent (security read)
+    return raw, (_worse_record(outcome, temps) or outcome)
+
+
+def _take_record_file(folder: Path, dfd: int | None) -> tuple[bytes | None, str]:
+    """The record file itself, for :func:`_take_record`."""
     from src.database.at_rest_state import RECORD_MAX_BYTES, RECORD_NAME
 
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
-    _drop_record_lock(Path(), dfd)
+    name: str = RECORD_NAME if dfd is not None else str(folder / RECORD_NAME)
     try:
-        fd = os.open(RECORD_NAME, flags, dir_fd=dfd)
+        lst = os.lstat(name, dir_fd=dfd)
+    except FileNotFoundError:
+        return None, "absent"
     except OSError:
-        return None
+        return None, "left"
+    if not stat.S_ISREG(lst.st_mode) or lst.st_size > RECORD_MAX_BYTES:
+        # not the app's record (it writes a small regular file): never followed or written here, left to the steps for any other
+        # file; but something IS at the name, so it is said as left, never as absent (security reads, row 400)
+        return None, "left"
+    if lst.st_nlink != 1:
+        # another name holds the same file (security read 2): overwriting would write into that other file, and unlinking this
+        # name would leave the contents reachable. Never written or removed; never said as destroyed.
+        return None, "left"
+    flags = (os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0)
+             | getattr(os, "O_BINARY", 0))
+    try:
+        fd = os.open(name, flags, dir_fd=dfd)
+    except FileNotFoundError:
+        return None, "absent"
+    except OSError:
+        _LOG.warning("crypto-erase: the at-rest record could not be overwritten (key material may remain)")
+        _unlink_if_same(name, dfd, lst)  # a read-only record still loses its name (Opus read, row 400); said as left all the same
+        return None, "left"
     raw: bytes | None = None
+    overwritten = False
     try:
         st = os.fstat(fd)
-        if stat.S_ISREG(st.st_mode) and st.st_size <= RECORD_MAX_BYTES:
-            chunks: list[bytes] = []
-            got = 0
-            # ``while True: if not <wanted>: break``, the guard-clause form (src/utils/interrupts.py; R161/R163)
-            while True:
-                if got > RECORD_MAX_BYTES:
-                    break
-                b = os.read(fd, RECORD_MAX_BYTES + 1 - got)
-                if not b:
-                    break
-                chunks.append(b)
-                got += len(b)
-            raw = b"".join(chunks) if got <= RECORD_MAX_BYTES else None
-            with contextlib.suppress(OSError):
-                os.unlink(RECORD_NAME, dir_fd=dfd)
+        if not stat.S_ISREG(st.st_mode) or (st.st_dev, st.st_ino) != (lst.st_dev, lst.st_ino) or st.st_nlink != 1:
+            return None, "left"  # another file swapped in between the look and the open: never read, written or removed
+        chunks: list[bytes] = []
+        got = 0
+        # ``while True: if not <wanted>: break``, the guard-clause form (src/utils/interrupts.py; R161/R163)
+        while True:
+            if got > RECORD_MAX_BYTES:
+                break
+            b = os.read(fd, RECORD_MAX_BYTES + 1 - got)
+            if not b:
+                break
+            chunks.append(b)
+            got += len(b)
+        raw = b"".join(chunks) if got <= RECORD_MAX_BYTES else None
+        size = max(st.st_size, got)
+        os.lseek(fd, 0, os.SEEK_SET)
+        done = 0
+        while True:
+            if done >= size:
+                break
+            n = os.write(fd, os.urandom(min(_CHUNK, size - done)))
+            if n <= 0:
+                raise OSError("nothing written")
+            done += n
+        os.fsync(fd)
+        overwritten = True
     except OSError:
-        raw = None
+        overwritten = False
     finally:
-        os.close(fd)
-    return raw
+        with contextlib.suppress(OSError):
+            os.close(fd)  # before the unlink: an open file cannot be removed on Windows; a failed close never stops the pass
+    if not overwritten:
+        _LOG.warning("crypto-erase: the at-rest record could not be overwritten (key material may remain)")
+        _unlink_if_same(name, dfd, lst)  # still unlinked when its name holds the same file (Opus read, row 400): said as left
+        return raw, "left"
+    try:
+        again = os.lstat(name, dir_fd=dfd)
+        if (again.st_dev, again.st_ino) != (lst.st_dev, lst.st_ino):
+            return raw, "left"  # its name now holds another file: never removed
+        os.unlink(name, dir_fd=dfd)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        _LOG.warning("crypto-erase: the at-rest record was overwritten but could not be removed (key material may remain)")
+        return raw, "left"
+    return raw, "destroyed"
 
 
-def _record_names_main(raw: bytes | None, ident: tuple[int, int]) -> bool:
+def _unlink_if_same(name: str, dfd: int | None, lst: os.stat_result) -> None:
+    """Unlink ``name`` only while it still holds the file ``lst`` describes. Never raises."""
+    with contextlib.suppress(OSError):
+        again = os.lstat(name, dir_fd=dfd)
+        if (again.st_dev, again.st_ino) == (lst.st_dev, lst.st_ino):
+            os.unlink(name, dir_fd=dfd)
+
+
+def _record_names_main(raw: bytes | None, ident: tuple[int, int], head: bytes | None) -> bool:
     from src.database.at_rest_state import record_names_identity
 
     try:
-        return record_names_identity(raw, ident)
+        return record_names_identity(raw, ident, head)
     except Exception:  # noqa: BLE001 - an unreadable record is "could not be determined" (R820 (1))
         return False
+
+
+def _head_of(fd: int) -> bytes | None:
+    """The first 16 bytes of a kept main file, in one bounded read (None when they cannot be read in full)."""
+    try:
+        head = os.pread(fd, len(_SQLITE_MAGIC), 0)
+    except OSError:
+        return None
+    return head if len(head) == len(_SQLITE_MAGIC) else None
 
 
 def _header_of(fd: int) -> str | None:
@@ -618,6 +697,17 @@ def plaintext_body_rewrite_supported() -> bool:
 
 
 def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, generation: int, missed: list[str]) -> dict:
+    """:func:`_open_and_unlink_plain_at`, with what became of the app's at-rest record (R828 (2)) as ``record_state`` on every
+    answer, the untouched ones included."""
+    taken: dict = {}
+    rec = _open_and_unlink_plain_at(db, pin, generation, missed, taken)
+    if "state" in taken:
+        rec["record_state"] = taken["state"]
+    return rec
+
+
+def _open_and_unlink_plain_at(db: Path, pin: tuple[int, int, int, int, str] | str, generation: int, missed: list[str],
+                              taken: dict) -> dict:
     """R817 (1): a main database KNOWN to be plaintext. Its folder is opened no-follow and checked against ``pin`` (read before the
     erase opened anything); each part is opened no-follow through that folder handle, checked to be a regular file (the main file
     the very one pinned, a sidecar on the same device), kept, its first page / log destroyed at once (:func:`_fast_destroy`) and
@@ -651,9 +741,15 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
             return _untouched("changed")  # another folder (another drive) at that place
         folder_ok = True
         deleted = True
+        head16: bytes | None = None
         # The main file first (its identity decides everything), then the log index (its head zeroed, so no connection trusts it
         # again), then the logs, as step 1's passes order them.
+        raw_rec: bytes | None = None
         for suffix in ("", "-shm", "-wal", "-journal"):
+            if suffix != "" and "state" not in taken:
+                # R828 (2) as the coordinator ordered it: the main file's first page, THEN the record (microseconds, and on an
+                # install a build between R820 and R828 wrote, real key material), THEN the logs, which can be long and stopped.
+                raw_rec, taken["state"] = _take_record(Path(folder), dfd)
             name = db.name + suffix
             kind = "head" if suffix == "" else ("shm" if suffix == "-shm" else "whole")
             try:
@@ -707,6 +803,7 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
                 rec["other_names"] = max(0, st.st_nlink - 1)
                 rec["touched"] = True
                 rec["header"] = _header_of(fd)  # R819 (d): through the handle just kept, before its first page is destroyed
+                head16 = _head_of(fd)  # row 400: its first 16 bytes (the salt), matched against the record's
                 rec["form"] = "plain" if rec["header"] == "sqlite" else "unknown"  # R819 (4): SQLite's own header, else not known
             # Kept with this wipe's descriptors at once (R817 (3)): closed only by the late pass, after the app's own pool on the
             # store, and seen by the holder rule; never left open if the erase stops before the rewrite.
@@ -722,16 +819,19 @@ def _open_and_unlink_plain(db: Path, pin: tuple[int, int, int, int, str] | str, 
                 _note_left(rec, st, name, dfd)  # rewritten through its handle; the walks of the folder only remove the name
                 _LOG.warning("crypto-erase: could not delete a file of an unencrypted store")
         rec["deleted"] = deleted
-        # R820 (3): the app's record beside the store, read only now (the main file's first page is destroyed: the key is gone),
-        # through the pinned folder's handle, no-follow, a regular file only, size-bounded; then destroyed (it is the app's).
-        rec["record_ok"] = rec["touched"] and _record_names_main(_read_record_fd(dfd), (dev, ino))
+        # R820 (3): the app's record beside the store, read once the main file's first page is destroyed (the key is gone), before
+        # its logs (above), through the pinned folder's handle, no-follow, a regular file only, size-bounded; overwritten and
+        # unlinked in the key-material pass, before any bulk work (R828 (2)).
+        if "state" not in taken:
+            raw_rec, taken["state"] = _take_record(Path(folder), dfd)
+        rec["record_ok"] = rec["touched"] and _record_names_main(raw_rec, (dev, ino), head16)
         return rec
     finally:
-        if folder_ok and not rec["touched"]:
-            # R820 (3): the app's record goes even when the file at the path is not the store, but only in the pinned folder,
-            # through its handle: a folder that is not the pinned one (a link, another drive) holds another store's record (delta
-            # security read, row 396).
-            _read_record_fd(dfd)
+        if folder_ok and "state" not in taken:
+            # R820 (3) / R828 (2): the app's record goes even when the file at the path is not the store, but only in the pinned
+            # folder, through its handle: a folder that is not the pinned one (a link, another drive) holds another store's record
+            # (delta security read, row 396).
+            taken["state"] = _take_record(Path(folder), dfd)[1]
         os.close(dfd)
 
 
@@ -787,19 +887,25 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
     rec.update(reason=None, touched=True)
     with contextlib.suppress(OSError):
         rec["other_names"] = max(0, os.lstat(db).st_nlink - 1)
+    fallback_head: bytes | None = None
     try:
         # R819 (d) / R820 (2): the first bytes in one bounded, unbuffered read, before its first page is overwritten
         fd = os.open(db, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0))
         try:
             st = os.fstat(fd)  # the very file pinned, never a file swapped in or reached through a link
-            rec["header"] = _header_kind(os.read(fd, len(_SQLITE_MAGIC))) if (st.st_dev, st.st_ino) == pin[:2] else None
+            raw16 = os.read(fd, len(_SQLITE_MAGIC)) if (st.st_dev, st.st_ino) == pin[:2] else None
+            rec["header"] = _header_kind(raw16) if raw16 is not None else None
+            fallback_head = raw16 if raw16 is not None and len(raw16) == len(_SQLITE_MAGIC) else None
         finally:
             os.close(fd)
     except OSError:
         rec["header"] = None
     rec["form"] = "plain" if rec["header"] == "sqlite" else "unknown"
     deleted, head_ok = True, False
+    raw: bytes | None = None
     for suffix in _STORE_PARTS:
+        if suffix != "" and "record_state" not in rec:
+            raw, rec["record_state"] = _take_record(db.parent)  # R828 (2): after the first page, before the logs
         p = db.with_name(db.name + suffix)
         if not os.path.lexists(p):
             continue
@@ -818,7 +924,9 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
     rec["state"] = "first_page" if head_ok else "not_overwritten"
     rec["reason"] = None if head_ok and rec["reason"] is None else (rec["reason"] or "write_failed")
     rec["deleted"] = deleted
-    rec["record_ok"] = head_ok and _record_names_main(_read_record_path(db.parent), pin[:2])  # R820 (3): after the first page
+    if "record_state" not in rec:
+        raw, rec["record_state"] = _take_record(db.parent)  # R820 (3) / R828 (2): overwritten and unlinked, before any bulk work
+    rec["record_ok"] = head_ok and _record_names_main(raw, pin[:2], fallback_head)
     return rec
 
 
@@ -837,22 +945,101 @@ def _folder_is_pinned(db: Path, pin: tuple[int, int, int, int, str] | str | None
     return stat.S_ISDIR(st.st_mode) and (st.st_dev, st.st_ino) == (pin[2], pin[3]) and same_place
 
 
-def _drop_record_beside(db: Path) -> None:
-    """R820 (3): remove the at-rest record beside ``db`` when it is a regular file (a link is never followed: left). Never raises."""
-    from src.database.at_rest_state import RECORD_NAME
-
-    p = db.parent / RECORD_NAME
-    with contextlib.suppress(OSError):
-        if stat.S_ISREG(os.lstat(p).st_mode):
-            p.unlink()
-    _drop_record_lock(db.parent)
+def _worse_record(a: str | None, b: str | None) -> str | None:
+    """Of two outcomes of :func:`_take_record`, the one to say: "left" over "destroyed" over "absent" (R828 (2))."""
+    order = {None: 0, "absent": 1, "destroyed": 2, "left": 3}
+    return a if order.get(a, 3) >= order.get(b, 3) else b
 
 
-def _drop_record_lock(folder: Path, dfd: int | None = None) -> None:
-    """The record's lock file (``file_lock``'s ``.lock`` beside it) goes with the record: a regular file only, never through a link.
+def _drop_record_beside(db: Path) -> str:
+    """R820 (3) / R828 (2): overwrite and remove the at-rest record beside ``db`` (:func:`_take_record`, by path: a link is never
+    followed). Returns its outcome. Never raises."""
+    return _take_record(db.parent)[1]
+
+
+def _drop_record_temps(folder: Path, dfd: int | None = None) -> str:
+    """A record's leftover write copies (``<record>.tmp.<pid>.<thread>``, ``file_lock.temp_name``: a crash between the write and
+    the swap leaves one) are overwritten and unlinked with it, a regular file with one name only, never through a link (security
+    read, row 400). Written with ``lseek`` + ``write`` (no ``os.pwrite`` on Windows: Opus read of 0da0c37de). Returns ``"left"``
+    when any copy was skipped or not overwritten in full, ``"destroyed"`` when every copy seen was, ``"absent"`` when there was none.
     Never raises."""
+    from src.database.at_rest_state import RECORD_MAX_BYTES, RECORD_NAME
+
+    try:
+        names = os.listdir(dfd if dfd is not None else folder)
+    except (FileNotFoundError, NotADirectoryError):
+        return "absent"
+    except Exception:  # noqa: BLE001 - a folder that cannot be listed may hold a copy never seen: said as left (security read)
+        return "left"
+    prefix = RECORD_NAME + ".tmp."
+    flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_BINARY", 0)
+    outcome = "absent"
+    for n in names:
+        if not isinstance(n, str) or not n.startswith(prefix):
+            continue
+        name = n if dfd is not None else str(folder / n)
+        try:
+            one = _drop_one_temp(name, dfd, flags, RECORD_MAX_BYTES)
+        except Exception:  # noqa: BLE001 - one copy that could not be handled never stops the pass; said as left
+            one = "left"
+        outcome = _worse_record(outcome, one) or "left"
+    return outcome
+
+
+def _drop_one_temp(name: str, dfd: int | None, flags: int, max_bytes: int) -> str:
+    """One record write copy for :func:`_drop_record_temps`: ``"destroyed"`` (overwritten in full, then its name unlinked),
+    ``"absent"`` (gone before it was written: nothing overwritten, never said as destroyed; Opus read a2c1c6e44) or ``"left"``."""
+    try:
+        lst = os.lstat(name, dir_fd=dfd)
+    except FileNotFoundError:
+        return "absent"
+    if not stat.S_ISREG(lst.st_mode) or lst.st_nlink != 1 or lst.st_size > max_bytes:
+        return "left"  # never written or removed: not a copy the app wrote alone (a copy too large is said as left)
+    try:
+        fd = os.open(name, flags, dir_fd=dfd)
+    except FileNotFoundError:
+        return "absent"
+    ok = same = False
+    try:
+        st = os.fstat(fd)
+        same = (st.st_dev, st.st_ino) == (lst.st_dev, lst.st_ino) and st.st_nlink == 1 and st.st_size <= max_bytes
+        if same:
+            size = max(st.st_size, lst.st_size)
+            os.lseek(fd, 0, os.SEEK_SET)
+            done = 0
+            # ``while True: if not <wanted>: break``, the guard-clause form (src/utils/interrupts.py; R161/R163)
+            while True:
+                if done >= size:
+                    break
+                k = os.write(fd, os.urandom(min(_CHUNK, size - done)))
+                if k <= 0:
+                    raise OSError("nothing written")
+                done += k
+            os.fsync(fd)
+            ok = True
+    except OSError:
+        ok = False
+    finally:
+        with contextlib.suppress(OSError):
+            os.close(fd)
+    if same:
+        _unlink_if_same(name, dfd, lst)  # its name, only while it still holds that file; a copy not overwritten in full is said left
+    try:
+        os.lstat(name, dir_fd=dfd)
+        gone = False  # still at its name (a refused unlink, or another file since): never said as destroyed (security read)
+    except FileNotFoundError:
+        gone = True
+    except OSError:
+        gone = False
+    return "destroyed" if ok and gone else "left"
+
+
+def _drop_record_lock(folder: Path, dfd: int | None = None) -> str:
+    """The record's lock file (``file_lock``'s ``.lock`` beside it) goes with the record: a regular file only, never through a link.
+    Returns what :func:`_drop_record_temps` said of the record's write copies. Never raises."""
     from src.database.at_rest_state import RECORD_NAME
 
+    temps = _drop_record_temps(folder, dfd)
     name = RECORD_NAME + ".lock"
     with contextlib.suppress(OSError):
         if dfd is not None:
@@ -860,32 +1047,7 @@ def _drop_record_lock(folder: Path, dfd: int | None = None) -> None:
                 os.unlink(name, dir_fd=dfd)
         elif stat.S_ISREG(os.lstat(folder / name).st_mode):
             (folder / name).unlink()
-
-
-def _read_record_path(folder: Path) -> bytes | None:
-    """R820 (3) where no folder handle is kept (R817 (4)): the record read by path, never through a link, a regular file only,
-    size-bounded; then removed. Never raises (None)."""
-    from src.database.at_rest_state import RECORD_MAX_BYTES, RECORD_NAME
-
-    p = folder / RECORD_NAME
-    try:
-        st = os.lstat(p)
-        if not stat.S_ISREG(st.st_mode) or st.st_size > RECORD_MAX_BYTES:
-            return None
-        fd = os.open(p, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0))
-        try:
-            fst = os.fstat(fd)
-            if (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino) or not stat.S_ISREG(fst.st_mode):
-                return None  # another file swapped in between the look and the open: never read, never removed
-            raw = os.read(fd, RECORD_MAX_BYTES + 1)
-        finally:
-            os.close(fd)
-    except OSError:
-        return None
-    with contextlib.suppress(OSError):
-        p.unlink()
-    _drop_record_lock(folder)
-    return raw if len(raw) <= RECORD_MAX_BYTES else None
+    return temps
 
 
 def _rewrite_plain(rec: dict, *, may_write: bool) -> None:
@@ -1780,8 +1942,9 @@ def quick_crypto_erase(
 ) -> dict:
     """Instant crypto-erase then remove the data dir. Requires ``confirm=True``.
 
-    Order: (1) in three passes, the salt page of each encrypted DB (main, custody, lanes) with its -shm head zeroed,
-    then its WAL and journal whole (they hold copies of page 1), then the salt pages again, unlinked; (2) the on-disk
+    Order: (1) in three passes, the salt page of each encrypted DB (main, custody, lanes), then the app's at-rest record
+    (overwritten and unlinked, R828 (2)), then each -shm head zeroed and each WAL and journal whole (they hold copies of page 1),
+    then the salt pages again, unlinked; (2) the on-disk
     keys; (3) the DuckDB cache header and key sidecar; (4) ``anchors.db`` whole; (5) the in-memory passphrase;
     (5a) the copies the app made of a database beside it, wherever it is (an encrypted one head-only, a plaintext one whole);
     (5b) the head of every other file under the data dir (encrypted snapshots and copies); (6) a full overwrite and
@@ -2095,8 +2258,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     # un-checkpointed write leaves) -- and it waits on nothing else. The -shm index
     # holds frame numbers and checksums, never page data, so its head is only zeroed (see pass 1).
     # THREE PASSES, so no checkpoint can carry the salt back into a file this step has already left. Pass 1 overwrites
-    # the head of every -shm (its header gone, no connection trusts the log index again, so none checkpoints) and of
-    # every main file, unlinking nothing. Pass 2 rewrites the -wal and -journal whole. Pass 3 overwrites the main and
+    # the head of every main file, then (after the at-rest record, the coordinator's order for R828 (2)) the head of every -shm
+    # (its header gone, no connection trusts the log index again, so none checkpoints), unlinking nothing. Pass 2 rewrites the
+    # -wal and -journal whole. Pass 3 overwrites the main and
     # -shm heads once more and unlinks them, catching a checkpoint that was already copying page 1 home during pass 2.
     # A database reached through a link (a corpus kept on another drive and linked into place) is erased where it really
     # is: these are the app's own files, the one place a link is followed. Every other file is never written through one.
@@ -2112,29 +2276,51 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     plain_pin = main_pin if plain_main is not None else None
     plain_parts = {plain_main.with_name(plain_main.name + suffix) for suffix in _STORE_PARTS} if plain_main is not None else set()
     plain_rec: dict | None = None
+    plain_took = False  # whether the plaintext path took the record beside its store (through the pinned folder)
+    record_state: str | None = None  # R828 (2): what became of the app's at-rest record (None: no place to look for it)
     head_ok: dict[Path, bool] = {}
     # The -shm head is written with ZEROS, never random bytes: it holds no page data, and a connection that rolls back
     # after the erase reads its frame count from that header and grows the mapped file toward it -- a random count grew
     # it toward 32 GiB in the security read; a zeroed header reads as "rebuild from the log", which is already noise.
+    # Page 1 of every store first; each -shm head after the record (the coordinator's order for R828 (2), security reads row 400).
     for db in dbs:
-        for p in (db.with_name(db.name + "-shm"), db):
-            if p not in plain_parts and _present(p, _unreached):
-                head_ok[p] = _overwrite(p, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db)
-    for db in dbs:
-        for suffix in ("-wal", "-journal"):
-            p = db.with_name(db.name + suffix)
-            if p in plain_parts:
-                continue
-            if _hold(p, whole=True, generation=generation) is False:
-                missed.append(p.name)
-            s, overwritten, w = _shred(p, unreached=_unreached)
-            seen += s
-            wiped += w
-            if s and not overwritten:
-                overwrite_failures.append(str(p))
+        if db not in plain_parts and _present(db, _unreached):
+            head_ok[db] = _overwrite(db, head_bytes=_SQLCIPHER_PAGE1)
     main_unreached = plain_main is not None and plain_pin is not None and _under(plain_main, base) and _off_drive()
-    if plain_main is not None and plain_pin is not None and not main_unreached:  # R812: else untouched
+    plain_takes = plain_main is not None and plain_pin is not None and not main_unreached
+    # R828 (2): the app's at-rest record is in the key-material pass on every path (CLI, HTTP, the locked app: all come here), and
+    # is overwritten and unlinked right after the first pages and before the logs (the coordinator's order: microseconds, where a log
+    # rewrite can be long and stopped), before any bulk work. Beside the store as configured
+    # and beside where it really is. In the data folder it is the app's own file (step 6 would remove it anyway); outside it, only
+    # beside an encrypted store or in the plaintext store's pinned folder (R820 (3): any other folder holds another store's record).
+    # The data folder itself is always looked in (security reads, R828): with no main database configured, or its file gone, the
+    # record there would otherwise go only with step 6's unlink, never overwritten.
+    record_dirs: dict[Path, Path] = {}
+    if main_db is not None and not main_unreached:
+        for m in dict.fromkeys((main_db, _real(main_db))):
+            if not _under(m.parent, base) and not (encrypted is True
+                                                   or plain_main is not None and _folder_is_pinned(m, plain_pin)):
+                continue
+            record_dirs.setdefault(m.parent, m)
+    from src.database.at_rest_state import RECORD_NAME as _RECORD_NAME
+
+    if not main_unreached:
+        record_dirs.setdefault(base, base / "oo.db")
+    plain_real = os.path.realpath(plain_main.parent) if plain_main is not None else None
+    # The records of every folder but the plaintext store's, BEFORE its path (security and Opus reads of 0da0c37de, row 400): that
+    # path rewrites a -wal whole, which can be long and can be stopped, and no other folder's record may wait behind it. A store of
+    # unknown form taken by that path (it may prove to be SQLCipher) thus has its page 1 a few small record writes later, never a log
+    # rewrite later: a deliberate trade, since its page 1 goes through the handle the path opens and keeps (security read a2c1c6e44). The folder
+    # the plaintext path takes is told apart by its real path and left to that path (it takes its record right after page 1).
+    for folder, m in record_dirs.items():
+        if plain_takes and plain_real is not None and os.path.realpath(folder) == plain_real:
+            continue
+        if _under(folder, base) and (drive_absent or _off_drive()):
+            continue  # R809 / R812: nothing on a drive that is not there, or that changed
+        record_state = _worse_record(record_state, _drop_record_beside(m))
+    if plain_takes and plain_main is not None and plain_pin is not None:  # R812: else untouched
         plain_rec = _open_and_unlink_plain(plain_main, plain_pin, generation, missed)
+        plain_took = "record_state" in plain_rec
         # R819 (4) / R820 (1): settled now, after the store's first page and log were destroyed through the kept handles. SQLite's
         # own header is "not encrypted", whatever any record says; "encrypted" needs another header AND the app's record naming this
         # very (device, inode); every other case is "could not be determined". Only "encrypted" skips the body rewrite.
@@ -2154,24 +2340,51 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                 elif not ok:
                     overwrite_failures.append(str(plain_main))
         plain_rec["form"] = "plain" if encrypted is False else "unknown"
-        if not plain_rec["touched"] and not _under(plain_main, base) and not plaintext_body_rewrite_supported() \
-                and _folder_is_pinned(plain_main, plain_pin):
-            # R820 (3), the first-page fallback (no folder handle): the record goes only from the pinned folder. With a handle
-            # (:func:`_open_and_unlink_plain`) it went through that handle.
-            _drop_record_beside(plain_main)
-        if not plain_rec["touched"]:
-            # Not this store's file at that place: its own sidecars still get step 1's old treatment (a log whole, a log index's
-            # head zeroed), counted as before, and the file at the path is never written.
-            for suffix in ("-shm", "-wal", "-journal"):
-                p = plain_main.with_name(plain_main.name + suffix)
-                s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1 if suffix == "-shm" else None, zeros=suffix == "-shm",
-                                           unreached=_unreached)
-                seen += s
-                wiped += w
-                if s and not overwritten:
-                    overwrite_failures.append(str(p))
-            if _under(plain_main, base):
-                plain_rec = None  # in the data folder, whatever is at the path is erased by step 6 like any other file
+        # R828 (2): taken right after the store's first page, through the pinned folder
+        record_state = _worse_record(record_state, plain_rec.get("record_state"))
+    if plain_takes and plain_main is not None and not plain_took:
+        # The plaintext store's folder, when its path did not take the record (it stopped before that step, or never ran): taken
+        # now by path, a folder outside the data folder only while it is still the folder pinned before the erase (Opus read,
+        # row 400); otherwise never written, but a record there is said as left, never as absent.
+        folder_m = next((m for f, m in record_dirs.items() if os.path.realpath(f) == plain_real), None)
+        if folder_m is not None and (_under(folder_m.parent, base) or _folder_is_pinned(folder_m, plain_pin)) \
+                and not (_under(folder_m.parent, base) and (drive_absent or _off_drive())):
+            record_state = _worse_record(record_state, _drop_record_beside(folder_m))
+        elif not (_under(plain_main.parent, base) and (drive_absent or _off_drive())) \
+                and _kind(plain_main.parent / _RECORD_NAME) != "absent":  # R809 / R812: nothing looked at on a changed drive
+            record_state = _worse_record(record_state, "left")
+    if plain_rec is not None and not plain_rec["touched"] and plain_main is not None:
+        # Not this store's file at that place: its own sidecars still get step 1's old treatment (a log whole, a log index's head
+        # zeroed), counted as before, and the file at the path is never written; after the record (the coordinator's order).
+        for suffix in ("-shm", "-wal", "-journal"):
+            p = plain_main.with_name(plain_main.name + suffix)
+            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1 if suffix == "-shm" else None, zeros=suffix == "-shm",
+                                       unreached=_unreached)
+            seen += s
+            wiped += w
+            if s and not overwritten:
+                overwrite_failures.append(str(p))
+        if _under(plain_main, base):
+            plain_rec = None  # in the data folder, whatever is at the path is erased by step 6 like any other file
+    # Each -shm head zeroed now (no page data, see above), after the record.
+    for db in dbs:
+        p = db.with_name(db.name + "-shm")
+        if p not in plain_parts and _present(p, _unreached):
+            head_ok[p] = _overwrite(p, head_bytes=_SQLCIPHER_PAGE1, zeros=True)
+    # The logs, whole, only now: after every first page and the record (the coordinator's order for R828 (2)), since a log rewrite
+    # can be long and can be stopped.
+    for db in dbs:
+        for suffix in ("-wal", "-journal"):
+            p = db.with_name(db.name + suffix)
+            if p in plain_parts:
+                continue
+            if _hold(p, whole=True, generation=generation) is False:
+                missed.append(p.name)
+            s, overwritten, w = _shred(p, unreached=_unreached)
+            seen += s
+            wiped += w
+            if s and not overwritten:
+                overwrite_failures.append(str(p))
     for db in dbs:
         for p in (db, db.with_name(db.name + "-shm")):
             if p in plain_parts:
@@ -2188,8 +2401,6 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                 headers.append(db.name)
                 head_reals.add(str(db))
 
-    if encrypted is True and plain_rec is None and main_db is not None and not _under(_real(main_db), base):
-        _drop_record_beside(_real(main_db))  # R820 (3): the app's record is destroyed with its store; in the folder, step 6 does it
     # Only for a store known to be encrypted: a plaintext body has no salt to lose, and is rewritten whole by step 6.
     salt_gone = {os.path.realpath(db) for db in dbs if head_ok.get(db)} if encrypted is True else set()
 
@@ -2516,6 +2727,9 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         "kept_items": kept_items,
         "keys_link": keys_link,
         "keys_left": len(keys_left),
+        # R828 (2): the app's at-rest record: "destroyed" (overwritten and unlinked in the key-material pass), "left" (either
+        # failed: "key material may remain", never clean), "absent" (none there), None (no place to look for it).
+        "at_rest_record": record_state,
         # Plan on the keys_left string: which of the APP's files were left, by the app's own exact names (relative to keys), so a
         # shared keys folder never leaves the operator guessing; never any other entry of it.
         "keys_left_names": [n.removeprefix("keys/") for n in keys_left],
@@ -2529,10 +2743,12 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                                           "drive_key_in_memory": pinned != 0}) if drive_absent
         else _drive_failure_sentence({"drive_lost": True, "drive_forgotten": drive_forgotten, "drive_key_in_memory": pinned != 0})
         + _DEFENCE_TAIL if drive_lost
-        else (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
+        else (_RECORD_LEFT_SENTENCE + " " if record_state == "left" else "")
+        + (_KEYS_LEFT_SENTENCE + " " if keys_left else "")
         + (_NOT_REMOVED_SENTENCE + " " if kept_foreign and left["not_removed"] else "")
         + (_LIMIT_NOTE_UNLISTED + ("" if guaranteed is True else " " + _plain_sentence(guaranteed)) if unlisted_folders
-           else _clean_note(guaranteed)),
+           # R828 (2): with the record left, the clean guarantee is never said beside "key material may remain"
+           else _DEFENCE_TAIL.lstrip() if record_state == "left" and guaranteed is True else _clean_note(guaranteed)),
     }
 
 
