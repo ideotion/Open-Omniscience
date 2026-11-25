@@ -9,7 +9,7 @@ pending column is declared additive, is the audit's judgement and is not written
 
 ## 1. Main database: the migration chain
 
-Head: `a7c2e9d4b1f3` (87 migrations, base first).
+Head: `e4c1a7f3b9d2` (88 migrations, base first).
 
 | # | revision | after | file |
 |---|---|---|---|
@@ -100,8 +100,9 @@ Head: `a7c2e9d4b1f3` (87 migrations, base first).
 | 85 | `d7e3a9b2c5f1` | `c2a6e8f1d4b7` | `d7e3a9b2c5f1_law_format_changes.py` |
 | 86 | `e4b7c1d9a2f6` | `d7e3a9b2c5f1` | `e4b7c1d9a2f6_stage_versions_and_engine_registry.py` |
 | 87 | `a7c2e9d4b1f3` | `e4b7c1d9a2f6` | `a7c2e9d4b1f3_screening_pending.py` |
+| 88 | `e4c1a7f3b9d2` | `a7c2e9d4b1f3` | `e4c1a7f3b9d2_corpus_segments.py` |
 
-## 2. Main database: tables (64, from `src/database/models.py`)
+## 2. Main database: tables (66, from `src/database/models.py`)
 
 ### `ai_custom_prompt`
 
@@ -349,6 +350,25 @@ Head: `a7c2e9d4b1f3` (87 migrations, base first).
 | `unit` | VARCHAR(16) | no |  |
 | `source` | VARCHAR(255) | yes |  |
 | `created_at` | DATETIME | yes |  |
+
+### `corpus_id_counter`
+
+| column | type | null | key |
+|---|---|---|---|
+| `id` | INTEGER | no | primary |
+| `next_id` | INTEGER | no |  |
+
+### `corpus_segments`
+
+| column | type | null | key |
+|---|---|---|---|
+| `seg_no` | INTEGER | no | primary |
+| `file_name` | VARCHAR(32) | yes |  |
+| `state` | VARCHAR(16) | no |  |
+| `id_lo` | INTEGER | no |  |
+| `id_hi` | INTEGER | yes |  |
+| `created_at` | DATETIME | yes |  |
+| `state_at` | DATETIME | yes |  |
 
 ### `derived_meta`
 
@@ -1862,6 +1882,7 @@ not listed). "ORM" marks a name that is also a model table above.
 | `osm_addresses` | virtual |  | `src/osm/places.py` |
 | `osm_names` | virtual |  | `src/osm/places.py` |
 | `osm_rtree` | virtual |  | `src/osm/view.py` |
+| `segment_meta` | table |  | `src/database/segments.py` |
 | `t` | table |  | `src/monitoring/merge_diag.py` |
 | `wiki_lane_fts` | virtual |  | `src/wiki/lane_search.py` |
 
