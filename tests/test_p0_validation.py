@@ -1161,6 +1161,11 @@ _NOT_GUARDED = {
         "decrypt_bytes and decrypt_stream re-raise their own literal messages from an InvalidTag or a struct.error, whose "
         "texts hold no passphrase."
     ),
+    "backup/staged_key.py": (
+        "Holds a staged file's key, never writes what it catches: held_by_another reads only the error's code, _seal_refusal "
+        "maps the driver's words to one of three fixed sentences, and the bare raises pass on NotADatabase, StagedKeyError (fixed "
+        "texts) or an error out of a key set through the C API or bound as an ATTACH parameter, which no SQLite message quotes."
+    ),
     "testing/scale_bench.py": (
         "The developer benchmark: it runs on a synthetic corpus with a throwaway passphrase of its own and is never part of "
         "a shipped run."
