@@ -268,6 +268,38 @@ def test_a_failed_delete_says_so_with_the_reason_and_keeps_the_list_accurate(fol
     assert old.name in {c["name"] for c in own.list_copies()["copies"]}
 
 
+def test_a_failed_delete_names_the_os_reason_and_never_a_path(folder, monkeypatch):
+    """Plan on key 17: {reason} is the OS error text only (strerror), never str(exc), which carries the full path
+    (R734: paths stay out of messages and logs). Both failure points are driven: opening the folder and the unlink."""
+    import json as _json
+
+    from src.backup import own_net as own
+
+    old, _new = _two(folder)
+    data = folder[0]
+    where = str(data)
+    real_unlink = own.os.unlink
+
+    def refuse_unlink(*a, **k):
+        raise PermissionError(13, "Permission denied", str(data / old.name))
+
+    monkeypatch.setattr(own.os, "unlink", refuse_unlink)
+    out = own.remove_copy(old.name)
+    assert out["reason"] == "Permission denied"
+    text = _json.dumps(out)
+    assert where not in text and "/" not in text.replace(old.name, "")
+    monkeypatch.setattr(own.os, "unlink", real_unlink)
+
+    def refuse_open():
+        raise PermissionError(13, "Permission denied", where)
+
+    monkeypatch.setattr(own, "_open_folder", refuse_open)
+    out = own.remove_copy(old.name)
+    assert not out["removed"] and out["reason"] == "Permission denied"
+    assert where not in _json.dumps(out)
+    assert old.exists()
+
+
 def test_the_words_are_an_ordinary_delete():
     from src.backup import own_net as own
 
