@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "2b488a97129476a52888ac69bab4ef62c35c7f91850b9403c6796b2d410d493b",
+  "digest": "7a154a6fc20129b6abab9d9c602fe37284423172b9584ac55efa0fa221e99185",
   "log": [
     {
       "version": 1,
@@ -145,6 +145,12 @@
       "digest": "2b488a97129476a52888ac69bab4ef62c35c7f91850b9403c6796b2d410d493b",
       "kind": "same",
       "note": "Row 424 changes only the keyword-counter reconcile (only drifted counters are rewritten, after a re-read under the write gate, and a pass scoped to the imported articles' keywords is added); no code that writes an article's mentions or tags changed, so the rows an article gets are identical."
+    },
+    {
+      "version": 3,
+      "digest": "7a154a6fc20129b6abab9d9c602fe37284423172b9584ac55efa0fa221e99185",
+      "kind": "same",
+      "note": "row 424: the reconcile reads the mentions view (R96); no code that writes an article's mentions or tags changed"
     }
   ]
 }
