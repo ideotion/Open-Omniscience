@@ -25,6 +25,16 @@ from src.analytics.extract import BaselineExtractor
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 from tests._app_engine import app_sqlite_engine
 
+
+@pytest.fixture(autouse=True)
+def _memory_figure_held(monkeypatch):
+    """The pool is memory-aware (row 416): on a runner short of free memory at that moment it computes serially, which
+    is right for the app and wrong for a test of the pool. Every test here therefore sees one steady, ample figure; a
+    test that is about the memory sets its own (its monkeypatch runs after this one)."""
+    import src.config.cgroup_memory as cgroup_memory
+
+    monkeypatch.setattr(cgroup_memory, "effective_memory", lambda *a, **k: {"available_mb": 64_000.0})
+
 _TEXTS = (
     "The WHO warned about drought and inflation in Paris on 5 March 2024. Climate policy shifted. ",
     "Le gouvernement a annoncé des réformes à Lyon le 3 avril 2024. Les syndicats ont protesté. ",

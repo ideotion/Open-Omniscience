@@ -345,7 +345,12 @@ def test_an_unread_name_that_is_not_utf8_still_renders_as_json(tmp_path, monkeyp
     # the status responses (UTF-8 JSON) cannot encode. The result must still encode, with the byte replaced.
     backup = _backup(tmp_path)
     bad = os.fsdecode(b"x\xff.bin")
-    _touch(backup / "wiki_dumps" / bad)
+    try:
+        _touch(backup / "wiki_dumps" / bad)
+    except OSError as e:
+        if e.errno != errno.EILSEQ:
+            raise
+        pytest.skip("this file system refuses a name that is not UTF-8 (APFS), so no such name can reach a restore here")
     tgt = _targets(tmp_path)
     _refuse_open(monkeypatch, bad, PermissionError(errno.EACCES, "Permission denied"))
     res = restore_folder_backup(backup, targets=tgt)

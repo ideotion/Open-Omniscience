@@ -1,9 +1,10 @@
 """R834 (row 410-A): the staged copy's integrity walk has its verdict before the merge writes the staged copy.
 
-The walk runs beside the merge (R827 R3(a)) and the merge writes the staged copy in one place only: the country-code
-step, which rewrites codes the store spells another way. A walk that read pages while that step wrote them could pass
-a torn file. So the step waits for the walk's verdict before its first write, and a failed verdict refuses before
-anything is written. Both are shown on the plaintext and the keyed (sealed) staged copy, with a real merge.
+The walk runs beside the merge (R827 R3(a)). A walk that read pages while a step wrote them could pass a torn file, so
+any write to the staged copy waits for the walk's verdict, and a failed verdict refuses before anything is written. The
+country-code step was the one writer; since row 439 it converts in memory and writes nothing, so the gate is shown here
+with that step's old in-place writer put back (``_writing_step``), and the shipped step is shown to leave the staged copy
+byte-identical without waiting for the walk. All on the plaintext and the keyed (sealed) staged copy, with a real merge.
 """
 
 from __future__ import annotations
@@ -59,6 +60,15 @@ def _staged(tmp_path: Path, sealed: bool) -> tuple[Path, Path]:
     return work, inc
 
 
+def _writing_step(con, batch_id, results) -> None:
+    """The country-code step as it was before row 439: it rewrote the staged copy in place, through the R834 gate. Any step that
+    writes ``inc`` must go through the gate the same way; this one stands in for it."""
+    from src.backup import merge as merge_mod
+    from src.backup.country_codes import normalise_staged_country_codes
+
+    results["_country_codes"] = normalise_staged_country_codes(con, schema="inc", before_write=merge_mod._INC_WRITE_GATE.get())
+
+
 def _build_inc_codes_already_canonical(inc: Path) -> None:
     """Make the country-code step a no-op, so nothing waits on the write gate and only the COMMIT path is tested."""
     con = staged_key.open_staged(inc, read_only=False)
@@ -72,8 +82,10 @@ def _build_inc_codes_already_canonical(inc: Path) -> None:
 @pytest.mark.parametrize("sealed", [False, True], ids=["plaintext", "keyed"])
 def test_the_walk_reads_a_file_nothing_writes_while_it_reads(tmp_path, monkeypatch, sealed):
     import src.backup.sqlite_backup as sb
+    from src.backup import merge as merge_mod
     from src.backup.merge import _quick_check_alongside, merge_corpus
 
+    monkeypatch.setattr(merge_mod, "_normalise_country_codes", _writing_step)
     work, inc = _staged(tmp_path, sealed)
     seen: dict[str, object] = {}
 
@@ -89,7 +101,7 @@ def test_the_walk_reads_a_file_nothing_writes_while_it_reads(tmp_path, monkeypat
         with _quick_check_alongside(inc):
             counts, _ = merge_corpus(inc, work, _META, cache_mb=8)
         assert seen["before"] == seen["after"], "the staged copy changed while its walk read it"
-        assert _digest(inc) != seen["before"], "the country-code step did not write the staged copy at all"
+        assert _digest(inc) != seen["before"], "the writing step did not write the staged copy at all"
     finally:
         staged_key.forget(inc)
     con = sqlite3.connect(work)
@@ -102,8 +114,10 @@ def test_the_walk_reads_a_file_nothing_writes_while_it_reads(tmp_path, monkeypat
 @pytest.mark.parametrize("sealed", [False, True], ids=["plaintext", "keyed"])
 def test_a_failed_walk_refuses_before_the_staged_copy_is_written(tmp_path, monkeypatch, sealed):
     import src.backup.sqlite_backup as sb
+    from src.backup import merge as merge_mod
     from src.backup.merge import MergeError, _quick_check_alongside, merge_corpus
 
+    monkeypatch.setattr(merge_mod, "_normalise_country_codes", _writing_step)
     work, inc = _staged(tmp_path, sealed)
     before = _digest(inc)
 
@@ -119,6 +133,42 @@ def test_a_failed_walk_refuses_before_the_staged_copy_is_written(tmp_path, monke
         assert _digest(inc) == before, "the staged copy was written before its walk's verdict"
     finally:
         staged_key.forget(inc)
+
+
+@pytest.mark.parametrize("sealed", [False, True], ids=["plaintext", "keyed"])
+def test_the_country_code_step_writes_nothing_and_does_not_wait_for_the_walk(tmp_path, monkeypatch, sealed):
+    """Row 439: the shipped step converts every code of the staged copy (alpha-3 into this alpha-2 store) without writing it, so the
+    file is byte-identical after the whole merge, and the step is done while the walk is still reading."""
+    import src.backup.sqlite_backup as sb
+    from src.backup.merge import _quick_check_alongside, merge_corpus
+
+    work, inc = _staged(tmp_path, sealed)
+    before = _digest(inc)
+    seen: dict[str, float] = {}
+
+    def slow_walk(path, **_k):
+        time.sleep(1.5)
+        seen["walk_ended"] = time.monotonic()
+        return 1
+
+    def progress(i, total, name):
+        if name == "country codes":
+            seen["step_done"] = time.monotonic()
+
+    monkeypatch.setattr(sb, "validate_sqlite_file", slow_walk)
+    try:
+        with _quick_check_alongside(inc):
+            counts, _ = merge_corpus(inc, work, _META, cache_mb=8, progress_cb=progress)
+        assert _digest(inc) == before, "the merge wrote the staged copy"
+        assert seen["step_done"] < seen["walk_ended"], "the country-code step waited for the integrity walk"
+        assert counts["_country_codes"]["rows_converted"] == 30
+    finally:
+        staged_key.forget(inc)
+    con = sqlite3.connect(work)
+    try:
+        assert {r[0] for r in con.execute("SELECT country FROM articles")} == {"fr"}  # converted on the way in
+    finally:
+        con.close()
 
 
 def test_without_a_walk_beside_nothing_waits(tmp_path):
