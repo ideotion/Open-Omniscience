@@ -612,7 +612,20 @@ def qid_dossier(session, qid: str, lang: str = "en") -> dict | None:
         "articles_all": articles_all,
         "article_ids_bounded": articles_all > len(ids),
         "not_counted_yet": not_yet,
+        **_not_analysed_in_corpus(session),
         "method": METHOD,
         "method_country": COUNTRY_METHOD if country else None,
         "caveat": CAVEAT,
     }
+
+
+def _not_analysed_in_corpus(session) -> dict:
+    """R832 (row 421): the dossier reaches articles only through their mentions, so an article the re-index has not finished is
+    missing from its counts without a trace, and it cannot say which. It carries the corpus-wide count instead, once
+    (``not_analysed_in_corpus``), the shared notion's (quarantine_scope). Absent when it cannot be read, never 0."""
+    from src.analytics.quarantine_scope import not_analysed_count
+
+    try:
+        return {"not_analysed_in_corpus": int(not_analysed_count(session))}
+    except Exception:  # noqa: BLE001 - say nothing rather than a 0
+        return {}

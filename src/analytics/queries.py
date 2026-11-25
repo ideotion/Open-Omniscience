@@ -3897,8 +3897,9 @@ def status_totals(session) -> dict:
     with contextlib.suppress(Exception):
         out["quarantined"] = int(session.query(func.count(Article.id)).filter(Article.quarantined.is_(True)).scalar() or 0)
     tally = not_counted_tally(session)
-    if "not_screened" in tally:
-        out["not_screened"] = int(tally["not_screened"])
+    for key in ("not_screened", "not_analysed"):  # R832: the second reason, disjoint from the first; absent when unread
+        if key in tally:
+            out[key] = int(tally[key])
     return out
 
 
