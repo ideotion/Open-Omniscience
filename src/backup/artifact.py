@@ -464,7 +464,7 @@ def _drop_newsletter_articles(db_path: Path) -> int:
 
 def _keywords_of_articles(cur: sqlite3.Cursor, tables: list[str], art_ids: list[int]) -> list[int]:
     """The keyword ids the given articles mention, read before their mentions are deleted (row 429). Empty when the
-    copy has no ``keyword_mentions`` table of the app's shape."""
+    copy has no mentions table of the app's shape."""
     if "keyword_mentions" not in tables:
         return []
     if not {"keyword_id", "article_id", "count"} <= {c[1] for c in cur.execute("PRAGMA table_info(keyword_mentions)")}:

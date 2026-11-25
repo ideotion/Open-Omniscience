@@ -2635,7 +2635,10 @@ def _wrong_rows_under_the_gate(session: Session, agg: dict[int, tuple[int, int]]
     the delta an ingest then committed (stored = truth - c, the ingest adds c to both) agrees with the stale ``agg`` and is
     stamped while still off by that old drift. (2) A write that moves a keyword's mentions WITHOUT moving its counter -- the
     ``ondelete=CASCADE`` delete of an article, the very drift the sweep exists to repair -- leaves the stored counter equal to
-    the stale ``agg``, so the row is stamped over the count from before the delete. Main had both (its GROUP BY also ran
+    the stale ``agg``, so the row is stamped over the count from before the delete. Row 429 closes (2) for the app's own
+    delete paths (source delete, newsletter removal, attach undo): each moves the counters in the delete's own transaction
+    through :func:`remove_deleted_articles_from_keyword_counters`, so the stored counter moves with the mentions and the
+    row disagrees with the stale ``agg`` and is re-read. A cascade from any other path keeps the bound below. Main had both (its GROUP BY also ran
     before the gate), and reading under the gate closes them only by holding ingest for seconds (measured 2.9 s). Nothing is
     lost by either (no count is written), each needs that write to land inside a window of a slice's GROUP BY, and they are
     bounded only because a stamp is never proof beyond the freshness window: :func:`counter_envelope` reads a stamp older than the window as ``estimated``, and the import
