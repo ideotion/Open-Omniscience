@@ -79,12 +79,14 @@ def test_a_store_without_the_tables_is_also_legacy_segment_0(tmp_path):
 
 
 def test_nothing_in_the_app_calls_the_writing_functions_yet():
-    """Stage 1 adds bookkeeping only (R826 g): no module outside this one reserves, commits or opens a segment."""
+    """Stage 1 adds bookkeeping only (R826 g): no module outside this one reserves, commits or opens a segment. Stage 2's
+    opener (``segment_open.py``) commits a new segment's identity only behind ``SEGMENT_WRITES_ENABLED``, which nothing
+    in ``src`` turns on (tests/test_segment_open.py pins both)."""
     root = Path(__file__).resolve().parents[1] / "src"
     callers = [
         p.relative_to(root).as_posix()
         for p in root.rglob("*.py")
-        if p.name != "segments.py"
+        if p.name not in ("segments.py", "segment_open.py")
         and any(
             f in p.read_text(encoding="utf-8")
             for f in ("reserve_segment(", "commit_segment(", "mark_open(", "reconcile(")
