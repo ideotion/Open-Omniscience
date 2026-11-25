@@ -851,9 +851,10 @@ def _sub_timer(timings: object):
     return _sub
 
 
-#: R834: set while the staged copy's integrity walk runs beside the merge. Called before the merge's first write to
-#: ``inc`` (only the country-code step writes it), it waits for the walk's verdict and refuses on a failed one, so the
-#: verdict always comes from a file nothing wrote to while it was read. Unset (no walk beside), nothing waits.
+#: R834: set while the staged copy's integrity walk runs beside the merge. Called before any merge write to ``inc``, it
+#: waits for the walk's verdict and refuses on a failed one, so the verdict always comes from a file nothing wrote to while
+#: it was read. Unset (no walk beside), nothing waits. Since row 439 no step writes ``inc`` (the country-code step converts
+#: in memory), so nothing waits on it; it stays for any write a later step brings.
 _INC_WRITE_GATE: contextvars.ContextVar[Callable[[], None] | None] = contextvars.ContextVar("oo_inc_write_gate", default=None)
 
 
@@ -3402,10 +3403,13 @@ def _merge_metadata_alternates(con, batch_id, results) -> None:
     notnull: dict[str, set[str]] = {}
     on_main: dict[str, bool] = {}
     law_held: dict[str, set[tuple]] = {}
+    from src.backup.country_codes import staged_alternates_sql
+
+    alt_join, alt_identity, alt_fields = staged_alternates_sql(con, "i")
     incoming = _q(
         con,
-        "SELECT table_name, identity, fields, provenance, origin FROM inc.metadata_alternates"
-        " ORDER BY id",
+        f"SELECT i.table_name, {alt_identity}, {alt_fields}, i.provenance, i.origin FROM inc.metadata_alternates i"  # noqa: S608  # nosec B608 # fixed names from country_codes, no value
+        + alt_join + " ORDER BY i.id",
     )
     for table, identity_json, fields_json, prov_json, origin in incoming:
         spec = ALTERNATE_SPECS.get(table)
@@ -3643,6 +3647,14 @@ def _merge_fetch_history(con, batch_id, results) -> None:
     }
 
 
+def _cc(con, table: str, column: str, alias: str = "i") -> str:
+    """Row 439: the SQL a step reads the staged ``alias.column`` of ``table`` through, a registered country column as step 1
+    converted it (``country_codes.staged_country_sql``). Every read of such a column of ``inc`` goes through here."""
+    from src.backup.country_codes import staged_country_sql
+
+    return staged_country_sql(con, table, column, alias)
+
+
 def _normalise_country_codes(con, batch_id, results) -> None:
     """Merge step 1 (Q310 = a): canonicalise the incoming corpus's country codes.
 
@@ -3651,9 +3663,11 @@ def _normalise_country_codes(con, batch_id, results) -> None:
     report states what was converted, what the converter refused and what collided,
     rather than the merge quietly rewriting values nobody is told about.
     """
-    from src.backup.country_codes import normalise_staged_country_codes
+    from src.backup.country_codes import plan_staged_country_codes
 
-    results["_country_codes"] = normalise_staged_country_codes(con, schema="inc", before_write=_INC_WRITE_GATE.get())
+    # Row 439: decided here, applied by the steps that read the columns (``_cc``); ``inc`` is never written, so this step does
+    # not wait for the staged copy's integrity walk (R834) and the walk stays off the critical path.
+    results["_country_codes"] = plan_staged_country_codes(con, schema="inc")
 
 
 def _merge_keyword_categories(con, batch_id, results) -> None:
@@ -4200,7 +4214,7 @@ def _merge_sources(con, batch_id, results) -> None:
         " cacheability, status, qualified_at, qualification_criteria_version,"
         " catalog_baseline, feed_key)"
         " SELECT i.name, i.domain, i.rss_url, i.rate_limit_ms, i.enabled, i.priority, i.tags,"
-        " i.reliability_score, i.language, i.region, i.country, i.source_type,"
+        f" i.reliability_score, i.language, i.region, {_cc(con, 'sources', 'country')}, i.source_type,"
         " i.update_frequency, i.cacheability, COALESCE(sv.status, i.status),"
         " CASE WHEN sv.old IS NULL THEN i.qualified_at ELSE sv.qualified_at END,"
         " CASE WHEN sv.old IS NULL THEN i.qualification_criteria_version ELSE sv.criteria END,"
@@ -4296,11 +4310,11 @@ def _merge_sources(con, batch_id, results) -> None:
     m = DomainResult()
     m.new = _insert_tracked(
         con, batch_id, "source_metadata",
-        "INSERT INTO main.source_metadata (source_id, language, country, region, city, timezone,"
+        "INSERT INTO main.source_metadata (source_id, language, country, region, city, timezone,"  # nosec B608 # column names are this file's own; the country expression is built by country_codes from fixed names
         " robots_txt_url, robots_allowed, crawl_delay, sitemap_url, favicon_url, logo_url,"
         " contact_email, social_twitter, social_facebook, social_linkedin, alexa_rank,"
         " last_checked, notes)"
-        " SELECT ms.new, i.language, i.country, i.region, i.city, i.timezone,"
+        f" SELECT ms.new, i.language, {_cc(con, 'source_metadata', 'country')}, i.region, i.city, i.timezone,"
         " i.robots_txt_url, i.robots_allowed, i.crawl_delay, i.sitemap_url, i.favicon_url,"
         " i.logo_url, i.contact_email, i.social_twitter, i.social_facebook, i.social_linkedin,"
         " i.alexa_rank, i.last_checked, i.notes"
@@ -4503,8 +4517,10 @@ def _adopt_article_metadata(con) -> dict:
     sets, guards, counts_sql = [], [], []
     for anchor, cols in _ADOPTABLE_ARTICLE_COLUMNS:
         for c in cols:
-            # The anchor decides the whole group, so a pair moves together or not at all.
-            sets.append(f'"{c}" = CASE WHEN m."{anchor}" IS NULL THEN i."{c}" ELSE m."{c}" END')
+            # The anchor decides the whole group, so a pair moves together or not at all. A country is read as step 1 converted
+            # it (row 439); the guards below only test it for NULL, which the conversion never changes.
+            value = _cc(con, "articles", c) if c == "country" else f'i."{c}"'
+            sets.append(f'"{c}" = CASE WHEN m."{anchor}" IS NULL THEN {value} ELSE m."{c}" END')
         guards.append(f'(m."{anchor}" IS NULL AND i."{anchor}" IS NOT NULL)')
         counts_sql.append(f'SUM(m."{anchor}" IS NULL AND i."{anchor}" IS NOT NULL)')
 
@@ -4711,7 +4727,7 @@ def _merge_articles(con, batch_id, results) -> None:
         " fetched_host)"
         " SELECT i.url, i.canonical_url, ms.new, i.title, i.content,"
         " i.compressed_content, i.published_at, i.language, i.hash, i.created_at,"
-        " i.updated_at, i.region, i.country, i.author, i.word_count, i.reading_time,"
+        f" i.updated_at, i.region, {_cc(con, 'articles', 'country')}, i.author, i.word_count, i.reading_time,"
         " i.sentiment_score, i.sentiment_label,"
         " i.detected_language, i.server_ip, i.ip_observed_at, i.server_ip_reason,"
         " i.content_multihash, i.canon_version,"
@@ -5451,12 +5467,13 @@ def _plan_derived_carry(con, batch_id, results) -> None:
     from src.catalog.countries import normalize_country
     from src.database.country_form import CountryCode
 
-    # The staged articles are in this store's form (the step before the carry made them so). The stamp's
+    # The staged articles are read in this store's form (the step before the carry decided it, ``_cc``). The stamp's
     # inputs were digested from what the ORM hands the engine -- lowercase alpha-2 whatever the file holds --
     # so the digest reads the value back through the column type, and a carried mention is written in the form
     # the file keeps, as a re-index through the same type would write it.
     form = store_form_of(con)
     to_python = CountryCode().process_result_value
+    country_sql = _cc(con, "articles", "country")  # as step 1 converted it (row 439): the staged file itself is not rewritten
     refused = plan["refused"]
     # An article is a candidate when it holds EITHER stamp from this machine's engines (``_stamped_candidates``: each stamp table read once, by
     # its own cursor). Candidates are verified in slices of ``_CARRY_PLAN_CHUNK``; a stamp whose article row the backup does not hold is
@@ -5467,9 +5484,9 @@ def _plan_derived_carry(con, batch_id, results) -> None:
             int(r[0]): r
             for r in _q(
                 con,
-                "SELECT id, source_id, title, content, compressed_content, language, detected_language,"  # noqa: S608  # nosec B608 # only placeholders are interpolated
-                " published_at, created_at, country, hash FROM inc.articles"
-                f" WHERE id IN ({','.join('?' * len(ids))})",
+                "SELECT i.id, i.source_id, i.title, i.content, i.compressed_content, i.language, i.detected_language,"  # noqa: S608  # nosec B608 # only placeholders and country_sql (fixed names) are interpolated
+                f" i.published_at, i.created_at, {country_sql}, i.hash FROM inc.articles i"
+                f" WHERE i.id IN ({','.join('?' * len(ids))})",
                 ids,
             )
         }
@@ -5799,9 +5816,9 @@ def _carry_derived_rows(con, batch_id, results) -> dict:
         )
         out["mentions"] += int(cur.rowcount or 0)
         cur = con.execute(
-            "INSERT INTO main.article_mentioned_places (article_id, name, country, kind,"
+            "INSERT INTO main.article_mentioned_places (article_id, name, country, kind,"  # nosec B608 # column names are this file's own; the country expression is built by country_codes from fixed names
             " mentions, snippet, lat, lon, note, extractor, created_at)"
-            " SELECT w.new, p.name, p.country, p.kind, p.mentions, p.snippet, p.lat, p.lon,"
+            f" SELECT w.new, p.name, {_cc(con, 'article_mentioned_places', 'country', 'p')}, p.kind, p.mentions, p.snippet, p.lat, p.lon,"
             " p.note, p.extractor, ?"
             " FROM temp.carry_win w"
             " CROSS JOIN inc.article_mentioned_places p ON p.article_id = w.old WHERE w.www = 1",
@@ -6023,7 +6040,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     r.new = _insert_tracked(
         con, batch_id, "external_sources",
-        "INSERT INTO main.external_sources (domain, name, url, source_type, credibility_score,"
+        "INSERT INTO main.external_sources (domain, name, url, source_type, credibility_score,"  # nosec B608 # column names are this file's own; the country expression is built by country_codes from fixed names
         " political_bias, country, language, description, founded_year, alexa_rank,"
         " social_media_followers, is_verified, last_verified_at, created_at, updated_at,"
         # 2026-08-03 (the AST column diff): `discovered_via` IS the Q4a ruling -- which
@@ -6031,7 +6048,7 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         # it NULL is indistinguishable from one nothing ever discovered.
         " discovered_via)"
         " SELECT i.domain, i.name, i.url, i.source_type, i.credibility_score,"
-        " i.political_bias, i.country, i.language, i.description, i.founded_year,"
+        f" i.political_bias, {_cc(con, 'external_sources', 'country')}, i.language, i.description, i.founded_year,"
         " i.alexa_rank, i.social_media_followers, i.is_verified, i.last_verified_at,"
         " i.created_at, i.updated_at, i.discovered_via FROM inc.external_sources i"
         " WHERE NOT EXISTS (SELECT 1 FROM external_sources m WHERE m.domain = i.domain)",
@@ -6182,12 +6199,17 @@ def _capture_alternates(
         (batch_id,),
     )
     origin, at, version = arrived[0] if arrived else ("unsigned", None, None)
+    from src.backup.country_codes import COUNTRY_COLUMNS
+
+    def _col(n: str) -> str:  # a country column is read as step 1 converted it (row 439)
+        return _cc(con, table, n) if n in COUNTRY_COLUMNS.get(table, ()) else f"i.{n}"
+
     ident = ", ".join(f"'{n}', {expr}" for n, expr in identity)
-    fields = ", ".join(f"'{n}', i.{n}" for n in shown)
+    fields = ", ".join(f"'{n}', {_col(n)}" for n in shown)
     tag = producer_tag_sql(
         table, "i", origin=":origin", batch=":batch", at=":at", app_version=":version"
     )
-    same = " AND ".join(f"t.{c} IS i.{c}" for c in differs)
+    same = " AND ".join(f"t.{c} IS {_col(c)}" for c in differs)
     tbl = _ident(table)
     # A contradiction is "this corpus has the item, and NONE of its rows says what the backup
     # says". Some of these tables have no unique constraint and a local pass appends a row on
@@ -6465,13 +6487,15 @@ def _key_law_documents(con, side: str, schema: str) -> None:
     The match of the law step is on the document's identity, a jurisdiction and a url, and the jurisdiction must be compared in ONE
     spelling: an install that pasted a document under ``gbr`` and one that holds the catalogue's ``uk`` (or an old backup of either)
     are the same document. SQLite cannot do that comparison with an index, so the keys are computed once, here, in Python, for both
-    sides, and the statements below join them. The key is for comparing only: the INSERT copies ``i.jurisdiction`` as it is staged."""
+    sides, and the statements below join them. The key is for comparing only: the INSERT copies the staged spelling (``ki.jurisdiction``, as step 1 converted it)."""
     from src.backup.country_codes import law_jurisdiction_key
 
     table = f"law_key_{side}"
     con.execute(f"DROP TABLE IF EXISTS temp.{table}")  # noqa: S608  `side` is a module literal ("main" or "inc")
     con.execute(f"CREATE TEMP TABLE {table} (id INTEGER PRIMARY KEY, jurisdiction TEXT, key TEXT, url TEXT, sib INTEGER NOT NULL DEFAULT 0)")  # noqa: S608  as above
-    cur = con.execute(f"SELECT id, jurisdiction, url FROM {schema}.law_documents")  # noqa: S608  # nosec B608 # `schema` is a module literal ("main" or "inc")
+    # The staged side's jurisdiction as step 1 converted it (row 439): every staged spelling below is read from here.
+    juris = _cc(con, "law_documents", "jurisdiction", "d") if schema == "inc" else "d.jurisdiction"
+    cur = con.execute(f"SELECT d.id, {juris}, d.url FROM {schema}.law_documents d")  # noqa: S608  # nosec B608 # `schema` is a module literal ("main" or "inc"); `juris` is fixed names
     while True:
         rows = cur.fetchmany(_LAW_KEY_CHUNK)
         if not rows:
@@ -6556,7 +6580,7 @@ def _is_catalogue_move(moves: set[tuple[str, str, str]], jurisdiction, from_url,
 
 _LAW_HELD = (
     "((ki.sib = 0 AND (EXISTS (SELECT 1 FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url) OR " + _LAW_MOVED_UNIQUE + "))"  # nosec B608 # module literals only: fixed table names, no request, user or file value
-    " OR (ki.sib = 1 AND EXISTS (SELECT 1 FROM main.law_documents m WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)))"
+    " OR (ki.sib = 1 AND EXISTS (SELECT 1 FROM main.law_documents m WHERE m.jurisdiction = ki.jurisdiction AND m.url = i.url)))"
 )
 
 
@@ -6607,10 +6631,10 @@ def _merge_law(con, batch_id, results) -> None:
         # integer link would arrive pointing at whatever row inherited its number, and
         # the reader would show one law's licence under another law's title.
         " country, language, latest_text, latest_text_revid, enacted_on, lane_key)"
-        " SELECT i.jurisdiction, i.title, i.url, i.official_url, i.category,"
+        " SELECT ki.jurisdiction, i.title, i.url, i.official_url, i.category,"
         " i.consolidated, i.watched, i.baseline_text, i.baseline_hash, i.last_hash,"
         " i.last_size, i.last_checked_at, i.last_status, i.created_at,"
-        " i.country, i.language, i.latest_text, i.latest_text_revid, i.enacted_on,"
+        + _cc(con, "law_documents", "country") + ", i.language, i.latest_text, i.latest_text_revid, i.enacted_on,"
         " i.lane_key"
         " FROM inc.law_documents i JOIN temp.law_key_inc ki ON ki.id = i.id"
         " WHERE NOT " + _LAW_HELD,
@@ -6632,7 +6656,7 @@ def _merge_law(con, batch_id, results) -> None:
         "SELECT id, home FROM ("  # nosec B608 # module literals only: fixed table names, no request, user or file value
         " SELECT i.id AS id, COALESCE("
         "  (SELECT MIN(km.id) FROM temp.law_key_main km"
-        "   WHERE km.key = ki.key AND km.url = i.url AND km.jurisdiction = i.jurisdiction),"
+        "   WHERE km.key = ki.key AND km.url = i.url AND km.jurisdiction = ki.jurisdiction),"
         "  (SELECT MIN(km.id) FROM temp.law_key_main km WHERE km.key = ki.key AND km.url = i.url),"
         "  CASE WHEN ki.sib = 0 THEN (SELECT MIN(p.main_id) FROM temp.law_alias_pair p WHERE p.inc_id = i.id"
         "   AND " + _LAW_MOVED_UNIQUE_P + ") END) AS home"
@@ -7168,7 +7192,7 @@ def _merge_places(con, batch_id, results) -> None:
             "INSERT OR IGNORE INTO main.places (id, qid, kind, name, names_json, country,"  # nosec B608 # table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             " country_alpha3, admin_path_json, geometry_ref, lat, lon, population,"
             " gazetteer_vintage, article_id, as_of)"
-            " SELECT i.id, i.qid, i.kind, i.name, i.names_json, i.country, i.country_alpha3,"
+            f" SELECT i.id, i.qid, i.kind, i.name, i.names_json, {_cc(con, 'places', 'country')}, i.country_alpha3,"
             " i.admin_path_json, i.geometry_ref, i.lat, i.lon, i.population,"
             " i.gazetteer_vintage, ma.new, i.as_of FROM inc.places i"
             " LEFT JOIN temp.map_articles ma ON ma.old = i.article_id"

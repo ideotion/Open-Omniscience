@@ -1478,3 +1478,26 @@ def test_a_legacy_named_id_of_different_bytes_carries_nothing(backup, tmp_path, 
     out = _restore(foreign, target, tmp_path / "w.db", carry=True, monkeypatch=monkeypatch)
     assert out["counts"]["_derived_carry"]["stamped"] == 0
     assert out["counts"]["keyword_mentions"]["new"] == 0
+
+
+@pytest.mark.parametrize("spelling", ["upper(country)", "CASE country WHEN 'es' THEN 'ESP' WHEN 'de' THEN 'DEU' END"])
+def test_the_carry_reads_the_country_as_the_in_place_conversion_left_it(backup, tmp_path, monkeypatch, spelling):
+    """Row 439: the country-code step no longer rewrites the staged copy, and the carry reads the converted value instead. A backup whose
+    articles spell their country another way (``ES``, ``ESP``) must carry and refuse exactly as it did when the staged copy was rewritten."""
+    from src.backup import merge as merge_mod
+    from src.backup.country_codes import normalise_staged_country_codes
+
+    variant = _variant(backup, tmp_path, "s.db", f"UPDATE articles SET country = {spelling}")
+    new_counts, _, new_path = _merge_only(variant, tmp_path, monkeypatch)
+    old_dir = tmp_path / "old"
+    old_dir.mkdir()
+    old_variant = old_dir / "s.db"
+    shutil.copyfile(variant, old_variant)
+
+    def _old_step(con, batch_id, results):
+        results["_country_codes"] = normalise_staged_country_codes(con, schema="inc")
+
+    monkeypatch.setattr(merge_mod, "_normalise_country_codes", _old_step)
+    old_counts, _, old_path = _merge_only(old_variant, old_dir, monkeypatch)
+    assert new_counts["_derived_carry"] == old_counts["_derived_carry"]
+    assert _snapshot(new_path) == _snapshot(old_path)
