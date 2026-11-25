@@ -307,3 +307,28 @@ def test_a_clean_erase_has_nothing_not_overwritten(tmp_path):
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert report["not_overwritten"] == 0 and report["partially_overwritten"] == 0, report
     assert crypto_erase._FAILED_SENTENCE not in report["limit"] and crypto_erase._PARTIAL_SENTENCE not in report["limit"], report
+
+
+# ---- row 371: the first-page fallback never waits on a FIFO swapped in at the store's name after the pin
+@pytest.mark.skipif(not hasattr(os, "mkfifo") or not hasattr(os, "O_NONBLOCK"), reason="needs a FIFO and O_NONBLOCK")
+def test_the_first_page_fallback_never_waits_on_a_fifo(tmp_path, monkeypatch):
+    import threading
+
+    db = tmp_path / "open_omniscience.db"
+    db.write_bytes(b"SQLite format 3\x00" + b"P" * 8176)
+    pin = crypto_erase._pin_file(db)
+    assert isinstance(pin, tuple)
+    db.unlink()
+    os.mkfifo(db)  # swapped in after the pin: no writer will ever open it, so a blocking open would never return
+    monkeypatch.setattr(crypto_erase, "_pin_file", lambda p: pin)
+    out: dict = {}
+    worker = threading.Thread(target=lambda: out.update(rec=crypto_erase._first_page_fallback(db, pin)), daemon=True)
+    worker.start()
+    worker.join(20)
+    if worker.is_alive():  # free the blocked open before failing, so the test run is not left hanging
+        fd = os.open(db, os.O_WRONLY | os.O_NONBLOCK)
+        os.close(fd)
+        worker.join(5)
+        pytest.fail("the fallback blocked on a FIFO at the store's name")
+    rec = out["rec"]
+    assert rec["header"] is None and rec["state"] != "first_page", rec

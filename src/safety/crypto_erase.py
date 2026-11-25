@@ -1147,11 +1147,14 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
         rec["other_names"] = max(0, os.lstat(db).st_nlink - 1)
     fallback_head: bytes | None = None
     try:
-        # R819 (d) / R820 (2): the first bytes in one bounded, unbuffered read, before its first page is overwritten
-        fd = os.open(db, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        # R819 (d) / R820 (2): the first bytes in one bounded, unbuffered read, before its first page is overwritten. Row 371:
+        # non-blocking, so a FIFO (or a device) swapped in at the name after the pin is never waited on; it is not the file pinned
+        fd = os.open(db, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+                     | getattr(os, "O_NOCTTY", 0))
         try:
             st = os.fstat(fd)  # the very file pinned, never a file swapped in or reached through a link
-            raw16 = os.read(fd, len(_SQLITE_MAGIC)) if (st.st_dev, st.st_ino) == pin[:2] else None
+            same = stat.S_ISREG(st.st_mode) and (st.st_dev, st.st_ino) == pin[:2]
+            raw16 = os.read(fd, len(_SQLITE_MAGIC)) if same else None
             rec["header"] = _header_kind(raw16) if raw16 is not None else None
             fallback_head = raw16 if raw16 is not None and len(raw16) == len(_SQLITE_MAGIC) else None
         finally:
