@@ -160,3 +160,86 @@ def test_the_seal_reads_first_when_it_fits_and_a_failed_read_never_fails_it(tmp_
             c.close()
     finally:
         staged_key.forget(q)
+
+
+class _NewFds:
+    """Every descriptor this process opens while the block runs, read from ``/proc/self/fd`` by a polling thread, with what it
+    points at. A file opened with ``O_TMPFILE`` has no name but still shows here (``/tmp/#123 (deleted)``), and so does one
+    unlinked right after it was opened, which is how SQLite makes its temp files."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._poll, daemon=True)
+        self.seen: set[str] = set()
+        self._before: set[tuple[str, str]] = set()
+
+    @staticmethod
+    def _snapshot() -> set[tuple[str, str]]:
+        import os
+
+        out: set[tuple[str, str]] = set()
+        for fd in os.listdir("/proc/self/fd"):
+            try:
+                out.add((fd, os.readlink(f"/proc/self/fd/{fd}")))
+            except OSError:
+                continue
+        return out
+
+    def _poll(self) -> None:
+        while not self._stop.is_set():
+            for _fd, target in self._snapshot() - self._before:
+                self.seen.add(target)
+
+    def __enter__(self):  # noqa: ANN204
+        self._before = self._snapshot()
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc) -> None:  # noqa: ANN002
+        self._stop.set()
+        self._thread.join()
+
+
+def _files_outside(seen: set[str], *allowed: Path) -> list[str]:
+    roots = [str(a) for a in allowed]
+    # /proc, /sys and /dev are not storage: the read before the seal looks at the cgroup's memory files under /sys.
+    return sorted(t for t in seen if t.startswith("/") and not t.startswith(("/proc/", "/sys/", "/dev/"))
+                  and not any(t.startswith(r) for r in roots))
+
+
+@pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="reads this process's open files from /proc")
+def test_on_disk_the_seal_opens_no_file_outside_its_own_staging(tmp_path):
+    """R842 on disk: whatever the seal opens while it runs is the plaintext, its copy and their journals, all in the private
+    staging folder; no temp file anywhere else, named or not (``O_TMPFILE``). The control shows the watcher sees one: the
+    same driver, made to sort to a temp FILE, is caught."""
+    rows = [(f"h{i}", f"{(i * 7919) % 20000:05d}" + "z" * 400) for i in range(20000)]
+    ctl = tmp_path / "control"
+    ctl.mkdir()
+    con = staged_key._driver().connect(str(ctl / "c.db"))
+    con.execute("CREATE TABLE t(h TEXT, c TEXT)")
+    con.executemany("INSERT INTO t VALUES(?,?)", rows)
+    con.commit()
+    con.execute("PRAGMA temp_store = FILE")
+    con.execute("PRAGMA cache_size = 10")
+    with _NewFds() as control:
+        con.execute("CREATE INDEX ix_c ON t(c)")
+    con.close()
+    if not _files_outside(control.seen, ctl):
+        pytest.skip("this SQLite build keeps even a FILE temp store in memory, so the watcher has nothing to see here")
+
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    p = stage / "s.db"
+    c = sqlite3.connect(p)
+    c.executescript("CREATE TABLE sources(id INTEGER PRIMARY KEY, domain TEXT);"
+                    "CREATE TABLE articles(id INTEGER PRIMARY KEY, hash TEXT UNIQUE, content TEXT);"
+                    "CREATE INDEX ix_articles_content ON articles(content);")
+    c.executemany("INSERT INTO articles(hash, content) VALUES(?,?)", rows)
+    c.commit()
+    c.close()
+    with _NewFds() as seal:
+        staged_key.seal_plaintext(p)
+    staged_key.forget(p)
+    assert _files_outside(seal.seen, stage) == []
