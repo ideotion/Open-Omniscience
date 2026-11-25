@@ -181,6 +181,25 @@ def _evidence(monkeypatch) -> None:
     monkeypatch.setattr(connect_module, "opened_with_key", lambda ident: True)
 
 
+
+class _Kept:
+    """A file read back after the erase through a descriptor kept open on it, never through a second name: a log or index with
+    another name is never written (R839/R840, security reads of row 438), so a hard link would change what is measured."""
+
+    def __init__(self, p: Path) -> None:
+        self.fd = os.open(p, os.O_RDONLY)
+        self.name = "kept-" + p.name
+
+    def read_bytes(self) -> bytes:
+        return os.pread(self.fd, os.fstat(self.fd).st_size, 0)
+
+    def __del__(self) -> None:
+        with contextlib.suppress(OSError):
+            os.close(self.fd)
+
+    def __lt__(self, other: object) -> bool:
+        return self.name < getattr(other, "name", "")
+
 def _salt_hits(data: bytes, salt: bytes) -> list[int]:
     hits, i = [], data.find(salt)
     while i != -1:
@@ -213,8 +232,8 @@ def test_quick_crypto_erase_destroys_every_copy_of_the_salt_in_the_write_ahead_l
             con.commit()
         salt = db.read_bytes()[:16]
         wal = db.with_name(db.name + "-wal")
-        kept = tmp_path / "kept-wal"
-        os.link(wal, kept)
+        # read back through a kept descriptor, never a second name (a log with another name is never written, R839/R840)
+        kept = _Kept(wal)
         before = _salt_hits(kept.read_bytes(), salt)
         assert [h for h in before if h >= crypto_erase._SQLCIPHER_PAGE1], "the setup must put the salt past the head"
 
@@ -247,17 +266,14 @@ def test_a_transaction_that_commits_after_the_erase_is_rewritten_through_the_kep
         con.execute("BEGIN")
         con.execute("CREATE TABLE u(x)")  # a schema change rewrites page 1
         con.execute("INSERT INTO t VALUES (randomblob(3000))")
-        for suffix in ("-wal", "-journal"):
-            side = db.with_name(db.name + suffix)
-            if side.exists():
-                os.link(side, tmp_path / ("kept" + suffix))
+        sides = [_Kept(side) for side in (db.with_name(db.name + s_) for s_ in ("-wal", "-journal")) if side.exists()]
         crypto_erase.quick_crypto_erase(confirm=True, data_dir=data, hold_for_rescrub=True)
         with contextlib.suppress(Exception):
             con.commit()
     finally:
         with contextlib.suppress(Exception):
             con.close()
-    kept = sorted(tmp_path.glob("kept*"))
+    kept = sorted(tmp_path.glob("kept*")) + sides
     late = [k.name for k in kept if _salt_hits(k.read_bytes(), salt)]
     assert late, "the setup must reproduce the late commit putting the salt back"
     assert crypto_erase.rescrub_held(close=True) >= 1
@@ -276,8 +292,7 @@ def test_the_log_index_head_is_zeroed_never_randomised(tmp_path, monkeypatch):
     _evidence(monkeypatch)
     shm = data / "open_omniscience.db-shm"
     shm.write_bytes(b"\xff" * 32768)
-    kept = tmp_path / "kept-shm"
-    os.link(shm, kept)
+    kept = _Kept(shm)
 
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
 
@@ -295,8 +310,7 @@ def test_quick_crypto_erase_overwrites_the_whole_rollback_journal(tmp_path, monk
     salt = b"SALT-SALT-SALT-!"
     journal = data / "open_omniscience.db-journal"
     journal.write_bytes(b"\x00" * 8192 + salt + b"\x00" * 8192)
-    kept = tmp_path / "kept-journal"
-    os.link(journal, kept)
+    kept = _Kept(journal)
 
     crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
 
@@ -460,8 +474,7 @@ def test_uninstall_watcher_overwrites_the_whole_write_ahead_log(tmp_path):
     salt = b"SALT-SALT-SALT-!"
     wal = data / "open_omniscience.db-wal"
     wal.write_bytes(b"\x00" * 8192 + salt + b"\x00" * 8192)
-    kept = tmp_path / "kept-wal"
-    os.link(wal, kept)
+    kept = _Kept(wal)
     plan = {"files": [], "venv": None, "app_folder": None, "wipe_data_dir": str(data), "audit_log": str(tmp_path / "a.log")}
 
     subprocess.run([sys.executable, "-c", _WATCHER_SRC, str(dead.pid), json.dumps(plan)], check=True, timeout=60)
@@ -1074,8 +1087,7 @@ def test_in_a_shared_folder_every_copy_of_the_salt_and_every_key_of_the_app_s_is
         key.write_bytes(b"PRIVATE KEY " * 20)
         kept = {}
         for name, p in (("main", db), ("wal", db.with_name(db.name + "-wal"))):
-            kept[name] = tmp_path / f"kept-{name}"
-            os.link(p, kept[name])
+            kept[name] = _Kept(p)
         # a key file with a name outside the keys folder is never written (R841): read back through a kept descriptor instead
         key_fd, key_size = os.open(key, os.O_RDONLY), key.stat().st_size
         # a copy with a second name is never written (security reads, row 402): read back through a kept descriptor instead

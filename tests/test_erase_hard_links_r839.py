@@ -549,3 +549,115 @@ def test_the_four_sentences_ship_in_every_language():
         for k in keys:
             assert "{n}" in loc[k], f.name
             assert "destr" not in loc[k].lower() if f.stem == "en" else True, "never 'destroyed' (R815)"
+
+
+def test_the_watcher_never_writes_a_foreign_file_under_a_store_name_below_the_data_folder(tmp_path):
+    """Security read of row 438: a store's name is the app's only where the app keeps its stores (the data folder itself);
+    a foreign file linked under that name deeper down is never written, and the log never calls it the app's own."""
+    if sys.platform == "win32":
+        pytest.skip("POSIX hard links")
+    data = _own(tmp_path)
+    (data / "exports" / "sub").mkdir(parents=True)
+    out = _outside(tmp_path)
+    before = out.read_bytes()
+    os.link(out, data / "exports" / "sub" / "custody_log.db")
+    log = _run_watcher(tmp_path, data)
+    assert out.read_bytes() == before, "a store NAME below the data folder is not the app's"
+    assert "overwritten all the same" not in log
+    assert "may remain under that other name (count: 1)" in log
+
+
+def test_the_watcher_never_says_left_a_file_it_then_overwrote_through_its_other_name(tmp_path):
+    """Security read of row 438: a file with both names in the data folder is left at the first (link count 2) and overwritten
+    at the second (link count 1): it is not reported as left under another name."""
+    if sys.platform == "win32":
+        pytest.skip("POSIX hard links")
+    data = _own(tmp_path)
+    (data / "annotations").mkdir()
+    a = data / "annotations" / "a.json"
+    a.write_bytes(b"X" * 9000)
+    os.link(a, data / "annotations" / "b.json")
+    log = _run_watcher(tmp_path, data)
+    assert "may remain under that other name" not in log
+    assert not (data / "annotations").exists() or not any((data / "annotations").iterdir())
+
+
+def test_a_key_whose_link_count_reads_zero_is_never_verified(tmp_path):
+    """R810 (1) with R841: a link count of 0 (unreadable) never reconciles with the names counted, so the key is unverified."""
+    if sys.platform == "win32" or not hasattr(os, "O_DIRECTORY"):
+        pytest.skip("POSIX folder handles")
+    kd = tmp_path / "keys"
+    kd.mkdir()
+    (kd / "x.key").write_bytes(b"k")
+    hold = crypto_erase._KeysHold.open(kd)
+    try:
+        st = os.stat(kd / "x.key")
+        fake = os.stat_result((st.st_mode, st.st_ino, st.st_dev, 0) + tuple(st)[4:])
+        assert hold.verify(st) is True
+        assert hold.verify(fake) is False
+        ghost = os.stat_result((st.st_mode, st.st_ino + 10**9, st.st_dev, 0) + tuple(st)[4:])
+        assert hold.verify(ghost) is False, "no name counted and a count of 0: never reconciled"
+    finally:
+        hold.close()
+
+
+@pytest.mark.parametrize("suffix", ["-wal", "-journal", "-shm"])
+def test_a_store_log_with_another_name_is_never_written_by_its_name_alone(tmp_path, suffix):
+    """Security read of row 438 (R840): a log or log index at a store's name, with another name elsewhere, is not tied to the store
+    by its name: never written (the main file is not even there), and never said as the app's own."""
+    if sys.platform == "win32":
+        pytest.skip("POSIX hard links")
+    data = _own(tmp_path)
+    main = data / crypto_erase._MAIN_DB
+    victim = _outside(tmp_path)
+    before = victim.read_bytes()
+    os.link(victim, main.with_name(main.name + suffix))
+    report = _erase(data)
+    assert victim.read_bytes() == before
+    assert report["linked_files"]["written"] == 0
+    assert report["linked_files"]["refused" if suffix != "-shm" else "left"] == 1
+    assert crypto_erase._LIMIT_NOTE not in report["limit"], "never the clean guarantee beside a copy left"
+
+
+@pytest.mark.parametrize("name", ["analytics.duckdb", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb"])
+def test_only_the_columnar_salt_sidecar_is_written_whatever_its_other_name(tmp_path, name):
+    """Security read of row 438 (R840): of the columnar files, only the key-derivation sidecar holds the salt."""
+    if sys.platform == "win32":
+        pytest.skip("POSIX hard links")
+    data = _own(tmp_path)
+    victim = _outside(tmp_path)
+    before = victim.read_bytes()
+    os.link(victim, data / name)
+    report = _erase(data)
+    assert victim.read_bytes() == before
+    assert report["linked_files"]["written"] == 0
+
+
+def test_the_columnar_salt_sidecar_is_written_whatever_its_other_name(tmp_path):
+    if sys.platform == "win32":
+        pytest.skip("POSIX hard links")
+    data = _own(tmp_path)
+    kdf = data / "analytics.duckdb.kdf"
+    kdf.write_bytes(b"S" * 64)
+    other = tmp_path / "kdf-copy"
+    os.link(kdf, other)
+    report = _erase(data)
+    assert other.read_bytes() != b"S" * 64
+    assert report["linked_files"]["written"] == 1
+
+
+def test_a_failing_key_check_never_leaks_the_descriptor(tmp_path):
+    """Security read of row 438: a check that raises closes the descriptor it was given."""
+    if sys.platform == "win32":
+        pytest.skip("POSIX hard links")
+    f = tmp_path / "x"
+    f.write_bytes(b"x")
+    os.link(f, tmp_path / "y")
+
+    def boom(_st):
+        raise OSError(5, "")
+
+    before = len(os.listdir("/proc/self/fd")) if os.path.isdir("/proc/self/fd") else None
+    assert crypto_erase._overwrite(f, keyed=boom) is False
+    if before is not None:
+        assert len(os.listdir("/proc/self/fd")) == before

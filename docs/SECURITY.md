@@ -1060,9 +1060,11 @@ imply a protection we cannot deliver.
   only one positively the app's own is overwritten whatever its other name (a key file only when every one of its names is in
   the keys folder or its `.pending`, counted through the held folder handle, since no copy of the public key is kept apart from
   the key file itself; an unverified one is never written, its name is removed and the result says its contents may still be
-  readable through the other name; a store's page 1 and logs, the columnar cache's salt, a segment or a database copy a
-  record names by identity, a plaintext store's log whose own valid header states the pinned store's page size), and the result
-  says so; any other is never written, its name here is removed, it is counted once by identity and the result says its contents
+  readable through the other name; a store's main file at the app's own path, the columnar cache's key-derivation sidecar (the
+  only columnar file holding the salt), a segment or a database copy a record names by identity, a plaintext store's log whose own
+  valid header states the pinned store's page size), and the result says so; a store's name is the app's only where the app keeps
+  its stores (the data folder itself, never a name deeper down), and a log or log index with another name is never tied to its
+  store by its name alone (an encrypted store's log is said as a possible copy left; a late rewrite never reaches either); any other is never written, its name here is removed, it is counted once by identity and the result says its contents
   may remain under that other name; a possible copy of the corpus that is not positively the app's (a segment or copy no record
   names, a plaintext log not tied by its header) is left whole and said so. The at-rest record with another name stays refused.
   Any of these keeps the result from being clean (`linked_files`). The keys folder is opened once, no-follow, and walked by

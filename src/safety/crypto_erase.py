@@ -454,7 +454,7 @@ def _masked(paths: list[str], root: Path | None = None) -> list[str]:
         return ["(path withheld)"] * len(paths)
 
 
-def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], refused: bool = False, head_bytes: int | None = None, zeros: bool = False, at: _At | None = None) -> bool | None:
+def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], refused: bool = False, head_bytes: int | None = None, zeros: bool = False, at: _At | None = None, unverified: str = "key") -> bool | None:
     """Overwrite ``path`` in place with random data, then fsync. When ``head_bytes``
     is given only that prefix is overwritten (the crypto-erase salt-page case);
     otherwise the whole file is overwritten in bounded chunks (small files only —
@@ -493,10 +493,10 @@ def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], re
             if callable(keyed):
                 # R841 (row 438 / R810 (3)): a key file with another name is written only when verified, through this descriptor's
                 # fstat (its identity), to be this installation's own; never on a guess
-                own = keyed(st)
-                if own:  # a link count that changed between the count and the write cannot be reconciled: unverified (R841)
-                    own = os.fstat(fd).st_nlink == st.st_nlink
-                _note_link(st, keyed=own, key=not own)
+                own = _verified_on(fd, st, keyed)
+                # ``unverified``: how a file the check did not clear is said: "key" (R841) or "refused" (a store's page 1 that is not
+                # the pinned one: a possible copy of the corpus, R840)
+                _note_link(st, keyed=own, key=not own and unverified == "key", refused=not own and unverified == "refused")
                 keyed = own
             else:
                 _note_link(st, keyed=keyed, refused=refused and not keyed)  # ``refused``: the caller leaves its name too (R840)
@@ -523,6 +523,16 @@ def _overwrite(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], re
         _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", _masked([str(path)])[0])
         return False
 
+
+
+def _verified_on(fd: int, st: os.stat_result, check: Callable[[os.stat_result], bool]) -> bool:
+    """R841: ``check`` cleared the file ``st`` describes and its link count, read again on the same descriptor, has not changed
+    since (a count that changed cannot be reconciled). Closes ``fd`` before any error leaves (security read of row 438)."""
+    try:
+        return bool(check(st)) and os.fstat(fd).st_nlink == st.st_nlink
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 def _data_regions(fd: int, size: int) -> list[tuple[int, int]] | None:
@@ -1090,7 +1100,9 @@ def _first_page_fallback(db: Path, pin: tuple[int, int, int, int, str]) -> dict:
         whole = suffix in ("-wal", "-journal")
         # R840: the main file is the pinned store; a sidecar with another name is not tied here (this path reads no header), so it
         # is neither written nor removed
-        ok = _overwrite(p, keyed=suffix == "", refused=True, head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=suffix == "-shm")
+        # the main file only while the descriptor written is the pinned one (security read of row 438: never judged on another open)
+        ok = _overwrite(p, keyed=(lambda st: (st.st_dev, st.st_ino) == pin[:2]) if suffix == "" else False, refused=True,
+                        head_bytes=None if whole else _SQLCIPHER_PAGE1, zeros=suffix == "-shm", unverified="refused")
         if ok is None:
             rec["reason"] = rec["reason"] or "changed"
             continue
@@ -1380,7 +1392,7 @@ def new_hold_generation() -> int:
     return next(_GENERATIONS)
 
 
-def _hold(path: Path, *, whole: bool, generation: int = 0, kind: str | None = None) -> bool | None:
+def _hold(path: Path, *, whole: bool, generation: int = 0, kind: str | None = None, linked_ok: bool = False) -> bool | None:
     """Keep a descriptor on ``path`` for :func:`rescrub_held`. POSIX only: on Windows an open descriptor would make the
     unlink fail. Returns True when kept, None when there is nothing to keep (no such file), False when an existing file
     could not be kept. Never raises."""
@@ -1393,12 +1405,16 @@ def _hold(path: Path, *, whole: bool, generation: int = 0, kind: str | None = No
     except OSError:
         return False
     try:
-        regular = stat.S_ISREG(os.fstat(fd).st_mode)
+        st_h = os.fstat(fd)
+        regular = stat.S_ISREG(st_h.st_mode)
     except OSError:
         regular = False
     if not regular:  # a FIFO, socket or device is never kept to write to
         os.close(fd)
         return False
+    if st_h.st_nlink != 1 and not linked_ok:  # R839/R840 (security read of row 438): another name holds it, so the late rewrite
+        os.close(fd)                         # never reaches it; the erase's own pass says what it did with it
+        return None
     kind = kind or ("whole" if whole else "head")
     try:
         cap = os.fstat(fd).st_size + _HELD_GROWTH
@@ -1763,7 +1779,7 @@ class _KeysHold:
                 found += _names_of(pfd, ident)
             finally:
                 _close_quietly(pfd)
-        return found == st.st_nlink
+        return found >= 1 and found == st.st_nlink   # a count of 0 (unreadable, R810 (1)) is never reconciled
 
 
 def _names_of(dfd: int, ident: tuple[int, int]) -> int:
@@ -2076,7 +2092,7 @@ def _kept_in_keys(keys_dir: Path) -> int:
 
 
 def _shred(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], head_bytes: int | None = None, zeros: bool = False, unreached=None,
-           at: _At | None = None) -> tuple[bool, bool | None, bool]:
+           at: _At | None = None, refused: bool = False) -> tuple[bool, bool | None, bool]:
     """Overwrite then unlink ``path``. Returns ``(seen, overwritten, unlinked)``:
     ``seen`` is whether the file existed, ``overwritten`` whether the destructive
     write actually completed, ``unlinked`` whether the directory entry was removed.
@@ -2090,8 +2106,8 @@ def _shred(path: Path, *, keyed: bool | Callable[[os.stat_result], bool], head_b
         return (False, False, False)
     if at is not None and _kind(path, unreached, at) == "absent":
         return (False, False, False)
-    overwritten = _overwrite(path, keyed=keyed, head_bytes=head_bytes, zeros=zeros) if at is None else _overwrite(
-        path, keyed=keyed, head_bytes=head_bytes, zeros=zeros, at=at)
+    overwritten = _overwrite(path, keyed=keyed, refused=refused, head_bytes=head_bytes, zeros=zeros) if at is None else _overwrite(
+        path, keyed=keyed, refused=refused, head_bytes=head_bytes, zeros=zeros, at=at)
     try:
         if at is None:
             path.unlink()
@@ -3731,11 +3747,12 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         # zeroed), counted as before, and the file at the path is never written; after the record (the coordinator's order).
         for suffix in ("-shm", "-wal", "-journal"):
             p = plain_main.with_name(plain_main.name + suffix)
-            s, overwritten, w = _shred(p, keyed=True, head_bytes=_SQLCIPHER_PAGE1 if suffix == "-shm" else None, zeros=suffix == "-shm",
-                                       unreached=_unreached)
+            # R840: not tied to the store (its file is not the pinned one), so one with another name is never written; a log is left
+            s, overwritten, w = _shred(p, keyed=False, refused=suffix != "-shm", head_bytes=_SQLCIPHER_PAGE1 if suffix == "-shm" else None,
+                                       zeros=suffix == "-shm", unreached=_unreached)
             seen += s
             wiped += w
-            if s and not overwritten:
+            if s and overwritten is False:  # None: another name holds it (R839), said on its own line
                 overwrite_failures.append(str(p))
         if _under(plain_main, base):
             plain_rec = None  # in the data folder, whatever is at the path is erased by step 6 like any other file
@@ -3743,7 +3760,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     for db in dbs:
         p = db.with_name(db.name + "-shm")
         if p not in plain_parts and _present(p, _unreached):
-            head_ok[p] = bool(_overwrite(p, keyed=True, head_bytes=_SQLCIPHER_PAGE1, zeros=True))
+            head_ok[p] = _overwrite(p, keyed=False, head_bytes=_SQLCIPHER_PAGE1, zeros=True) is not False  # R839: a log index with another name is not the store's
     _corpus_logs(corpus_sweep)  # R826: the segments' logs whole, and every segment name unlinked, after the record
     # The logs, whole, only now: after every first page and the record (the coordinator's order for R828 (2)), since a log rewrite
     # can be long and can be stopped.
@@ -3754,22 +3771,24 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
                 continue
             if _hold(p, whole=True, generation=generation) is False:
                 missed.append(p.name)
-            s, overwritten, w = _shred(p, keyed=True, unreached=_unreached)
+            # R840 (security read of row 438): a log is the store's only when tied to it, which a log of an encrypted store cannot be
+            # by its header here: one with another name is never written, and said as a possible copy left
+            s, overwritten, w = _shred(p, keyed=False, refused=True, unreached=_unreached)
             seen += s
             wiped += w
-            if s and not overwritten:
+            if s and overwritten is False:
                 overwrite_failures.append(str(p))
     for db in dbs:
         for p in (db, db.with_name(db.name + "-shm")):
             if p in plain_parts:
                 continue
-            if _hold(p, whole=False, generation=generation, kind="head" if p == db else "shm") is False:
+            if _hold(p, whole=False, generation=generation, kind="head" if p == db else "shm", linked_ok=p == db) is False:
                 missed.append(p.name)
-            s, overwritten, w = _shred(p, keyed=True, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db, unreached=_unreached)
+            s, overwritten, w = _shred(p, keyed=p == db, head_bytes=_SQLCIPHER_PAGE1, zeros=p != db, unreached=_unreached)
             overwritten = overwritten and head_ok.get(p, True)
             seen += s
             wiped += w
-            if s and not overwritten:
+            if s and overwritten is False:
                 overwrite_failures.append(str(p))
             if s and overwritten and p == db:
                 headers.append(db.name)
@@ -3837,7 +3856,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     if store_dir is not None and _under(store_dir, base) and _off_drive():
         store_dir = None  # R812 (c)
     for duck in [store_dir / name for name in _DUCK_FILES] if store_dir is not None else []:
-        _s, _overwritten, _w = _track(duck, keyed=True, head_bytes=_SQLCIPHER_PAGE1)
+        # R840: only the key-derivation sidecar holds the salt; the others with another name are not written (security read, row 438)
+        _s, _overwritten, _w = _track(duck, keyed=duck.name == "analytics.duckdb.kdf", head_bytes=_SQLCIPHER_PAGE1)
         seen += _s
         wiped += _w
 
@@ -4312,7 +4332,8 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         + (_LIMIT_NOTE_UNLISTED + ("" if guaranteed is True else " " + _plain_sentence(guaranteed)) if unlisted_folders
            # R828 (2): with the record left, the clean guarantee is never said beside "key material may remain"; row 378: nor beside
            # "the erase of the data folder is not complete" or a sign-in token that may remain
-           else _DEFENCE_TAIL.lstrip() if (record_state == "left" or shaped_items or hf_token_left) and guaranteed is True
+           else _DEFENCE_TAIL.lstrip() if (record_state == "left" or shaped_items or hf_token_left or link_counts["left"]
+                                           or link_counts["refused"] or link_counts["keys"]) and guaranteed is True
            else _clean_note(guaranteed)),
     }
 

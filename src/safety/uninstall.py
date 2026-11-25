@@ -109,12 +109,20 @@ def header_only(name):
 # that may hold articles and their salt was left. The link count is read by fstat on the handle about to be written, at the moment of the decision.
 # R841: "key": a file under a key name with another name somewhere the app does not write its keys (every name of the app's own key
 # is in keys or keys/.pending): never written, this name removed, and the log says its contents may still be readable through the other.
-linked = {"keyed": set(), "left": set(), "refused": set(), "key": set()}
+linked = {"keyed": set(), "left": set(), "refused": set(), "key": set(), "written": set()}   # "written": every file whose overwrite completed
 SEG = re.compile(r"seg-[1-9][0-9]{0,3}\.db(-wal|-shm|-journal)?")
 def key_path(p):
     return bool(wd) and os.path.relpath(p, wd).replace("\\", "/").startswith("keys/")
-def keyed_path(p):   # the app's own by what it is: a file of its keys folder (verified, R841), or a store whose page 1 holds the salt
-    return key_path(p) or header_only(os.path.basename(p))
+def keyed_path(p):   # the app's own by what it is: a file of its keys folder (verified, R841), or one of its stores (page 1 holds the salt)
+    # and their logs, only where the app keeps them (the data folder itself): a store name deeper down is never the app's by its name alone
+    # (the main file only: a log or log index with another name is never tied to its store here, R840; security read of row 438)
+    if key_path(p): return True
+    return at_top(p) and os.path.basename(p) in _SQL + ("analytics.duckdb.kdf",)
+def at_top(p):
+    return bool(wd) and os.path.dirname(os.path.abspath(p)) == os.path.abspath(wd)
+def store_log(p):   # a log of one of the app's stores, where the app keeps them: one with another name may hold articles (R840)
+    nm = os.path.basename(p)
+    return at_top(p) and any(nm == b + x for b in _SQL for x in ("-wal", "-journal"))
 def key_names(ident):   # R841: how many names the file has in keys and keys/.pending, each looked at never following a link
     n = 0
     kd = os.path.join(wd, "keys")
@@ -146,9 +154,10 @@ def overwrite(p, head_only, keyed=False):   # True once every byte it was to wri
             ident = (fs.st_dev, fs.st_ino)
             if not keyed:
                 os.close(fd)
-                if segment_path(p): linked["refused"].add(ident); return "refused"
+                if segment_path(p) or store_log(p): linked["refused"].add(ident); return "refused"
                 linked["left"].add(ident); return "left"
-            if key_path(p) and key_names(ident) != fs.st_nlink:   # R841: a name elsewhere: not shown to be this installation's key
+            kn = key_names(ident) if key_path(p) else 0
+            if key_path(p) and (kn < 1 or kn != fs.st_nlink):   # R841: a name elsewhere, or a count of 0: not shown to be this installation's key
                 os.close(fd); linked["key"].add(ident); return "key"
             linked["keyed"].add(ident)
         n = fs.st_size
@@ -158,6 +167,7 @@ def overwrite(p, head_only, keyed=False):   # True once every byte it was to wri
             while w < limit:
                 c = os.urandom(min(CHUNK, limit - w)); f.write(c); w += len(c)
             f.flush(); os.fsync(f.fileno())
+        linked["written"].add((fs.st_dev, fs.st_ino))   # overwritten after all (through another of its names): never counted as left
         return True
     except OSError: return False
 # R798: every folder a walk of the wipe could not list (it then checked none of the files in it); one is enough for "may be
@@ -206,6 +216,8 @@ def keep(p, kind):
         regular = False
     if not regular:
         os.close(fd); held_stat["missed"] += 1; return
+    if st.st_nlink != 1 and not keyed_path(p):   # R839 (security read of row 438): another name holds it; the late rewrite never reaches it
+        os.close(fd); return
     kept.append((fd, kind, st.st_size + GROWTH))
 def flock(kind, start, length):
     if LAYOUT == "hhqqi": return struct.pack(LAYOUT, kind, 0, start, length, 0)
@@ -531,8 +543,9 @@ if wd and os.path.isdir(wd):
     if hf_left:
         rec("a Hugging Face sign-in token may remain in %s of %s: it can be revoked in the Hugging Face account; "
             "THE ERASE MAY BE INCOMPLETE" % (", ".join(sorted(set(hf_left))), tok(wd)))
-    lk = {"keyed": len(linked["keyed"]), "refused": len(linked["refused"] - linked["keyed"]), "key": len(linked["key"] - linked["keyed"]),
-          "left": len(linked["left"] - linked["keyed"] - linked["refused"] - linked["key"])}
+    wr = linked["written"]
+    lk = {"keyed": len(linked["keyed"]), "refused": len(linked["refused"] - linked["keyed"] - wr),
+          "key": len(linked["key"] - linked["keyed"] - wr), "left": len(linked["left"] - linked["keyed"] - linked["refused"] - linked["key"] - wr)}
     if lk["key"]:
         rec("files under the app's key names in %s also had another name elsewhere on the disk and could not be shown to be this "
             "installation's own keys, so they were not overwritten, only removed: their contents may still be readable through that "
@@ -643,7 +656,7 @@ if sd and os.path.isdir(sd):
     for nm in ("analytics.duckdb", "analytics.duckdb.kdf", "analytics.duckdb.wal", ".oo_columnar_probe.duckdb"):
         fp = os.path.join(sd, nm)
         if there(fp):
-            if overwrite(fp, True, True) is False: sd_failed += 1   # the columnar cache's salt: overwritten all the same (R840)
+            if overwrite(fp, True, nm == "analytics.duckdb.kdf") is False: sd_failed += 1   # only the salt sidecar is written whatever its other name (R840)
             try: os.remove(fp); sd_wiped += 1
             except OSError: pass
     rec("wiped columnar store %s (%d files, header-only%s)" % (tok(sd), sd_wiped, "; %d not overwritten, THE ERASE MAY BE INCOMPLETE" % sd_failed if sd_failed else ""))
