@@ -173,6 +173,8 @@ def _seed_newsletters(db):
     _article(db, nl.id, "nq", _TEXTS[1], quarantined=True)
     _article(db, web.id, "w1", _TEXTS[2])
     _article(db, web.id, "w2", _TEXTS[3])
+    # A quarantined article that STAYS, on the same day: the copy's rebuilt counts must leave it out (R101).
+    _article(db, web.id, "wq", _TEXTS[1], quarantined=True)
     assert _stored(db) == _exact(db)
     return nl, web
 
@@ -228,7 +230,7 @@ def test_the_backup_copy_without_newsletters_carries_exact_counters(tmp_path):
 
     assert _drop_newsletter_articles(path) == 5
     check = _session(str(path))
-    assert check.query(Article).count() == 2
+    assert check.query(Article).count() == 3
     assert _stored(check) == _exact(check)
 
 
