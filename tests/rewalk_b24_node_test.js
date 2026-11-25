@@ -75,6 +75,8 @@ const NAMES = [
   "_anRefillFormSlots",
   // the panels a switch also redraws (the round-2 review of N-4)
   "_anWwwHtml", "_anRelatedHtml", "_anCompetitiveHtml", "_anOverviewHtml",
+  // the "N of these results not counted yet" line the panels lead with (row 408 PR 3b)
+  "anNotCountedYetHtml",
   // the entity spine's hover helpers _anWwwHtml calls (S05-03)
   "placeNameSourceText", "entityLadderHoverText", "placeUnresolvedText",
 ];

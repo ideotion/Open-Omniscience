@@ -78,13 +78,13 @@ def _commit(monkeypatch, *, left: bool) -> tuple[dict, list[int]]:
     from src.backup.merge import run_restore
 
     calls: list[int] = []
-    real = store.reconcile_keyword_counters
+    real = store.reconcile_counters_after_import
 
-    def _spy(session, **kw):
+    def _spy(*a, **kw):
         calls.append(1)
-        return real(session, **kw)
+        return real(*a, **kw)
 
-    monkeypatch.setattr(store, "reconcile_keyword_counters", _spy)
+    monkeypatch.setattr(store, "reconcile_counters_after_import", _spy)
     dest = Path(os.environ["OO_DATA_DIR"]).parent / f"p6-{os.getpid()}-{left}.oobak"
     dest.unlink(missing_ok=True)
     write_backup_v2(dest)

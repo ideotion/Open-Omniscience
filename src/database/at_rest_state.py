@@ -376,7 +376,165 @@ def note_main_open(path: Path | str) -> None:
         log_failure(_LOG, "the at-rest record could not be updated after an open", exc, level=logging.DEBUG)
 
 
-def record_names_identity(raw: bytes | None, ident: tuple[int, int], head: bytes | None = None) -> bool:
+#: R823: the record entry of a copy the app made of one of its stores, beside it (a pre-restore snapshot, a rebuild's kept file),
+#: keyed by the copy's own file name; R826: a corpus segment's, by its name without ``.db``.
+COPY_PREFIX = "copy:"
+SEGMENT_PREFIX = "corpus:"
+
+
+def copy_key(copy: Path | str) -> str:
+    return COPY_PREFIX + Path(copy).name
+
+
+def record_copy(copy: Path, source: Path, source_name: str) -> bool:
+    """R823: write the record entry for ``copy``, a copy the app just made of its store ``source`` (``source_name`` in the
+    record), ONLY when the source is proven keyed (this process holds it open under a key, or the record names its very file) AND
+    the copy carries the source's own first 16 bytes, read from one descriptor each, behind a header that is not SQLite's. The
+    entry is bound to the copy's own (device, inode) by a MAC (R828 (1)); no byte of either file is stored. The copy's name, place,
+    size and the main store being encrypted are never evidence. Returns whether it was written; a failed write never fails the
+    copy (it is then rewritten in full by an erase). Never raises."""
+    try:
+        smark, cmark = _mark(source), _mark(copy)
+        if smark is None or cmark is None or smark[2] != cmark[2]:
+            return False  # a plaintext file (SQLite's header) on either side, or another file: no entry
+        from src.database.connect import opened_with_key
+
+        record = _record_path(source)
+        keyed = opened_with_key(smark[:2])
+        if not keyed:
+            doc = _read_record_at(record)
+            keyed = entry_names(doc["stores"].get(source_name), smark, doc)
+        if not keyed or Path(copy).parent != Path(source).parent:
+            return False  # its record is the source's, beside it: a copy elsewhere has no entry
+        if _record_bytes(record) is None:
+            return False  # never creates the record (security reads, row 402): a keyed store has one from its encryption
+        from src.safety.file_lock import atomic_replace, file_lock
+
+        with file_lock(record):
+            doc = _read_record_at(record)
+            entry = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True,
+                     "copy_of": source_name}
+            entry.update(_bound_entry(doc, cmark))
+            doc["stores"][copy_key(copy)] = entry
+            atomic_replace(record, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
+        return True
+    except Exception as exc:  # noqa: BLE001 - bookkeeping never fails the copy
+        log_failure(_LOG, "the at-rest record could not name a copy (an erase rewrites it whole)", exc, level=logging.DEBUG)
+        return False
+
+
+def forget_copy(copy: Path) -> None:
+    """R823 / R828 (4): the entry of ``copy`` goes when the copy is removed or replaced. Never creates the record; never
+    raises."""
+    record = _record_path(Path(copy))
+    if _record_bytes(record) is None:
+        return
+    _write_identity(copy_key(copy), record, None)
+
+
+#: R826: the one folder of the split corpus inside the data folder, and the only file name a segment may have there
+#: (``src/safety/crypto_erase.py`` sweeps exactly these names).
+SEGMENT_DIR = "corpus"
+_SEGMENT_NAME = re.compile(r"^(seg-[1-9][0-9]{0,3})\.db\Z")  # \Z: "seg-1.db\n" is never a segment's name
+
+
+def _segment_entry(path: Path | str, *, must_exist: bool) -> str | None:
+    """The record key ``corpus:seg-<n>`` of the segment at ``path``, or None when the helper must refuse it: a name other than
+    ``seg-<n>.db``, a link (or anything but a regular file with one name) at that name, or a file whose folder is not the data
+    folder's own ``corpus`` folder (a link at the folder's name, or another folder, is refused; the comparison is by device and
+    inode, so the spelling of the path does not matter). Nothing is opened. Never raises."""
+    from src.paths import data_dir_path
+
+    p = Path(path)
+    m = _SEGMENT_NAME.match(p.name)
+    if m is None:
+        return None
+    folder = data_dir_path() / SEGMENT_DIR
+    try:
+        fst = os.lstat(folder)
+        pst = os.lstat(p.parent)
+    except OSError:
+        return None
+    if not (stat.S_ISDIR(fst.st_mode) and stat.S_ISDIR(pst.st_mode)) or (fst.st_dev, fst.st_ino) != (pst.st_dev, pst.st_ino):
+        return None
+    try:
+        st = os.lstat(p)
+    except FileNotFoundError:
+        return None if must_exist else SEGMENT_PREFIX + m.group(1)
+    except OSError:
+        return None
+    if not stat.S_ISREG(st.st_mode) or (must_exist and st.st_nlink != 1):
+        return None
+    return SEGMENT_PREFIX + m.group(1)
+
+
+def record_segment(path: Path | str, main: Path | None = None) -> bool:
+    """R826 / R828: write the record entry ``corpus:seg-<n>`` for the corpus segment at ``path`` (``<data>/corpus/seg-<n>.db``),
+    bound to the file's own (device, inode) by a MAC of its first 16 bytes (no byte of the file is stored), in the record beside
+    the main corpus ``main`` (default: the live one). Call it ONLY after the segment was read back with the key, and while that
+    keyed connection is still open: the helper checks that this process holds the very file open under a key
+    (``connect.opened_with_key``) and writes nothing otherwise. Refused (returns False, writes nothing): any name but
+    ``seg-<n>.db``, a link at the name or at the ``corpus`` folder's name, a file with a second name, a file outside the data
+    folder's ``corpus`` folder, a file whose first 16 bytes are SQLite's header. With an entry, an erase destroys the segment's
+    page 1 and says "destroyed"; without one it rewrites the file whole. Returns whether it was written; never raises."""
+    try:
+        name = _segment_entry(path, must_exist=True)
+        if name is None:
+            return False
+        if main is None:
+            from src.api.unlock import main_db_path
+
+            main = main_db_path()
+        mark = _mark(Path(path))
+        if main is None or mark is None:
+            return False
+        st = os.lstat(path)
+        if (st.st_dev, st.st_ino) != mark[:2]:
+            return False  # swapped between the look and the read
+        from src.database.connect import opened_with_key
+
+        if not opened_with_key(mark[:2]):
+            return False  # never read back with the key by this process: no evidence, no entry
+        from src.safety.file_lock import atomic_replace, file_lock
+
+        record = _record_path(Path(main))
+        if _record_bytes(record) is None:
+            return False  # never creates the record: the corpus's encryption wrote it (record_encrypted)
+        with file_lock(record):
+            doc = _read_record_at(record)
+            entry = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True}
+            entry.update(_bound_entry(doc, mark))
+            doc["stores"][name] = entry
+            atomic_replace(record, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
+        return True
+    except Exception as exc:  # noqa: BLE001 - bookkeeping never fails the segment (an erase then rewrites it whole)
+        log_failure(_LOG, "the at-rest record could not name a corpus segment (an erase rewrites it whole)", exc, level=logging.DEBUG)
+        return False
+
+
+def forget_segment(path: Path | str, main: Path | None = None) -> bool:
+    """R826 / R828 (4): remove the entry ``corpus:seg-<n>`` of the segment at ``path`` when the segment is deleted, replaced or
+    decrypted (call it before or after the file goes: a missing file is fine). Refused (returns False, changes nothing): any name
+    but ``seg-<n>.db``, a link at the name or at the ``corpus`` folder's name, a path outside the data folder's ``corpus``
+    folder. Never creates the record or a folder; never opens the segment; never raises."""
+    try:
+        name = _segment_entry(path, must_exist=False)
+        if name is None:
+            return False
+        if main is None:
+            from src.api.unlock import main_db_path
+
+            main = main_db_path()
+        if main is None:
+            return False
+        forget(name, Path(main))
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log_failure(_LOG, "the at-rest record could not drop a corpus segment", exc, level=logging.DEBUG)
+        return False
+
+
+def record_names_identity(raw: bytes | None, ident: tuple[int, int], head: bytes | None = None, name: str = "corpus") -> bool:
     """R820 (1)/(3): whether the record's bytes ``raw`` (read by the erase, no-follow, regular file only, at most
     :data:`RECORD_MAX_BYTES`) name the corpus at ``ident`` as encrypted and read back with the key. Anything else is False: no record,
     a malformed one, an entry without an identity (a record from before R820) or with another one."""
@@ -387,7 +545,7 @@ def record_names_identity(raw: bytes | None, ident: tuple[int, int], head: bytes
     except (UnicodeDecodeError, ValueError, RecursionError):
         return False
     stores = doc.get("stores") if isinstance(doc, dict) else None
-    entry = stores.get("corpus") if isinstance(stores, dict) else None
+    entry = stores.get(name) if isinstance(stores, dict) else None
     # Row 400 (security reads): the file's own first 16 bytes too, read through the erase's kept handle, so a file that took the
     # same inode later is never named by an older record.
     if head is None or len(head) < 16 or head[:16] == _SQLITE_MAGIC or not isinstance(doc, dict):

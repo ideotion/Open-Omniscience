@@ -33,6 +33,7 @@ spliced into the local chain.
 
 from __future__ import annotations
 
+import contextvars
 import functools
 import glob
 import heapq
@@ -785,6 +786,32 @@ def _report_import_scale(corpus_path: Path) -> dict:
     return facts
 
 
+def _staged_keyed(path: Path) -> bool:
+    """Whether the import keyed this staged file (R829 A): its readers then need the encrypting driver even on a
+    plaintext install."""
+    from src.backup.staged_key import is_keyed
+
+    return is_keyed(path)
+
+
+def _check_staged_schema_file(path: Path) -> None:
+    """Refuse a staged corpus whose schema holds what the app does not make (``staged_key.check_staged_schema``), before
+    any row of it is read, then drop its triggers and views (``staged_key.disarm_staged``, row 432). Raises
+    :class:`MergeError` with fixed words."""
+    from src.backup.staged_key import StagedKeyError, db_errors, disarm_staged
+
+    try:
+        # Row 432: checked, then every trigger and view of the backup's dropped from our copy before the upgrade or the
+        # merge writes it (a no-op when the reader already did it on staging; this is the merge's own entry).
+        disarm_staged(path)
+    except StagedKeyError as exc:
+        from src.monitoring.secret_scrub import record_text
+
+        raise MergeError(record_text(exc)) from None  # fixed words of its own, scrubbed as every record is
+    except db_errors():
+        raise MergeError("the backup's corpus schema could not be read, so it was not merged") from None
+
+
 def _sub_timer(timings: object):
     """A ``with _sub("name"):`` that records a sub-stage, or does nothing.
 
@@ -824,6 +851,12 @@ def _sub_timer(timings: object):
     return _sub
 
 
+#: R834: set while the staged copy's integrity walk runs beside the merge. Called before the merge's first write to
+#: ``inc`` (only the country-code step writes it), it waits for the walk's verdict and refuses on a failed one, so the
+#: verdict always comes from a file nothing wrote to while it was read. Unset (no walk beside), nothing waits.
+_INC_WRITE_GATE: contextvars.ContextVar[Callable[[], None] | None] = contextvars.ContextVar("oo_inc_write_gate", default=None)
+
+
 @contextmanager
 def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]:
     """Run the staged copy's ``PRAGMA quick_check`` on its own thread while the body (the merge) runs.
@@ -848,7 +881,7 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
     guard = threading.Lock()
     state: dict[str, object] = {"conn": None, "error": None, "seconds": None}
 
-    def _connected(conn: sqlite3.Connection) -> None:
+    def _connected(conn: Any) -> None:
         with guard:
             state["conn"] = conn
             if stop.is_set():
@@ -857,7 +890,7 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
     def _walk() -> None:
         t0 = time.monotonic()
         try:
-            validate_sqlite_file(path, connection_cb=_connected, should_stop=stop.is_set)
+            validate_sqlite_file(path, connection_cb=_connected, should_stop=stop.is_set, alongside=True)
         except BackupError as exc:
             from src.monitoring.secret_scrub import record_text
 
@@ -870,12 +903,25 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
                 state["conn"] = None
 
     walker = threading.Thread(target=_walk, name="oo-import-quick-check", daemon=True)
+    gate_waited = {"seconds": 0.0, "used": False}
+
+    def _before_inc_write() -> None:
+        if not gate_waited["used"]:
+            gate_waited["used"] = True
+            t0 = time.monotonic()
+            walker.join()
+            gate_waited["seconds"] = time.monotonic() - t0
+        if state["error"] is not None:
+            raise MergeError(str(state["error"]))
+
     finished = False
+    gate_token = _INC_WRITE_GATE.set(_before_inc_write)
     try:
         walker.start()  # inside the try: the finally below stops and joins whatever it started
         yield
         finished = True
     finally:
+        _INC_WRITE_GATE.reset(gate_token)
         if not finished:
             stop.set()
         t_wait = time.monotonic()
@@ -883,14 +929,16 @@ def _quick_check_alongside(path: Path, timings: object = None) -> Iterator[None]
             if not finished:
                 with guard:
                     conn = state["conn"]
-                    if isinstance(conn, sqlite3.Connection):
+                    if conn is not None:  # the stdlib's or sqlcipher3's connection (a keyed staged copy, R829 A)
                         with suppress(Exception):
-                            conn.interrupt()
+                            conn.interrupt()  # type: ignore[attr-defined]
             walker.join(timeout=0.5)
         _record = getattr(timings, "record", None)
         if _record is not None:
             with suppress(Exception):
                 _record("merge:quick_check_wait", time.monotonic() - t_wait)
+                if gate_waited["used"]:
+                    _record("merge:quick_check_wait_before_write", gate_waited["seconds"])
                 if isinstance(state["seconds"], float):
                     _record("merge:quick_check", state["seconds"])
     if state["error"] is not None:
@@ -1334,6 +1382,11 @@ def prepare_staged_corpus(
     except BackupError as exc:
         raise MergeError(str(exc)) from None  # BackupError: validate_sqlite_file's own fixed words, no driver text
 
+    # The staged file is foreign input (R829 A1, R826 b): its schema is checked against the app's own before any row
+    # of it is read -- the revision just below is the first row, and the upgrade after it runs SQL on the file.
+    with _sub("prepare_staged:schema"):
+        _check_staged_schema_file(staged.corpus_path)
+
     original_rev = file_revision(staged.corpus_path)
     if original_rev is None:
         raise MergeError(
@@ -1603,17 +1656,22 @@ def _staged_group_rows_or_none(staged_corpus: Path | str) -> dict[str, int] | No
     For :func:`check_memory_once_staged`, which runs BEFORE the staged file is validated: a file
     that cannot be counted here answers None (no early verdict) rather than a refusal, because
     the validation a moment later is what names a damaged file, in its own words, and the
-    merge's own count still runs after it. Read-only and plaintext by design: a staged member is
-    a plain SQLite file (:func:`src.database.connect.attach`'s note), and ``mode=ro`` never
-    writes the main file (a WAL-mode header can still leave ``-wal``/``-shm`` side files in the
-    private staging directory, which ``cleanup_staging`` removes with it)."""
-    from src.database.read_only_uri import open_plain_read_only
+    merge's own count still runs after it. Read-only (keyed when the import sealed the file, R829 A),
+    and ``mode=ro`` never writes the main file (a WAL-mode header can still leave ``-wal``/``-shm``
+    side files in the private staging directory, which ``cleanup_staging`` removes with it). A
+    schema the app does not make answers None too: no row of it is read here, and the validation
+    refuses it in its own words."""
+    from src.backup.staged_key import check_staged_schema, open_staged
 
     try:
-        con = open_plain_read_only(staged_corpus)
+        con = open_staged(staged_corpus)
     except Exception:  # noqa: BLE001 - not countable here: the validation names it
         return None
     try:
+        try:
+            check_staged_schema(con)
+        except Exception:  # noqa: BLE001 - refused by the validation a moment later, in its own words
+            return None
         present = {
             str(r[0]).lower()
             for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
@@ -2738,7 +2796,7 @@ def merge_corpus(
     from src.database.connect import attach
     from src.database.connect import connect as db_connect
 
-    con = db_connect(working_copy, check_same_thread=False)
+    con = db_connect(working_copy, check_same_thread=False, sqlcipher_host=_staged_keyed(staged_corpus))
     con.isolation_level = None  # explicit BEGIN/COMMIT (auto-BEGIN would collide)
     # Where the temp structures live depends on whether the working copy is ENCRYPTED. See
     # _temp_store_for: a PLAIN copy keeps its temp storage on disk (RAM per inserted row is the
@@ -2779,7 +2837,13 @@ def merge_corpus(
     fts_title_trigger_ddl = _fts_insert_trigger_ddl(con, _FTS_TITLE_INSERT_TRIGGER)
     try:
         con.execute("PRAGMA foreign_keys=OFF")  # order is FK-safe; checked at the end
-        attach(con, staged_corpus, "inc")  # staged members are plaintext by design
+        attach(con, staged_corpus, "inc")  # keyed when the import sealed it (R829 A), else a plaintext member
+        if cache_mb and _staged_keyed(staged_corpus):
+            # A keyed ``inc`` decrypts every page it reads again: with the default cache a read in index order costs up
+            # to 8.5x the plaintext one (measured, row 410), and it costs nothing more once ``inc`` has its own cache.
+            # An attached schema keeps the default unless it is told, whatever ``main`` has.
+            with suppress(Exception):  # a tuning PRAGMA must never break a merge
+                con.execute(f"PRAGMA inc.cache_size=-{int(cache_mb) * 1024}")
         # The source joins key on (domain, feed_key): ``_merge_sources`` registers the incoming keys as a SQL function
         # (``oo_inc_feed_key``, derived by the ONE feed normaliser) before its first statement.
         con.execute("BEGIN IMMEDIATE")
@@ -3589,7 +3653,7 @@ def _normalise_country_codes(con, batch_id, results) -> None:
     """
     from src.backup.country_codes import normalise_staged_country_codes
 
-    results["_country_codes"] = normalise_staged_country_codes(con, schema="inc")
+    results["_country_codes"] = normalise_staged_country_codes(con, schema="inc", before_write=_INC_WRITE_GATE.get())
 
 
 def _merge_keyword_categories(con, batch_id, results) -> None:
@@ -7735,7 +7799,7 @@ def verify_merge(
     from src.database.connect import connect as db_connect
 
     _sub = _sub_timer(timings)
-    con = db_connect(working_copy, check_same_thread=False)
+    con = db_connect(working_copy, check_same_thread=False, sqlcipher_host=_staged_keyed(staged_corpus))
     try:
         v: dict = {}
         has_fts = bool(
@@ -7837,6 +7901,9 @@ def _merge_side_files_and_custody(staged: StagedArtifact, report: dict) -> None:
     report["side_files"] = merge_side_files(staged)
     if staged.custody_path is not None:
         report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
+    elif getattr(staged, "custody_refused", None):
+        # Row 432: refused for its schema when it was staged, in merge_custody's own words and shape.
+        report["custody"] = {"entries": 0, "imported": 0, "duplicate": 0, "chains": [], "refused": staged.custody_refused}
 
 
 def _ids_after(all_ids: list[int], after: int) -> list[int]:
@@ -9270,10 +9337,16 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
     its ancestors' chains, so on a 1-million-article backup that was gigabytes: two
     imports on a 7 GB machine were killed in this stage at 5.6 and 6.0 GB, after hours
     of merging, before the swap."""
-    from src.database.read_only_uri import open_plain_read_only
+    from src.backup.staged_key import StagedKeyError, check_staged_schema, open_staged
 
-    src = open_plain_read_only(staged_custody)
+    src = open_staged(staged_custody)  # keyed when the import sealed it (R829 A3)
     try:
+        try:
+            check_staged_schema(src)  # foreign input: no row of it is read past an object the app does not make
+        except StagedKeyError as exc:
+            from src.monitoring.secret_scrub import record_text
+
+            return {"entries": 0, "imported": 0, "duplicate": 0, "chains": [], "refused": record_text(exc)}  # fixed words
         src_tables = {
             r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
@@ -9415,6 +9488,10 @@ def _prune_snapshots(keep: int = _SNAPSHOT_KEEP) -> list[str]:
             removed.append(p.name)
         except OSError:  # pragma: no cover
             pass
+        else:
+            from src.database import at_rest_state
+
+            at_rest_state.forget_copy(p)  # R823 / R828 (4): its record entry goes with it
     return removed
 
 
@@ -9508,6 +9585,10 @@ def prune_pre_restore_snapshots_by_age(max_age_hours: float | None = None) -> li
             removed.append(p.name)
         except OSError:  # pragma: no cover
             pass
+        else:
+            from src.database import at_rest_state
+
+            at_rest_state.forget_copy(p)  # R823 / R828 (4): its record entry goes with it
     return removed
 
 
@@ -10950,6 +11031,8 @@ def run_restore(
     # 7 lettered stages (A-G) converge into ONE report.
     for _name, _seconds in (staged.stage_a_timings or {}).items():
         timings.record(f"stage_a:{_name}", _seconds)
+    with suppress(Exception):  # its steps ran one after another, before this recorder existed
+        timings.started_earlier(sum(float(v) for v in (staged.stage_a_timings or {}).values()))
 
     if commit:
         # The half-migrated ask first: the writer check stops jobs and restarts them only on its own refusal (row 325).
@@ -11305,6 +11388,11 @@ def run_restore(
         with timings.stage("pre_restore_snapshot"):
             if _reuse is None:
                 snapshot_preserving(live_db_path(), snapshot, allow_file_copy=exclusive)
+                from src.database import at_rest_state
+
+                # R823: named in the record only when the live corpus is proven keyed and the copy carries its very salt; else
+                # an erase rewrites it whole (a corpus-sized write), never head-only on a guess
+                at_rest_state.record_copy(snapshot, live_db_path(), "corpus")
                 _remember_run_snapshot(snapshot)
                 report["pre_restore_snapshot"] = str(snapshot)
             elif _net_here is not None:
@@ -11590,13 +11678,28 @@ def run_restore(
         # never masquerade as exact. Still a NAMED, TIMED stage, so the real number shows up
         # in report["timings"] on the operator's hardware rather than being guessed at.
         #
+        # SCOPED TO THE IMPORT FIRST (row 424, 2026-11-25). The sweep above cost every item of a queue its whole budget
+        # (18.3 s of a 72 s import on lane O's bench; 30 s, 14 %, of lane S's 212 s restore) to re-verify keywords this
+        # import never touched. The merge moves the counters only through the articles it brings in, so the stage now
+        # reconciles exactly the keywords those articles mention (every batch the swap brought in, as the quarantine scan
+        # below reads them), with the sweep's own arithmetic and stamp. The insurance sweep still runs, from the same
+        # durable cursor and inside what is left of the same budget, unless the counters are exact afterwards AND a whole
+        # sweep landed within the freshness window (the envelope cannot see a keyword stored at 0 over real mentions,
+        # which only a whole sweep reaches): the first import after the window pays it, an import into a corpus swept
+        # recently does not, and the envelope discloses `estimated` until a sweep lands either way. The stage sweeps as it always did when the group
+        # cannot be derived (the scope would miss the earlier held items' articles) and for an import over a quarter of
+        # the corpus, where the sweep is the faster of the two.
+        #
         # ROW 422 P6: when the deferred drain follows this import, its closing sweep reconciles EVERY counter in full
-        # (``finish_deferral``: restart, no budget) and closes the R22 marker. The per-item pass is then paid twice
+        # (``finish_deferral``: restart, no budget) and closes the R22 marker. The scoped pass and its insurance sweep are then paid twice
         # for one answer, so it is left to the drain -- but only after the marker is durably open, so nothing reads
         # ``exact`` meanwhile, a crash included (the next drain, at boot or after the next import, finishes it).
         with timings.stage("keyword_counter_reconcile"):
             try:
-                from src.analytics.store import reconcile_keyword_counters
+                from sqlalchemy import bindparam as _bindparam
+                from sqlalchemy import text as _text
+
+                from src.analytics.store import reconcile_counters_after_import
                 from src.database.session import session_scope
 
                 left_since = _leave_counters_to_drain() if counters_left_to_drain else None
@@ -11608,7 +11711,21 @@ def run_restore(
                     }
                 else:
                     with session_scope() as _cnt_sess:
-                        report["keyword_counters"] = reconcile_keyword_counters(_cnt_sess)
+                        _rc_ids = (
+                            [
+                                int(r[0])
+                                for r in _cnt_sess.execute(
+                                    _text(
+                                        "SELECT row_id FROM merged_rows "
+                                        "WHERE batch_id IN :bs AND table_name = 'articles'"
+                                    ).bindparams(_bindparam("bs", expanding=True)),
+                                    {"bs": swap_batches},
+                                ).fetchall()
+                            ]
+                            if swap_batches is not None
+                            else None
+                        )
+                        report["keyword_counters"] = reconcile_counters_after_import(_cnt_sess, _rc_ids)
             except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
                 log_failure(_LOG, "keyword-counter reconcile after restore-merge failed", exc, level=logging.WARNING)
                 report["keyword_counters"] = {"reconciled": False, "error": "see server log"}
@@ -11666,7 +11783,11 @@ def run_restore(
                                 _q_sess, article_ids=unqueued, write=True
                             )
                             report["quarantine_summary"]["batches"] = q_batches
-                        report["screening"] = {"queued": len(queued), "batches": q_batches, **not_counted_tally(_q_sess)}
+                        # Each figure names its scope (Plan, 2026-11-25): this run's queue beside the corpus-wide count.
+                        _corpus_tally = not_counted_tally(_q_sess)
+                        report["screening"] = {"queued_from_this_import": len(queued), "batches": q_batches}
+                        if "not_screened" in _corpus_tally:  # unread is absent, never 0
+                            report["screening"]["not_screened_in_your_corpus"] = _corpus_tally["not_screened"]
                         kick_if_allowed()
                     elif new_article_ids:
                         report["quarantine_summary"] = default_quarantine_candidates_batch(

@@ -196,7 +196,8 @@ def _mention_distribution(session: Session) -> dict:
     return {
         "method": (
             "Keywords bucketed by their maintained mention/article counters. "
-            "zero_mention = prunable orphans (no view references them). No score."
+            "zero_mention = prunable orphans (no view references them). No score. "
+            "These are RAW counters: they include quarantined articles and articles not screened yet."
         ),
         "zero_mention": c(mc == 0),
         "single_article": c(Keyword.article_count == 1),
@@ -419,7 +420,8 @@ def _generic_terms(session: Session, *, top_per_lang: int = 15, cap: int = 40000
             "ranked by article spread (df_ratio, self-normalised). REVIEW candidates for the "
             "open-class stoplist — a dual-use call the human makes (health/policy stay; "
             "system/global go); never auto-applied, never a verdict. A tagged term is a known "
-            "topic (flagged). No score."
+            "topic (flagged). No score. Article spread is read from the RAW counters, which "
+            "include quarantined articles and articles not screened yet."
         ),
         "top_per_language": top_per_lang,
         "candidate_terms": total,

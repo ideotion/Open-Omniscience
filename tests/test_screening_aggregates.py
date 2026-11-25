@@ -1,0 +1,197 @@
+"""R830 group D / R831(2) / R832 (row 408 PR 3b): the remaining aggregates leave the articles still queued for screening out,
+search-fed figures say how many results they did not count, the Home total keeps counting every article and says what it
+holds, and the re-index backlog is said as "not analysed yet".
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from src.database.models import ScreeningPending
+from tests.js_source_helper import function_body, python_function_source
+from tests.test_bulletin_facts import _corpus as _bulletin_corpus
+from tests.test_bulletin_facts import _period
+from tests.test_source_article_counts import SINCE, s  # noqa: F401 - s is a fixture
+
+__all__ = ["s"]
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _queue(sess, ids) -> None:
+    for i in ids:
+        sess.add(ScreeningPending(article_id=int(i)))
+    sess.commit()
+
+
+def test_split_not_screened_keeps_order_and_counts_the_queued(s):
+    from src.analytics.quarantine_scope import split_not_screened
+
+    assert split_not_screened(s, [5, 3, 1]) == ([5, 3, 1], 0), "nothing queued: the ids come back whole"
+    _queue(s, [3, 9])
+    assert split_not_screened(s, [5, 3, 1, 3]) == ([5, 1], 1)
+    assert split_not_screened(s, []) == ([], 0)
+
+
+def test_per_source_counts_leave_queued_articles_out_on_both_plans(s):
+    from src.analytics import source_article_counts as sac
+
+    all_time = sac.unquarantined_counts_by_source(s)
+    since = sac.counts_by_source_since(s, SINCE)
+    # article 1 is source 1, quarantined NULL, five minutes old: counted by both before it is queued
+    _queue(s, [1])
+    assert sac.unquarantined_counts_by_source(s)[1] == all_time[1] - 1
+    assert sac.counts_by_source_since(s, SINCE)[1] == since[1] - 1
+    # the ORM fallbacks (a store missing an index, or another dialect) leave it out too
+    fb_all = {int(a): int(b) for a, b in s.execute(sac._fallback_unquarantined()).all() if a is not None}
+    fb_since = {int(a): int(b) for a, b in s.execute(sac._fallback_since(SINCE)).all() if a is not None}
+    assert fb_all[1] == all_time[1] - 1 and fb_since[1] == since[1] - 1
+
+
+def test_the_forced_plans_stay_index_only_with_the_queue_filter(s):
+    from sqlalchemy import bindparam, text
+
+    from src.analytics import source_article_counts as sac
+    from src.database.models import Article
+
+    for stmt, params in (
+        (text("EXPLAIN QUERY PLAN " + sac._ALL_TIME_UNQUARANTINED), {}),
+        (
+            text("EXPLAIN QUERY PLAN " + sac._SINCE).bindparams(
+                bindparam("since", SINCE, type_=Article.__table__.c.created_at.type)
+            ),
+            {},
+        ),
+    ):
+        steps = [str(r[-1]) for r in s.execute(stmt, params)]
+        scans = [st for st in steps if st.startswith(("SCAN articles", "SEARCH articles"))]
+        assert scans and all("INDEX" in st for st in scans), steps
+        assert all("COVERING INDEX" in st or "USING INDEX" in st or "PRIMARY KEY" in st for st in scans), steps
+
+
+def test_the_bulletin_counts_and_says_the_articles_not_screened_yet():
+    from src.bulletin import facts
+    from src.bulletin.i18n import Translator
+    from src.bulletin.render import _md_disclosures
+    from src.database.models import Article
+
+    sess = _bulletin_corpus()
+    before = facts.masthead(sess, _period())["articles"]
+    d = facts.disclosures(sess, _period())
+    assert d["not_screened_in_period"] == 0
+    first = sess.query(Article).order_by(Article.id).first()
+    _queue(sess, [first.id])
+    assert facts.masthead(sess, _period())["articles"] == before - 1, "the queued article leaves the edition's figures"
+    d = facts.disclosures(sess, _period())
+    assert d["not_screened_in_period"] == 1
+    lines = _md_disclosures({"disclosures": d}, Translator("en"))
+    assert any("not screened for junk yet" in ln for ln in lines), lines
+    unread = _md_disclosures({"disclosures": {"not_screened_in_period": None}}, Translator("en"))
+    assert any("could not be read" in ln for ln in unread), "an unread count is said, never printed as 0"
+
+
+def test_stats_say_quarantined_and_not_analysed_beside_not_screened(monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from src.api import database as dbapi
+    from src.api import jobs as jobs_api
+    from src.database.models import Article, Base, Source
+    from tests._app_engine import app_sqlite_engine
+
+    eng = app_sqlite_engine(":memory:")
+    Base.metadata.create_all(eng)
+    sess = Session(eng)
+    src = Source(name="a", domain="a.test")
+    sess.add(src)
+    sess.flush()
+    for n, q in enumerate((True, None, False)):
+        sess.add(Article(url=f"https://a.test/{n}", canonical_url=f"https://a.test/{n}", source_id=src.id, title="t",
+                         content="x", hash=f"{n:064d}", quarantined=q))
+    sess.commit()
+    monkeypatch.setattr(jobs_api, "_backlog_cache", {"at": 0.0, "value": None})
+    monkeypatch.setattr("src.backup.merge.reindex_backlog", lambda: {"available": True, "articles_pending": 7})
+    monkeypatch.setattr("src.analytics.screening_drain.kick_if_allowed", lambda: False)
+    out = dbapi._not_counted(sess)
+    assert out["quarantined"] == 1 and out["not_analysed"] == 7 and out["not_screened"] == 0
+    monkeypatch.setattr(jobs_api, "_backlog_cache", {"at": 0.0, "value": None})
+    monkeypatch.setattr("src.backup.merge.reindex_backlog", lambda: {"available": False, "reason": "locked"})
+    assert "not_analysed" not in dbapi._not_counted(sess), "an unread backlog is absent, never a 0"
+
+
+def test_search_fed_figures_disclose_and_lists_keep_every_result():
+    """Source pins: every search-fed figure splits the queued results off and says how many; the facet options of the
+    LIST do not, and the Explore panels, the per-tab line and the Home breakdown draw what the payloads carry."""
+    ins = (ROOT / "src/api/insights.py").read_text(encoding="utf-8")
+    assert ins.count("split_not_screened(db, ids)") == 6, "keywords, www, sentiment, sources, coordination, graph"
+    assert ins.count('"not_counted_yet"') >= 5
+    facets = python_function_source(ins, "insights_corpus_source_language_facets")
+    assert "split_not_screened" not in facets, "the LIST's filter options keep every result"
+    links = (ROOT / "src/api/link_analysis.py").read_text(encoding="utf-8")
+    assert "split_not_screened(db, ids)" in links and '"not_counted_yet": not_yet' in links
+    an = (ROOT / "src/static/app-analysis.js").read_text(encoding="utf-8")
+    for k in ("Www", "Links", "Sentiment", "Sources"):
+        assert f"anNotCountedYetHtml(d) + _an{k}Html(d)" in an
+    assert "_nc(_anWwwHtml)" in an, "the language-switch repaint keeps the line"
+    corpus = (ROOT / "src/static/app-corpus.js").read_text(encoding="utf-8")
+    assert corpus.count("anNotCountedYetHtml(d)") == 2
+    shell = (ROOT / "src/static/app-shell.js").read_text(encoding="utf-8")
+    assert "ooNotCountedTabLine(name)" in function_body(shell, "showTab")
+    home = (ROOT / "src/static/app-home.js").read_text(encoding="utf-8")
+    for key in ("of which quarantined: {n}", "of which not screened yet: {n}", "of which not analysed yet: {n}"):
+        assert key in home
+
+
+def test_a_queued_article_that_is_already_quarantined_is_counted_once(s):
+    """A restore can queue an article that arrives quarantined: the breakdown names it as quarantined only."""
+    from src.analytics.quarantine_scope import not_counted_tally
+    from src.database.models import Article
+
+    q = s.query(Article).filter(Article.quarantined.is_(True)).first()
+    assert q is not None, "the fixture carries a quarantined article"
+    plain = s.query(Article).filter(Article.quarantined.isnot(True)).first()
+    _queue(s, [q.id, plain.id])
+    assert not_counted_tally(s) == {"not_screened": 1}
+
+
+def test_the_late_review_sites_say_what_they_left_out():
+    """Source pins for the read of the final head: the Related and Competitive panels and the mind map draw the line,
+    framing and the commodity chart take the slice, and the Library's line is a breakdown of a status total."""
+    an = (ROOT / "src/static/app-analysis.js").read_text(encoding="utf-8")
+    assert "anNotCountedYetHtml(cd && typeof cd.not_counted_yet" in an
+    assert an.count("anNotCountedYetHtml(cs) + _anCompetitiveHtml(") == 1
+    assert "anNotCountedYetHtml(d.cs) + _anCompetitiveHtml(" in an
+    assert "const controls = anNotCountedYetHtml(g) +" in an
+    ins = (ROOT / "src/api/insights.py").read_text(encoding="utf-8")
+    assert 'graph = {**graph, "not_counted_yet": _not_yet}' in ins
+    fr = (ROOT / "src/api/framing.py").read_text(encoding="utf-8")
+    assert "split_not_screened(db, ids)" in fr and '"not_counted_yet": not_yet' in fr
+    co = (ROOT / "src/api/commodity.py").read_text(encoding="utf-8")
+    assert "split_not_screened(db, list(ids or []))" in co and "SELECT article_id FROM screening_pending" in co
+    shell = (ROOT / "src/static/app-shell.js").read_text(encoding="utf-8")
+    assert 'const status = name === "library";' in shell
+    ai = (ROOT / "src/static/app-ai-tools.js").read_text(encoding="utf-8")
+    assert ai.count("_aiNotCountedYetHtml(d) + ") == 2, "the framing table and its empty state both say what they left out"
+    mk = (ROOT / "src/static/app-markets.js").read_text(encoding="utf-8")
+    assert 'anNotCountedYetHtml(d) : "")' in mk
+    assert 'F("{n} articles", {n: num(all)})' in shell, "the Library breakdown follows its total"
+
+
+def test_the_import_report_names_the_scope_of_each_screening_figure():
+    """Plan 2026-11-25 (c): this run's queue reads as "from this import", the corpus-wide count as "in your corpus"."""
+    from src.backup.import_reports import render_import_report_markdown
+
+    md = render_import_report_markdown({"screening": {"queued_from_this_import": 5, "batches": [],
+                                                      "not_screened_in_your_corpus": 3}})
+    assert "5 articles from this import were queued" in md
+    assert "3 articles in your corpus were not screened yet" in md and "not just this import" in md
+    old = render_import_report_markdown({"screening": {"queued": 2, "not_screened": 2}})
+    assert "2 articles from this import" in old, "an older report's bare keys still read"
+    unread = render_import_report_markdown({"screening": {"queued_from_this_import": 1, "batches": []}})
+    assert "The number of articles in your corpus not screened yet could not be read." in unread, (
+        "an unread corpus count is said, never left out or printed as 0")
+    none_left = render_import_report_markdown({"screening": {"queued_from_this_import": 1, "batches": [],
+                                                             "not_screened_in_your_corpus": 0}})
+    assert "in your corpus" not in none_left

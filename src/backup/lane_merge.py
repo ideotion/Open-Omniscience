@@ -272,8 +272,17 @@ def _refuse_unsafe_inc(conn: Any) -> None:
     A real snapshot holds ordinary tables under these names. A view, a virtual table or a
     generated column under one of them would run SQL the backup's author chose inside this
     machine's keyed connection, so the member is refused before anything is read from it.
+
+    Names are matched without regard to case, as SQLite resolves ``inc.lane_meta`` to a view
+    stored as ``LANE_META`` (row 432's second security read, measured); and a member holding
+    any view at all is refused, since no lane this build writes has one. The member's own
+    triggers are left: they can only fire on a write to the member, and this module never
+    writes to it (every write names ``main.`` or ``temp.``; pinned by
+    ``tests/test_lane_member_never_written_row432.py``).
     """
-    rows = conn.execute("SELECT type, name, sql FROM inc.sqlite_master WHERE name IN ({})".format(",".join("?" * len(_READ_TABLES))), tuple(sorted(_READ_TABLES))).fetchall()  # noqa: S608  # nosec B608 # placeholders only
+    if conn.execute("SELECT 1 FROM inc.sqlite_master WHERE type = 'view' LIMIT 1").fetchone() is not None:
+        raise LaneMergeError("the lane member holds a view, which no lane this build writes has; refusing to merge it")
+    rows = conn.execute("SELECT type, name, sql FROM inc.sqlite_master WHERE lower(name) IN ({})".format(",".join("?" * len(_READ_TABLES))), tuple(sorted(_READ_TABLES))).fetchall()  # noqa: S608  # nosec B608 # placeholders only
     for typ, name, sql in rows:
         if typ != "table" or str(sql or "").lstrip().upper().startswith("CREATE VIRTUAL"):
             raise LaneMergeError("the lane member holds a table this build does not merge from (not a plain table); refusing to merge it")

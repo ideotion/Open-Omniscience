@@ -117,6 +117,9 @@ def legacy(tmp_path, monkeypatch):
     monkeypatch.setattr(backup_v2, "cleanup_staging", lambda staged: None)
     monkeypatch.setattr(backup_v2, "check_memory_before_staging", lambda: None)
     monkeypatch.setattr("src.backup.volume_job.defer_reindex", lambda: False)  # no backlog read: the merge itself is stubbed
+    # Row 436: the closing restart would start the index heal on the suite's shared store (a store no earlier test
+    # initialised reads as an open marker), and the next test's restore would then be refused by that running job.
+    monkeypatch.setattr(backup_v2, "start_jobs_stopped_for_restore", lambda: None)
     path = tmp_path / "old.bak"
     path.write_bytes(b"read_artifact is stubbed")
     return path

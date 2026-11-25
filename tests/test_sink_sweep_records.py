@@ -25,9 +25,9 @@ ROOT = Path(__file__).resolve().parents[1]
 #: ``refusal_detail``/``retry_after_of`` are the wiki walk's class (and HTTP status) classifiers, which never read the message;
 #: ``is_corruption`` answers a bool from the driver's ``sqlite_errorcode`` (``damage.corruption_of`` keeps a fixed label, never the text).
 #: ``stop_reason_of``/``stop_text_of`` (R768) return one of the transport watch's four fixed reason tokens and the fixed note rebuilt from
-#: it, never the exception's own words.
+#: it, never the exception's own words. ``_seal_refusal`` (R829 A) returns one of ``staged_key``'s fixed sentences.
 CALLS = {"type", "isinstance", "log_failure", "note_error", "log_failure_once", "refusal_text", "is_damaged", "refusal_token", "refusal_detail", "retry_after_of",
-         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "bounded_error", "engine_text", "is_pool_timeout", "is_corruption",
+         "record_text", "record_traceback", "unicode_note", "is_driver_error","quotes_a_driver","is_locked_error","_is_integrity_error", "restore_failure_text", "http_detail", "is_driver_text", "_all_diag_err_str", "_err_str", "_record_text", "_restore_error", "bounded_error", "engine_text", "is_pool_timeout", "is_corruption", "_seal_refusal",
          "stop_reason_of", "stop_text_of",
          # row 236: the local-AI clients' error text -- record_text with every address in it masked (its other call sites are classified)
          "error_text"}
@@ -127,8 +127,9 @@ NOT_RECORDS: dict[str, dict[str, int]] = {
     "src/wiki/lane_search.py": {"getattr reaches how, a way round the scan of the log calls": 1},
     "src/backup/runlog.py": {"getattr reaches attr, a way round the scan of the log calls": 1},
     "src/backup/folder_backup.py": {"the caught exception 'exc' is used outside a scrubbing call": 1},  # R787: reads the errno of the OSError from placing one artifact member to tell a name this system cannot hold (refused, that member only) from any other failure (raised); its words are not used
+    "src/backup/staged_key.py": {"the caught exception 'exc' is used outside a scrubbing call": 3},  # R829 A, row 432: ``_seal_refusal``, the lock probe of a failed seal (``_held_now``) and the first read of ``disarm_staged`` (a lock is IN_USE, not "no database") read only the SQLite result code, to pick one of the module's fixed sentences; the words are read, stored and logged nowhere
     "src/database/drive_pin.py": {"the caught exception 'exc' is used outside a scrubbing call": 2},  # row 390: reads whether a SQLite or DuckDB error says the connection is ALREADY closed (nothing left to close or delete) rather than not knowing (pinned); its words are stored and logged nowhere
-    "src/safety/crypto_erase.py": {"the caught exception 'exc' is used outside a scrubbing call": 4},  # R798 (row 333): ``_absent`` reads the class and errno of a failed lstat or stat to tell "not there" from "could not be looked at", and ``_listing`` hands a failed listing to the R798 callback, which takes only its ``filename`` (the folder, for the report and a masked log line); its words are not used
+    "src/safety/crypto_erase.py": {"the caught exception 'exc' is used outside a scrubbing call": 9},  # R798 (row 333): ``_absent`` reads the class and errno of a failed lstat or stat to tell "not there" from "could not be looked at", and ``_listing`` hands a failed listing to the R798 callback, which takes only its ``filename`` (the folder, for the report and a masked log line); its words are not used. Row 402: ``_copy_folder`` and ``_db_copies`` hand a copy folder that cannot be opened or listed through its handle to the same callback. Row 387: ``_listing`` (through the data folder's handle), ``_open_below`` and ``_fd_files`` hand a folder the walk cannot open or list to the same callback, rebuilt from its errno and path only
 }
 
 #: Functions that take a caught exception to CLASSIFY it (a bool, an enum, an int, a class name) or to build an in-memory dedupe
@@ -320,9 +321,8 @@ _DATABASE_CLASSIFIED: dict[str, dict[tuple[str, str], int]] = {
     },
     # Row 156: a staged backup member's open or ATTACH reads only whether the SQLite code was busy or locked, to refuse it as in use
     # with fixed words instead of "no key opens it"; nothing of the error is kept, served or logged
-    'src/backup/stream_backup.py': {
-        ('_export_plaintext_with_keys', 'if held_by_another(exc):'): 1,
-        ('_export_plaintext_with_keys', 'if not held_by_another(exc):'): 1,
+    'src/backup/staged_key.py': {
+        ('_open_with', 'if held_by_another(exc):'): 1,
     },
     'src/backup/lane_merge.py': {
         ('_attach', 'if held_by_another(exc):'): 1,

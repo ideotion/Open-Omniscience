@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
 from src.analytics.managed import UNSEGMENTED
+from src.analytics.quarantine_scope import not_counted
 from src.catalog.provenance import HAZARD, LAW, NEWSLETTER, STATISTICS, WIKIPEDIA, provenance_of
 from src.database.derived_views import KeywordMentionRead
 from src.database.feed_key import shown_feed_key
@@ -320,7 +321,7 @@ def collect_article_stats(
     art_q = session.query(
         Article.id, Article.word_count, Article.language, Article.source_id, Article.url,
         Article.detected_language,
-    ).filter(Article.quarantined.isnot(True))
+    ).filter(not_counted(Article.id))
     if since is not None:
         art_q = art_q.filter(Article.created_at >= since)
     if scope is not None:
@@ -722,7 +723,7 @@ def link_dense_article_ids(
             for aid, wc, sid, lang, deduced in (
                 session.query(Article.id, Article.word_count, Article.source_id, Article.language,
                               Article.detected_language)
-                .filter(Article.quarantined.isnot(True))
+                .filter(not_counted(Article.id))
                 .filter(Article.id.in_(chunk))
             ):
                 if sid is None or not _word_signals_apply(_cohort_lang(lang, deduced)):
