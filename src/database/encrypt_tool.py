@@ -130,8 +130,10 @@ def encrypt_database(
     library: bool = False,
     on_swapped: Callable[[], object] | None = None,
     keep_snapshot_on_failure: bool = True,
+    marks: dict | None = None,
 ) -> dict:
-    """Encrypt one SQLite file in place: snapshot -> export -> verify -> swap.
+    """Encrypt one SQLite file in place: snapshot -> export -> verify -> swap. ``marks`` (in memory only, never in the report):
+    filled with the swapped file's identity taken just BEFORE its keyed read-back, for the at-rest record (security reads, row 400).
 
     The live file is replaced only AFTER the encrypted copy passes
     quick_check and per-table count equality. Returns an honest report.
@@ -182,6 +184,10 @@ def encrypt_database(
     # app keyless against a file it has just encrypted.
     if on_swapped is not None:
         on_swapped()
+    if marks is not None:
+        from src.database.at_rest_state import _mark
+
+        marks["before_read"] = _mark(p)
     try:
         tables = len(_table_counts_safe(p, key))  # read back with the key BEFORE the replaced file is overwritten
     finally:
@@ -400,14 +406,16 @@ def encrypt_store(
         guard: AbstractContextManager[object] = _APPEND_LOCK
     else:
         guard = nullcontext()
+    marks: dict = {}
     with guard:
         report = encrypt_database(
-            path, key, library=library, on_swapped=on_swapped, keep_snapshot_on_failure=keep_snapshot_on_failure
+            path, key, library=library, on_swapped=on_swapped, keep_snapshot_on_failure=keep_snapshot_on_failure, marks=marks
         )
     if report.get("skipped") == "file does not exist":
         return report
-    # Security reads (row 400): the file's identity before the keyed read that proves it, compared again when the record is written.
-    expect = at_rest_state._mark(Path(path))
+    # Security reads (row 400): the file's identity taken BEFORE the keyed read that proves it (the read-back of a fresh encryption,
+    # or the check below), compared again when the record is written; one that could not be taken binds nothing.
+    expect = marks.get("before_read") if "before_read" in marks else at_rest_state._mark(Path(path))
     if report.get("skipped") == "already encrypted":
         from src.database.connect import StoreHeldError
 

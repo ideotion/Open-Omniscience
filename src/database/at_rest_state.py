@@ -84,10 +84,14 @@ def read_record(main: Path | None = None) -> dict[str, Any]:
     return _read_record_at(_record_path(rows[0][1]))
 
 
-def record_encrypted(name: str, main: Path | None = None, expect: tuple[int, int, bytes] | None = None) -> None:
+_UNSET: Any = object()
+
+
+def record_encrypted(name: str, main: Path | None = None, expect: Any = _UNSET) -> None:
     """Add ``name`` to the record, atomically and under the record's lock (``file_lock``, then ``atomic_replace``). Called only after the store was encrypted AND read
     back with the key. ``expect``: the store's :func:`_mark` taken BEFORE that keyed read (security reads, row 400); the entry is
-    bound to the file only when the file is still that one, else it carries no identity (never evidence). A failure to write is
+    bound to the file only when the file is still that one, else (another file, or None: no mark could be taken) it carries no
+    identity (never evidence). A failure to write is
     logged by class and never undoes the encryption: the status reads the files."""
     rows = stores(main)
     if not rows:
@@ -102,8 +106,8 @@ def record_encrypted(name: str, main: Path | None = None, expect: tuple[int, int
             doc["stores"][name] = {"encrypted_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "read_back_with_key": True}
             store = dict(rows).get(name)
             mark = _mark(store) if store is not None else None
-            if mark is not None and expect is not None and mark != expect:
-                mark = None  # another file at the name since the keyed read: no identity, so never evidence
+            if mark is not None and expect is not _UNSET and mark != expect:
+                mark = None  # another file at the name since the keyed read (or none could be taken before it): never evidence
             if mark is not None:  # R820 (4) / R828 (1): the identity of the file read back with the key, bound by a MAC (R789)
                 doc["stores"][name].update(_bound_entry(doc, mark))
             atomic_replace(path, json.dumps(_serialisable(doc), indent=1, sort_keys=True))
