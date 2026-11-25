@@ -4788,6 +4788,10 @@
         const holder = r.other_holder || "unknown";
         // R798: a folder the erase could not list holds files it never checked, so that result is never clean either.
         const unlisted = Number(r.unlisted_folders) || 0;
+        // R797 (row 332): a file whose rewrite stopped short (to keep free disk space, or on an error) was only partially overwritten.
+        const partial = Number(r.partially_overwritten) || 0;
+        // Row 332, Revision 3: a file it could not overwrite at all (a read-only key file), counted once, apart from the two above.
+        const failed = Number(r.not_overwritten) || 0;
         // R802: a data folder the erase removed whole that is there again when it ends was written into after it, so that result is never clean.
         const back = r.folder_back === true;
         // A data folder the erase could not remove at all (a link, an entry it could not delete) is said as that, never as "came back".
@@ -4827,7 +4831,7 @@
         // Security reads (row 402): a corpus folder that could not be reached counts too (the server says "not_overwritten" with no file)
         const segShort = Math.max((Number(seg.partially_overwritten) || 0) + (Number(seg.not_overwritten) || 0) + (Number(seg.left) || 0),
           (seg.corpus === "not_overwritten" || seg.corpus === "partially_overwritten") ? 1 : 0);
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !shapedN && !hfTokenLeft.length && !linkedLeft && !linkedRefused && !linkedKeys && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
+        const clean = holder === "none" && unlisted === 0 && partial === 0 && failed === 0 && !back && !notRemoved && !keysLink && !leftOver && !shapedN && !hfTokenLeft.length && !linkedLeft && !linkedRefused && !linkedKeys && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
@@ -4953,6 +4957,8 @@
           (keysLink ? `<div class="card-caveat">${esc(tfw("The {folder} folder in the data folder is a link, which the erase never follows: the app’s signing keys may be where it points, and they were not destroyed. Remove them there by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}</div>` : "") +
           (notRemoved ? `<div class="card-caveat">${esc(t("The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."))}</div>` : "") +
           (back ? `<div class="card-caveat">${esc(t("The data folder existed again when the erase ended, although the erase had removed it: something recreated it afterwards, so the erase may be incomplete. Restart the app, run the wipe again, then run the full free-space overwrite below."))}</div>` : "") +
+          (failed ? `<div class="card-caveat">${esc(tfw("Some files could not be overwritten before they were deleted (files: {n}; the app log names them), so the erase may be incomplete. Make them writable, then run the wipe again and a full overwrite of free disk space below.", { n: fmtNum(failed, 0) }))}</div>` : "") +
+          (partial ? `<div class="card-caveat">${esc(tfw("Some files were only partially overwritten before they were deleted (files: {n}; {done} of {known}): the rewrite stopped to keep free disk space, or on an error, so the erase may be incomplete. Free some disk space, then run a full overwrite of free disk space below.", { n: fmtNum(partial, 0), done: humanBytes(Number(r.partial_bytes_done) || 0), known: humanBytes(Number(r.partial_bytes_known) || 0) }))}</div>` : "") +
           (unlisted ? `<div class="card-caveat">${esc(tfw("The erase could not list {n} of the folders it was to erase, so it could not check the files in them: the erase may be incomplete. Make those folders readable (the app log names them), then run the wipe again and a full overwrite of free disk space below.", { n: fmtNum(unlisted, 0) }))}</div>` : "") +
           // R711: in a folder the app does not own, only its files went; the folder and the rest stayed, and the names are in the report.
           (r.scope === "app-only"
