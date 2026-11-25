@@ -96,7 +96,7 @@ def test_a_file_swapped_for_a_link_is_never_written_through(tmp_path):
     (data / "x.json").symlink_to(target)
     fd = os.open(data, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        assert crypto_erase._overwrite(data / "x.json", at=crypto_erase._At(fd, "x.json")) is False
+        assert crypto_erase._overwrite(data / "x.json", keyed=False, at=crypto_erase._At(fd, "x.json")) is False
     finally:
         os.close(fd)
     assert target.read_bytes() == b"keep me"
