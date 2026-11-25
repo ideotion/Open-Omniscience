@@ -348,7 +348,9 @@
         `<div class="hint" id="mm-legend">${mmLegend(g)}</div>` +
         `<svg id="mm-svg" viewBox="0 0 ${W} ${H}" width="100%" style="background:var(--panel2);border:1px solid var(--border);border-radius:8px;touch-action:none;cursor:grab"><g id="mm-view"></g></svg>` +
         `<div class="hint" data-i18n-dyn>${esc(t("Drag to pan · scroll to zoom (far out goes up a level) · click a word to dive in."))} `
-        + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(view1)} ${esc(t(g.method || ""))} ${esc(cav)}</div>`;
+        + `<b>${esc(t("Font size = shared-article volume."))}</b> ${esc(view1)} ${esc(t(g.method || ""))} ${esc(cav)}`
+        // Row 422 P6: node sizes read the maintained counters; while they await a re-index they say so.
+        + `${g.counts && g.counts.basis === "estimated" && typeof basisChip === "function" ? " " + basisChip(g.counts) : ""}</div>`;
       const svg = $("mm-svg"), view = $("mm-view");
       const maxW = Math.max(...treeEdges.map(e => e.w || 1), 1);
       view.innerHTML =
