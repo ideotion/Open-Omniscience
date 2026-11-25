@@ -445,7 +445,7 @@ def _delete_in(cur: sqlite3.Cursor, table: str, col: str, ids: list[int]) -> Non
         cur.execute(f"DELETE FROM {table} WHERE {col} IN ({q})", chunk)  # noqa: S608  # nosec B608 # table/col validated against _SAFE_TABLE; values are bound params
 
 
-def _drop_newsletter_articles(db_path: Path) -> int:
+def _drop_newsletter_articles(db_path: Path, *, foreign: bool = False) -> int:
     """Remove imported-newsletter articles from a corpus snapshot copy (a staged copy the import keyed is opened with
     its key, R829 A).
 
@@ -454,8 +454,16 @@ def _drop_newsletter_articles(db_path: Path) -> int:
     column — all FKs to articles.id use that name), so the restore's foreign_key_check
     finds no orphans. The empty source rows are LEFT (harmless; a future re-import of
     fixed .eml re-attaches to them). Returns the number of articles dropped.
+
+    ``foreign=True`` (a backup being IMPORTED): the copy's triggers and views are dropped first
+    (:func:`staged_key.disarm_staged`, row 432), whatever path led here, so no DELETE below runs a body the backup
+    wrote. The export path keeps them: there the copy is our own snapshot, and its search-index triggers are what
+    purge the newsletters' words before the ``optimize`` merge.
     """
-    from src.backup.staged_key import check_staged_schema, open_staged
+    from src.backup.staged_key import check_staged_schema, disarm_staged, open_staged
+
+    if foreign:
+        disarm_staged(db_path)  # row 432: raises on anything it could not remove; nothing is deleted then
 
     con = open_staged(db_path, read_only=False)  # keyed when the import sealed it (R829 A)
     try:
@@ -1261,8 +1269,9 @@ def _disarm_staged(path: Path) -> None:
         return
     try:
         staged_key.disarm_staged(path)
-    except staged_key.db_errors():
+    except staged_key.NotADatabase:
         return  # it does not read as a database: the validation refuses it in its own words, before any merge
+    # Anything else (a drop that failed part-way, a refused schema) propagates as a StagedKeyError: never "nothing to drop".
 
 
 def cleanup_staging(staged: StagedArtifact) -> None:

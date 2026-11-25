@@ -24,7 +24,8 @@ connection that opens the file as its main database (the C API's ``sqlite3_key``
 ``trusted_schema`` off and ``cell_size_check`` on, and :func:`check_staged_schema` refuses a file whose schema holds a
 trigger, view or virtual table the app does not make itself, before any row of it is read. A name is no evidence of a
 body, so :func:`disarm_staged` then drops every trigger and view from the staged copy before anything writes to it
-(row 432): no SQL a backup carries in a trigger or a view ever runs.
+(row 432): no SQL a backup carries in a trigger or a view of its corpus or custody log runs. Lane members are not
+disarmed here (a stated residual).
 
 The registry is per process and in memory only: a staged file the registry does not name is a plaintext file, read
 the way it always was.
@@ -66,6 +67,7 @@ class NotADatabase(StagedKeyError):
 DAMAGED = "the backup's corpus is damaged: it could not be read in full, so nothing was imported"
 DISK_FULL = "there was not enough free disk space to stage the backup's corpus, so nothing was imported"
 IN_USE = "another program is using the staged copy of the backup"
+NOT_PREPARED = "the backup's copy could not be prepared for the import, so nothing was read from it"
 
 #: SQLite's primary result code for a full disk (or a page limit reached), ``SQLITE_FULL``.
 _SQLITE_FULL = 13
@@ -352,14 +354,27 @@ def _raw_secret() -> bytes:
 _SPACE_MARGIN = 1 << 20
 
 
-def _short_of_space(source: Path, written: int) -> bool:
-    """True when the staging folder's file system has less free space than the sealed copy still needs (the source's size
-    less what was written of the copy, plus :data:`_SPACE_MARGIN`): a measured fact about the disk, never the driver's
-    words. A size that cannot be read is no evidence."""
+def _live_bytes(conn: Any) -> int | None:
+    """What a sealed copy of ``conn``'s main database writes: its pages in use (``sqlcipher_export`` copies rows, never
+    the free list), plus 3% for the copy's own page layout. None when the counts cannot be read."""
+    try:
+        pages = int(conn.execute("PRAGMA page_count").fetchone()[0])
+        free = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+        size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+    except Exception:  # noqa: BLE001 - no evidence: the file's size stands in
+        return None
+    return max(pages - free, 0) * size * 103 // 100
+
+
+def _short_of_space(source: Path, written: int, need: int | None = None) -> bool:
+    """True when the staging folder's file system has less free space than the sealed copy still needs (``need``, the
+    copy's whole size, else the source's size; less what was written of the copy, plus :data:`_SPACE_MARGIN`): a measured
+    fact about the disk, never the driver's words. A size that cannot be read is no evidence."""
     import shutil
 
     try:
-        needed = max(source.stat().st_size - written, 0) + _SPACE_MARGIN
+        whole = source.stat().st_size if need is None else need
+        needed = max(whole - written, 0) + _SPACE_MARGIN
         return shutil.disk_usage(source.parent).free < needed
     except OSError:
         return False
@@ -368,14 +383,19 @@ def _short_of_space(source: Path, written: int) -> bool:
 def _held_now(source: Path) -> bool:
     """True when another connection holds a lock on ``source`` that a read or a write here would wait for: asked of SQLite
     with a zero timeout, read from the error's result code (``held_by_another``), never from its words."""
+    from urllib.parse import quote
+
     from src.database.connect import sqlite_opening
 
+    if source.is_symlink() or not source.is_file():
+        return False  # nothing to ask about, and a probe must never create a file
     try:
         with sqlite_opening():  # R789
-            probe = sqlite3.connect(str(source), timeout=0, isolation_level=None)
+            probe = sqlite3.connect(f"file:{quote(str(source))}?mode=rw", uri=True, timeout=0, isolation_level=None)
     except sqlite3.Error:
         return False
     try:
+        _harden(probe)
         for sql in ("BEGIN", "SELECT count(*) FROM sqlite_master", "ROLLBACK", "BEGIN IMMEDIATE", "ROLLBACK"):
             probe.execute(sql).fetchall()
         return False
@@ -392,7 +412,7 @@ def _is_held(code: object) -> bool:
     return isinstance(code, int) and (code & 0xFF) in _HELD_CODES
 
 
-def _seal_refusal(exc: BaseException, source: Path, written: int) -> str:
+def _seal_refusal(exc: BaseException, source: Path, written: int, need: int | None = None) -> str:
     """One of this module's fixed sentences for a seal the driver failed, chosen by evidence, never by the driver's words
     (row 432): SQLite's result code, the disk's free space against what the copy still needed, and whether another
     connection holds the source now. ``sqlcipher_export`` reports a failure inside it as a plain ``SQLITE_ERROR``
@@ -401,7 +421,7 @@ def _seal_refusal(exc: BaseException, source: Path, written: int) -> str:
     refused here, before hours of merging that its integrity check would refuse at the end anyway, and never left on
     disk in plaintext for that time."""
     code = getattr(exc, "sqlite_errorcode", None)
-    if (isinstance(code, int) and (code & 0xFF) == _SQLITE_FULL) or _short_of_space(source, written):
+    if (isinstance(code, int) and (code & 0xFF) == _SQLITE_FULL) or _short_of_space(source, written, need):
         return DISK_FULL
     if _is_held(code) or _held_now(source):
         return IN_USE
@@ -423,6 +443,7 @@ def seal_plaintext(path: os.PathLike[str] | str) -> None:
     p = Path(path)
     sealed = p.with_name(p.name + ".sealing")
     secret = _raw_secret()
+    need: int | None = None
     sqc = _driver()
     with sqlite_opening():  # R789
         src = sqc.connect(str(p), check_same_thread=True)
@@ -435,7 +456,8 @@ def seal_plaintext(path: os.PathLike[str] | str) -> None:
         check_staged_schema(src)  # a foreign file: refused before the export reads a row or replays its schema
         page_size = int(src.execute("PRAGMA page_size").fetchone()[0])
         auto_vacuum = int(src.execute("PRAGMA auto_vacuum").fetchone()[0])
-        if _short_of_space(p, 0):
+        need = _live_bytes(src)
+        if _short_of_space(p, 0, need):
             raise StagedKeyError(DISK_FULL)  # refused before a byte of the copy is written (as R793 does for a snapshot)
         create_new(sealed, mode=0o600).close()
         src.set_trace_callback(None)  # as in attach_staged: a trace would see the key expanded into the ATTACH
@@ -458,7 +480,7 @@ def seal_plaintext(path: os.PathLike[str] | str) -> None:
             written = 0
             with suppress(OSError):
                 written = sealed.stat().st_size
-            reason = _seal_refusal(exc, p, written)
+            reason = _seal_refusal(exc, p, written, need)
         with suppress(OSError):
             sealed.unlink()
         if isinstance(exc, NotADatabase | StagedKeyError):
@@ -531,6 +553,21 @@ _USING = re.compile(
 )
 
 
+#: The name a trigger or view gives itself in its own text: ``CREATE [TEMP] TRIGGER|VIEW [IF NOT EXISTS] <name>``, quoted or
+#: not, with comments removed first.
+_DECLARED = re.compile(
+    r"\s*CREATE\s+(?:TEMP\s+|TEMPORARY\s+)?(?:TRIGGER|VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:(?:main|\"main\")\s*\.\s*)?"
+    r"(?:\"([^\"]*)\"|`([^`]*)`|\[([^\]]*)\]|([A-Za-z_][A-Za-z0-9_]*))",
+    re.IGNORECASE,
+)
+
+
+def _declared_name(sql: str) -> str | None:
+    """The name ``sql`` declares (see :data:`_DECLARED`), or ``None`` when it cannot be read."""
+    m = _DECLARED.match(_without_comments(sql))
+    return next((g for g in m.groups() if g is not None), None) if m else None
+
+
 def _without_comments(sql: str) -> str:
     """``sql`` with its comments replaced by a space (SQLite's own rule: a comment is whitespace)."""
     return re.sub(r"/\*.*?(?:\*/|$)|--[^\n]*", " ", sql, flags=re.DOTALL)
@@ -549,9 +586,19 @@ def check_staged_schema(conn: Any, schema: str = "main") -> None:
         if typ not in ("table", "index", "trigger", "view"):
             raise StagedSchemaRefused("the backup's corpus holds a schema object of an unknown kind; it was not read")
         if typ in ("trigger", "view"):
-            if not _OBJ_NAME.match(lname) or known.get(lname) != typ:
+            # The row's name and the name its own text declares must both be the app's, byte for byte: SQLite matches
+            # them ignoring case when it loads the schema, but deletes a row by its exact name, so a row named
+            # ``article_fts_au`` holding ``CREATE TRIGGER "ARTICLE_FTS_AU"`` would survive a DROP (security read, row 432).
+            if (not _OBJ_NAME.match(lname) or known.get(lname) != typ or name != lname
+                    or _declared_name(str(sql or "")) != lname):
                 raise StagedSchemaRefused(f"the backup's corpus holds a {typ} this app does not make; it was not read")
             continue
+        if typ == "table" and rootpage and _OBJ_NAME.match(lname):
+            # A generated column runs its expression on every write and read of its row, on the merge's connection too
+            # (row 432's security read); the app makes none, so a backup that carries one is not the app's.
+            cols = conn.execute(f'PRAGMA "{schema}".table_xinfo("{name}")').fetchall()
+            if any(int(c[6]) in (2, 3) for c in cols):
+                raise StagedSchemaRefused("the backup's corpus holds a generated column this app does not make; it was not read")
         # A table with no root page is virtual, whatever its SQL text looks like: a comment inside the text
         # (``CREATE /*x*/ VIRTUAL TABLE``) still loads as a virtual table, so the text is never what decides.
         if typ == "table" and (not rootpage or _VIRTUAL_TEXT.match(_without_comments(str(sql or "")))):
@@ -573,17 +620,41 @@ def disarm_staged(path: os.PathLike[str] | str) -> int:
     backup made by an older build, whose triggers read differently, still imports. A schema upgrade of an older copy
     re-creates the app's own triggers from this build's text. Called once the copy is staged, before the newsletter filter,
     the upgrade and the merge, and before the integrity walk starts beside the merge (R834)."""
-    conn = open_staged(path, read_only=False)
     try:
+        conn = open_staged(path, read_only=False)
+    except StagedKeyError:
+        raise
+    except db_errors():
+        raise NotADatabase from None
+    try:
+        try:
+            conn.execute("SELECT count(*) FROM main.sqlite_master").fetchone()
+        except db_errors():
+            raise NotADatabase from None  # nothing a database holds is in it: the validation refuses it in its own words
         check_staged_schema(conn)
         # Triggers first: an INSTEAD OF trigger sits on a view. Each name passed check_staged_schema's identifier match.
+        count = "SELECT count(*) FROM main.sqlite_master WHERE type IN ('trigger', 'view')"
         rows = conn.execute(
             "SELECT type, name FROM main.sqlite_master WHERE type IN ('trigger', 'view') ORDER BY type = 'view', name"
         ).fetchall()
-        for typ, name in rows:
-            kind = "TRIGGER" if typ == "trigger" else "VIEW"
-            conn.execute(f'DROP {kind} IF EXISTS main."{name}"')
-        conn.commit()
+        try:
+            for typ, name in rows:
+                kind = "TRIGGER" if typ == "trigger" else "VIEW"
+                conn.execute(f'DROP {kind} IF EXISTS main."{name}"')
+            left = int(conn.execute(count).fetchone()[0])
+        except db_errors():
+            with suppress(Exception):
+                conn.rollback()
+            raise StagedKeyError(NOT_PREPARED) from None  # a drop that failed part-way is never read as "nothing to drop"
+        # Read back from the table itself, not the parsed schema: a DROP can remove the object SQLite loaded and leave a
+        # row it did not match, which loads again on the next open. Anything left refuses the copy.
+        if left:
+            conn.rollback()
+            raise StagedSchemaRefused("the backup's corpus holds a trigger or view that could not be removed; it was not read")
+        try:
+            conn.commit()
+        except db_errors():
+            raise StagedKeyError(NOT_PREPARED) from None
         return len(rows)
     finally:
         conn.close()

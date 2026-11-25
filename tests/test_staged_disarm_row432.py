@@ -353,7 +353,7 @@ def test_a_source_another_connection_is_writing_is_called_in_use(tmp_path):
 
 
 #: Every function the app registers on the merge's host connection, by name: what an expression in the staged schema
-#: (CHECK, DEFAULT, generated column, index expression) can still call there (row 432's residual). Each is pure. A new
+#: (CHECK, DEFAULT, index expression; a generated column is refused) can still call there (row 432's residual). Each is pure. A new
 #: registration is added here on purpose, with a reason, or this test fails.
 _HOST_FUNCTIONS = {
     "oo_inc_feed_key": "src/backup/merge.py:_merge_sources: a lookup in a dict of the incoming sources' keys",
@@ -399,3 +399,175 @@ def test_the_merge_host_registers_only_pure_functions_and_loads_no_extension(tmp
         staged_key.forget(inc)
     assert seen["functions"] == set(_HOST_FUNCTIONS), seen["functions"]
     assert seen["extension"] == "not authorized"
+
+
+def _rename_in_schema(path: Path, row_name: str, sql: str) -> None:
+    """Write a schema row whose name and text the app's own DDL would never give it (``writable_schema``)."""
+    con = sqlite3.connect(path)
+    try:
+        con.execute("PRAGMA writable_schema = ON")
+        con.execute("UPDATE sqlite_master SET sql = ? WHERE name = ?", (sql, row_name))
+        con.commit()
+    finally:
+        con.close()
+
+
+@pytest.mark.parametrize("typ", ["trigger", "view"])
+def test_a_row_whose_text_names_it_in_another_case_is_refused_not_left_behind(tmp_path, typ):
+    """Security read (row 432): SQLite loads a schema row ignoring the case of its name but DROP deletes the row by its exact
+    name, so ``article_fts_au`` holding ``CREATE TRIGGER "ARTICLE_FTS_AU"`` used to survive the drop and fire in the merge."""
+    from src.database.models import MENTIONS_VIEW
+
+    inc = tmp_path / "inc.db"
+    _build(inc, 2, "FRA")
+    if typ == "trigger":
+        _plant(inc, *_PLANTED_UPDATE)
+        _rename_in_schema(inc, "article_fts_au", 'CREATE TRIGGER "ARTICLE_FTS_AU" AFTER UPDATE ON articles BEGIN '
+                          "UPDATE articles SET title = 'planted' WHERE id = new.id; END")
+    else:
+        _plant(inc, f"DROP VIEW IF EXISTS {MENTIONS_VIEW}", f"CREATE VIEW {MENTIONS_VIEW} AS SELECT 'planted' AS x")
+        _rename_in_schema(inc, MENTIONS_VIEW, f"CREATE VIEW \"{MENTIONS_VIEW.upper()}\" AS SELECT 'planted' AS x")
+    before = inc.read_bytes()
+    with pytest.raises(staged_key.StagedSchemaRefused, match=typ):
+        staged_key.disarm_staged(inc)
+    assert inc.read_bytes() == before
+
+
+def test_the_drop_is_read_back_from_the_table_itself(tmp_path, monkeypatch):
+    """Whatever the check let through, a row the DROP did not remove refuses the copy and nothing is committed."""
+    inc = tmp_path / "inc.db"
+    _build(inc, 1, None)
+    _plant(inc, *_PLANTED_UPDATE)
+    _rename_in_schema(inc, "article_fts_au", 'CREATE TRIGGER "ARTICLE_FTS_AU" AFTER UPDATE ON articles BEGIN SELECT 1; END')
+    monkeypatch.setattr(staged_key, "check_staged_schema", lambda conn, schema="main": None)  # the check bypassed
+    with pytest.raises(staged_key.StagedSchemaRefused, match="could not be removed"):
+        staged_key.disarm_staged(inc)
+    assert "article_fts_au" in _names(inc, "trigger")  # rolled back: refused as a whole, never half-disarmed
+
+
+@pytest.mark.parametrize("kind", ["VIRTUAL", "STORED"])
+def test_a_generated_column_is_refused(tmp_path, kind):
+    inc = tmp_path / "inc.db"
+    _build(inc, 1, None)
+    _plant(inc, f"ALTER TABLE sources ADD COLUMN g TEXT GENERATED ALWAYS AS ('x' || domain) {kind}"
+           if kind == "VIRTUAL" else "CREATE TABLE extra (a TEXT, g TEXT GENERATED ALWAYS AS (a || 'x') STORED)")
+    with pytest.raises(staged_key.StagedSchemaRefused, match="generated column"):
+        staged_key.disarm_staged(inc)
+
+
+# --------------------------------------------------------------------------- the second security read's findings
+
+
+def _staged(tmp_path: Path, corpus: Path, *, failures: list[str]):
+    from src.backup.artifact import StagedArtifact
+
+    return StagedArtifact(kind="oo-backup-2", staging_dir=tmp_path, corpus_path=corpus, custody_path=None,
+                          manifest=None, signature_state="unsigned", origin_fingerprint="unsigned",
+                          hash_failures=failures)
+
+
+@pytest.mark.parametrize("failures", [[], ["corpus.db: digest mismatch"]], ids=["verified", "hash-failure"])
+def test_the_restores_newsletter_filter_never_runs_a_planted_body(tmp_path, failures):
+    """The legacy restore filters newsletters out of the staged copy before the merge, and an artifact whose hashes
+    failed is never sealed or disarmed: the filter disarms the copy itself, and does not touch a refused one at all."""
+    from src.api.backup_v2 import _apply_restore_selection
+
+    inc = tmp_path / "inc.db"
+    _build(inc, 2, None, newsletters=3)
+    _plant(inc, *_PLANTED_DELETE)
+    before = inc.read_bytes()
+    _apply_restore_selection(_staged(tmp_path, inc, failures=failures), include_newsletters=False)
+    assert _rows(inc, "SELECT count(*) FROM sources WHERE domain = 'planted.example'")[0][0] == 0
+    if failures:
+        assert inc.read_bytes() == before  # refused: never written to
+    else:
+        assert _rows(inc, "SELECT count(*) FROM articles")[0][0] == 2 and not _names(inc, "trigger")
+
+
+def test_the_export_filter_keeps_its_own_snapshots_triggers(tmp_path):
+    """Our own snapshot keeps its search-index triggers (they purge the letters' words): only an import disarms."""
+    from src.backup.artifact import _drop_newsletter_articles
+
+    inc = tmp_path / "inc.db"
+    _build(inc, 1, None, newsletters=1)
+    _plant(inc, "CREATE TRIGGER article_fts_ad AFTER DELETE ON articles BEGIN SELECT 1; END")
+    assert _drop_newsletter_articles(inc) == 1 and "article_fts_ad" in _names(inc, "trigger")
+
+
+def test_a_file_that_is_no_database_is_left_for_the_validation(tmp_path):
+    from src.backup.artifact import _disarm_staged
+
+    junk = tmp_path / "inc.db"
+    junk.write_bytes(b"SQLite format 3\x00" + b"\xff" * 4080)
+    with pytest.raises(staged_key.NotADatabase):
+        staged_key.disarm_staged(junk)
+    _disarm_staged(junk)  # left: the validation refuses it in its own words
+
+
+def test_a_drop_that_fails_part_way_is_never_read_as_nothing_to_drop(tmp_path, monkeypatch):
+    from src.backup.artifact import _disarm_staged
+
+    inc = tmp_path / "inc.db"
+    _build(inc, 1, None)
+    _plant(inc, *_PLANTED_UPDATE)
+    real = staged_key.open_staged
+
+    class _Conn:
+        def __init__(self, inner):
+            self._c = inner
+
+        def __getattr__(self, name):
+            return getattr(self._c, name)
+
+        def execute(self, sql, *a):
+            if sql.startswith("DROP"):
+                raise sqlite3.OperationalError("database or disk is full")
+            return self._c.execute(sql, *a)
+
+    monkeypatch.setattr(staged_key, "open_staged", lambda *a, **k: _Conn(real(*a, **k)))
+    with pytest.raises(staged_key.StagedKeyError) as refused:
+        _disarm_staged(inc)
+    assert str(refused.value) == staged_key.NOT_PREPARED and not isinstance(refused.value, staged_key.NotADatabase)
+    assert "article_fts_au" in _names(inc, "trigger")
+
+
+def test_the_space_check_counts_the_pages_in_use_not_the_files_size(tmp_path, monkeypatch):
+    """A copy with a large free list seals on a disk that holds its rows but not its whole file."""
+    import shutil
+    from collections import namedtuple
+
+    p = tmp_path / "inc.db"
+    _build(p, 5, None)
+    _plant(p, "CREATE TABLE pad (x BLOB)",
+           "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000) "
+           "INSERT INTO pad SELECT randomblob(4096) FROM n", "DROP TABLE pad")  # 8 MB to the free list; the file keeps it
+    con = sqlite3.connect(p)
+    live = staged_key._live_bytes(con)
+    con.close()
+    size = p.stat().st_size
+    assert live is not None and live + staged_key._SPACE_MARGIN < size
+    real = shutil.disk_usage
+    usage = namedtuple("usage", "total used free")
+    free = (live + staged_key._SPACE_MARGIN + size) // 2  # room for the rows, not for the file
+    monkeypatch.setattr(shutil, "disk_usage", lambda path: usage(real(path).total, real(path).used, free))
+    try:
+        staged_key.seal_plaintext(p)
+        assert staged_key.is_keyed(p)
+    finally:
+        staged_key.forget(p)
+
+
+def test_the_lock_probe_creates_nothing_and_follows_no_link(tmp_path):
+    missing = tmp_path / "gone.db"
+    assert staged_key._held_now(missing) is False and not missing.exists()
+    real = tmp_path / "real.db"
+    _build(real, 1, None)
+    link = tmp_path / "link.db"
+    link.symlink_to(real)
+    holder = sqlite3.connect(real, isolation_level=None)
+    try:
+        holder.execute("BEGIN EXCLUSIVE")
+        assert staged_key._held_now(real) is True and staged_key._held_now(link) is False
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
