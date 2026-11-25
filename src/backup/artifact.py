@@ -462,6 +462,51 @@ def _drop_newsletter_articles(db_path: Path) -> int:
         con.close()
 
 
+def _keywords_of_articles(cur: sqlite3.Cursor, tables: list[str], art_ids: list[int]) -> list[int]:
+    """The keyword ids the given articles mention, read before their mentions are deleted (row 429). Empty when the
+    copy has no ``keyword_mentions`` table of the app's shape."""
+    if "keyword_mentions" not in tables:
+        return []
+    if not {"keyword_id", "article_id", "count"} <= {c[1] for c in cur.execute("PRAGMA table_info(keyword_mentions)")}:
+        return []  # a copy whose mention table is not the app's: nothing this function knows how to recount
+    out: set[int] = set()
+    for i in range(0, len(art_ids), 900):
+        chunk = art_ids[i : i + 900]
+        q = ",".join("?" * len(chunk))
+        out.update(
+            r[0]
+            for r in cur.execute(
+                f"SELECT DISTINCT keyword_id FROM keyword_mentions WHERE article_id IN ({q})", chunk  # noqa: S608  # nosec B608 # q is only ?-placeholders
+            )
+        )
+    return sorted(out)
+
+
+def _recount_keywords(cur: sqlite3.Cursor, keyword_ids: list[int]) -> None:
+    """Set ``mention_count``/``article_count`` of the given keywords in a snapshot copy to what its remaining mentions
+    say (row 429): the delete above took the newsletter articles' mentions out, and a counter that still counted them
+    would travel in the backup. The same arithmetic as the live sweep: the sum of ``count`` and the number of distinct
+    articles over mentions whose article is not quarantined (R101; a copy from a build without the column counts all).
+    Column-tolerant, like the rest of this function: a copy without the counter columns is left as it is."""
+    if not keyword_ids:
+        return
+    kw_cols = {c[1] for c in cur.execute("PRAGMA table_info(keywords)")}
+    if not {"mention_count", "article_count"} <= kw_cols:
+        return
+    art_cols = {c[1] for c in cur.execute("PRAGMA table_info(articles)")}
+    live = " AND m.article_id NOT IN (SELECT id FROM articles WHERE quarantined IS 1)" if "quarantined" in art_cols else ""
+    for i in range(0, len(keyword_ids), 900):
+        chunk = keyword_ids[i : i + 900]
+        q = ",".join("?" * len(chunk))
+        cur.execute(
+            "UPDATE keywords SET "  # noqa: S608  # nosec B608 # live is one of two module literals; q is only ?-placeholders
+            f"mention_count = COALESCE((SELECT SUM(m.count) FROM keyword_mentions m WHERE m.keyword_id = keywords.id{live}), 0), "
+            f"article_count = (SELECT COUNT(DISTINCT m.article_id) FROM keyword_mentions m WHERE m.keyword_id = keywords.id{live}) "
+            f"WHERE id IN ({q})",
+            chunk,
+        )
+
+
 def _merge_fts_index(con) -> bool:
     """Make the search index forget the deleted articles' text. ``article_fts`` is an external-content
     FTS5 table: deleting an article writes a delete marker and leaves its postings and its terms in the
@@ -512,6 +557,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
     if not art_ids:
         return 0
     tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    touched = _keywords_of_articles(cur, tables, art_ids)
     for t in tables:
         if t == "articles" or not _SAFE_TABLE.match(t):
             continue
@@ -519,6 +565,7 @@ def _drop_newsletter_rows(con, *, vacuum: bool = True) -> int:
         if "article_id" in cols:
             _delete_in(cur, t, "article_id", art_ids)
     _delete_in(cur, "articles", "id", art_ids)
+    _recount_keywords(cur, touched)
     _merge_fts_index(con)
     con.commit()
     if vacuum:

@@ -592,6 +592,30 @@ def shift_keyword_counters_for_quarantine(
     return {"articles": len(ids), "keywords": len(kids), "clamped": clamped}
 
 
+def remove_deleted_articles_from_keyword_counters(session: Session, article_ids: Iterable[int]) -> dict:
+    """Take the articles about to be DELETED out of ``Keyword.mention_count`` / ``article_count`` (row 429).
+
+    Every path that deletes articles calls this in the SAME transaction as the delete, with the write gate held,
+    BEFORE the delete is flushed (the mentions must still be there to be read). A quarantined article's mentions
+    are already out of the counters (R101), so only the articles that are not quarantined are subtracted; the
+    arithmetic is :func:`shift_keyword_counters_for_quarantine`'s. Without it a cascade delete moved the mentions
+    and left the counters counting them until a whole sweep, and a sweep slice whose GROUP BY ran before such a
+    delete could stamp the stale count without reading it again (the second case disclosed in
+    :func:`_wrong_rows_under_the_gate`): with the counters moving inside the delete's transaction, the row
+    disagrees with that GROUP BY and is read again under the gate. Returns the shift's tally."""
+    ids = sorted({int(i) for i in article_ids})
+    live: list[int] = []
+    for i in range(0, len(ids), _MENTION_ID_CHUNK):
+        chunk = ids[i : i + _MENTION_ID_CHUNK]
+        live += [
+            int(a)
+            for (a,) in session.execute(
+                select(Article.id).where(Article.id.in_(chunk), Article.quarantined.is_not(True))
+            )
+        ]
+    return shift_keyword_counters_for_quarantine(session, live, quarantined=True)
+
+
 def _resolve_known_language(article: Article, content: str) -> str | None:
     """The known/deduced language driving extraction + sentiment for one article.
 
