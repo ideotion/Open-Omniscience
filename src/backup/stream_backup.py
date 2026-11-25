@@ -2527,6 +2527,35 @@ def backup_passphrase_check(src_dir: Path | str, passphrase: str) -> tuple[str, 
         return "none", None
 
 
+def backup_key_opens(src_dir: Path | str, passphrase: str) -> bool:
+    """True only when ``passphrase`` (never empty) opens the first volume of the streamed set at ``src_dir``. It runs the
+    same checks as :func:`backup_passphrase_check` and reads one chunk, and it writes nothing. Row 422 P1 asks this before
+    staging the next backup early: nothing is staged for a backup whose passphrase this run does not hold."""
+    if not passphrase:
+        return False
+    src = Path(src_dir)
+    try:
+        m = load_manifest(src)
+        if m.get("kind") != STREAM_KIND:
+            return False
+        _require_safe_manifest_names(m)
+        _require_each_volume_read_once(m, src)
+        _require_distinct_member_names(m)
+        vol_by_name = {v.get("name"): v for v in m.get("volumes") or []}
+        first = next((v for mm in m.get("members") or [] for v in mm.get("volumes") or [] if v in vol_by_name), None)
+        if first is None:
+            return False
+        path = src / first
+        if path.is_symlink() or not path.is_file():
+            return False
+        opens, _digest = stream_key_opens_or_digest(
+            path, passphrase, follow_links=False, max_bytes=volume_expectation(vol_by_name[first])["expect_bytes"]
+        )
+        return bool(opens)
+    except Exception:  # noqa: BLE001 - no answer is "does not open": the item stages at its own turn, as before
+        return False
+
+
 def backup_passphrase_is_wrong(src_dir: Path | str, passphrase: str) -> bool:
     """True only when ``backup_passphrase_check`` names the passphrase wrong (see there)."""
     return backup_passphrase_check(src_dir, passphrase)[0] == "wrong"

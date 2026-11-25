@@ -1743,7 +1743,7 @@ class ImportQueueManager:
         same reader runs again and reports in full. Only a decline for space is said (its words name the numbers)."""
         from src.backup.artifact import BackupSpaceError, cleanup_staging, read_volume_backup
         from src.backup.merge import artifact_source_digest, find_completed_import
-        from src.backup.stream_backup import STREAM_KIND, register_active_staging
+        from src.backup.stream_backup import STREAM_KIND, backup_key_opens, register_active_staging
         from src.backup.volumes import load_manifest
 
         t0 = time.monotonic()
@@ -1762,6 +1762,12 @@ class ImportQueueManager:
                 pre.note = {"used": False, "reason": "already-merged"}  # its own turn says so, in full
                 return
             backup_key, corpus_key = self._keys_for(nxt)
+            # Passphrases are never stored: the next backup is staged early only with a key this run already holds in
+            # memory for it, and only once that key opens its first volume. A backup with no key here is not touched
+            # until its own turn (one chunk is read, and nothing is written).
+            if not backup_key_opens(src, backup_key):
+                pre.note = {"used": False, "reason": "no-passphrase"}
+                return
             staged = read_volume_backup(
                 src,
                 backup_key,
@@ -1837,7 +1843,6 @@ class ImportQueueManager:
     @staticmethod
     def _finish_and_remove(pre: _Prestage) -> None:
         from src.backup.artifact import cleanup_staging
-
         from src.backup.stream_backup import unregister_active_staging
 
         pre.cancel.set()

@@ -77,9 +77,16 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(A, "read_volume_backup", _read)
     monkeypatch.setattr(A, "cleanup_staging", lambda staged: cleaned.append(Path(staged.staging_dir)))
     monkeypatch.setattr(ImportQueueManager, "_merge_in_flight_reserve", staticmethod(lambda src: 123 << 20))
+    keys_seen: list[str] = []
+
+    def _opens(src, key):
+        keys_seen.append(key)
+        return bool(key)
+
+    monkeypatch.setattr(SB, "backup_key_opens", _opens)
     mgr = ImportQueueManager(state_path=tmp_path / "q.json")
     mgr._checkpoint_k = 1
-    return SimpleNamespace(mgr=mgr, vols=vols, reads=reads, cleaned=cleaned, tmp=tmp_path)
+    return SimpleNamespace(mgr=mgr, vols=vols, reads=reads, cleaned=cleaned, tmp=tmp_path, keys_seen=keys_seen)
 
 
 def _drain(mgr, timeout=10.0):
@@ -302,3 +309,132 @@ def test_the_reserve_is_the_safety_copy_and_the_merges_growth(tmp_path, monkeypa
 
     monkeypatch.setattr(SQ, "live_db_path", _boom)
     assert ImportQueueManager._merge_in_flight_reserve(tmp_path) >= 1 << 60, "an unknown size stages nothing ahead"
+
+
+# --- Plan's two conditions on P1 (2026-11-25) ------------------------------------------------------------------------
+
+
+def test_nothing_is_staged_for_a_backup_whose_passphrase_this_run_does_not_hold(env, monkeypatch):
+    """Passphrases are never stored: the next backup is staged ahead only with a key the run holds in memory for it, and
+    only once that key opens its first volume. Without one, no staging file is made; the item stages at its own turn."""
+    items = _items("1", "2")
+    items[0]["passphrase"] = "only-for-the-first"
+    env.mgr.start(items)
+    assert _drain(env.mgr)["state"] == "done"
+    assert env.reads == [], "no read of the second backup before its turn"
+    assert not list(env.tmp.glob("staged-*")), "no staging file"
+    assert env.mgr._items[1]["summary"]["prestage"] == {"used": False, "reason": "no-passphrase"}
+    assert "prestaged" not in env.vols.calls[1][1]
+
+
+def test_a_key_that_does_not_open_the_next_backup_stages_nothing(env, monkeypatch):
+    import src.backup.stream_backup as SB
+
+    monkeypatch.setattr(SB, "backup_key_opens", lambda src, key: False)
+    env.mgr.start(_items("1", "2"), passphrase="pw")
+    assert _drain(env.mgr)["state"] == "done"
+    assert env.reads == [] and not list(env.tmp.glob("staged-*"))
+    assert env.mgr._items[1]["summary"]["prestage"]["reason"] == "no-passphrase"
+
+
+def test_the_key_check_reads_nothing_without_a_key_and_writes_nothing(tmp_path):
+    from src.backup.stream_backup import backup_key_opens
+
+    src = _tiny_set(tmp_path)
+    before = sorted((p.name, p.stat().st_size) for p in src.iterdir())
+    assert backup_key_opens(src, "") is False
+    assert backup_key_opens(src, "not the passphrase") is False
+    assert backup_key_opens(src, "pw") is True
+    assert sorted((p.name, p.stat().st_size) for p in src.iterdir()) == before
+    assert backup_key_opens(tmp_path / "no-such-set", "pw") is False
+
+
+def _real_cleanup(monkeypatch, env):
+    """Staging folders really removed, so the test can look at the disk rather than at a list."""
+    import shutil
+
+    import src.backup.artifact as A
+
+    def _rm(staged):
+        env.cleaned.append(Path(staged.staging_dir))
+        shutil.rmtree(staged.staging_dir, ignore_errors=True)
+
+    monkeypatch.setattr(A, "cleanup_staging", _rm)
+
+
+def test_a_queue_stopped_while_the_next_backup_is_being_staged_leaves_no_staging(env, monkeypatch):
+    import shutil
+
+    import src.backup.artifact as A
+    from src.backup.volumes import VolumeStopped
+
+    _real_cleanup(monkeypatch, env)
+    started = __import__("threading").Event()
+
+    def _slow(src, pw, **kw):
+        d = env.tmp / f"staged-{Path(src).name}"
+        d.mkdir()
+        (d / "partial.vol").write_bytes(b"x" * 4096)
+        started.set()
+        while not kw["should_stop"]():
+            time.sleep(0.01)
+        shutil.rmtree(d)  # what the real reader does when it stops between volumes (tested below on a real set)
+        raise VolumeStopped("stopped")
+
+    monkeypatch.setattr(A, "read_volume_backup", _slow)
+    env.vols._polls = 10_000
+    env.mgr.start(_items("1", "2"), passphrase="pw")
+    assert started.wait(5)
+    env.mgr.stop()
+    _drain(env.mgr)
+    assert not list(env.tmp.glob("staged-*"))
+    from src.backup.stream_backup import _ACTIVE_STAGING
+
+    assert not any("staged-" in s for s in _ACTIVE_STAGING)
+
+
+def test_a_refused_item_leaves_no_staging_behind(env, monkeypatch):
+    """The next item is refused at its own start: the staging taken for it is removed, on disk and in the registry."""
+    _real_cleanup(monkeypatch, env)
+    real_start = env.vols.start_restore
+
+    def _start(path, passphrase, **kw):
+        if path == "/b/2":
+            env.vols.calls.append((path, kw))
+            raise ValueError("refused: the live store cannot take a restore now")
+        return real_start(path, passphrase, **kw)
+
+    monkeypatch.setattr(env.vols, "start_restore", _start)
+    env.mgr.start(_items("1", "2"), passphrase="pw")
+    _drain(env.mgr)
+    assert [c[0] for c in env.vols.calls] == ["/b/1", "/b/2"]
+    assert "prestaged" in env.vols.calls[1][1], "it was staged ahead and handed over"
+    assert [p.name for p in env.cleaned] == ["staged-2"]
+    assert not list(env.tmp.glob("staged-*"))
+    from src.backup.stream_backup import _ACTIVE_STAGING
+
+    assert not any("staged-" in s for s in _ACTIVE_STAGING)
+
+
+def test_an_item_in_flight_that_is_refused_never_strands_the_next_staging(env, monkeypatch):
+    """The item merging is refused by its restore: whatever the run then does, the staging taken for the next one is
+    handed to it or removed. Never left on disk."""
+    _real_cleanup(monkeypatch, env)
+    polls = {"n": 0}
+    real_status = env.vols.status
+
+    def _status():
+        st = real_status()
+        if st["state"] == "done" and not polls["n"]:
+            polls["n"] = 1
+            return {"state": "done", "summary": {"report": {"refused": "the backup's corpus is damaged"}},
+                    "progress": {"phase": "done"}}
+        return st
+
+    monkeypatch.setattr(env.vols, "status", _status)
+    env.mgr.start(_items("1", "2"), passphrase="pw")
+    _drain(env.mgr)
+    handed = [kw["prestaged"] for _p, kw in env.vols.calls if kw.get("prestaged") is not None]
+    on_disk = list(env.tmp.glob("staged-*"))
+    assert len(handed) + len(env.cleaned) == 1
+    assert on_disk == [Path(h.staging_dir) for h in handed], "only a staging an item took may remain (its restore owns it)"
