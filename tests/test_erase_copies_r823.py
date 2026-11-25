@@ -437,3 +437,23 @@ def test_the_copy_and_segment_sentences_are_in_every_locale():
         for f in root.glob("*.json"):
             doc = json.loads(f.read_text(encoding="utf-8"))
             assert key in doc and "{n}" in doc[key], (f.name, key)
+
+
+def test_the_kept_handle_reads_and_writes_without_pread_or_pwrite(tmp_path, monkeypatch):
+    """Windows has neither ``os.pread`` nor ``os.pwrite``: the copy and segment steps read and write through seek then read/write,
+    so no AttributeError can end the erase there."""
+    import os
+
+    from src.safety import crypto_erase
+
+    p = tmp_path / "f.bin"
+    p.write_bytes(b"A" * 64)
+    monkeypatch.delattr(os, "pread", raising=False)
+    monkeypatch.delattr(os, "pwrite", raising=False)
+    fd = os.open(p, os.O_RDWR | getattr(os, "O_BINARY", 0))
+    try:
+        assert crypto_erase._read_at(fd, 16, 0) == b"A" * 16
+        assert crypto_erase._write_at(fd, b"B" * 16, 0) == 16
+    finally:
+        os.close(fd)
+    assert p.read_bytes() == b"B" * 16 + b"A" * 48

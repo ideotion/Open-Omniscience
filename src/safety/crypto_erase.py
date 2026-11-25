@@ -650,6 +650,31 @@ def _unlink_if_same(name: str, dfd: int | None, lst: os.stat_result) -> None:
             os.unlink(name, dir_fd=dfd)
 
 
+def _read_at(fd: int, n: int, offset: int) -> bytes:
+    """``n`` bytes at ``offset`` through a kept descriptor: ``os.pread`` where it exists, else seek then read (Windows has no
+    ``os.pread``; an AttributeError there would end the erase, which catches only OSError)."""
+    if hasattr(os, "pread"):
+        return os.pread(fd, n, offset)
+    os.lseek(fd, offset, os.SEEK_SET)
+    return os.read(fd, n)
+
+
+def _write_at(fd: int, data: bytes, offset: int) -> int:
+    """``data`` written at ``offset`` through a kept descriptor, in full where the platform allows: the bytes written. Seek then
+    write (no ``os.pwrite`` on Windows); raises OSError like the call it replaces."""
+    os.lseek(fd, offset, os.SEEK_SET)
+    done = 0
+    # ``while True: if not <wanted>: break``, the guard-clause form (src/utils/interrupts.py; R161/R163)
+    while True:
+        if done >= len(data):
+            break
+        k = os.write(fd, data[done:])
+        if k <= 0:
+            break
+        done += k
+    return done
+
+
 def _record_names_main(raw: bytes | None, ident: tuple[int, int], head: bytes | None) -> bool:
     from src.database.at_rest_state import record_names_identity
 
@@ -662,7 +687,7 @@ def _record_names_main(raw: bytes | None, ident: tuple[int, int], head: bytes | 
 def _head_of(fd: int) -> bytes | None:
     """The first 16 bytes of a kept main file, in one bounded read (None when they cannot be read in full)."""
     try:
-        head = os.pread(fd, len(_SQLITE_MAGIC), 0)
+        head = _read_at(fd, len(_SQLITE_MAGIC), 0)
     except OSError:
         return None
     return head if len(head) == len(_SQLITE_MAGIC) else None
@@ -673,7 +698,7 @@ def _header_of(fd: int) -> str | None:
     plaintext, whatever any record says), ``"other"`` (anything else: never by itself evidence of encryption), or None when they
     cannot be read in full."""
     try:
-        return _header_kind(os.pread(fd, len(_SQLITE_MAGIC), 0))
+        return _header_kind(_read_at(fd, len(_SQLITE_MAGIC), 0))
     except OSError:
         return None
 
@@ -1971,7 +1996,7 @@ def _corpus_open(base: Path, generation: int, named_by: list[bytes] | None = Non
             # (sorted, ``seg-<n>.db`` comes before its own ``-shm``/``-wal``/``-journal``). Anything else is never written.
             if kind == "head":
                 try:
-                    head = os.pread(fd, len(_SQLITE_MAGIC), 0)
+                    head = _read_at(fd, len(_SQLITE_MAGIC), 0)
                 except OSError:
                     head = b""
                 if any(record_names_identity(raw, (fs.st_dev, fs.st_ino), head, name=SEGMENT_PREFIX + m.group(1))
@@ -1985,10 +2010,10 @@ def _corpus_open(base: Path, generation: int, named_by: list[bytes] | None = Non
         head_ok = True
         if kind != "whole":
             try:
-                head = (head or os.pread(fd, len(_SQLITE_MAGIC), 0)) if kind == "head" else b""
+                head = (head or _read_at(fd, len(_SQLITE_MAGIC), 0)) if kind == "head" else b""
                 n = min(fs.st_size, _SQLCIPHER_PAGE1)
                 if n:
-                    head_ok = os.pwrite(fd, bytes(n) if kind == "shm" else os.urandom(n), 0) == n
+                    head_ok = _write_at(fd, bytes(n) if kind == "shm" else os.urandom(n), 0) == n
                 os.fsync(fd)
             except OSError:
                 head_ok = False
@@ -2121,7 +2146,7 @@ def _copy_take(p: Path, raws: list[bytes], generation: int, *, side: bool = Fals
     _HELD.setdefault(generation, []).append((fd, "keep", 0))
     ident = (st.st_dev, st.st_ino)
     try:
-        head = os.pread(fd, len(_SQLITE_MAGIC), 0)
+        head = _read_at(fd, len(_SQLITE_MAGIC), 0)
     except OSError:
         head = b""
     # A copy's log or journal (``side``) is never evidence: it is rewritten whole and said "overwritten" (security reads, row 402).
@@ -2129,7 +2154,7 @@ def _copy_take(p: Path, raws: list[bytes], generation: int, *, side: bool = Fals
         record_names_identity(raw, ident, head, name=copy_key(p)) for raw in raws)
     n = min(st.st_size, _SQLCIPHER_PAGE1)
     try:
-        ok = (os.pwrite(fd, os.urandom(n), 0) == n) if n else True
+        ok = (_write_at(fd, os.urandom(n), 0) == n) if n else True
         os.fsync(fd)
     except OSError:
         ok = False
