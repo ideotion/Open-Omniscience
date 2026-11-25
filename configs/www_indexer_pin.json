@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "digest": "5d6c86a16a30e652e6051dbe5440f062eb80262869f480de907ebda8552d31c5",
+  "digest": "bdad1cec2cfeb19c6727c100726d6429fd85e32ce7eec52a0a3bfbc2bad8210b",
   "log": [
     {
       "version": 1,
@@ -70,7 +70,19 @@
     },
     {
       "version": 1,
-      "digest": "5d6c86a16a30e652e6051dbe5440f062eb80262869f480de907ebda8552d31c5",
+      "digest": "4a6e442bff265f1d0b8ed1386d3d6dd404949a71b4c9d95e16dcad38f3b4c700",
+      "kind": "same",
+      "note": "Row 419 changes only how locextract finds the case-insensitive candidates (one prefilter pass with the patterns' own flags, then each pattern's own rx.match at those positions); the candidate list is identical to the per-pattern finditer loop, pinned over the whole pattern table by tests/test_locextract_prefilter.py, so extract_locations returns the same places"
+    },
+    {
+      "version": 1,
+      "digest": "84f1352ae8454cd684b11e672531bb372411d87a3dcca5c503a4923b39219efd",
+      "kind": "same",
+      "note": "Row 419 review fix: the prefilter is a zero-width lookahead over the heads (no trailing boundary), so a fold to a non-word character cannot hide a candidate; the candidate list stays identical to the per-pattern finditer loop, pinned by tests/test_locextract_prefilter.py"
+    },
+    {
+      "version": 1,
+      "digest": "bdad1cec2cfeb19c6727c100726d6429fd85e32ce7eec52a0a3bfbc2bad8210b",
       "kind": "same",
       "note": "Row 418: places and entities are written by one executemany each and the www stamp by SQL text written once, instead of the ORM unit of work; rows, ids and stored values are identical, pinned by tests/test_apply_core_row418.py and the golden output digest"
     }
