@@ -323,41 +323,25 @@ def test_a_precomputed_date_list_is_stored_without_re_extracting(monkeypatch):
     called: list[int] = []
     monkeypatch.setattr(D, "extract_dates", lambda *a, **k: called.append(1) or [])
 
-    class _Art:
-        id = 1
-        content = _TEXT
-        language = "en"
-        published_at = None
-        created_at = None
+    from sqlalchemy.orm import sessionmaker
 
-    class _Q:
-        def filter(self, *a, **k):
-            return self
+    from src.database.models import Article, ArticleMentionedDate, Base, Source
+    from tests._app_engine import app_sqlite_engine
 
-        def all(self):
-            return []
-
-    class _Sess:
-        added: list = []
-
-        def query(self, *a, **k):
-            return _Q()
-
-        def add(self, row):
-            self.added.append(row)
-
-        def in_nested_transaction(self):
-            return True
-
-        def flush(self):
-            pass
-
-    s = _Sess()
+    engine = app_sqlite_engine(":memory:", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add(Source(name="S", domain="x.test"))
+    s.commit()
+    art = Article(url="https://x.test/1", canonical_url="https://x.test/1", source_id=1, title="T", content=_TEXT,
+                  hash="h1", language="en")
+    s.add(art)
+    s.commit()
     n = D.store_for_article(
-        s, _Art(), precomputed=[{"date": "2024-09-11", "precision": "day", "text": "x"}]
+        s, art, precomputed=[{"date": "2024-09-11", "precision": "day", "text": "x"}]
     )
     assert n == 1 and called == [], "the worker's result was used, not recomputed"
-    assert s.added[0].mentioned_on == date(2024, 9, 11)
+    assert [t.mentioned_on for t in s.query(ArticleMentionedDate)] == [date(2024, 9, 11)]
 
 
 # --------------------------------------------------------------------------- #

@@ -279,3 +279,43 @@ def test_the_stamp_upsert_is_built_once_and_overwrites_like_the_construct(model)
         ("f", "2026-11-24 22:01:02.345678", 4, None)  # a conflict clears the carry, as the construct's set_ did
     ]
     assert s.query(IndexEngine.components).all() == [("c",)]
+
+
+@pytest.mark.parametrize("model", [ArticleIndexStamp, ArticleWwwStamp])
+def test_the_stamp_text_is_the_construct_it_replaced_and_stores_the_same_rows(model):
+    """The stamp statements are SQL text written once; this keeps them equal to the construct row 418 replaced, by its
+    SQLite rendering and by the rows each stores over an insert then a conflicting update."""
+    from sqlalchemy.dialects import sqlite
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    def construct(**values):
+        stmt = sqlite_insert(model).values(**values)
+        return stmt.on_conflict_do_update(
+            index_elements=[model.article_id],
+            set_={
+                "engine": stmt.excluded.engine, "inputs": stmt.excluded.inputs, "stamped_at": stmt.excluded.stamped_at,
+                "stage_version": stmt.excluded.stage_version, "carried_from_batch": None,
+            },
+        )
+
+    names = ("article_id", "engine", "inputs", "stamped_at", "stage_version", "carried_from_batch")
+    rendered = str(construct(**{n: 0 for n in names}).compile(dialect=sqlite.dialect(paramstyle="named")))
+    assert rendered.replace(":param_1", "NULL") == str(store._stamp_upsert(model))
+
+    now = datetime(2026, 11, 24, 22, 1, 2, 345678, tzinfo=UTC)
+    first = {"article_id": 0, "engine": "e", "inputs": "i", "stamped_at": now, "stage_version": 3, "carried_from_batch": 7}
+    second = {**first, "engine": "f", "stage_version": 4, "stamped_at": datetime(2026, 11, 25, tzinfo=UTC)}
+    stored = []
+    for run in ("construct", "text"):
+        s = _db()
+        a = _article(s, 0, "x")
+        for params in (first, second):
+            p = {**params, "article_id": a.id}
+            s.execute(construct(**p)) if run == "construct" else s.execute(store._stamp_upsert(model), p)
+        stored.append(s.execute(text(f"SELECT * FROM {model.__tablename__}")).all())
+    assert stored[0] == stored[1]
+
+    engine_insert = sqlite_insert(IndexEngine).values(engine=0, stage=0, components=0, recorded_at=0)
+    rendered = str(engine_insert.on_conflict_do_nothing(index_elements=[IndexEngine.engine]).compile(
+        dialect=sqlite.dialect(paramstyle="named")))
+    assert rendered == str(store._record_engine_insert())

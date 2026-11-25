@@ -26,7 +26,7 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from sqlalchemy import Table, bindparam, delete, func, insert, null, select, text, update
+from sqlalchemy import Table, bindparam, delete, func, insert, select, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -653,7 +653,12 @@ def _write_article_derived(session: Session, article: Article, values: dict[str,
     them on ``article`` as its committed state (row 418).
 
     What the attribute assignments and the flush's UPDATE did, minus the unit of work: the row ends identical, the
-    object reads the same values without a query, and the article is not left dirty for a later flush to write again."""
+    object reads the same values without a query, and the article is not left dirty for a later flush to write again.
+
+    One difference, on a failure only: when a caller-owned savepoint around ``index_article`` (``ArticleBatch._index_one``)
+    rolls back after this write, the row goes back but the object keeps these values until the next commit or rollback
+    expires it, where the flushed ORM write would have been expired at once. The database is never wrong (the keys are not
+    dirty, so nothing writes them back), and no caller reads them on that path."""
     from sqlalchemy.orm.attributes import set_committed_value
 
     values = {**values, "updated_at": datetime.now(UTC)}
@@ -765,52 +770,42 @@ def _record_engine(session: Session, engine: str, stage: str, components: str) -
 
 _STAMP_COLUMNS = ("article_id", "engine", "inputs", "stamped_at", "stage_version", "carried_from_batch")
 
+#: Row 418: the stamp upsert and the engine record as SQL text, written once. SQLAlchemy cannot cache a SQLite ``ON CONFLICT``
+#: insert (it reports "no key"), so the construct these replace was compiled again for every article: about 0.5 ms per statement,
+#: three per article. The text is exactly what that construct rendered with the SQLite dialect (``carried_from_batch`` bound None
+#: there, NULL here); tests/test_apply_core_row418.py compares the two renderings and the rows each one stores.
+_STAMP_UPSERT_SQL = (
+    "INSERT INTO {table} (article_id, engine, inputs, stamped_at, stage_version, carried_from_batch) "
+    "VALUES (:article_id, :engine, :inputs, :stamped_at, :stage_version, :carried_from_batch) "
+    "ON CONFLICT (article_id) DO UPDATE SET engine = excluded.engine, inputs = excluded.inputs, "
+    "stamped_at = excluded.stamped_at, stage_version = excluded.stage_version, carried_from_batch = NULL"
+)
+_ENGINE_RECORD_SQL = (
+    "INSERT INTO index_engines (engine, stage, components, recorded_at) "
+    "VALUES (:engine, :stage, :components, :recorded_at) ON CONFLICT (engine) DO NOTHING"
+)
 
-def _compiled_once(stmt, table: Table, names: Iterable[str]):
-    """``stmt`` rendered ONCE to SQLite text with typed parameters (row 418).
 
-    SQLAlchemy cannot cache a SQLite ``ON CONFLICT`` insert (it reports "no key"), so the construct was compiled again
-    for every article: 0.5 ms per statement, three of them per article. The text is the construct's own rendering, and
-    each parameter keeps its column's type, so a datetime is stored exactly as before. It still runs through
-    ``session.execute``, so the write gate and the R827 recorder see it."""
-    from sqlalchemy.dialects import sqlite
-
-    sql = str(stmt.compile(dialect=sqlite.dialect(paramstyle="named")))
+def _typed_text(sql: str, table: Table, names: Iterable[str]):
+    """``sql`` as a text statement whose parameters keep their columns' types, so a datetime is stored exactly as the construct
+    stored it. It runs through ``session.execute``, so the write gate and the R827 recorder see it."""
     return text(sql).bindparams(*(bindparam(name, type_=table.c[name].type) for name in names))
 
 
 @functools.cache
 def _stamp_upsert(model):
-    """The stamp upsert for ``model`` (``ArticleIndexStamp`` or ``ArticleWwwStamp``), built once (row 418, the reason in
-    :func:`_compiled_once`). Same SQL and conflict rule as the per-call construct it replaces."""
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
+    """The stamp upsert for ``model`` (``ArticleIndexStamp`` or ``ArticleWwwStamp``), built once (row 418, the reason above
+    :data:`_STAMP_UPSERT_SQL`)."""
     table = cast(Table, model.__table__)
-    stmt = sqlite_insert(table).values({name: bindparam(name) for name in _STAMP_COLUMNS})
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[table.c.article_id],
-        set_={
-            "engine": stmt.excluded.engine,
-            "inputs": stmt.excluded.inputs,
-            "stamped_at": stmt.excluded.stamped_at,
-            "stage_version": stmt.excluded.stage_version,
-            "carried_from_batch": null(),  # the construct bound None; NULL is the same value, written into the text
-        },
-    )
-    return _compiled_once(stmt, table, _STAMP_COLUMNS)
+    return _typed_text(_STAMP_UPSERT_SQL.format(table=table.name), table, _STAMP_COLUMNS)
 
 
 @functools.cache
 def _record_engine_insert():
-    """``_record_engine``'s insert-or-keep, built once (row 418, the reason in :func:`_compiled_once`)."""
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
+    """``_record_engine``'s insert-or-keep, built once (row 418)."""
     from src.database.models import IndexEngine
 
-    table = cast(Table, IndexEngine.__table__)
-    names = ("engine", "stage", "components", "recorded_at")
-    stmt = sqlite_insert(table).values({name: bindparam(name) for name in names})
-    return _compiled_once(stmt.on_conflict_do_nothing(index_elements=[table.c.engine]), table, names)
+    return _typed_text(_ENGINE_RECORD_SQL, cast(Table, IndexEngine.__table__), ("engine", "stage", "components", "recorded_at"))
 
 
 def _index_article_www(
