@@ -55,13 +55,15 @@ from sqlalchemy.orm import Session
 # All time, quarantined articles left out: one covering-index scan.
 _ALL_TIME_UNQUARANTINED = (
     "SELECT source_id, count(*) FROM articles INDEXED BY idx_article_feed_scan "
-    "WHERE quarantined IS NOT 1 GROUP BY source_id"
+    "WHERE quarantined IS NOT 1 AND id NOT IN (SELECT article_id FROM screening_pending) GROUP BY source_id"
 )
 
-# A created_at window, every article counted (the latest facets never filtered on quarantine).
+# A created_at window, every article counted (the latest facets never filtered on quarantine; the articles still queued
+# for screening are not counted yet, R830, answered from the queue's own primary key).
 _SINCE = (
     "SELECT source_id, count(*) FROM articles INDEXED BY idx_article_source_id "
     "WHERE id IN (SELECT id FROM articles INDEXED BY idx_article_created_at WHERE created_at >= :since) "
+    "AND id NOT IN (SELECT article_id FROM screening_pending) "
     "GROUP BY source_id"
 )
 
@@ -88,14 +90,14 @@ def _counts(rows) -> dict[int, int]:
 
 def unquarantined_counts_by_source(session: Session) -> dict[int, int]:
     """``{source_id: articles}`` over the whole corpus, quarantined articles left out (``IS NOT 1``,
-    so NULL counts as not quarantined, as everywhere else)."""
+    so NULL counts as not quarantined, as everywhere else), and the articles still queued for screening (R830)."""
     if _have(session, "idx_article_feed_scan"):
         return _counts(session.execute(text(_ALL_TIME_UNQUARANTINED)).all())
     return _counts(session.execute(_fallback_unquarantined()).all())
 
 
 def counts_by_source_since(session: Session, since: datetime) -> dict[int, int]:
-    """``{source_id: articles}`` for articles with ``created_at >= since``, every article counted.
+    """``{source_id: articles}`` for articles with ``created_at >= since``, every screened article counted.
 
     ``since`` is bound through the column's own DateTime type, so it is compared against the same
     stored text form the ORM filter ``Article.created_at >= since`` compares against."""
@@ -111,16 +113,22 @@ def counts_by_source_since(session: Session, since: datetime) -> dict[int, int]:
 # ``IS NOT 1`` is a syntax error). On SQLite they compile to the plans the old joins ran, which the tests pin as the slow
 # twin of the forced ones.
 def _fallback_unquarantined():
+    from src.analytics.quarantine_scope import pending_ids_select
     from src.database.models import Article
 
     return (
         select(Article.source_id, func.count())
-        .where(Article.quarantined.isnot(True))
+        .where(Article.quarantined.isnot(True), Article.id.not_in(pending_ids_select()))
         .group_by(Article.source_id)
     )
 
 
 def _fallback_since(since: datetime):
+    from src.analytics.quarantine_scope import pending_ids_select
     from src.database.models import Article
 
-    return select(Article.source_id, func.count()).where(Article.created_at >= since).group_by(Article.source_id)
+    return (
+        select(Article.source_id, func.count())
+        .where(Article.created_at >= since, Article.id.not_in(pending_ids_select()))
+        .group_by(Article.source_id)
+    )

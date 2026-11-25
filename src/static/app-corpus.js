@@ -1276,7 +1276,7 @@
       if (!d || !d.terms || !d.terms.length) {
         // The Combine picker works over the WHOLE-corpus keyword index, so it stays useful even
         // when this window's matched set has no indexed keywords.
-        kw.innerHTML = anConjunctionHtml()
+        kw.innerHTML = anConjunctionHtml() + anNotCountedYetHtml(d)
           + `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
         _conjRestore("an");
         return;
@@ -1315,6 +1315,7 @@
       kw.innerHTML = anConjunctionHtml()
         + `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
         + ` · <span class="muted">${esc(cav)}</span>${cjkNote}${btn}</div>`
+        + anNotCountedYetHtml(d)
         + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`
         + anContextHtml();
       _conjRestore("an");

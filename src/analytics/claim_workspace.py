@@ -49,6 +49,8 @@ from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
+from src.analytics.quarantine_scope import not_counted
+
 #: The longest claim the workspace accepts (characters). A claim is a sentence or a short
 #: paragraph; anything longer is a document, and deriving a query from it would widen the
 #: related set past meaning.
@@ -396,7 +398,7 @@ def _corpus_source_facets(session) -> dict[str, Counter]:
 
     from src.database.models import Article, Source
 
-    held = select(Article.source_id).where(Article.quarantined.isnot(True)).distinct()
+    held = select(Article.source_id).where(not_counted(Article.id)).distinct()
     rows = session.query(Source.country, Source.language, Source.source_type).filter(
         Source.id.in_(held)
     ).all()

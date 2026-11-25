@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from src.analytics import queries as q
 from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
+from src.analytics.quarantine_scope import split_not_screened
 from src.api import served_cache
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.api.search_filters import AdvancedSearch, advanced_search_params
@@ -1143,8 +1144,8 @@ def insights_reindex(limit: int = Query(300, ge=1, le=5000), db: Session = Depen
     and ``busy``, instead of draining the same rows beside it for one batch (Lane E follow-up (e))."""
     from src.analytics.extract import get_extractor
     from src.analytics.store import backfill_corpus
-    from src.jobs.insights_backlog import KIND as _BACKLOG_KIND
     from src.jobs.insights_backlog import _JOB as _BACKLOG_JOB
+    from src.jobs.insights_backlog import KIND as _BACKLOG_KIND
     from src.scheduler.maintenance import note_page_drain
 
     if _BACKLOG_JOB.status().get("running"):
@@ -1406,6 +1407,8 @@ def insights_corpus_keywords(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit, target_lang=_tlang(target_lang))
         res["total_matched"] = total
         _xl = _cross_language_block(
@@ -1414,10 +1417,10 @@ def insights_corpus_keywords(
         )
         if _xl is not None:
             res["cross_language"] = _xl
-        res["capped"] = total > len(ids)
+        res["capped"] = total > resolved
         res["method"] = "Keyword counts across the matched articles, ordered by how many mention each term."
         res["caveat"] = (
-            f"Counts only, never a score — scoped to the top {len(ids)} matched "
+            f"Counts only, never a score — scoped to the top {resolved} matched "
             "article(s) by relevance."
         )
         # The same sentence as a keyable FRAME + its data (M14), so the client renders it
@@ -1425,7 +1428,9 @@ def insights_corpus_keywords(
         res["caveat_i18n"] = (
             "Counts only, never a score — scoped to the top {n} matched article(s) by relevance."
         )
-        res["caveat_vars"] = {"n": len(ids)}
+        # The top ``resolved`` by relevance, of which ``not_counted_yet`` are still queued and left out
+        # of the counts (said on its own line), so the number names the set the reader sees.
+        res["caveat_vars"] = {"n": resolved}
         # S3 (keyword -> super-group navigation): ONE batched reverse lookup for the
         # whole page of terms — the reverse index is cached per process, so this is
         # in-memory lookups, never an N+1 query per row. Plural membership renders as
@@ -1440,6 +1445,7 @@ def insights_corpus_keywords(
             hits = sg_by_term.get(t["normalized"], [])
             if hits:
                 t["supergroups"] = hits
+        res["not_counted_yet"] = not_yet
         return res
 
     return _deadlined(db, key, _compute)
@@ -1496,13 +1502,16 @@ def insights_corpus_www(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         out = {
             "who": q.corpus_who(db, article_ids=ids, limit=limit),
             "where": q.corpus_where(db, article_ids=ids, limit=limit),
             "when": q.corpus_when(db, article_ids=ids, limit=limit),
             "n_articles": len(ids),
             "total_matched": total,
-            "capped": total > len(ids),
+            "capped": total > resolved,
+            "not_counted_yet": not_yet,
             "caveat": "Deduced from article text, never confirmed; counts only.",
         }
         # S05-03: people and places on the entity spine (Q415, Q818, Q827) -- additive
@@ -1629,6 +1638,7 @@ def insights_corpus_source_language_facets(
         end_date=end_date, language=language, tags=tags, cap=cap,
         expand=expand, ui_lang=ui_lang, sense=sense,
         literal_cap=-1 if literal_cap else None, adv=adv)
+    # The filter options of the LIST, which shows every result, queued for screening or not (R830 group D).
     facets = q.corpus_source_language_facets(db, article_ids=ids)
     return {
         "sources": facets["sources"],
@@ -1858,6 +1868,8 @@ def insights_corpus_sentiment(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_sentiment(db, article_ids=ids)
         res["total_matched"] = total
         _xl = _cross_language_block(
@@ -1866,7 +1878,8 @@ def insights_corpus_sentiment(
         )
         if _xl is not None:
             res["cross_language"] = _xl
-        res["capped"] = total > len(ids)
+        res["capped"] = total > resolved
+        res["not_counted_yet"] = not_yet
         return res
 
     return _deadlined(db, key, _compute)
@@ -1922,6 +1935,8 @@ def insights_corpus_sources(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_sources(db, article_ids=ids, limit=limit)
         res["n_articles"] = len(ids)
         _xl = _cross_language_block(
@@ -1931,7 +1946,8 @@ def insights_corpus_sources(
         if _xl is not None:
             res["cross_language"] = _xl
         res["total_matched"] = total
-        res["capped"] = total > len(ids)
+        res["capped"] = total > resolved
+        res["not_counted_yet"] = not_yet
         return res
 
     return _deadlined(db, key, _compute)
@@ -1988,6 +2004,8 @@ def insights_corpus_coordination(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        resolved = len(ids)
+        ids, not_yet = split_not_screened(db, ids)  # R830 group D: the figure leaves queued results out, says how many
         res = q.corpus_coordination(db, article_ids=ids)
         res["total_matched"] = total
         _xl = _cross_language_block(
@@ -1996,7 +2014,8 @@ def insights_corpus_coordination(
         )
         if _xl is not None:
             res["cross_language"] = _xl
-        res["capped"] = total > len(ids)
+        res["capped"] = total > resolved
+        res["not_counted_yet"] = not_yet
         return res
 
     return _deadlined(db, key, _compute)
@@ -4289,14 +4308,20 @@ def insights_graph(
             end_date=end_date, language=language, tags=tags, cap=cap,
             expand=expand, ui_lang=ui_lang, sense=sense,
             literal_cap=-1 if literal_cap else None, adv=adv)
+        ids, _not_yet = split_not_screened(db, ids)  # R830 group D: the mind map is a figure, queued results stay out
         # Cache by the exact id set so re-opening the same analysis mindmap is instant --
         # and by the label language, whose translations the nodes now carry (M7).
         _tl = _tlang(target_lang)
-        return _deadlined(
+        graph = _deadlined(
             db, _ckey("graph-articles", ids=",".join(map(str, ids)), tl=_tl),
             lambda: rm.article_graph(db, article_ids=ids, target_lang=_tl),
             on_timeout=lambda exc: _graph_degraded(exc, level="article", n_articles=len(ids)),
         )
+        # Say how many results the map left out, so a corpus still queued for screening does not
+        # read as one with too few keywords (a copy: the cached graph is shared across callers).
+        if _not_yet and isinstance(graph, dict):
+            graph = {**graph, "not_counted_yet": _not_yet}
+        return graph
     if level not in ("keyword", "family", "supergroup"):
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
     if level == "keyword" and not (term or "").strip():

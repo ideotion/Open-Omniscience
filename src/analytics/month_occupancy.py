@@ -52,6 +52,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.analytics.extract import global_stopwords
+from src.analytics.quarantine_scope import not_counted
 from src.database.models import Article
 from src.timemap.dateextract import (
     _FA_MONTHS,
@@ -183,7 +184,7 @@ def _sample_ids(session: Session, sample: int) -> tuple[list[int], dict]:
         target = rng.randint(int(lo), int(hi))
         row = (
             session.query(Article.id)
-            .filter(Article.id >= target, Article.quarantined.isnot(True))
+            .filter(Article.id >= target, not_counted(Article.id))
             .order_by(Article.id)
             .limit(1)
             .first()
