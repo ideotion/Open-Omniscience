@@ -112,11 +112,12 @@
     // ("N articles not screened yet") and those the re-index has not reached ("N articles not analysed yet"). Home says the
     // same inside its status strip, Explore says it per figure ("N of these results not counted yet"). Nothing at 0, and a
     // count the server could not read draws nothing rather than a 0.
-    const OO_NOT_COUNTED_TABS = ["insights", "observatory", "timemap", "library", "agenda", "claim"];
+    // (Not the Timemap: its signals are curated anchors, never counts of your articles.)
+    const OO_NOT_COUNTED_TABS = ["insights", "observatory", "library", "agenda", "claim"];
     function ooNotCountedHover(kind) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       return kind === "analysed"
-        ? T("Imported articles the re-index has not reached yet. They are readable and searchable, but they carry no keywords, dates, places or people until it does, so the analyses leave them out.")
+        ? T("Imported articles the re-index has not finished yet. They are readable and searchable, but some or all of their keywords, dates, places and people may not be there yet, so the analyses may leave them out or count them only in part until it does.")
         : T("Imported articles the junk screening has not reached yet. They are readable and searchable, but the counts, trends and cards leave them out until they are screened, which happens in the background after an import.");
     }
     async function ooNotCountedTabLine(name) {

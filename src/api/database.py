@@ -121,8 +121,9 @@ def _not_counted(db: Session) -> dict:
         out["quarantined"] = int(db.query(func.count(Article.id)).filter(Article.quarantined.is_(True)).scalar() or 0)
     except Exception:  # noqa: BLE001 - an unreadable count is not a zero: say nothing
         out.pop("quarantined", None)
-    # R832: the imported articles the re-index has not reached yet carry no keywords, dates, places or people, so every
-    # analysis leaves them out; "N articles not analysed yet", from the re-index backlog read at query time (30 s at most old).
+    # R832: the imported articles the re-index has not finished may not carry all their keywords, dates, places or people
+    # yet, so an analysis may leave them out or count them in part; "N articles not analysed yet", from the re-index
+    # backlog read at query time (30 s at most old).
     from src.api.jobs import reindex_backlog_cached
 
     bk = reindex_backlog_cached()

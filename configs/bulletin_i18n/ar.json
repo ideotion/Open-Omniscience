@@ -232,7 +232,7 @@
 
   "- {n} article(s) in the period are quarantined and excluded throughout.": "- {n} مقالًا في الفترة موضوع في الحجر ومستبعد في كل الوثيقة.",
   "The count of quarantined articles could not be read — unknown, not zero.": "لم يتسنَّ قراءة عدد المقالات الموضوعة في الحجر — غير معروف، وليس صفرًا.",
-  "- {n} imported article(s) in the period are not screened for junk yet and are left out until they are.": "- مقالات مستوردة في الفترة لم تُفحص بعد بحثًا عن المحتوى غير المرغوب وتُستبعد حتى تُفحص: {n}.",
+  "- {n} imported article(s) in the period are not screened for junk yet and are left out until they are.": "- مقالات مستوردة في الفترة لم يصل إليها فحص المحتوى غير المفيد بعد وتُستبعد حتى تُفحص: {n}.",
   "The count of articles not screened yet could not be read — unknown, not zero.": "تعذرت قراءة عدد المقالات التي لم تُفحص بعد — غير معروف، وليس صفرًا.",
   "- {n} keyword mention(s) carry no date and are invisible to every window.": "- {n} إشارة إلى كلمات مفتاحية لا تحمل تاريخًا وهي غير مرئية لأي نافذة.",
   "The count of keyword mentions with no date could not be read — unknown, not zero.": "لم يتسنَّ قراءة عدد إشارات الكلمات المفتاحية التي لا تحمل تاريخًا — غير معروف، وليس صفرًا.",

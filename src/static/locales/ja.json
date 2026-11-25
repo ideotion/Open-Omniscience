@@ -2668,7 +2668,7 @@
   "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "自分の PDF ファイルをコーパスに取り込みます。テキストが抽出され、各文書は記事と同じように検索・分析・関連付けされますが、独立した絞り込み可能なソース（「取り込んだ PDF」）として保たれ、ウェブと混ざることはありません。",
   "Imported": "インポート数",
   "Imported articles the junk screening has not reached yet. They are readable and searchable, but the counts, trends and cards leave them out until they are screened, which happens in the background after an import.": "ジャンク判定がまだ届いていないインポート済みの記事です。読むことも検索することもできますが、判定されるまで件数・トレンド・カードには含まれません。判定はインポート後にバックグラウンドで行われます。",
-  "Imported articles the re-index has not reached yet. They are readable and searchable, but they carry no keywords, dates, places or people until it does, so the analyses leave them out.": "再インデックスがまだ届いていないインポート済みの記事です。読むことも検索することもできますが、それまでキーワード・日付・場所・人物を持たないため、分析には含まれません。",
+  "Imported articles the re-index has not finished yet. They are readable and searchable, but some or all of their keywords, dates, places and people may not be there yet, so the analyses may leave them out or count them only in part until it does.": "再インデックスがまだ終わっていないインポート済みの記事です。読むことも検索することもできますが、キーワード・日付・場所・人物の全部または一部がまだない場合があるため、終わるまで分析から外れるか、一部しか数えられないことがあります。",
   "Imported articles waiting for keywords ({n})": "キーワード待ちのインポート記事 ({n})",
   "Imported calendar folder": "インポートしたカレンダーフォルダー",
   "Imported events": "インポート済みイベント",

@@ -2668,7 +2668,7 @@
   "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "将你自己的 PDF 文件导入语料库——文本会被提取，每份文档都像任何文章一样被搜索、分析和关联，同时保留为独立、可筛选的来源（“已导入的 PDF”），绝不与网络内容混淆。",
   "Imported": "已导入",
   "Imported articles the junk screening has not reached yet. They are readable and searchable, but the counts, trends and cards leave them out until they are screened, which happens in the background after an import.": "垃圾内容筛查尚未处理到的导入文章。它们可以阅读和搜索，但在筛查完成之前，计数、趋势和卡片不包含它们；筛查在导入后于后台进行。",
-  "Imported articles the re-index has not reached yet. They are readable and searchable, but they carry no keywords, dates, places or people until it does, so the analyses leave them out.": "重新索引尚未处理到的导入文章。它们可以阅读和搜索，但在处理之前没有关键词、日期、地点或人物，因此分析不包含它们。",
+  "Imported articles the re-index has not finished yet. They are readable and searchable, but some or all of their keywords, dates, places and people may not be there yet, so the analyses may leave them out or count them only in part until it does.": "重新索引尚未完成的导入文章。它们可以阅读和搜索，但其关键词、日期、地点和人物可能尚未全部或部分生成，因此在完成之前，分析可能不计入它们或只部分计入。",
   "Imported articles waiting for keywords ({n})": "等待关键词的导入文章（{n}）",
   "Imported calendar folder": "已导入的日历文件夹",
   "Imported events": "已导入的事件",
