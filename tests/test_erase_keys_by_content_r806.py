@@ -309,7 +309,7 @@ def test_the_watcher_never_follows_a_keys_link(tmp_path):
 def test_kept_for_keys_never_hides_a_removal_that_failed(app_data, monkeypatch):
     _app_folder(app_data)
     (app_data / "keys" / "mine.asc").write_bytes(b"mine")
-    monkeypatch.setattr(crypto_erase, "_remove_app_folders", lambda roots: None)  # every removal fails
+    monkeypatch.setattr(crypto_erase, "_remove_app_folders", lambda roots, *a, **k: None)  # every removal fails
     out = _erase()
     assert out["folder_kept_foreign"] is True and "wiki_dumps" in out["not_removed"], out
     assert out["limit"].startswith(crypto_erase._NOT_REMOVED_SENTENCE), out["limit"]

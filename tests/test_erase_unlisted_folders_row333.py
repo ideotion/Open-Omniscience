@@ -36,6 +36,21 @@ def _refusing_scandir(refused: set[Path]):
     return scandir
 
 
+def _refusing_listdir(refused: set[Path]):
+    """Row 387: the walks list through a folder's handle; the listing of a refused folder fails, known by its identity."""
+    real = os.listdir
+
+    def listdir(path="."):
+        target = os.fstat(path) if isinstance(path, int) else os.stat(path)
+        for r in refused:
+            st = os.stat(r)
+            if (st.st_dev, st.st_ino) == (target.st_dev, target.st_ino):
+                raise PermissionError(13, "Permission denied")
+        return real(path)
+
+    return listdir
+
+
 def _refusing_walk(refused: Path):
     def walk(top, *a, onerror=None, **k):  # the listing of ``refused`` fails, as an unreadable folder's does
         for root, dirs, names in os.walk(top, *a, onerror=onerror, **k):
@@ -55,7 +70,7 @@ def test_a_folder_the_walk_cannot_list_makes_the_erase_may_be_incomplete(tmp_pat
     locked.mkdir(parents=True)
     (locked / "pre-restore-1.db").write_bytes(b"S" * 8192)
     (data / "app_settings.json").write_text("{}", encoding="utf-8")
-    scope_os(monkeypatch, crypto_erase, walk=_refusing_walk(locked))
+    scope_os(monkeypatch, crypto_erase, walk=_refusing_walk(locked), listdir=_refusing_listdir({locked}))
     with caplog.at_level(logging.WARNING, logger=crypto_erase._LOG.name):
         report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=data)
     assert report["unlisted_folders"] == 1, report
@@ -77,7 +92,7 @@ def test_a_shared_data_folder_it_cannot_list_is_recorded_not_skipped_in_silence(
     (folder / "open_omniscience.db").write_bytes(b"S" * 8192)
     (folder / "thesis.docx").write_bytes(b"years of work")
     monkeypatch.setattr(data_scope, "folder_scope", lambda base: {"broad": True, "reason": "test"})
-    scope_os(monkeypatch, crypto_erase, scandir=_refusing_scandir({folder}))
+    scope_os(monkeypatch, crypto_erase, scandir=_refusing_scandir({folder}), listdir=_refusing_listdir({folder}))
     report = crypto_erase.quick_crypto_erase(confirm=True, data_dir=folder)
     assert report["unlisted_folders"] >= 1, report
     assert "may be incomplete" in report["limit"], report
