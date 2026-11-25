@@ -33,6 +33,7 @@ from __future__ import annotations
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.analytics.quarantine_scope import not_counted
 from src.analytics.managed import UNSEGMENTED
 from src.database.models import Article, ArticleLink, Source
 from src.database.stand_in import not_a_stand_in_article
@@ -129,7 +130,7 @@ def article_length_report(session: Session) -> dict:
     )
     for wc, lang, sid in (
         session.query(Article.word_count, Article.language, Article.source_id)
-        .filter(Article.quarantined.isnot(True))
+        .filter(not_counted(Article.id))
     ):
         scanned += 1
         if wc is None:
@@ -153,7 +154,7 @@ def article_length_report(session: Session) -> dict:
     for _aid, c in (
         session.query(ArticleLink.article_id, func.count(ArticleLink.id))
         .join(Article, Article.id == ArticleLink.article_id)
-        .filter(ArticleLink.link_type == "external", Article.quarantined.isnot(True))
+        .filter(ArticleLink.link_type == "external", not_counted(Article.id))
         .group_by(ArticleLink.article_id)
     ):
         link_counts.append(int(c))

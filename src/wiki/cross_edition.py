@@ -315,7 +315,8 @@ def _press_count(corpus: Any, match: str, start: datetime, end: datetime) -> int
     """Articles of the press corpus matching ``match`` and published in ``[start, end)``.
 
     The corpus's own Wikipedia-sourced articles are left out (a page's own text is not
-    coverage of it), and so are articles the app judged not-an-article. An article with no
+    coverage of it), and so are articles the app judged not-an-article and the imported articles the
+    junk screening has not reached yet (R830). An article with no
     publication date is not counted in either window: the date is the only thing placing it
     on the day.
     """
@@ -324,7 +325,8 @@ def _press_count(corpus: Any, match: str, start: datetime, end: datetime) -> int
             "SELECT count(*) FROM article_fts f JOIN articles a ON a.id = f.rowid "
             "WHERE article_fts MATCH :q AND a.published_at >= :s AND a.published_at < :e "
             "AND a.source_id NOT IN (SELECT id FROM sources WHERE lower(domain) = 'wikipedia.org' OR lower(domain) LIKE '%.wikipedia.org') "
-            "AND a.quarantined IS NOT 1"
+            "AND a.quarantined IS NOT 1 "
+            "AND a.id NOT IN (SELECT article_id FROM screening_pending)"
         ),
         {"q": match, "s": start.isoformat(" "), "e": end.isoformat(" ")},
     ).scalar()

@@ -42,6 +42,8 @@ network and nothing here writes.
 
 from __future__ import annotations
 
+from src.analytics.quarantine_scope import not_counted
+
 import re
 import unicodedata
 from collections import Counter, defaultdict
@@ -396,7 +398,7 @@ def _corpus_source_facets(session) -> dict[str, Counter]:
 
     from src.database.models import Article, Source
 
-    held = select(Article.source_id).where(Article.quarantined.isnot(True)).distinct()
+    held = select(Article.source_id).where(not_counted(Article.id)).distinct()
     rows = session.query(Source.country, Source.language, Source.source_type).filter(
         Source.id.in_(held)
     ).all()

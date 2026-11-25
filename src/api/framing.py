@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from src.analytics.quarantine_scope import not_counted
 from src.awareness.framing import compare_framing
 from src.database.fts import SearchQueryError, search_ids
 from src.database.maintenance import StatementTimeout, statement_deadline
@@ -61,7 +62,7 @@ def framing(
             q = (
                 db.query(Article)
                 .options(joinedload(Article.source))
-                .filter(Article.quarantined.isnot(True))
+                .filter(not_counted(Article.id))
             )
             if query:
                 try:
@@ -93,7 +94,7 @@ def framing(
                 # slice is DISCLOSED, never presented as the whole corpus.
                 total_n = int(
                     db.query(func.count(Article.id))
-                    .filter(Article.quarantined.isnot(True))
+                    .filter(not_counted(Article.id))
                     .scalar()
                     or 0
                 )
