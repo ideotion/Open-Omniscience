@@ -2485,6 +2485,8 @@
         if (typeof left.count === "number" && left.count > 0) {
           bits.push(esc(tf("Safety copies in your data folder: {n} ({size})",
             { n: fmtNum(left.count, 0), size: humanBytes(left.bytes || 0) })));
+          // The folder, isolated so a right-to-left line cannot reorder it, and selectable so it can be copied.
+          if (left.folder) bits.push(`<bdi translate="no" dir="ltr" style="user-select:all">${esc(String(left.folder))}</bdi>`);
         }
         if (bits.length) {
           safetyLine = `<div class="hint" title="${esc(t("A safety copy is a full copy of your corpus taken before an import changes anything. A copy whose import was refused before any change is removed; every other copy stays until you remove it or it ages out."))}">${bits.join(" · ")}</div>`;

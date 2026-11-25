@@ -244,7 +244,8 @@ def remove_if_refused_before_activation(net: Path) -> dict:
 
 
 def leftovers() -> dict:
-    """The safety copies in the data folder, by count and total size (R833 point 3): ``{"count", "bytes", "names"}``. Regular
+    """The safety copies in the data folder, by count and total size (R833 point 3): ``{"count", "bytes", "names", "folder"}``,
+    the folder so the operator can find them (they are removed by hand until a remove action exists). Regular
     files of the exact ``pre-restore-<UTC stamp>.db`` shape only; never follows a link. Never raises."""
     import re
 
@@ -264,4 +265,4 @@ def leftovers() -> dict:
                 names.append(entry.name)
     except OSError:
         return {"count": None, "bytes": None, "names": []}
-    return {"count": count, "bytes": total, "names": sorted(names)}
+    return {"count": count, "bytes": total, "names": sorted(names), "folder": str(data_dir())}
