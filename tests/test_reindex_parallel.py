@@ -16,9 +16,21 @@ rest of the batch), and a pool failure degrading to the exact serial computation
 
 from __future__ import annotations
 
+import pytest
+
 import src.analytics.reindex_parallel as rp
 from src.analytics.extract import BaselineExtractor
 from tests.os_scope import scope_os
+
+
+@pytest.fixture(autouse=True)
+def _memory_figure_held(monkeypatch):
+    """The pool is memory-aware (row 416): on a runner short of free memory at that moment it computes serially, which
+    is right for the app and wrong for a test of the pool. Every test here therefore sees one steady, ample figure; a
+    test that is about the memory sets its own (its monkeypatch runs after this one)."""
+    import src.config.cgroup_memory as cgroup_memory
+
+    monkeypatch.setattr(cgroup_memory, "effective_memory", lambda *a, **k: {"available_mb": 64_000.0})
 
 
 def _sorted_terms(terms):
