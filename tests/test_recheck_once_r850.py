@@ -362,3 +362,15 @@ def test_the_ride_along_still_freezes_after_its_trial_fetches(db, store, monkeyp
     out = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW)
     assert out["evaluated"] == 1 and out["recheck_once"]["rechecked"] == 1
     assert len(freezes) == 2, "one for the choice, one after the trial fetches"
+
+
+def test_a_freeze_that_fails_never_fails_a_pass_with_nothing_to_judge(db, store, monkeypatch):
+    """Before R850 a pass with no candidates never froze the cohort; the extra freeze for the one-time choice
+    must not turn any failure of its own into a failed pass. It waits, like a pause."""
+    def broken(*_a, **_kw):
+        raise RuntimeError("the freeze could not read the corpus")
+
+    monkeypatch.setattr(sa, "frozen_cohort", broken)
+    out = q.run_qualification_pass(db, None, per_pass=1, recheck_per_pass=1, now=NOW)
+    assert out == {"enabled": True, "evaluated": 0}
+    assert q._recheck_once_owed() is False and q.RECHECK_ONCE_KEY not in store

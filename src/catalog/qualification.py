@@ -2051,9 +2051,15 @@ def run_qualification_pass(
                 session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
                 sample_articles=(QUALIFICATION_SAMPLE_ARTICLES if plan["mode"] == "sample" else None),
             )
-        except sq.ScanPaused as exc:
-            _note_recheck_once_paused()
-            log_failure(_LOG, "the one-time re-check selection waited: the cohort freeze paused", exc, level=logging.INFO)
+        except Exception as exc:  # noqa: BLE001 - the one-time choice never fails a pass; it waits and is tried later
+            # A pause, or any other failure of this extra freeze: before R850 a pass with nothing to judge never froze,
+            # so a freeze that cannot run must not stop that pass now. The wait applies either way.
+            import contextlib
+
+            with contextlib.suppress(Exception):  # nothing was written; a session that cannot roll back is the pass's to meet
+                session.rollback()
+            _note_recheck_once_paused()  # after the rollback: the read is ended first, then the wait is recorded
+            log_failure(_LOG, "the one-time re-check selection waited: the cohort freeze did not run", exc, level=logging.INFO)
         else:
             # Never store a choice made from another baseline: the check below the trial fetches refuses that cut.
             if frozen_early.get("min_articles") == TRIAL_MIN_ARTICLES:
