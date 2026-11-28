@@ -463,6 +463,7 @@ def init_db() -> None:
     from src.database.maintenance import (
         ensure_article_analysis_columns,
         ensure_article_detected_language_column,
+        ensure_article_feed_entry_date_column,
         ensure_article_fetched_host_column,
         ensure_article_identity_columns,
         ensure_article_ip_columns,
@@ -486,6 +487,7 @@ def init_db() -> None:
         ensure_law_text_columns,
         ensure_merge_batch_source_digest,
         ensure_merged_rows_row_key_column,
+        ensure_qualification_attempt_failing_column,
         ensure_source_catalog_baseline_column,
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
@@ -551,8 +553,14 @@ def init_db() -> None:
     # Where a page was fetched from, after its redirects (queue item 61; self-heal, no backfill).
     _init_step("ensure_article_fetched_host_column")
     ensure_article_fetched_host_column(engine)
+    # The feed entry's own date, for an article whose page gave none (row 457, R847; self-heal, no backfill).
+    _init_step("ensure_article_feed_entry_date_column")
+    ensure_article_feed_entry_date_column(engine)
     _init_step("ensure_source_catalog_baseline_column")
     ensure_source_catalog_baseline_column(engine)
+    # The names of the criteria that failed on a judging attempt (row 450; self-heal, no backfill).
+    _init_step("ensure_qualification_attempt_failing_column")
+    ensure_qualification_attempt_failing_column(engine)
     # The stamps' stage version and carry provenance (R824, row 405; self-heal, no backfill): index_article writes both.
     _init_step("ensure_stamp_provenance_columns")
     ensure_stamp_provenance_columns(engine)

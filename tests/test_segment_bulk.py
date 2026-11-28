@@ -317,3 +317,43 @@ def test_a_load_left_unsealed_by_its_with_block_is_abandoned(data, shared):
     assert _row(shared, load.seg.seg_no).state == "abandoned"
     assert not (data / "corpus" / load.seg.file_name).exists()
     assert load.seg.seg_no not in segment_write._BULK_LOADING
+
+
+@posix_only
+def test_two_threads_on_one_shared_connection_never_meet_inside_a_registry_transaction(data, shared, monkeypatch):
+    """The writer's generation catch-up holds a shared-file transaction open on ``shared``; a reference check on another
+    thread over the same connection waits for it instead of reading inside it (and refusing a committed row)."""
+    import threading
+
+    inside, other_done = threading.Event(), threading.Event()
+
+    def slow_record_generation(con, seg_no, generation):
+        con.execute("BEGIN IMMEDIATE")
+        inside.set()
+        other_done.wait(1.0)  # with the lock the other thread is blocked here and this times out; without it, it ran
+        con.execute("UPDATE corpus_segments SET generation = ? WHERE seg_no = ?", (generation, seg_no))
+        con.execute("COMMIT")
+
+    w = segment_write.open_writer(shared)
+    try:
+        monkeypatch.setattr(segment_write, "record_generation", slow_record_generation)
+        result: list[object] = []
+
+        def check():
+            inside.wait(5)
+            try:
+                segment_write.check_shared_references(shared, "keyword_mentions", [{"keyword_id": 3}])
+                result.append("ok")
+            except SegmentError as exc:
+                result.append(exc)
+            finally:
+                other_done.set()
+
+        t = threading.Thread(target=check)
+        t.start()
+        with w.transaction() as tx:
+            tx.add_articles([_article(1)])
+        t.join(5)
+        assert result == ["ok"], "the check waited for the other thread's registry transaction to end"
+    finally:
+        w.close()

@@ -198,7 +198,7 @@ def _store(monkeypatch, url: str, *, title: str | None, text: str):
     doc = ExtractedDoc(title=title, text=text, published_at=None, language="sv", author=None, canonical_url=None)
     monkeypatch.setattr(pipeline, "extract_article", lambda html, url=None: doc)
     staged: list = []
-    batch = SimpleNamespace(has_hash=lambda h: False, stage=lambda *a: staged.append(a))
+    batch = SimpleNamespace(has_hash=lambda h: False, stage=lambda *a, **k: staged.append(a))
     monkeypatch.setattr(pipeline, "_exists", lambda *a, **k: False)
     source = SimpleNamespace(id=1, domain="example.com", language="sv")
     out = pipeline.store_fetched(None, source, _fetched(url, "<html></html>"), batch=batch)

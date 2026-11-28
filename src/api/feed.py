@@ -58,6 +58,7 @@ from sqlalchemy import and_, func, literal, literal_column, select, text, tuple_
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
+from src.ingest.feed_entry_date import feed_date_fields
 from src.utils.url_utils import fetched_host_fields
 
 router = APIRouter(prefix="/api/feed", tags=["feed"])
@@ -196,6 +197,8 @@ def _card(a: Any, keywords: list[dict]) -> dict:
         # source's, so the card can say so beside the source it credits (both null when not recorded or nothing to compare).
         **fetched_host_fields(a.fetched_host, a.source.domain if a.source else None),
         "published_at": a.published_at.isoformat() if a.published_at else None,
+        # Row 457 (R847): the feed's date when the page gave none, shown flagged as the feed's on the card.
+        **feed_date_fields(a.published_at, a.feed_entry_published_at),
         "language": a.language,
         "detected_language": a.detected_language,
         # Two lengths, both already here: expanding a card must not cost a request, and a

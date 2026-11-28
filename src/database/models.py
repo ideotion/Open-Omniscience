@@ -769,6 +769,11 @@ class SourceQualificationAttempt(Base):
     attempted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     verdict: Mapped[str] = mapped_column(String(20), nullable=False)  # qualified | disqualified
     criteria_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    # Row 450 (R850): the NAMES of the criteria that failed on a judging attempt, comma-separated and sorted, each one a
+    # name from src.analytics.source_audit.CRITERIA and nothing else (never article text, never a value). "" = judged
+    # and nothing failed; NULL = not recorded (an attempt from before this column, or one that judged nothing: an
+    # inherited, curated, no-evidence or off-site row). Written by evaluate_and_stamp only.
+    failing_criteria: Mapped[str | None] = mapped_column(String(400), nullable=True)
 
     __table_args__ = (
         Index("idx_qual_attempt_source_time", "source_id", "attempted_at"),
@@ -903,6 +908,13 @@ class Article(Base):
     # and the paths that store without that fetch record (the Wikipedia, law, hazards, IPCC and statistics imports, and the
     # local PDF import).
     fetched_host: Mapped[str | None] = mapped_column(String(255))
+    # THE FEED ENTRY'S OWN DATE (row 457, R847): the date the source's feed gave this item, kept ONLY for an article whose
+    # page carried no date of its own (``published_at`` NULL at store time). Naive UTC like every timestamp here. It is the
+    # FEED's claim, never the page's, so it is never written into ``published_at``: a surface that uses it reads both through
+    # ``src.ingest.feed_entry_date.article_date`` and shows it flagged as the feed's date. NULL means not recorded, never a
+    # guess: an article that has its own date, one stored before this column existed (no backfill, no rewrite of stored rows),
+    # one whose feed entry gave no usable date, and every path that stores without a feed entry.
+    feed_entry_published_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=lambda: datetime.now(UTC))
 

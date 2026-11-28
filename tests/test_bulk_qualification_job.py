@@ -371,6 +371,7 @@ def test_empty_backlog_is_a_clean_immediate_complete(db, scope, monkeypatch):
     assert out == {
         "complete": True, "batches_run": 1, "evaluated": 0, "qualified": 0,
         "disqualified": 0, "no_evidence": 0, "trial_fetch_errors": 0,
+        "not_enough_data": 0, "not_enough_data_undated": 0,  # R845
         "initial_backlog": {"unqualified": 0, "due_disqualified": 0},
     }
 
@@ -459,3 +460,32 @@ def test_bulk_qualification_wiring_composes_end_to_end():
     # the worker is a cooperatively-cancellable, WRITER background job
     assert '"qualify-sources-bulk"' in api_src
     assert "cancellable=True" in api_src.split('"qualify-sources-bulk"', 1)[1][:400]
+
+
+@pytest.fixture(autouse=True)
+def _judged_without_the_r845_evidence_gate(monkeypatch):
+    """These tests pin how a source is JUDGED, on fixtures of a few undated articles. R845's gate (no verdict
+    below 5 articles or without one published in the last 180 days) is pinned on its own in
+    tests/test_not_enough_data_r845.py, so it is lifted here rather than every fixture being re-dated."""
+    from src.catalog import qualification as _q
+
+    monkeypatch.setattr(_q, "evidence_shortfall", lambda session, source_ids, *, now: {})
+
+
+def test_a_run_whose_batches_all_lack_data_says_so_not_no_feed(db, scope, monkeypatch):
+    """R845: batches whose sources all came back not_enough_data stop with that sentence. The no-feed one
+    would name a cause that did not happen."""
+    _add_unqualified(db, 3)
+
+    def _all_not_enough(db, fetcher, per_pass, now, **_kw):
+        return {"enabled": True, "evaluated": 3, "qualified": 0, "disqualified": 0, "no_evidence": 0,
+                "not_enough_data": 3, "not_enough_data_undated": 1}
+
+    monkeypatch.setattr("src.catalog.qualify_job.qualification_pass", _all_not_enough)
+    out = run_bulk_qualification(_Ctx(), batch_size=5, fetcher=object(), session_factory=scope, sleep_s=0.0)
+    assert out["paused_reason"] == (
+        "Stopped: every source in the last batch has not enough data yet "
+        "(fewer than 5 articles, or none in the last 180 days)."
+    )
+    assert out["not_enough_data"] >= 3 and out["not_enough_data_undated"] >= 1
+    assert out["complete"] is False

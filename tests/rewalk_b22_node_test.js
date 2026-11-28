@@ -100,6 +100,7 @@ function sandbox(I, els, body, extra) {
     ${ESC}
     const document = { documentElement: { dir: "ltr" } };
     ${extract("ooIsoDate", null, CORE)}
+    ${extract("ooArticleDateHtml", null, CORE)}
     const $ = (id) => this.els[id] || null;
     const fmtNum = (n) => String(n);
     const calls = this.calls;
