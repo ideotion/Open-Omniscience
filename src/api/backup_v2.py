@@ -1365,6 +1365,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         reindex_flush_policy,
         reindex_hold_target_s,
         reindex_imported_articles,
+        reindex_owned_commit_batch,
+        reindex_owned_hold_target_s,
     )
     from src.database.corpus_lease import corpus_lease
     from src.database.session import session_scope
@@ -1620,9 +1622,15 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             # queued writer ends the batch after 1 s, as for every writer. A collecting target of 0 (or a general one of 0) is
             # the old rule, width from OO_REINDEX_COMMIT_BATCH and no policy. The wider of the two widths, so an operator who set
             # OO_REINDEX_COMMIT_BATCH above 200 is never narrowed.
+            # Row 446 (P1): with nothing else writing, the drain takes the owned width (500, the precompute window) under the
+            # owned hold target (30 s), re-read at EVERY flush question through _collector_idle, so the batch falls back to the
+            # general 10 s the moment the collector starts or a window opens; a collector that starts is a queued writer too and
+            # ends the batch after 1 s. The published target is the one in force while idle.
+            owned_target: float | None = None
             if idle:
                 hold_target = reindex_hold_target_s()
-                commit_batch = import_reindex_commit_batch()
+                owned_target = reindex_owned_hold_target_s()
+                commit_batch = reindex_owned_commit_batch() if owned_target > hold_target else import_reindex_commit_batch()
             else:
                 hold_target = reindex_collecting_hold_target_s()
                 commit_batch = (
@@ -1639,7 +1647,11 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             # has held the gate for the hold target or another writer is queued behind it, so a save from the UI never waits for
             # 200 articles. Resolved here, per batch, beside the width, for the same reason: the operator may change the knob
             # between batches, and the value used is PUBLISHED with the seconds it produced.
-            flush_policy = reindex_flush_policy(hold_target)
+            flush_policy = (
+                reindex_flush_policy(hold_target, owned_target_s=owned_target, owned=_collector_idle)
+                if owned_target is not None and owned_target > hold_target
+                else reindex_flush_policy(hold_target)
+            )
             st: dict = {}
             guard_stopped = {"stopped": False}
             with corpus_lease("reindex-resume"):
@@ -1677,7 +1689,8 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
             out["articles_reindexed"] += int(res.get("reindexed") or 0)
             out["articles_failed"] += int(res.get("failed") or 0)
             _accumulate(
-                run, st, commit_batch=commit_batch, idle=idle, hold_target_s=hold_target,
+                run, st, commit_batch=commit_batch, idle=idle,
+                hold_target_s=owned_target if owned_target is not None and owned_target > hold_target else hold_target,
                 # The count that RAN, resolved the way precompute_batch resolves it (the env var first), never the request.
                 workers=worker_count(workers),
             )

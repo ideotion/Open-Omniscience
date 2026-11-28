@@ -278,3 +278,43 @@ def test_the_new_key_is_in_every_language():
     for loc in sorted((ROOT / "src/static/locales").glob("*.json")):
         d = json.loads(loc.read_text(encoding="utf-8"))
         assert "{n}" in d["{n} of these results not analysed yet"], loc.name
+
+
+# ── The import report (R830 Q3 placement, with 366(c)) ─────────────────────────────────────────────────────────────────
+
+
+def test_a_fresh_read_goes_past_a_cached_count_and_refreshes_it():
+    """The import report states the count as it is after the swap: a count cached before the import is never served to it."""
+    s = _store()
+    assert qs.not_analysed_count(s) == 2
+    qs._not_analysed_cache["value"] = 999  # what an earlier poll saw, before this import changed the store
+    assert qs.not_analysed_count(s) == 999, "the polls keep their 30 s reuse"
+    assert qs.not_analysed_count(s, fresh=True) == 2
+    assert qs.not_analysed_count(s) == 2, "the fresh read refreshes the cache for the polls after it"
+
+
+def test_the_import_report_says_the_count_and_nothing_at_zero():
+    from src.backup.import_reports import render_import_report_markdown as md
+
+    said = md({"outcome": "ok", "analysis": {"not_analysed_in_your_corpus": 1234}})
+    assert "## Analysis" in said
+    assert "1,234 articles in your corpus were not analysed yet when this report was written" in said
+    assert "not just this import" in said, "the figure names its scope, as the screening one does"
+    assert "## Analysis" not in md({"outcome": "ok", "analysis": {"not_analysed_in_your_corpus": 0}}), "gone at 0"
+    assert "## Analysis" not in md({"outcome": "ok"}), "an older report without the figure says nothing about it"
+
+
+def test_the_import_report_says_an_unread_count_never_zero():
+    from src.backup.import_reports import render_import_report_markdown as md
+
+    said = md({"outcome": "ok", "analysis": {"not_analysed_unread": True}})
+    assert "The number of articles in your corpus not analysed yet could not be read." in said
+    assert " 0 articles" not in said
+
+
+def test_the_restore_reads_the_count_fresh_after_the_swap_and_records_an_unread_one():
+    src = (ROOT / "src" / "backup" / "merge.py").read_text(encoding="utf-8")
+    tally = src[src.index('with timings.stage("work_induced_tally"):'):]
+    tally = tally[: tally.index('report["work_induced"]')]
+    assert "not_analysed_count(_na_sess, fresh=True)" in tally
+    assert 'report["analysis"] = {"not_analysed_unread": True}' in tally

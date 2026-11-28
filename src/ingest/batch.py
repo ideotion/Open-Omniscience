@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -46,6 +47,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
+from src.ingest import flush_stats
 from src.ingest.fetch_verdict import address_secrets, failure_url
 from src.monitoring.secret_scrub import log_failure
 from src.utils.url_utils import fetched_host as _fetched_host_of
@@ -305,6 +307,10 @@ class ArticleBatch:
         from src.ingest.dedup_front import mark_stored
         from src.ingest.pipeline import _CustodyBatch, _exists, _maybe_record_custody
 
+        # Row 446: the flush's phases for the pass's ``collector_flush`` block (src/ingest/flush_stats.py). Clock reads only.
+        clock = time.monotonic
+        phases: dict[str, float] = {}
+        t = clock()
         to_store: list[tuple[_StagedArticle, Article]] = []
         dups = 0
         for e in entries:
@@ -314,18 +320,26 @@ class ArticleBatch:
                 dups += 1
                 continue
             to_store.append((e, self._article_row(e)))
+        phases["exists"] = clock() - t
+        hold_s = 0.0
         if to_store:
             # C16 (2026-07-24 throughput brief, S-D): STAGE, then gate. Every
             # DB-FREE step of index_article -- keyword extraction, sentiment, and
             # the when/where/who EXTRACTION half -- runs HERE, before the gate
             # window opens, so the window holds only DML. Nothing about WHAT is
             # computed changes; only where. See _precompute.
+            t = clock()
             derivs = self._precompute(to_store)
             for _, a in to_store:
                 self._session.add(a)
+            gate = clock()
+            phases["precompute"] = gate - t
             # The ONE gate window for the whole batch opens at this flush (ids
             # are assigned here) and closes at the commit below.
             self._session.flush()
+            t = clock()
+            phases["insert"] = t - gate
+            index_s = links_s = 0.0
             if os.getenv("OO_NO_INDEX") != "1":
                 from src.analytics.extract import get_extractor
                 from src.analytics.store import articles_with_stored_mentions
@@ -336,8 +350,17 @@ class ArticleBatch:
                 with_rows = articles_with_stored_mentions(self._session, [a.id for _, a in to_store])
                 for i, (e, a) in enumerate(to_store):
                     self._index_one(a, extractor, content=e.text, deriv=derivs.get(_pk(i)), has_stored_rows=a.id in with_rows)
+                    t_links = clock()
                     self._links_one(a.id, e.links)
+                    links_s += clock() - t_links
+                index_s = clock() - t - links_s
+            phases["index"] = index_s
+            phases["links"] = links_s
+            t = clock()
             self._session.commit()
+            end = clock()
+            phases["commit"] = end - t
+            hold_s = end - gate
         # Tally ONLY after the commit succeeded (skeptic finding D1): a failed
         # batch redoes EVERY entry, and a duplicate counted here would then be
         # recounted by the redo — 3 dispositions for 2 staged articles.
@@ -352,6 +375,9 @@ class ArticleBatch:
                 # front so a near-future re-check of the same content (the
                 # field-measured re-served-feed-item case) skips the DB entirely.
                 mark_stored(canonical_url=e.canonical_url, content_hash=e.content_hash)
+        if to_store:
+            phases["after_commit"] = clock() - end
+            flush_stats.record(phases, articles=len(to_store), hold_s=hold_s)
 
     def _precompute(self, to_store: list) -> dict:
         """The DB-free half of ``index_article`` for the whole batch, computed

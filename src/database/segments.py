@@ -210,9 +210,15 @@ _SEGMENT_META_DDL = (
 )
 
 
-def commit_segment(seg_con: Any, r: Reservation) -> None:
+def commit_segment(seg_con: Any, r: Reservation, *, next_id: int | None = None) -> None:
     """Step 2: the segment file's own transaction records its number and range. ``seg_con`` is a DB-API connection to
-    the (new, empty) segment file in autocommit mode, opened by the caller with the app's factory and the corpus key."""
+    the (new, empty) segment file in autocommit mode, opened by the caller with the app's factory and the corpus key.
+    ``next_id`` is for a bulk-loaded segment (``segment_write.BulkLoad``), whose rows are in the file before its identity
+    is: the first id not yet used, inside ``[id_lo, id_hi + 1]``. Left out, it is ``id_lo`` (an empty segment)."""
+    if next_id is None:
+        next_id = r.id_lo
+    if not isinstance(next_id, int) or isinstance(next_id, bool) or not r.id_lo <= next_id <= r.id_hi + 1:
+        raise SegmentError("a segment's next id lies inside its own range")
     if getattr(seg_con, "in_transaction", False):
         raise SegmentError("the segment's identity is written in a transaction of its own")
     seg_con.execute("BEGIN IMMEDIATE")
@@ -224,7 +230,7 @@ def commit_segment(seg_con: Any, r: Reservation) -> None:
             )
         seg_con.execute(
             "INSERT INTO segment_meta (seg_no, id_lo, id_hi, created_at, generation, next_id) VALUES (?, ?, ?, ?, 1, ?)",
-            (r.seg_no, r.id_lo, r.id_hi, _now(), r.id_lo),
+            (r.seg_no, r.id_lo, r.id_hi, _now(), next_id),
         )
     except BaseException:
         _rollback(seg_con)
@@ -293,19 +299,32 @@ def record_generation(con: Any, seg_no: int, generation: int) -> None:
     _commit(con)
 
 
+def mark_sealed(con: Any, r: Reservation) -> None:
+    """A bulk-loaded segment's last step (``segment_write.BulkLoad.seal``): its row moves from ``reserved`` straight to
+    ``closed``, in one shared-file transaction, so the segment the app writes to stays the one already open."""
+    if not _set_state(con, r.seg_no, "reserved", "closed"):
+        raise SegmentError("that segment is not reserved; it was opened or abandoned already")
+
+
+def mark_abandoned(con: Any, seg_no: int) -> bool:
+    """A reservation given up by its own process (a bulk load that failed). False: it was not reserved."""
+    return _set_state(con, seg_no, "reserved", "abandoned")
+
+
 def mark_open(con: Any, r: Reservation) -> None:
     """Step 3: the reservation's row moves from ``reserved`` to ``open`` in the shared file."""
     if not _set_state(con, r.seg_no, "reserved", "open"):
         raise SegmentError("that segment is not reserved; it was opened or abandoned already")
 
 
-def reconcile(con: Any, identity_of: Any) -> dict[str, list[int]]:
+def reconcile(con: Any, identity_of: Any, *, skip: frozenset[int] = frozenset()) -> dict[str, list[int]]:
     """Settle every ``reserved`` row a crash left: ``identity_of(file_name)`` returns the identity the file records
     (see :func:`segment_identity`) or None when the file is absent or proves nothing. An exact match means step 2
-    committed, so the row opens; anything else abandons it. Its range stays used either way. Returns what it did."""
+    committed, so the row opens; anything else abandons it. Its range stays used either way. Returns what it did.
+    ``skip`` names reservations a live bulk load of this process still holds: they are not a crash's leftovers."""
     done: dict[str, list[int]] = {"opened": [], "abandoned": []}
     for s in registry(con):
-        if s.implicit or s.state != "reserved":
+        if s.implicit or s.state != "reserved" or s.seg_no in skip:
             continue
         seen = identity_of(s.file_name)
         if seen is not None and seen == (s.seg_no, s.id_lo, s.id_hi):

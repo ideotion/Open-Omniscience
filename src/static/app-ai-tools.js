@@ -162,7 +162,10 @@
             <span title="${esc(ooLabelText(x.name, t(x.desc || "")))}"><b>${esc(x.label ? t(x.label) : x.name)}</b></span>
             ${x.can_disqualify
               ? `<span class="warn" title="${esc(t("A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable."))}">${t("can disqualify")}</span>`
-              : `<span class="muted">${t("watch only")}</span>`}${floorBits(x)}
+              // R844: link density only adds to another signature, never disqualifies alone
+              : x.corroborates_only
+                ? `<span class="muted" title="${esc(t("A corroborating signal: beside the furniture-repetition signature it marks a source failing, but on its own it is only a watch flag and can never disqualify a source."))}">${t("corroborates only")}</span>`
+                : `<span class="muted">${t("watch only")}</span>`}${floorBits(x)}
           </div>`).join("") + floorLine;
 
         host.innerHTML = (cfg.gates || []).map(g => `<div class="panel" style="margin:10px 0">
@@ -485,6 +488,14 @@
           (rc.flagged
             ? `<div>` + ooLabelHtml(esc(t("Checked first")),
                 esc(tf("{n} sources whose verdict a backup disagrees with, checked ahead of the rest", {n: n(rc.flagged)}))) + `</div>`
+            : ""),
+          // R850 / R851: how many of the sources link density alone disqualified had their one re-check, and how many could not be told
+          ((rc.recheck_once && rc.recheck_once.selected)
+            ? `<div title="${esc(t("Chosen by recomputing the criteria from each source's stored articles, never from a stored verdict."))}">`
+              + ooLabelHtml(esc(t("One-time re-check")),
+                esc(tf("{rechecked} of {chosen} sources that link density alone disqualified have been re-checked once; {undetermined} could not be determined (too few stored articles).",
+                       {rechecked: n(rc.recheck_once.rechecked), chosen: n(rc.recheck_once.chosen), undetermined: n(rc.recheck_once.not_determined)})))
+              + `</div>`
             : ""),
           (rc.next && rc.next.length)
             ? `<div class="muted">` + ooLabelHtml(esc(t("Next up")), doms(rc.next.map((r) => r.domain))) + `</div>` : "",

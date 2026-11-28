@@ -1783,6 +1783,34 @@ def ensure_source_catalog_baseline_column(engine: Engine) -> list[str]:
     return added
 
 
+_QUALIFICATION_ATTEMPT_FAILING_COLUMN: dict[str, str] = {
+    "failing_criteria": "ALTER TABLE source_qualification_attempts ADD COLUMN failing_criteria VARCHAR(400)",
+}
+
+
+def ensure_qualification_attempt_failing_column(engine: Engine) -> list[str]:
+    """Self-heal ``source_qualification_attempts.failing_criteria`` (row 450; idempotent, additive, no backfill).
+
+    NULL on every row written before it: those attempts kept no reasons, and none is guessed. No-op on a fresh DB /
+    non-sqlite / missing table."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='source_qualification_attempts'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(source_qualification_attempts)")).fetchall()}
+        if "failing_criteria" not in existing:
+            conn.execute(text(_QUALIFICATION_ATTEMPT_FAILING_COLUMN["failing_criteria"]))
+            added.append("failing_criteria")
+    if added:
+        _LOG.info(f"added source_qualification_attempts column(s): {', '.join(added)}")
+    return added
+
+
 def ensure_merged_rows_row_key_column(engine: Engine) -> list[str]:
     """Self-heal ``merged_rows.row_key`` and its partial index (idempotent, additive, no backfill).
 
@@ -1841,6 +1869,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         | frozenset(_ARTICLE_FEED_ENTRY_DATE_COLUMN)
     ),
     "merged_rows": frozenset({"row_key"}),
+    "source_qualification_attempts": frozenset(_QUALIFICATION_ATTEMPT_FAILING_COLUMN),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),
     # ensure_keyword_mention_source_column (inline DDL): source_id + its index, and
     # `language` (Q414 = a) in the same function -- see the note there on why one

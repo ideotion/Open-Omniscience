@@ -446,7 +446,7 @@ def test_the_migration_is_one_add_column_and_goes_down_without_rebuilding_the_ar
         trig0, idx0, cols0 = shape(c)
     assert "art_probe_ai" in trig0 and "feed_entry_published_at" in cols0
     try:
-        for target, has_column in (("b8d4f2a6c1e9", False), ("c2f6a8e4d1b7", True)):
+        for target, has_column in (("c4f1a9e27b53", False), ("c2f6a8e4d1b7", True)):
             with engine.begin() as conn:
                 cfg = _alembic_config()
                 cfg.attributes["connection"] = conn

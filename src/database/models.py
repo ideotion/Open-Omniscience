@@ -769,6 +769,11 @@ class SourceQualificationAttempt(Base):
     attempted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     verdict: Mapped[str] = mapped_column(String(20), nullable=False)  # qualified | disqualified
     criteria_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    # Row 450 (R850): the NAMES of the criteria that failed on a judging attempt, comma-separated and sorted, each one a
+    # name from src.analytics.source_audit.CRITERIA and nothing else (never article text, never a value). "" = judged
+    # and nothing failed; NULL = not recorded (an attempt from before this column, or one that judged nothing: an
+    # inherited, curated, no-evidence or off-site row). Written by evaluate_and_stamp only.
+    failing_criteria: Mapped[str | None] = mapped_column(String(400), nullable=True)
 
     __table_args__ = (
         Index("idx_qual_attempt_source_time", "source_id", "attempted_at"),

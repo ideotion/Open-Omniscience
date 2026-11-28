@@ -184,7 +184,7 @@ main source_credibility_rules: id, rule_name, factor, weight, min_value, max_val
 main source_group_association: source_id, group_id, added_at
 main source_groups: id, name, description, color, is_tag_based, tag_pattern, priority, rate_limit_ms, enabled, created_at, updated_at
 main source_metadata: id, source_id, language, country, region, city, timezone, robots_txt_url, robots_allowed, crawl_delay, sitemap_url, favicon_url, logo_url, contact_email, social_twitter, social_facebook, social_linkedin, alexa_rank, last_checked, notes
-main source_qualification_attempts: id, source_id, attempted_at, verdict, criteria_version
+main source_qualification_attempts: id, source_id, attempted_at, verdict, criteria_version, failing_criteria
 main sources: id, name, domain, rss_url, feed_key, outlet_id, rate_limit_ms, enabled, priority, tags, reliability_score, language, region, country, source_type, update_frequency, cacheability, article_count, counter_reconciled_at, status, qualified_at, qualification_criteria_version, last_crawled_at, catalog_baseline
 main spell_deletes: term_delete, keyword_id
 main stat_figures: id, agency, series_id, ref_area, time_period, value, unit, methodology_ref, adjustment, base_year, extracted_at, created_at

@@ -334,6 +334,16 @@ def _serving_gate_open_for_in_process_clients():
 
 
 @pytest.fixture(autouse=True)
+def _no_feed_read_held_over():
+    """Row 454: a feed read in one test (``pipeline._note_feed_read``) is the evidence that lets a no-answer failure in the NEXT test
+    advance its back-off. Cleared per test, so each test says for itself whether the network was seen working."""
+    pipeline = sys.modules.get("src.ingest.pipeline")
+    if pipeline is not None:
+        pipeline._LAST_FEED_READ_AT.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_failed_open_held_over():
     """Row 435: a ``sqlite3.connect`` that raises never reports its handle, so ``src.database.connect`` counts it as an open in
     flight for ``_AUDIT_STALE_S`` (60 s) and every reader sweep of that minute closes nothing (by design: an open that may be
@@ -389,6 +399,19 @@ def _write_gate_not_leaked(request):
             "(would hang the next writer): a session was flushed but never "
             "committed/rolled-back/closed. Use session_scope()/get_db, or close()."
         )
+
+
+@pytest.fixture
+def roomy_memory(monkeypatch):
+    """Row 444: the available-memory reading an encrypted merge checks (``maintenance._available_mb_now``, read by
+    ``merge.check_memory_for_encrypted_merge``), held at 16 GB. Without it a test that restores into an encrypted corpus
+    passes or fails by how much memory the runner has free at that moment: at 300 MB free the merge rightly refuses with
+    its named message. A file whose tests are not about that refusal opts in with
+    ``pytestmark = pytest.mark.usefixtures("roomy_memory")``; the refusal itself is pinned in
+    ``tests/test_merge_encrypted_temp.py``, and a test that sets its own reading still wins (its monkeypatch runs later)."""
+    from src.database import maintenance
+
+    monkeypatch.setattr(maintenance, "_available_mb_now", lambda: 16_384.0)
 
 
 @pytest.fixture(autouse=True)

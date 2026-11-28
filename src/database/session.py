@@ -487,6 +487,7 @@ def init_db() -> None:
         ensure_law_text_columns,
         ensure_merge_batch_source_digest,
         ensure_merged_rows_row_key_column,
+        ensure_qualification_attempt_failing_column,
         ensure_source_catalog_baseline_column,
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
@@ -557,6 +558,9 @@ def init_db() -> None:
     ensure_article_feed_entry_date_column(engine)
     _init_step("ensure_source_catalog_baseline_column")
     ensure_source_catalog_baseline_column(engine)
+    # The names of the criteria that failed on a judging attempt (row 450; self-heal, no backfill).
+    _init_step("ensure_qualification_attempt_failing_column")
+    ensure_qualification_attempt_failing_column(engine)
     # The stamps' stage version and carry provenance (R824, row 405; self-heal, no backfill): index_article writes both.
     _init_step("ensure_stamp_provenance_columns")
     ensure_stamp_provenance_columns(engine)

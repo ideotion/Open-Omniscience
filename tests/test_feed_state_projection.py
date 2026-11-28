@@ -107,13 +107,14 @@ def test_the_coverage_loop_reads_four_columns_and_gives_the_same_buckets(db):
 
     totals = out["totals"]
     assert totals["total"] == 6
-    assert totals["reached"] == 5 and totals["never_reached"] == 1
+    assert totals["reached"] == 4 and totals["failed"] == 1 and totals["not_read"] == 1  # R848: the 500 is failed, not reached
     assert totals["backed_off"] == 1
     assert totals["status"]["error"] == 1
+    assert totals["failed_by_reason"]["http_5xx"] == 1
 
 
 def test_the_language_equilibrium_filter_answers_the_same_from_the_projection_the_runner_reads(db):
-    """runner.py reads (source_id, last_checked_at) for the equilibrium filter; ``equilibrium_filter`` takes the date with ``getattr(st, ..., None)``,
+    """runner.py reads (source_id, last_checked_at, last_status) for the equilibrium filter; ``equilibrium_filter`` takes the date with ``getattr(st, ..., None)``,
     so a projection that dropped the column would count every source as never fetched and defer nothing, silently."""
     import inspect
     import random
@@ -125,10 +126,13 @@ def test_the_language_equilibrium_filter_answers_the_same_from_the_projection_th
     for s in sources:
         s.language = "en"
     db.commit()
-    assert "session.query(FeedFetchState.source_id, FeedFetchState.last_checked_at)" in inspect.getsource(runner), (
+    assert "FeedFetchState.source_id, FeedFetchState.last_checked_at, FeedFetchState.last_status" in inspect.getsource(runner), (
         "the equilibrium block's projection changed: update this test with it"
     )
-    projected = {st.source_id: st for st in db.query(FeedFetchState.source_id, FeedFetchState.last_checked_at)}
+    projected = {
+        st.source_id: st
+        for st in db.query(FeedFetchState.source_id, FeedFetchState.last_checked_at, FeedFetchState.last_status)
+    }
     entities = {st.source_id: st for st in db.query(FeedFetchState)}
     pace = {"en": 0.0}  # a language over its share: every re-check inside the freshness cap is deferred
 

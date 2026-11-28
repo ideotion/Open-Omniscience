@@ -125,7 +125,14 @@ CRITERIA: tuple[dict, ...] = (
     # link-dense constitutes a broken scrape, and picking a number here to match pathology's
     # would be a fabricated threshold wearing a measured criterion's clothes. It fires from
     # the cohort tail, under the same minimum-evidence guard, and the panel says so.
+    #
+    # R844 (row 449, 2026-11-28): CORROBORATING ONLY. The field analysis (#2418) found this
+    # criterion alone disqualifying about 100 mainstream outlets per re-checking instance: a
+    # newsroom that links its sources reads as link-dense. It keeps its evidence guard and its
+    # record, and it still corroborates the pathology signature into `failing`, but on its own
+    # (or with soft signals only) it never passes `watch`, so it can never disqualify a source.
     {"name": "link_density_rate", "bad": "high", "extraction_failure": True,
+     "corroborates_only": True,
      "abs_floor": None, "evidence_key": "link_dense_articles",
      "desc": "fraction of the source's articles whose outbound-link density crosses the "
              "shipped threshold (external links per word) — the link-farm / nav-index "
@@ -144,6 +151,8 @@ CRITERIA: tuple[dict, ...] = (
 )
 _CRIT_NAMES = tuple(c["name"] for c in CRITERIA)
 _EXTRACTION_FAILURE_CRIT = frozenset(c["name"] for c in CRITERIA if c["extraction_failure"])
+# R844: extraction-failure criteria that may only corroborate a primary signature, never stand as one.
+_CORROBORATING_ONLY_CRIT = frozenset(c["name"] for c in CRITERIA if c.get("corroborates_only"))
 
 STATUSES = ("healthy", "watch", "degraded", "failing")
 
@@ -649,8 +658,13 @@ def derive_status(failing: list[dict]) -> str:
     ``failing`` = that signature CORROBORATED by >=1 other tail signal (signature + sustained
     low-yield = a systematically non-usable source); ``degraded`` = the signature ALONE (a lone
     extraction-failure signal worth review, never yet auto-acted); ``watch`` = soft-only signal(s);
-    ``healthy`` = none."""
-    ef = [f for f in failing if f["extraction_failure"]]
+    ``healthy`` = none.
+
+    R844 (row 449): a ``corroborates_only`` criterion (``link_density_rate``) is never the
+    signature itself. It counts toward ``failing`` beside a primary signature, and without one
+    it is a soft signal like the others: ``watch`` at most, so it can never disqualify alone.
+    Read by criterion NAME, so a stored list from before R844 is judged by today's rule."""
+    ef = [f for f in failing if f["extraction_failure"] and f.get("criterion") not in _CORROBORATING_ONLY_CRIT]
     if ef and len(failing) >= 2:
         return "failing"
     if ef:

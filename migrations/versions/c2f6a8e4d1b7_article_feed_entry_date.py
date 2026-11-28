@@ -9,7 +9,7 @@ the feed entry that brought it is gone. One ADD COLUMN, so it costs the same on 
 Self-healed identically at boot (src.database.maintenance.ensure_article_feed_entry_date_column). Idempotent.
 
 Revision ID: c2f6a8e4d1b7
-Revises: b8d4f2a6c1e9
+Revises: c4f1a9e27b53
 Create Date: 2026-11-28
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c2f6a8e4d1b7"
-down_revision: str | None = "b8d4f2a6c1e9"
+down_revision: str | None = "c4f1a9e27b53"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
