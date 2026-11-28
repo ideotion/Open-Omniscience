@@ -34,12 +34,12 @@ _LOCK = threading.Lock()
 #: The phases a flush reports, in the order it runs them; the first three of the gate's are inside it, with ``commit``.
 PHASES = ("exists", "precompute", "insert", "index", "links", "commit", "after_commit")
 
-METHOD = (
-    "seconds on a monotonic clock, summed over the collector flushes that committed in this pass's window; "
-    "hold = from the insert that takes the single-writer gate to the end of the commit that gives it back "
-    "(insert + index + links + commit); exists, precompute and after_commit run outside the gate; "
-    "a flush that failed and was redone article by article is not counted"
-)
+#: The method, as an identifier rather than a sentence: this block goes to a report file (``collect_perf.jsonl``), and a bare English
+#: sentence there would be one more for the server-text ratchet (tests/test_server_text_keyed.py). Spelled out: seconds on a
+#: monotonic clock, summed over the collector flushes that committed in this pass's window; hold = from the insert that takes the
+#: single-writer gate to the end of the commit that gives it back (insert + index + links + commit); exists, precompute and
+#: after_commit run outside the gate; a flush that failed and was redone article by article is not counted.
+METHOD = "monotonic_s;committed_flushes_only;hold=insert+index+links+commit;outside_gate=exists,precompute,after_commit"
 
 
 def _empty() -> dict:
