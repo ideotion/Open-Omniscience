@@ -297,7 +297,7 @@ def build_sample_zip(
     total = db.execute(select(func.count()).select_from(Source)).scalar_one()
     buf = io.BytesIO()
     manifest: list[dict[str, Any]] = []
-    empty: list[list[Any]] = []   # [source_id, domain, feed_key, class] for each source with no stored article
+    empty: list[list[Any]] = []   # [source_id, domain, feed_key, class, last_failing_criteria] per source with no stored article
     classes: dict[tuple, int] = {}   # a never-collected source's class -> its index in the manifest's ``classes``
     class_counts: list[int] = []
     rows_bytes = 0   # the manifest's rows as written, before compression: a bound the compressed manifest stays under

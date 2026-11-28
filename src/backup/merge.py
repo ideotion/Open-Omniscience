@@ -5162,9 +5162,13 @@ def _inc_has_table(con: sqlite3.Connection, name: str) -> bool:
 
 
 #: What a merge copies of an incoming attempt's ``failing_criteria`` (row 450): the value only when it is made of
-#: lower-case letters, underscores and commas and fits the column, else NULL ("not recorded").
+#: lower-case letters, underscores and commas and fits the column, else NULL ("not recorded"). SQLite's GLOB and a
+#: TEXT ``length()`` both stop at the first NUL, so the size and the NUL are measured on the BYTES, and a value that
+#: is not TEXT at all (a BLOB keeps its type in a TEXT column) is refused before either.
 _FAILING_CRITERIA_COPY = (
-    "CASE WHEN i.failing_criteria IS NULL OR length(i.failing_criteria) > 400"
+    "CASE WHEN i.failing_criteria IS NULL OR typeof(i.failing_criteria) <> 'text'"
+    " OR length(CAST(i.failing_criteria AS BLOB)) > 400"
+    " OR instr(CAST(i.failing_criteria AS BLOB), x'00') > 0"
     " OR i.failing_criteria GLOB '*[^a-z_,]*' THEN NULL ELSE i.failing_criteria END"
 )
 

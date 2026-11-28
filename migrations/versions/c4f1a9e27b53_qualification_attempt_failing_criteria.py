@@ -39,19 +39,20 @@ _TABLE = "source_qualification_attempts"
 _COLUMN = "failing_criteria"
 
 
+def _has_table(table: str) -> bool:
+    return sa.inspect(op.get_bind()).has_table(table)
+
+
 def _has_column(table: str, column: str) -> bool:
-    insp = sa.inspect(op.get_bind())
-    try:
-        return column in {c["name"] for c in insp.get_columns(table)}
-    except Exception:  # noqa: BLE001 - a store without the table at all: nothing to add
-        return True
+    return column in {c["name"] for c in sa.inspect(op.get_bind()).get_columns(table)}
 
 
 def upgrade() -> None:
-    if not _has_column(_TABLE, _COLUMN):
+    # A store without the table at all: nothing to add (the table, when created, carries the column).
+    if _has_table(_TABLE) and not _has_column(_TABLE, _COLUMN):
         op.add_column(_TABLE, sa.Column(_COLUMN, sa.String(length=400), nullable=True))
 
 
 def downgrade() -> None:
-    if _has_column(_TABLE, _COLUMN):
+    if _has_table(_TABLE) and _has_column(_TABLE, _COLUMN):
         op.drop_column(_TABLE, _COLUMN)

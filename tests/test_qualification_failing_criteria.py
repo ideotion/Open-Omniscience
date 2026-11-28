@@ -89,6 +89,11 @@ def test_the_self_heal_adds_the_column_to_an_older_store_once(tmp_path):
     ("Subscribe now", None),               # a capital or a space: not a name list
     ("pathology_rate; DROP TABLE x", None),
     ("a" * 401, None),                      # over the column
+    ("a" * 400, "a" * 400),                 # exactly the column
+    ("pathology_rate\x00https://example.invalid/" + "z" * 500, None),  # GLOB and length() stop at a NUL
+    (b"pathology_rate", None),              # a BLOB keeps its type in a TEXT column
+    (b"ab\x00xyz", None),
+    (7, None),
 ])
 def test_a_restore_copies_only_a_list_of_names(incoming, kept):
     from src.backup.merge import _FAILING_CRITERIA_COPY
