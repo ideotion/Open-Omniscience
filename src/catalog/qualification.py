@@ -2060,7 +2060,11 @@ def run_qualification_pass(
                 recheck_once = _select_recheck_once_if_owed(session, frozen_early, should_pause=should_pause, now=now)
                 chose_now = bool(recheck_once.get("selected"))
     # The pass that made the choice says so even when it returns early; any other pass keeps its old result shape.
-    _once_note: dict[str, Any] = {"recheck_once": recheck_once} if chose_now else {}
+    # An empty choice (nothing to choose) is not reported, so an install with nothing disqualified keeps it too.
+    _once_note: dict[str, Any] = (
+        {"recheck_once": recheck_once}
+        if chose_now and (recheck_once.get("chosen") or recheck_once.get("not_determined")) else {}
+    )
 
     # ---- candidate selection: NEW candidates and RE-CHECKS have SEPARATE budgets ----
     # (2026-09-04 ruling.) Until now they shared ``per_pass``, and new candidates were
