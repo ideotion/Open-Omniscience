@@ -319,3 +319,46 @@ def test_a_source_held_off_site_is_never_chosen(db, four):
                                       criteria_version=off_site.CRITERIA_VERSION))
     db.commit()
     assert q.select_link_density_only(db, _frozen())["chosen"] == []
+
+
+def test_any_failed_selection_waits_not_only_a_pause(db, monkeypatch, four):
+    """A store that keeps refusing the write must not make every pass pay the freeze and the read again."""
+    import src.config.kv_store as kv
+
+    monkeypatch.setattr(kv, "kv_get_json_strict", lambda key: None)
+    writes = []
+
+    def refuse(key, obj):
+        writes.append(key)
+        raise OSError("settings cannot be saved in this session")
+
+    monkeypatch.setattr(kv, "kv_set_json", refuse)
+    first = q._select_recheck_once_if_owed(db, _frozen(), should_pause=None, now=NOW)
+    assert first["selected"] is False and len(writes) == 1
+    assert q._recheck_once_owed() is False, "the next pass waits"
+    again = q._select_recheck_once_if_owed(db, _frozen(), should_pause=None, now=NOW)
+    assert again["selected"] is False and len(writes) == 1
+
+
+def test_a_cut_frozen_at_another_threshold_stores_no_choice(db, store, four):
+    wrong = lambda: {**_frozen(), "min_articles": 20}  # noqa: E731
+    q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=wrong)
+    assert q.RECHECK_ONCE_KEY not in store, "no choice from another baseline (that cut is refused once a pass judges)"
+
+
+def test_the_pass_that_chose_reports_it_even_when_it_returns_early(db, store, monkeypatch, four):
+    monkeypatch.setattr(q, "select_due_disqualified", lambda *a, **kw: [])  # nothing to judge: the early return
+    out = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=_frozen)
+    assert out["evaluated"] == 0 and out["recheck_once"]["chosen"] == 1
+    again = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=_frozen)
+    assert again == {"enabled": True, "evaluated": 0}, "any other pass keeps its old result shape"
+
+
+def test_the_ride_along_still_freezes_after_its_trial_fetches(db, store, monkeypatch, four):
+    """Without a provider the baseline judged against is frozen after the trial fetches, as before R850; the early freeze
+    serves only the one-time choice, so verdicts on that pass are the ones the old order gave."""
+    freezes = []
+    monkeypatch.setattr(sa, "frozen_cohort", lambda session, **kw: freezes.append(kw) or _frozen())
+    out = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW)
+    assert out["evaluated"] == 1 and out["recheck_once"]["rechecked"] == 1
+    assert len(freezes) == 2, "one for the choice, one after the trial fetches"

@@ -1067,17 +1067,16 @@ def _select_recheck_once_if_owed(
     if isinstance(raw, dict) and raw.get("selection") == RECHECK_ONCE_SELECTION:
         return recheck_once_counts()
     if _recheck_once_paused_at is not None and time.monotonic() - _recheck_once_paused_at < _RECHECK_ONCE_RETRY_S:
-        return {"selected": False, "reason": "waiting after a paused read"}
+        return {"selected": False, "reason": "waiting after a selection that did not run"}
     try:
         selection = select_link_density_only(session, frozen, should_pause=should_pause)
         session.rollback()  # the read opened a transaction; nothing was written in it
         store_recheck_once(selection, now=now)
     except Exception as exc:  # noqa: BLE001 - a selection that could not run is tried again later
         session.rollback()  # end the read before the pass goes on, whatever stopped it
-        from src.analytics.source_quality import ScanPaused
-
-        if isinstance(exc, ScanPaused):
-            _recheck_once_paused_at = time.monotonic()
+        # Any failure waits, not only a pause: a store that keeps refusing the write (or a recompute that keeps
+        # failing) would otherwise make every pass pay a whole-corpus freeze plus this read, for nothing.
+        _recheck_once_paused_at = time.monotonic()
         log_failure(_LOG, "the one-time re-check selection did not run", exc, level=logging.INFO)
         return {"selected": False, "reason": record_text(exc)}
     _recheck_once_paused_at = None
@@ -2044,6 +2043,7 @@ def run_qualification_pass(
     # cohort this pass freezes, and the chosen are then due in this same pass. Only a read (and a key-value write before
     # any ORM write of the pass); every network gate still sits ahead of each trial fetch below.
     frozen_early: dict | None = None
+    chose_now = False
     recheck_once: dict[str, Any] = recheck_once_counts()
     if _recheck_once_owed():
         try:
@@ -2055,7 +2055,12 @@ def run_qualification_pass(
             _note_recheck_once_paused()
             log_failure(_LOG, "the one-time re-check selection waited: the cohort freeze paused", exc, level=logging.INFO)
         else:
-            recheck_once = _select_recheck_once_if_owed(session, frozen_early, should_pause=should_pause, now=now)
+            # Never store a choice made from another baseline: the check below the trial fetches refuses that cut.
+            if frozen_early.get("min_articles") == TRIAL_MIN_ARTICLES:
+                recheck_once = _select_recheck_once_if_owed(session, frozen_early, should_pause=should_pause, now=now)
+                chose_now = bool(recheck_once.get("selected"))
+    # The pass that made the choice says so even when it returns early; any other pass keeps its old result shape.
+    _once_note: dict[str, Any] = {"recheck_once": recheck_once} if chose_now else {}
 
     # ---- candidate selection: NEW candidates and RE-CHECKS have SEPARATE budgets ----
     # (2026-09-04 ruling.) Until now they shared ``per_pass``, and new candidates were
@@ -2127,7 +2132,7 @@ def run_qualification_pass(
             _seen_ids.add(int(_cand.id))
             candidates.append(_cand)
     if not candidates:
-        return {"enabled": True, "evaluated": 0}
+        return {"enabled": True, "evaluated": 0, **_once_note}
 
     trial_errors = 0
     deferred = 0
@@ -2189,7 +2194,7 @@ def run_qualification_pass(
             # own airplane skip, so the bulk job pauses on it instead of reading ``evaluated: 0`` as an empty backlog.
             return {
                 "enabled": True, "evaluated": 0, "skipped": "airplane mode engaged",
-                "trial_fetch_errors": trial_errors, "deferred": deferred,
+                "trial_fetch_errors": trial_errors, "deferred": deferred, **_once_note,
             }
 
     # S5.1: the COHORT is frozen (once per run, by the caller that knows what a run is) and
@@ -2202,7 +2207,9 @@ def run_qualification_pass(
     # CALLABLE rather than a dict for exactly that reason -- a caller that memoises it gets
     # one freeze per run, and a pass that never needs one never triggers it.
     try:
-        frozen = frozen_early if frozen_early is not None else cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
+        # Frozen again here, after the trial fetches, so the baseline holds what this pass fetched (the old order); the
+        # early freeze served only the one-time choice. A memoising provider (the bulk job) still freezes once a run.
+        frozen = cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
             session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
             sample_articles=(
                 QUALIFICATION_SAMPLE_ARTICLES if plan["mode"] == "sample" else None
@@ -2215,7 +2222,7 @@ def run_qualification_pass(
         log_failure(_LOG, "qualification pass paused during the cohort freeze", exc, level=logging.INFO)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": record_text(exc),
-            "trial_fetch_errors": trial_errors, "deferred": deferred,
+            "trial_fetch_errors": trial_errors, "deferred": deferred, **_once_note,
         }
     # A cut frozen at another threshold is a DIFFERENT baseline -- it decides which sources
     # form the cohort at all. Refused rather than answered, because the failure is invisible:
@@ -2240,7 +2247,7 @@ def run_qualification_pass(
         log_failure(_LOG, "qualification pass paused", exc, level=logging.INFO)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": record_text(exc),
-            "trial_fetch_errors": trial_errors, "deferred": deferred,
+            "trial_fetch_errors": trial_errors, "deferred": deferred, **_once_note,
         }
     fails_by_source = sa.flag_criteria(
         per, min_articles=TRIAL_MIN_ARTICLES, cohort_cut=frozen["cohort_cut"],
