@@ -162,7 +162,10 @@
             <span title="${esc(ooLabelText(x.name, t(x.desc || "")))}"><b>${esc(x.label ? t(x.label) : x.name)}</b></span>
             ${x.can_disqualify
               ? `<span class="warn" title="${esc(t("A criterion that can disqualify a source — it is an extraction-failure signature, not a judgement about what the source publishes. The others are style-ambiguous, so they can never exceed a watch flag; that cap is deliberate and is not adjustable."))}">${t("can disqualify")}</span>`
-              : `<span class="muted">${t("watch only")}</span>`}${floorBits(x)}
+              // R844: link density only adds to another signature, never disqualifies alone
+              : x.corroborates_only
+                ? `<span class="muted" title="${esc(t("A corroborating signal: beside the furniture-repetition signature it marks a source failing, but on its own it is only a watch flag and can never disqualify a source."))}">${t("corroborates only")}</span>`
+                : `<span class="muted">${t("watch only")}</span>`}${floorBits(x)}
           </div>`).join("") + floorLine;
 
         host.innerHTML = (cfg.gates || []).map(g => `<div class="panel" style="margin:10px 0">

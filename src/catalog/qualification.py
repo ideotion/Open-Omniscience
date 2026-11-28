@@ -72,7 +72,11 @@ _LOG = logging.getLogger("catalog.qualification")
 # The criteria VERSION stamped on every verdict (Source.qualification_criteria_version +
 # SourceQualificationAttempt.criteria_version). Bump this if the judging criteria change
 # so the history stays honest about which rules judged an old attempt.
-CRITERIA_VERSION = "oo-source-qualification-3"
+CRITERIA_VERSION = "oo-source-qualification-4"
+# -4 (R844, row 449, 2026-11-28): `link_density_rate` became corroborating only -- it can no
+# longer disqualify a source on its own (alone, or with soft signals only, it is `watch`). A
+# LABEL like the bumps below: nothing re-judges on it, so the sources it disqualified come back
+# at their normal re-check cadence, with no forced sweep and no re-extraction.
 # -3 (B6, 2026-09-15): the criteria SET changed -- `link_density_rate` joins `pathology_rate`
 # as a second extraction-failure criterion, so a source can now reach `failing` on two
 # independent extraction signatures rather than one signature plus a soft corroborator. That
@@ -347,7 +351,7 @@ def consecutive_disqualifications(session: Session, source_id: int) -> int:
 def decide_verdict(failing_criteria: list[dict]) -> str:
     """Map source_audit's categorical status onto a qualification verdict: disqualified
     ONLY on the extraction-failure signature (status degraded or failing -- pathology_rate,
-    alone or corroborated); qualified otherwise (healthy, or watch = soft-only flags,
+    alone or corroborated, link_density_rate only as a corroborator, R844); qualified otherwise (healthy, or watch = soft-only flags,
     which the reframe forbids ever failing a source for). Reuses derive_status -- never
     re-derives the criteria logic."""
     from src.analytics.source_audit import derive_status
