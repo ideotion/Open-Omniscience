@@ -7989,7 +7989,7 @@
   "offline stored copy + history": "オフラインで保存された複製＋履歴",
   "ok": "成功",
   "on": "オン",
-  "on another host than the source's site: {host}": "ソースのサイトとは別のホスト上：{host}",
+  "on another host than the source's site: {host}. Accepting it means the app will contact this other party when it collects the feed.": "ソースのサイトとは別のホスト上：{host}。承認すると、フィードを収集する際にアプリはこの別の相手に接続します。",
   "on both backends": "両方のバックエンドで",
   "on disk": "ディスク上",
   "on disk, all stores": "ディスク上、全ストア",

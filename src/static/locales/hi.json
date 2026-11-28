@@ -7989,7 +7989,7 @@
   "offline stored copy + history": "ऑफ़लाइन संग्रहीत प्रति + इतिहास",
   "ok": "सफल",
   "on": "चालू",
-  "on another host than the source's site: {host}": "स्रोत की साइट से अलग होस्ट पर: {host}",
+  "on another host than the source's site: {host}. Accepting it means the app will contact this other party when it collects the feed.": "स्रोत की साइट से अलग होस्ट पर: {host}। इसे स्वीकार करने का अर्थ है कि फ़ीड एकत्र करते समय ऐप इस दूसरे पक्ष से संपर्क करेगा।",
   "on both backends": "दोनों बैकएंड पर",
   "on disk": "डिस्क पर",
   "on disk, all stores": "डिस्क पर, सभी स्टोर",

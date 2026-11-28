@@ -7989,7 +7989,7 @@
   "offline stored copy + history": "офлайн-копия и история",
   "ok": "успех",
   "on": "вкл",
-  "on another host than the source's site: {host}": "на другом хосте, не на сайте источника: {host}",
+  "on another host than the source's site: {host}. Accepting it means the app will contact this other party when it collects the feed.": "на другом хосте, не на сайте источника: {host}. Если принять его, приложение будет обращаться к этой третьей стороне при сборе ленты.",
   "on both backends": "на обоих бэкендах",
   "on disk": "на диске",
   "on disk, all stores": "на диске, все хранилища",

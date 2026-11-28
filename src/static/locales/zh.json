@@ -7989,7 +7989,7 @@
   "offline stored copy + history": "离线存储的副本 + 历史记录",
   "ok": "成功",
   "on": "开",
-  "on another host than the source's site: {host}": "在来源网站以外的主机上：{host}",
+  "on another host than the source's site: {host}. Accepting it means the app will contact this other party when it collects the feed.": "在来源网站以外的主机上：{host}。接受它意味着应用在收集该订阅源时会联系这个第三方。",
   "on both backends": "在两个后端上",
   "on disk": "磁盘占用",
   "on disk, all stores": "磁盘上，所有存储",

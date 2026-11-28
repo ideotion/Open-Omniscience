@@ -7989,7 +7989,7 @@
   "offline stored copy + history": "نسخة مخزَّنة دون اتصال + السجل التاريخي",
   "ok": "سليم",
   "on": "مفعّلة",
-  "on another host than the source's site: {host}": "على مضيف غير موقع المصدر: {host}",
+  "on another host than the source's site: {host}. Accepting it means the app will contact this other party when it collects the feed.": "على مضيف غير موقع المصدر: {host}. قبوله يعني أن التطبيق سيتصل بهذا الطرف الآخر عند جمع الخلاصة.",
   "on both backends": "على كلا المحركين",
   "on disk": "على القرص",
   "on disk, all stores": "على القرص، جميع المخازن",

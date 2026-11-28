@@ -70,7 +70,7 @@
           r.proposals.map(p => {
             const where = esc(_fpT("found on a page the crawl already read"));
             const host = p.other_host
-              ? `<div class="card-caveat">${esc(_tfn("on another host than the source's site: {host}", { host: p.host }))}</div>`
+              ? `<div class="card-caveat">${esc(_tfn("on another host than the source's site: {host}. Accepting it means the app will contact this other party when it collects the feed.", { host: p.host }))}</div>`
               : `<div class="muted">${esc(_tfn("host: {host}", { host: p.host }))}</div>`;
             return `<tr><td>${esc(p.source_name || p.source_domain || "")}<div class="muted">${esc(p.source_domain || "")}</div></td>` +
               `<td><code>${esc(p.url)}</code>${host}</td><td>${where}</td>` +

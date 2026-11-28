@@ -7989,7 +7989,7 @@
   "offline stored copy + history": "salinan tersimpan offline + riwayat",
   "ok": "berhasil",
   "on": "aktif",
-  "on another host than the source's site: {host}": "di host lain selain situs sumber: {host}",
+  "on another host than the source's site: {host}. Accepting it means the app will contact this other party when it collects the feed.": "di host lain selain situs sumber: {host}. Menerimanya berarti aplikasi akan menghubungi pihak lain ini saat mengumpulkan feed.",
   "on both backends": "di kedua backend",
   "on disk": "di disk",
   "on disk, all stores": "di disk, semua penyimpanan",

@@ -7989,7 +7989,7 @@
   "offline stored copy + history": "অফলাইনে সংরক্ষিত অনুলিপি + ইতিহাস",
   "ok": "সফল",
   "on": "চালু",
-  "on another host than the source's site: {host}": "উৎসের সাইট ছাড়া অন্য হোস্টে: {host}",
+  "on another host than the source's site: {host}. Accepting it means the app will contact this other party when it collects the feed.": "উৎসের সাইট ছাড়া অন্য হোস্টে: {host}। এটি গ্রহণ করার অর্থ, ফিড সংগ্রহের সময় অ্যাপ এই অন্য পক্ষের সঙ্গে যোগাযোগ করবে।",
   "on both backends": "উভয় ব্যাকএন্ডে",
   "on disk": "ডিস্কে",
   "on disk, all stores": "ডিস্কে, সমস্ত স্টোর",

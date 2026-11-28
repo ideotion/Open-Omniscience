@@ -7989,7 +7989,7 @@
   "offline stored copy + history": "copia almacenada sin conexión + historial",
   "ok": "correcto",
   "on": "activada",
-  "on another host than the source's site: {host}": "en otro host distinto del sitio de la fuente: {host}",
+  "on another host than the source's site: {host}. Accepting it means the app will contact this other party when it collects the feed.": "en otro host distinto del sitio de la fuente: {host}. Aceptarlo significa que la aplicación contactará con este otro tercero al recopilar el feed.",
   "on both backends": "en ambos motores",
   "on disk": "en disco",
   "on disk, all stores": "en disco, todos los almacenes",
