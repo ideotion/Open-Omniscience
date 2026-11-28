@@ -105,6 +105,13 @@ def extensive_date_search_enabled() -> bool:
 #: and what would change it.
 _LXML_LOCK = threading.RLock()
 
+#: Which path produced this thread's last extraction (row 462, #2418 OPEN-QUESTIONS Q2), read by :func:`extract_article`
+#: once the lock is given up and counted per pass in :mod:`src.ingest.lock_stats` (``by_method``). Numbers only.
+#: ``bare`` / ``bare_none``: the one-parse ``bare_extraction`` gave an article / no article; ``fallback`` /
+#: ``fallback_none``: it raised (or returned an unexpected type) and the two-call ``extract`` path gave an article /
+#: none; ``raised``: the extraction raised.
+_OUTCOME = threading.local()
+
 
 def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None:
     """Extract an article from raw HTML, or return ``None`` if there isn't one.
@@ -118,6 +125,7 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
         return None
     asked = lock_stats.now()
     got = released = None
+    _OUTCOME.value = None  # set by the path the extraction takes; still None only if it never ran (counted as ``other``)
     try:
         lock_stats.asking()
         with _LXML_LOCK:
@@ -133,13 +141,14 @@ def extract_article(html: str, *, url: str | None = None) -> ExtractedDoc | None
                     try:
                         return _extract_locked(html, url=url)
                     except BaseException as exc:
+                        _OUTCOME.value = "raised"
                         _release_frames(exc)
                         raise
             finally:
                 released = lock_stats.released()
     finally:
         # After the lock is given up, so the statistic adds nothing to a hold; numbers only, never the URL.
-        lock_stats.record(asked=asked, got=got, released=released, html=html)
+        lock_stats.record(asked=asked, got=got, released=released, html=html, outcome=getattr(_OUTCOME, "value", None))
 
 
 def _release_frames(exc: BaseException) -> None:
@@ -210,6 +219,7 @@ def _extract_locked(html: str, *, url: str | None = None) -> ExtractedDoc | None
         # away rather than re-extracting every non-article page in a crawl.
         return _extract_resiliently(html, url=url)
 
+    _OUTCOME.value = "bare_none"
     if doc is None:
         return None
     if not isinstance(doc, Document):
@@ -236,6 +246,7 @@ def _extract_locked(html: str, *, url: str | None = None) -> ExtractedDoc | None
         language = _clean(getattr(meta, "language", None))
         published_at = _parse_date(getattr(meta, "date", None))
 
+    _OUTCOME.value = "bare"
     return ExtractedDoc(
         title=title,
         text=text.strip(),
@@ -262,6 +273,7 @@ def _extract_resiliently(html: str, *, url: str | None = None) -> ExtractedDoc |
         include_tables=False,
         no_fallback=False,
     )
+    _OUTCOME.value = "fallback_none"
     if not text or len(text.strip()) < _MIN_BODY_CHARS:
         return None
     title = author = language = canonical = None
@@ -276,6 +288,7 @@ def _extract_resiliently(html: str, *, url: str | None = None) -> ExtractedDoc |
         canonical = _clean(getattr(meta, "url", None))
         language = _clean(getattr(meta, "language", None))
         published_at = _parse_date(getattr(meta, "date", None))
+    _OUTCOME.value = "fallback"
     return ExtractedDoc(
         title=title,
         text=text.strip(),
