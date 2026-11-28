@@ -917,8 +917,9 @@ def run_scrape_once(
     # duplicates). This is an additive pre-filter — it changes only WHICH feeds
     # run THIS pass, never the dispatch below, and never an exclusion: the cap
     # (BACKOFF_CAP_S ~6 h) guarantees every feed is re-checked soon; any new
-    # article / 304 / error already cleared the window. Counted honestly as "backed_off", not skipped
-    # silently and not as a duplicate/error.
+    # article / 304 / the first read after failures clears the window, and since row 454 a FAILING feed
+    # climbs it too (asked again within the cap, never dropped). Counted honestly as "backed_off", not
+    # skipped silently and not as a duplicate/error.
     sources, backed_off = _filter_due_feeds(session, sources)
     if backed_off:
         agg["backed_off"] = agg.get("backed_off", 0) + backed_off
@@ -947,7 +948,9 @@ def run_scrape_once(
                 states = (
                     {
                         st.source_id: st
-                        for st in session.query(FeedFetchState.source_id, FeedFetchState.last_checked_at).filter(
+                        for st in session.query(
+                            FeedFetchState.source_id, FeedFetchState.last_checked_at, FeedFetchState.last_status
+                        ).filter(
                             FeedFetchState.source_id.in_(feed_ids)
                         )
                     }
