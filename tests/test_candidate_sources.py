@@ -162,3 +162,11 @@ def test_the_apps_own_channels_are_not_candidates(db):
     doc = cs.build_candidate_sources(db)
     assert [c["domain"] for c in doc["candidates"]] == ["cited.example", "new.example"], "cited outlets are web sources"
     assert doc["left_out"]["not_a_web_source"] == 3
+
+
+def test_the_left_out_channels_are_the_source_quality_exports_exempt_set():
+    """Row 455: the candidate export and the source-quality export name the same non-web classes, so neither drifts."""
+    from src.analytics.source_quality import _AUDIT_EXEMPT_CLASSES
+    from src.catalog.candidate_sources import NOT_WEB_SOURCES
+
+    assert NOT_WEB_SOURCES == _AUDIT_EXEMPT_CLASSES
