@@ -40,6 +40,9 @@ one that matches what you need.
 - **[research/](research/)** — committed reference material (not status) for two design
   tracks: statistical-data ingestion/diversified visualization, and keyword-engine
   optimization; verify-before-trust, per its own README.
+- **[field-analysis-2026-11/](field-analysis-2026-11/)** — the November 2026 field data analysis (four
+  running instances plus historical snapshots): aggregate findings and ranked recommendations, starting at
+  its `SUMMARY.md`. A report, not status: each finding names the code PR or proposal it led to.
 
 ## Plan / track
 - **[ROADMAP.md](ROADMAP.md)** — the single forward-looking board: current DB limitations,
