@@ -951,9 +951,8 @@ def select_link_density_only(
     no stamp. ``not_determined`` are the disqualified sources with too few stored articles to recompute
     (fewer than the criterion's own evidence minimum). May raise ``ScanPaused`` like any scoped read."""
     from src.analytics import source_audit as sa
-    from src.database.models import Source
-
     from src.catalog import off_site as _off_site
+    from src.database.models import Source
 
     ids = sorted(int(r[0]) for r in session.query(Source.id).filter(Source.status == STATUS_DISQUALIFIED).all())
     # A source held because its pages came from another site was not judged on its extraction: never chosen here.
