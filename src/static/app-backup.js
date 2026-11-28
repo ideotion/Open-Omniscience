@@ -4848,13 +4848,13 @@
       if (!box) return;
       const field = (id) => box.querySelector("#" + id);
       const msg = field("atrest-msg");
-      if (!field("atrest-consent").checked) { msg.textContent = t("Tick the consent box first."); return; }
+      if (!field("atrest-consent").checked) { ooLive(msg, () => t("Tick the consent box first.")); return; }
       if (!confirm(t("Encrypt the corpus with this passphrase? It will be required at every start and there is no recovery."))) return;
-      btn.disabled = true; msg.textContent = t("Encrypting — this rewrites the whole database…");
+      btn.disabled = true; ooLive(msg, () => t("Encrypting — this rewrites the whole database…"));
       try {
         const r = await api("/api/system/encrypt-db", { method: "POST", body: JSON.stringify({
           passphrase: field("atrest-pw1").value, confirm: field("atrest-pw2").value, consent: true })});
-        msg.textContent = "";
+        ooLive(msg, () => "");
         // "Encrypted" only when every store is (R742); the panel below says which are not.
         if (r && r.encrypted) toast(t("Encrypted. Your passphrase is now required at every start — there is no recovery."), "ok");
         loadAtRestState();
@@ -4863,9 +4863,10 @@
         // is read back into its parts by ooServerText, alone or after the partial words.
         const said = String(e.message || "");
         const partial = "The library is now encrypted with this passphrase and stays open with it: keep the passphrase, it is required at every start. Some other stores could not be encrypted yet and are still unencrypted; they are finished at the next unlock, or press the encrypt button again now. Settings shows which.";
-        msg.textContent = said.startsWith(partial) && said.length > partial.length
+        // Drawn through ooLive (row 366(c)): the refusal follows a language switch.
+        ooLive(msg, () => said.startsWith(partial) && said.length > partial.length
           ? t(partial) + " " + ooServerText(said.slice(partial.length).trim())
-          : (ooServerText(said) !== said ? ooServerText(said) : t(said));
+          : (ooServerText(said) !== said ? ooServerText(said) : t(said)));
         loadAtRestState();  // a partial run changed the state: the library is encrypted and open with its key
       }
       finally { btn.disabled = false; }
@@ -4981,7 +4982,8 @@
           pool: "The app's own connection to it could not be confirmed closed.",
         }[ps.reason] : null;
         // R818 (c): once overwritten in full, its other names lead to the overwritten content; in part, to partly overwritten content.
-        const psWords = psState ? [t(psState)]
+        // Row 366(c): the words below are functions, so the result's render (ooLiveHtml) translates them again on a switch.
+        const psWords = () => !psState ? "" : [t(psState)]
           .concat(ps.state === "first_page" && psReason ? [t("The rest was not overwritten.")] : [])
           .concat(psReason ? [t(psReason)] : [])
           .concat(ps.touched === true ? [t(ps.deleted === true ? "It was deleted." : "It could not be deleted: remove it by hand.")] : [])
@@ -4990,12 +4992,12 @@
             : ps.state === "partially_overwritten"
               ? "Other names for it remain on the disk and now lead to partly overwritten content; parts of the old content may still be readable through them (count: {n})."
               : "Other names for it remain on the disk and lead to the same file (count: {n}).", { n: fmtNum(Number(ps.other_names), 0) })] : [])
-          .join(" ") : "";
+          .join(" ");
         // R815 (3): said plainly, visible beside the result, whenever there was a main database that is not known to be encrypted.
         const plainNote = plaintext && (driveAbsent ? !!ps : (r.encrypted_corpus === false || Number(r.files_seen) > 0 || !!ps));
         // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state. When the erase may be incomplete, the
         // notice beside the result already asks for it, and the "already cryptographically unrecoverable" wording is not shown.
-        const rec = plaintext
+        const rec = () => plaintext
           ? (r.encrypted_corpus === false ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
             : t("Your store could not be confirmed as encrypted, so a full disk-overwrite is recommended before you stop."))
           : !clean ? t("Plaintext left on the disk from before the corpus was encrypted in place is not covered by this: overwriting free space may reach it, but not reliably on SSDs or copy-on-write file systems, and only full-disk encryption that was on when it was written protects it.")
@@ -5010,14 +5012,15 @@
         // result then never says the store is unrecoverable, and the notice stays visible beside it.
         // R809: with the drive absent or lost no free-space overwrite is offered below, so the note never points at one.
         const noOverwrite = driveAbsent || driveLost;
-        const holderNote = holder === "held"
+        const holderNote = () => holder === "held"
           ? (noOverwrite
             ? t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer.")
             : t("Another program had the database open during the erase, so the erase may be incomplete: that program may have written the database’s key material back to the disk. Close that program or restart the computer, then run a full overwrite of free disk space below."))
           : (noOverwrite
             ? t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer.")
             : t("The erase could not check whether another program had the database open. If one did, the erase may be incomplete: close such a program or restart the computer, then run a full overwrite of free disk space below."));
-        $("panic-result").innerHTML =
+        _panicScrubs = [];  // a new wipe's result replaces the overwrites listed under the last one, as it always did
+        _panicPaint = () =>
           `<span class="pill warn">${esc(t(driveAbsent ? "erase failed" : clean ? "crypto-erased" : "erase may be incomplete"))}</span> ` +
           // R809: with the drive absent the count is only what was erased ELSEWHERE, said as that, never as the erase's success.
           `${esc(tfw(driveAbsent ? "Files erased outside the data drive: {done} of {total}." : "{done} of {total} files erased.", { done: fmtNum(r.files_wiped || 0, 0), total: fmtNum(r.files_seen || 0, 0) }))} ` +
@@ -5037,13 +5040,13 @@
             (r.drive_forgotten === true ? ` ${esc(t("Data on that drive may partly still exist. The app no longer remembers this drive, so it will not recognise or erase it on a later launch unless it is set up again."))}` : "") +
             `</div>` : "") +
           (encLine ? `<div class="${r.corpus_encryption === "encrypted" ? "hint" : "card-caveat"}">${esc(t(encLine))}</div>` : "") +
-          (psWords ? `<div class="card-caveat">${esc(psWords)}</div>` : "") +
+          (psState ? `<div class="card-caveat">${esc(psWords())}</div>` : "") +
           (plainNote ? `<div class="card-caveat">${esc(r.encrypted_corpus === false
             ? t("The main database was not encrypted, so no key was destroyed: old pages of it may remain on the disk after the overwrite and delete. Full-disk encryption is the remedy.")
             : t("The main database could not be confirmed as encrypted, so this erase cannot promise it is unreadable: old pages of it may remain on the disk after the overwrite and delete. Full-disk encryption is the remedy."))}</div>` : "") +
           (clean ? `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` : "") +
           `<span class="muted">${esc(r.limit)}</span>` +
-          (holder === "none" ? "" : `<div class="card-caveat">${esc(holderNote)}</div>`) +
+          (holder === "none" ? "" : `<div class="card-caveat">${esc(holderNote())}</div>`) +
           // R806 (4): one of two outcomes for the folder, a count and never the names of what was kept.
           (keptForeign
             ? (keptCount ? `<div class="card-caveat">${esc(tfw("The data folder was kept because it holds items the app did not create (count: {n}).", { n: fmtNum(keptCount, 0) }))}</div>` : "")
@@ -5083,16 +5086,53 @@
             : "") +
           // R809 / R812: no free-space overwrite is offered for a drive that is not there, or that went away during the erase: it
           // would write to whatever disk is at its place.
-          (driveAbsent || driveLost ? "" : `<div class="hint" style="margin-top:8px">${esc(rec)}` +
+          (driveAbsent || driveLost ? "" : `<div class="hint" style="margin-top:8px">${esc(rec())}` +
           `<div class="row" style="gap:6px;margin-top:6px">` +
           `<button class="danger" data-on-click="secureErase(1)">${esc(t("Single pass"))}</button>` +
           `<button class="danger" data-on-click="secureErase(3)">${esc(t("Triple pass"))}</button>` +
           `<button class="danger" data-on-click="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
-          `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`);
+          `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`) +
+          // the free-space overwrites run from the buttons above, each listed under it (secureErase)
+          _panicScrubs.map(_panicScrubHtml).join("");
+        ooLiveHtml($("panic-result"), _panicPaint);
         toast(clean ? t("Local data crypto-erased. Restart the app.")
           : driveAbsent ? t("The erase failed. Read the notice under the wipe button.")  // R809: a failure, never "may be incomplete"
           : t("The erase may be incomplete. Read the notice under the wipe button."), clean ? "warn" : "err");
       } catch (e) { toast(_failMsg("Panic wipe failed: {error}", e), "err"); }
+    }
+
+    // The panic wipe's result and the free-space overwrites run under it (row 366(c)): one render, kept for a language switch.
+    let _panicPaint = null;
+    let _panicScrubs = [];
+    // One free-space overwrite's result, as HTML. Pure, translated where it is called, so a redraw follows a switch.
+    function _panicScrubHtml(r) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tfw = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      // The size through the one localised writer (Y9): "MiB" was English in every
+      // locale and the only binary-prefixed unit the app printed anywhere.
+      // R805 (c): when no folder on the drive that held the data could be used, nothing was overwritten, and it says why, never "overwritten".
+      const notDone = {
+        other_drive: "Free disk space was not overwritten: the folder above the erased data folder is on another drive, so writing there would not reach the erased data.",
+        drive_unread: "Free disk space was not overwritten: the app could not tell which drive held the erased data folder.",
+        no_folder: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
+        nothing_written: "Free disk space was not overwritten: nothing could be written on the drive that held the data, which may already be full.",
+        // R809: the marked data drive is not there (or another drive is at its place): nothing was written at its path.
+        drive_absent: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
+      }[r.scrub_not_done];
+      if (r.scrub_not_done) {
+        return `<div class="card-caveat" style="margin-top:6px">${esc(t(notDone || "Free disk space was not overwritten: no folder on the drive that held the data could be used for it."))}</div>`;
+      }
+      return `<div class="hint" style="margin-top:6px"><span class="pill warn">${esc(t("overwritten"))}</span> ` +
+        `${esc(String(r.passes))}× — ${esc(_fmtBytes(r.bytes_written || 0))}. <span class="muted">${esc(r.limit)}</span></div>` +
+        // R805 (c)4: the folder is now outside the data folder, so it is shown as the plain path it is.
+        (r.scrub_folder_left
+          ? `<div class="card-caveat">${esc(tfw("The overwrite could not remove all its temporary files from {path}: remove that folder by hand.", { path: "\u0001path\u0002" })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder_left))}</bdi>`)}</div>`
+          : "") +
+        (r.scrub_folder
+          ? `<div class="hint">${esc(tfw("The overwrite wrote its temporary files in {path} and removed them. It left {reserve} of free space unwritten so the disk would not fill completely; anything in that part was not overwritten.", { path: "\u0001path\u0002", reserve: _fmtBytes(r.reserve_bytes || 0) })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder))}</bdi>`)}</div>`
+          : "");
     }
 
     // Phase 2 of the panic flow: an optional full free-space overwrite (defence-in-depth
@@ -5105,36 +5145,14 @@
       // (audit A-011).
       if (!confirm(t("Overwrite all free disk space on this machine? This cannot be undone and can take several minutes on a large disk."))) return;
       try {
-        toast("Running full overwrite… this can take a while.", "warn");
+        toast(t("Running full overwrite… this can take a while."), "warn");
         const r = await api("/api/safety/secure-erase",
           {method: "POST", body: JSON.stringify({confirm: true, passes})});
-        // The size through the one localised writer (Y9): "MiB" was English in every
-        // locale and the only binary-prefixed unit the app printed anywhere.
-        // R805 (c): when no folder on the drive that held the data could be used, nothing was overwritten, and it says why, never "overwritten".
-        const notDone = {
-          other_drive: "Free disk space was not overwritten: the folder above the erased data folder is on another drive, so writing there would not reach the erased data.",
-          drive_unread: "Free disk space was not overwritten: the app could not tell which drive held the erased data folder.",
-          no_folder: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
-          nothing_written: "Free disk space was not overwritten: nothing could be written on the drive that held the data, which may already be full.",
-          // R809: the marked data drive is not there (or another drive is at its place): nothing was written at its path.
-          drive_absent: "Free disk space was not overwritten: no folder on the drive that held the data could be used for it.",
-        }[r.scrub_not_done];
-        const tfw = (window.OOI18N && OOI18N.tf)
-          ? OOI18N.tf
-          : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
-        if (box && r.scrub_not_done) {
-          box.innerHTML += `<div class="card-caveat" style="margin-top:6px">${esc(t(notDone || "Free disk space was not overwritten: no folder on the drive that held the data could be used for it."))}</div>`;
-        } else if (box) {
-          box.innerHTML +=
-            `<div class="hint" style="margin-top:6px"><span class="pill warn">${esc(t("overwritten"))}</span> ` +
-            `${r.passes}× — ${esc(_fmtBytes(r.bytes_written || 0))}. <span class="muted">${esc(r.limit)}</span></div>` +
-            // R805 (c)4: the folder is now outside the data folder, so it is shown as the plain path it is.
-            (r.scrub_folder_left
-              ? `<div class="card-caveat">${esc(tfw("The overwrite could not remove all its temporary files from {path}: remove that folder by hand.", { path: "\u0001path\u0002" })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder_left))}</bdi>`)}</div>`
-              : "") +
-            (r.scrub_folder
-              ? `<div class="hint">${esc(tfw("The overwrite wrote its temporary files in {path} and removed them. It left {reserve} of free space unwritten so the disk would not fill completely; anything in that part was not overwritten.", { path: "\u0001path\u0002", reserve: _fmtBytes(r.reserve_bytes || 0) })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder))}</bdi>`)}</div>`
-              : "");
+        // Row 366(c): listed under the wipe's result and drawn by its render, so it follows a language switch with it.
+        if (box) {
+          _panicScrubs.push(r);
+          // Every value is escaped where _panicScrubHtml writes it; the wipe's own render when there is one.
+          ooLiveHtml(box, _panicPaint || (() => _panicScrubs.map(_panicScrubHtml).join("")));
         }
         toast(r.scrub_not_done ? t("Free disk space was not overwritten. Restart the app.") : t("Full overwrite complete. Restart the app."), "warn");
       } catch (e) { toast(_failMsg("Full overwrite failed: {error}", e), "err"); }
@@ -5183,34 +5201,36 @@
     // (we never run the uninstall while a backup is still streaming from this server).
 
     async function uninstallApp() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sel = _uninstallSel();
       // Only the data-wiping modes risk losing the corpus — offer a backup there first.
+      // Row 366(c): every line in the operator's language; the typed words stay the literal ASCII WIPE / UNINSTALL.
       if (sel.wipe_data) {
-        const backFirst = confirm("This mode WIPES your data and keys — IRREVERSIBLE.\n\n" +
-          "Create an encrypted backup first?\n\nOK = back up now (then click Uninstall again)\n" +
-          "Cancel = continue WITHOUT a backup");
+        const backFirst = confirm(t("This mode WIPES your data and keys — IRREVERSIBLE.") + "\n\n" +
+          t("Create an encrypted backup first?") + "\n\n" + t("OK = back up now (then click Uninstall again)") + "\n" +
+          t("Cancel = continue WITHOUT a backup"));
         if (backFirst) { openUnifiedExport(); return; }
       }
-      let msg = "UNINSTALL: remove the virtualenv and desktop launchers, then stop the server.";
-      if (sel.remove_folder) msg += "\nAlso delete the app folder.";
-      if (sel.wipe_data) msg += "\nAlso WIPE your data and keys — IRREVERSIBLE.";
-      else msg += "\nYour data is KEPT.";
-      if (!confirm(msg + "\n\nContinue?")) return;
+      let msg = t("UNINSTALL: remove the virtualenv and desktop launchers, then stop the server.");
+      if (sel.remove_folder) msg += "\n" + t("Also delete the app folder.");
+      if (sel.wipe_data) msg += "\n" + t("Also WIPE your data and keys — IRREVERSIBLE.");
+      else msg += "\n" + t("Your data is KEPT.");
+      if (!confirm(msg + "\n\n" + t("Continue?"))) return;
       const want = sel.wipe_data ? "WIPE" : "UNINSTALL";
-      if (prompt(`To confirm, type ${want} in capitals:`) !== want) {
-        toast("Uninstall cancelled.", "err"); return; }
+      if (prompt(want === "WIPE" ? t("To confirm, type WIPE in capitals:") : t("To confirm, type UNINSTALL in capitals:")) !== want) {
+        toast(t("Uninstall cancelled."), "err"); return; }
       try {
         const r = await api("/api/safety/uninstall", {method: "POST",
           body: JSON.stringify({confirm: true, mode: sel.mode,
             remove_folder: sel.remove_folder, wipe_data: sel.wipe_data, passes: sel.passes})});
-        if (!r.scheduled) { $("uninstall-result").textContent = r.note || "Nothing to remove."; return; }
-        $("uninstall-result").innerHTML =
-          `<span class="pill warn">uninstalling</span> ${esc(r.note || "")}`;
-        toast("Uninstalling — the app is stopping.", "warn");
+        // The server's own note stays as it said it (it names a path); the app's words follow a switch (ooLive, row 366(c)).
+        if (!r.scheduled) { ooLive($("uninstall-result"), () => r.note || t("Nothing to remove.")); return; }
+        ooLiveHtml($("uninstall-result"), () =>
+          `<span class="pill warn">${esc(t("uninstalling"))}</span> ${esc(r.note || "")}`);
+        toast(t("Uninstalling — the app is stopping."), "warn");
         // The server is about to SIGTERM itself; replace the whole UI with a terminal
         // screen so the user can't keep clicking dead tabs, and try to close the tab
         // (best-effort — browsers only close script-opened tabs). Maintainer 2026-06-21.
-        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         _terminalOverlay(
           t("Open Omniscience has been uninstalled and the app has stopped. You can close this window."),
           {tryClose: true});

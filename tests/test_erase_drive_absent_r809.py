@@ -238,7 +238,7 @@ def test_the_panic_page_says_failed_and_offers_no_overwrite():
     assert 'driveAbsent ? "erase failed"' in js
     assert '"Files erased outside the data drive: {done} of {total}."' in js
     assert S1 in js and S3 in js
-    assert '(driveAbsent || driveLost ? "" : `<div class="hint" style="margin-top:8px">${esc(rec)}`' in js
+    assert '(driveAbsent || driveLost ? "" : `<div class="hint" style="margin-top:8px">${esc(rec())}`' in js
 
 
 @pytest.mark.parametrize("layout", ["absent", "mismatch"])
