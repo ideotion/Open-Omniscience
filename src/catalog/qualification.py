@@ -1032,6 +1032,25 @@ def record_recheck_once_tries(ids: set[int], *, now: datetime) -> None:
         log_failure(_LOG, "could not record the one-time re-check tries", exc, level=logging.WARNING)
 
 
+def _note_recheck_once_paused() -> None:
+    global _recheck_once_paused_at
+    _recheck_once_paused_at = time.monotonic()
+
+
+def _recheck_once_owed() -> bool:
+    """Whether a pass should make the R851 choice now: no choice by today's rule is stored (read strictly: a read that
+    fails is never taken for "nothing stored") and no memory pause asked this process to wait."""
+    from src.config.kv_store import kv_get_json_strict
+
+    if _recheck_once_paused_at is not None and time.monotonic() - _recheck_once_paused_at < _RECHECK_ONCE_RETRY_S:
+        return False
+    try:
+        raw = kv_get_json_strict(RECHECK_ONCE_KEY)
+    except Exception:  # noqa: BLE001 - tried again next pass
+        return False
+    return not (isinstance(raw, dict) and raw.get("selection") == RECHECK_ONCE_SELECTION)
+
+
 def _select_recheck_once_if_owed(
     session: Session, frozen: dict, *, should_pause: Callable[[], bool] | None, now: datetime,
 ) -> dict[str, Any]:
@@ -2020,6 +2039,24 @@ def run_qualification_pass(
 
     now = now or datetime.now(UTC)
 
+    # R850 / R851, before anything is picked: an install whose queue is empty is exactly the one this is for (new
+    # candidates run out, nothing due on the ladder for months), so the choice is made on any pass that runs, from the
+    # cohort this pass freezes, and the chosen are then due in this same pass. Only a read (and a key-value write before
+    # any ORM write of the pass); every network gate still sits ahead of each trial fetch below.
+    frozen_early: dict | None = None
+    recheck_once: dict[str, Any] = recheck_once_counts()
+    if _recheck_once_owed():
+        try:
+            frozen_early = cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
+                session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
+                sample_articles=(QUALIFICATION_SAMPLE_ARTICLES if plan["mode"] == "sample" else None),
+            )
+        except sq.ScanPaused as exc:
+            _note_recheck_once_paused()
+            log_failure(_LOG, "the one-time re-check selection waited: the cohort freeze paused", exc, level=logging.INFO)
+        else:
+            recheck_once = _select_recheck_once_if_owed(session, frozen_early, should_pause=should_pause, now=now)
+
     # ---- candidate selection: NEW candidates and RE-CHECKS have SEPARATE budgets ----
     # (2026-09-04 ruling.) Until now they shared ``per_pass``, and new candidates were
     # taken first: with a backlog of tens of thousands of unqualified sources (42.6k-66.7k
@@ -2165,7 +2202,7 @@ def run_qualification_pass(
     # CALLABLE rather than a dict for exactly that reason -- a caller that memoises it gets
     # one freeze per run, and a pass that never needs one never triggers it.
     try:
-        frozen = cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
+        frozen = frozen_early if frozen_early is not None else cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
             session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
             sample_articles=(
                 QUALIFICATION_SAMPLE_ARTICLES if plan["mode"] == "sample" else None
@@ -2259,10 +2296,9 @@ def run_qualification_pass(
     # and the odd slot of an odd budget changes hands.
     if forced:
         record_forced_tries(forced_tried, now=now, odd_budget=slot_contested)
-    # R850 / R851: the chosen sources this pass tried have had their one re-check, whatever it decided. Then, once per
-    # install, the choice itself, recomputed read-only from the cohort this pass froze (the next passes take them first).
+    # R850 / R851: the chosen sources this pass tried have had their one re-check, whatever it decided.
     record_recheck_once_tries(once_tried, now=now)
-    recheck_once = _select_recheck_once_if_owed(session, frozen, should_pause=should_pause, now=now)
+    recheck_once = recheck_once_counts() if recheck_once.get("selected") else recheck_once
     # R728 B: the reversible mark on a held candidate's off-site articles, after the hold is committed.
     # The hold queued them in its own transaction, so a failure here leaves them owed, never lost.
     off_site_marked = 0

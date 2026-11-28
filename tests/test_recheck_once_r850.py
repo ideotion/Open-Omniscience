@@ -163,22 +163,18 @@ def test_a_paused_selection_stores_nothing_and_is_tried_again_later(db, store, m
     assert out["selected"] is False and q.RECHECK_ONCE_KEY not in store
 
 
-def test_the_pass_runs_the_selection_and_takes_the_chosen_first(db, store, four):
-    """Through the ordinary pass: no fetcher (no network here), the cohort injected, so what is exercised is the choice and
-    the scheduling. The first pass chooses; the next pass takes the chosen source although its ladder is not due."""
+def test_an_idle_install_chooses_and_judges_within_one_pass(db, store, four):
+    """The case R850 exists for: no new candidates and nothing due on the ladder. One ordinary pass (no fetcher here, so
+    no network; the cohort injected) makes the choice and judges the chosen source within its own re-check budget."""
     link = four[0]
-    first = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=_frozen)
-    # nothing was due, so the pass had nobody to judge and returned before freezing a cohort: the choice waits
-    assert first == {"enabled": True, "evaluated": 0}
-    db.add(Source(name="new.example", domain="new.example", status=q.STATUS_UNQUALIFIED, enabled=True))
-    db.commit()
-    second = q.run_qualification_pass(db, None, per_pass=1, recheck_per_pass=2, now=NOW, cohort_provider=_frozen)
-    assert second["recheck_once"]["chosen"] == 1 and second["recheck_once"]["rechecked"] == 0
-    third = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=_frozen)
-    assert third["evaluated"] == 1
+    assert q.select_unqualified(db, limit=10) == [] and q.select_due_disqualified(db, now=NOW, limit=10) == []
+    out = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=_frozen)
+    assert out["evaluated"] == 1
     tried = db.query(SourceQualificationAttempt).filter(SourceQualificationAttempt.source_id == link.id).count()
-    assert tried == 2, "its one re-check was judged in an ordinary pass"
-    assert third["recheck_once"]["rechecked"] == 1
+    assert tried == 2, "its one re-check was judged in this pass"
+    assert out["recheck_once"]["chosen"] == 1 and out["recheck_once"]["rechecked"] == 1
+    again = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=_frozen)
+    assert again == {"enabled": True, "evaluated": 0}, "once: the next pass has nothing to take"
 
 
 def test_the_real_recompute_reads_and_writes_nothing():
