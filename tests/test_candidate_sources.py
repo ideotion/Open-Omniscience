@@ -170,3 +170,14 @@ def test_the_left_out_channels_are_the_source_quality_exports_exempt_set():
     from src.catalog.candidate_sources import NOT_WEB_SOURCES
 
     assert NOT_WEB_SOURCES == _AUDIT_EXEMPT_CLASSES
+
+
+def test_a_legal_portal_on_a_real_domain_stays_a_candidate(db):
+    """Row 455: ``provenance_of`` classes any ``legal`` row as law; only the app's own law.*.local stores are left out."""
+    _src(db, 1, "newgazette.example", tags="")
+    _src(db, 2, "law.fr.local", tags="")
+    db.query(Source).filter(Source.id.in_([1, 2])).update({"source_type": "legal"}, synchronize_session=False)
+    db.commit()
+    doc = cs.build_candidate_sources(db)
+    assert [c["domain"] for c in doc["candidates"]] == ["newgazette.example"]
+    assert doc["left_out"]["not_a_web_source"] == 1
