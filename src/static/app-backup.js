@@ -5151,8 +5151,8 @@
         // Row 366(c): listed under the wipe's result and drawn by its render, so it follows a language switch with it.
         if (box) {
           _panicScrubs.push(r);
-          if (_panicPaint) ooLiveHtml(box, _panicPaint);
-          else ooLiveHtml(box, () => _panicScrubs.map(_panicScrubHtml).join(""));
+          // Every value is escaped where _panicScrubHtml writes it; the wipe's own render when there is one.
+          ooLiveHtml(box, _panicPaint || (() => _panicScrubs.map(_panicScrubHtml).join("")));
         }
         toast(r.scrub_not_done ? t("Free disk space was not overwritten. Restart the app.") : t("Full overwrite complete. Restart the app."), "warn");
       } catch (e) { toast(_failMsg("Full overwrite failed: {error}", e), "err"); }
