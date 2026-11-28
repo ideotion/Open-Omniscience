@@ -557,7 +557,7 @@ def test_each_page_size_tried_is_an_attempt(tmp_path, monkeypatch):
     monkeypatch.setattr(connect, "have_driver", lambda: True)
     tried: list = []
 
-    def stub(p, use_key, check_same_thread, timeout, page_size, *, last_error=None, read_only=False):
+    def stub(p, use_key, check_same_thread, timeout, page_size, *, last_error=None, read_only=False, existing_no_follow=False):
         tried.append(page_size)
         return object() if len(tried) == 3 else None
 
@@ -577,7 +577,7 @@ def test_every_size_failing_counts_every_attempt_and_still_raises(tmp_path, monk
     monkeypatch.setattr(connect, "have_driver", lambda: True)
     calls = []
 
-    def stub(p, use_key, check_same_thread, timeout, page_size, *, last_error=None, read_only=False):
+    def stub(p, use_key, check_same_thread, timeout, page_size, *, last_error=None, read_only=False, existing_no_follow=False):
         calls.append(page_size)
         return None
 
