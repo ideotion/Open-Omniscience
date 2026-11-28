@@ -332,8 +332,10 @@ def test_the_two_refusals_are_keyed_in_every_locale_and_the_page_translates_them
     js = (root / "src/static/app-backup.js").read_text(encoding="utf-8")
     # The encrypt panel translates a whole keyed refusal with t(); row 323 (R793) routes a room refusal through ooServerText first.
     # Row 366(c): the refusal is drawn through ooLive, so the whole keyed sentence is translated inside the render.
-    handler = js[js.index('const said = String(e.message || "");'):]
-    handler = handler[: handler.index("loadAtRestState();")]
+    from tests.js_source_helper import function_body
+
+    handler = function_body(js, "encryptCorpus")
+    assert 'const said = String(e.message || "");' in handler
     assert "ooLive(msg, () => said.startsWith(partial)" in handler and ": t(said)));" in handler
 
 
