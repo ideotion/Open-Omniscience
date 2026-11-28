@@ -410,6 +410,10 @@ def build(engine: Engine, ctx: JobContext | None = None) -> dict[str, Any]:
                     return {"outcome": "stopped", "days": days, "cursor": cursor}
                 if not _stand_aside(ctx):
                     return {"outcome": "stopped", "days": days, "cursor": cursor}
+                if _a_drain_is_running():
+                    # Row 460: the drain's end bump would make this build start over; give the gate back now. The
+                    # table stays not current (trending reads live) and the idle maintenance starts it again later.
+                    return {"outcome": "stopped", "reason": "reindex-drain", "days": days, "cursor": cursor}
                 if cursor is None:
                     nxt = conn.exec_driver_sql(
                         "SELECT min(observed_on) FROM keyword_mentions_all WHERE observed_on IS NOT NULL"
@@ -671,8 +675,58 @@ def _worker(ctx: JobContext, *, engine: Engine | None = None) -> dict[str, Any]:
 DAY_COUNTS_JOB = register_job(BackgroundJob(JOB_KIND, LABEL, _worker, is_writer=True, cancellable=True))
 
 
+#: Row 460 (2026-11-28): the job whose run ends with a corpus-epoch bump. The field's Linux A spent 35,291 s of the single-writer gate
+#: in this build over 44,856 grants (0.79 s each: it yields between days, as designed). Measured on a 12.0 M-mention store, one day is
+#: 0.21 s mean, 1.2 s at most, and a writer queuing beside it waited 0.8 s at most. The cost was the NUMBER of builds: the re-index drain
+#: bumps the epoch when it starts and again when it ends, and a build at another epoch starts over from its first day, so a build
+#: started while a drain ran, or between the drains of an import queue (the counter deferral stays open across them), was thrown away.
+_DRAIN_JOB_KIND = "reindex-resume"
+
+
+def _a_drain_is_running() -> bool:
+    try:
+        from src.jobs.background import get_job
+
+        job = get_job(_DRAIN_JOB_KIND)
+        return job is not None and job.status().get("state") == "running"
+    except Exception:  # noqa: BLE001 - unknown is treated as running: waiting costs a later start, never a wrong count
+        return True
+
+
+def build_waits_for(engine: Engine) -> str | None:
+    """Why a build would be thrown away if it started now (row 460), or ``None``: ``reindex-drain`` while the drain job runs,
+    ``counter-deferral`` while its counter deferral is open (an import queue between two drains; an unreadable marker reads as open).
+    Trending reads live meanwhile: :func:`windowed_counts` answers ``None`` whenever the table is not :func:`current`."""
+    if _a_drain_is_running():
+        return "reindex-drain"
+    try:
+        from sqlalchemy.orm import Session as _Session
+
+        from src.analytics.counter_deferral import is_deferral_open
+
+        with engine.connect() as conn, _Session(bind=conn) as s:
+            if is_deferral_open(s):
+                return "counter-deferral"
+    except Exception:  # noqa: BLE001 - unknown is treated as open, for the same reason
+        return "counter-deferral"
+    return None
+
+
 def start_build(engine: Engine | None = None) -> str:
-    """Start the build job unless it runs. ``started``, ``running`` or ``failed`` (no thread)."""
+    """Start the build job unless it runs. ``started``, ``running``, ``waiting`` (row 460: a drain would throw the build away, see
+    :func:`build_waits_for`; the boot and the idle maintenance ask again later) or ``failed`` (no thread)."""
+    try:
+        if engine is None:
+            from src.database import session as _session
+
+            engine = _session.engine
+        why = build_waits_for(engine)
+        if why is not None:
+            _LOG.info("daily keyword counts: build waits for the %s; trending reads live meanwhile", why)
+            return "waiting"
+    except Exception as exc:  # noqa: BLE001 - never raises; the idle maintenance asks again
+        log_failure(_LOG, "daily keyword counts: build not queued", exc, level=logging.INFO)
+        return "failed"
     try:
         DAY_COUNTS_JOB.start(**({"engine": engine} if engine is not None else {}))
         return "started"
@@ -707,6 +761,7 @@ __all__ = [
     "TRIGGERS",
     "basis",
     "build",
+    "build_waits_for",
     "current",
     "drop_keywords",
     "ensure_day_counts",
