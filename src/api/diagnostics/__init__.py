@@ -574,6 +574,7 @@ __all__ = [
     "_VERDICT",
     "_known_via",
     "_class_of",
+    "_criteria_names",
     "_last_by_source",
     "_via",
     "never_collected_in_set",
