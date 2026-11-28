@@ -34,8 +34,12 @@ import contextlib
 import functools
 import json
 import logging
+import os
 import threading
+import time
+import uuid
 from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -63,7 +67,7 @@ from src.database.segments import (
     mark_open,
     mark_sealed,
     next_segment_size,
-    reconcile,
+    reconcile_one,
     record_generation,
     registry,
     reserve_segment,
@@ -85,8 +89,9 @@ _BULK_LOADING: set[int] = set()
 #: Held across every statement this module runs on the SHARED connection. The writer, a bulk load and the registry steps can
 #: run on different threads over ONE ``shared_con``; without it one thread's BEGIN could meet another's open transaction on
 #: the same connection (refused, or worse, a statement committed inside someone else's transaction), and the reference
-#: check could read another thread's uncommitted rows. A LEAF lock: nothing else is acquired while it is held, so it adds no
-#: lock order to :data:`_REGISTRY_LOCK`, the writer's or a load's.
+#: check could read another thread's uncommitted rows. No lock of THIS module is taken while it is held, and nothing called
+#: under it calls back into this module, so it adds no lock order to :data:`_REGISTRY_LOCK`, the writer's or a load's. (It
+#: is held only around registry statements: a segment file is never opened under it, see :func:`_settle`.)
 _SHARED_LOCK = threading.RLock()
 
 
@@ -359,6 +364,10 @@ def _open_read_write(seg: Segment, key: str | None) -> Any:
     path, before, shared_encrypted = _prechecked(seg)
     if not segment_open._no_log_beside(path):
         raise SegmentUnavailable(seg.seg_no, "not_a_segment_file")
+    # The read-only open above confirmed this file and rolled back any journal it had. A journal there NOW was not
+    # confirmed: a read-write open would roll it into whatever file holds the name, so it is refused and left alone.
+    if segment_open._journal_left(path):
+        raise SegmentUnavailable(seg.seg_no, "unreadable")
     absent_before = _absent_sidecars(path)
     con = _checked_connect(seg, path, key, bool(shared_encrypted), read_only=False)
     try:
@@ -384,28 +393,144 @@ def _open_read_write(seg: Segment, key: str | None) -> Any:
 
 def _settle(shared_con: Any, key: str | None) -> list[Segment]:
     """Settle what a crash may have left: ``reserved`` rows (opened when the file proves its identity, else abandoned) and
-    more than one ``open`` row (all but the newest close). Returns the registry afterwards."""
-    by_name = {s.file_name: s for s in _on_shared(registry, shared_con) if s.file_name is not None}
+    more than one ``open`` row (all but the newest close). Returns the registry afterwards.
 
-    def identity_of(file_name: str | None) -> tuple[int, int, int] | None:
-        seg = by_name.get(file_name) if file_name is not None else None
-        if seg is None:
-            return None
-        try:
-            con = segment_open.open_segment(seg, key=key)
-        except (SegmentUnavailable, SegmentError):
-            return None
-        try:
-            return segment_identity(con)
-        finally:
-            con.close()
-
-    _on_shared(reconcile, shared_con, identity_of, skip=frozenset(_BULK_LOADING))
+    A reservation a LIVE bulk load holds is not a crash's leftover and is left alone: this process's own
+    (:data:`_BULK_LOADING`) and any other process's on the same data folder (its claim file, :func:`_claimed_elsewhere`).
+    The claims are read AFTER the registry: a load writes its claim before its reservation commits, so a reservation this
+    settle sees is always one whose claim it sees too. Each file is opened outside :data:`_SHARED_LOCK`, which is held only
+    around the registry's own statements."""
+    segs = _on_shared(registry, shared_con)
+    by_name = {s.file_name: s for s in segs if s.file_name is not None}
+    own = frozenset(_BULK_LOADING)
+    claimed: _Claims | None = None
+    for s in segs:
+        if s.implicit or s.state != "reserved" or s.seg_no in own:
+            continue
+        if claimed is None:
+            claimed = _claimed_elsewhere()
+        if claimed.reserving or s.seg_no in claimed.seg_nos:
+            continue
+        _on_shared(reconcile_one, shared_con, s, _identity_on_disk(by_name.get(s.file_name), key))
     segs = _on_shared(registry, shared_con)
     opens = sorted((s for s in segs if not s.implicit and s.seg_no >= 1 and s.state == "open"), key=lambda s: s.seg_no)
     for s in opens[:-1]:
         _on_shared(mark_closed, shared_con, s.seg_no)
     return _on_shared(registry, shared_con) if len(opens) > 1 else segs
+
+
+def _identity_on_disk(seg: Segment | None, key: str | None) -> tuple[int, int, int] | None:
+    """The identity ``seg``'s file records, read by the checked opener, or None when it proves nothing."""
+    if seg is None:
+        return None
+    try:
+        con = segment_open.open_segment(seg, key=key)
+    except (SegmentUnavailable, SegmentError):
+        return None
+    try:
+        return segment_identity(con)
+    finally:
+        con.close()
+
+
+# --- a live bulk load's claim, seen by every process on the data folder (R826 stage 4a) -------------------------------
+
+#: This process's claim file name part (as a corpus lease names its process).
+_CLAIM_PROCESS = uuid.uuid4().hex
+_CLAIM_SUFFIX = ".claim"
+#: How long a claim file that cannot be read still holds every reservation: ``corpus_lease``'s figure for a lease (10 s).
+_UNREADABLE_CLAIM_S = 10.0
+#: True between a load's claim and its reservation's commit (changed only under :data:`_REGISTRY_LOCK`).
+_RESERVING: list[bool] = [False]
+
+
+@dataclass(frozen=True)
+class _Claims:
+    seg_nos: frozenset[int]
+    reserving: bool  # another process is between its claim and its reservation: no reserved row is settled now
+
+
+def _claims_folder() -> Any:
+    from src.paths import data_dir
+
+    return data_dir() / "leases"
+
+
+def _write_claim() -> None:
+    """Write (or remove, when it holds nothing) this process's claim: the reservations its live bulk loads hold, and
+    whether one is being reserved now. The caller holds :data:`_REGISTRY_LOCK`. Raises when it cannot be written: a load
+    that other processes cannot see could be abandoned under it, so it is refused before anything is reserved."""
+    from src.safety import process_owner
+    from src.safety.file_lock import atomic_replace
+
+    path = _claims_folder() / f"segment-load.{_CLAIM_PROCESS}{_CLAIM_SUFFIX}"
+    if not _BULK_LOADING and not _RESERVING[0]:
+        path.unlink(missing_ok=True)
+        return
+    owner = process_owner.owner_record()
+    if not owner:  # psutil failed: a claim nobody can ever judge dead would hold every settle until it is deleted by hand
+        raise SegmentError("this process could not be recorded, so no bulk load is started")
+    path.parent.mkdir(mode=0o700, exist_ok=True)
+    record = {**owner, "process": _CLAIM_PROCESS, "seg_nos": sorted(_BULK_LOADING),
+              "reserving": _RESERVING[0]}
+    atomic_replace(path, json.dumps(record), fsync=True)
+
+
+def _rewrite_claim() -> None:
+    """:func:`_write_claim` after a load ended, its registry row already moved on. Best effort: a claim left naming a row
+    that is no longer reserved holds nothing, and one left "reserving" only makes other processes wait to settle until
+    this process ends (its owner is then dead and the file is removed)."""
+    try:
+        _write_claim()
+    except Exception as exc:  # noqa: BLE001 - see the docstring; the text stays in the debug log
+        log_failure(_LOG, "a bulk load's claim could not be updated", exc, level=logging.DEBUG)
+
+
+def _claimed_elsewhere() -> _Claims:
+    """Every OTHER process's live claim on this data folder. A claim whose owner is alive, or cannot be judged (another
+    host on a shared drive, an unreadable record), holds its reservations; a dead owner's claim is a leftover and is
+    removed. A claim file that cannot be read at all holds every reservation (fail closed: the next settle tries again)."""
+    from src.safety import process_owner
+
+    seg_nos: set[int] = set()
+    reserving = False
+    try:
+        files = sorted(_claims_folder().glob(f"segment-load.*{_CLAIM_SUFFIX}"))
+    except OSError:
+        return _Claims(frozenset(), True)
+    for f in files:
+        rec = _read_claim(f)
+        if rec is None:
+            # Unreadable: held while it is new (a shared drive's rename that is not atomic can show a live writer's file
+            # half written), then a leftover, as ``corpus_lease`` treats an unreadable lease (10 s).
+            if _older_than(f, _UNREADABLE_CLAIM_S):
+                f.unlink(missing_ok=True)
+            else:
+                reserving = True
+            continue
+        if rec.get("process") == _CLAIM_PROCESS:
+            continue
+        if process_owner.record_state(rec, machine=process_owner.machine_tag()) == "dead":
+            f.unlink(missing_ok=True)
+            continue
+        seg_nos.update(int(n) for n in rec.get("seg_nos", ()) if isinstance(n, int) and not isinstance(n, bool))
+        reserving = reserving or bool(rec.get("reserving"))
+    return _Claims(frozenset(seg_nos), reserving)
+
+
+def _older_than(f: Any, seconds: float) -> bool:
+    try:
+        return time.time() - os.lstat(f).st_mtime > seconds
+    except OSError:
+        return False
+
+
+def _read_claim(f: Any) -> dict | None:
+    try:
+        rec = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return rec if isinstance(rec, dict) else None
 
 
 def _start_segment(shared_con: Any, segs: list[Segment], key: str | None) -> None:
@@ -489,10 +614,11 @@ class BulkLoad:
     settling then keeps it as the open segment (the newest); nothing is lost. A load that fails in this process (an error,
     :meth:`abandon`) abandons its reservation and removes its own file, as a failed create does.
 
-    ONE PROCESS. The reservation is left alone only by THIS process's settles (``_BULK_LOADING``): another process that
-    settles the registry during the load sees a reserved row whose file proves nothing yet and abandons it, and the seal
-    then fails and removes the file. Before stage 4 turns any write path on, either every settle runs in the app's one
-    process or the load holds a lock other processes honour.
+    EVERY PROCESS (stage 4a). This process's settles leave the reservation alone through ``_BULK_LOADING``; every other
+    process's through the load's claim file in the leases folder (``segment-load.<uuid hex>.claim``), written before the
+    reservation commits and read by a settle after its registry read. A claim whose owner is dead is a leftover and is
+    removed. NOT covered: the writer's own reservation (``_start_segment``) holds no claim; stage 4's write-site wiring
+    claims it, or runs every settle in the writer's process, before any write path is turned on.
 
     Temporary storage is memory only (R825), and nothing is read from the file before the seal checks it, so no sync
     trigger of anyone else's can run: the schema the load writes under is the one this call made, on a file name this call
@@ -641,6 +767,7 @@ class BulkLoad:
         self._done = True
         with _REGISTRY_LOCK:
             _BULK_LOADING.discard(self._r.seg_no)
+            _rewrite_claim()
 
 
 def open_bulk_load(shared_con: Any, *, key: str | None = None, size: int | None = None) -> BulkLoad:
@@ -651,13 +778,27 @@ def open_bulk_load(shared_con: Any, *, key: str | None = None, size: int | None 
     require_writes()
     with _REGISTRY_LOCK:
         segs = _on_shared(registry, shared_con) if _WRITER_LOCK.locked() else _settle(shared_con, key)
-        r = _on_shared(reserve_segment, shared_con, size if size is not None else next_segment_size(segs))
-        _BULK_LOADING.add(r.seg_no)
+        # The claim is on disk BEFORE the reservation commits (another process's settle that sees the reservation then
+        # sees the claim too), and names the reservation before this call returns.
+        _RESERVING[0] = True
         try:
+            _write_claim()
+            r = _on_shared(reserve_segment, shared_con, size if size is not None else next_segment_size(segs))
+            _BULK_LOADING.add(r.seg_no)
+        except BaseException:
+            _RESERVING[0] = False
+            _rewrite_claim()
+            raise
+        _RESERVING[0] = False
+        try:
+            _write_claim()
             path, ident, con, encrypted = create_bulk_segment(r, key=key)
         except BaseException:
             _BULK_LOADING.discard(r.seg_no)
-            _on_shared(mark_abandoned, shared_con, r.seg_no)
+            try:
+                _on_shared(mark_abandoned, shared_con, r.seg_no)
+            finally:
+                _rewrite_claim()  # even when the registry step fails: the claim never names a load that ended
             raise
     try:
         con.execute("PRAGMA temp_store = MEMORY")  # R825: never a plaintext temporary file
@@ -676,5 +817,9 @@ def open_bulk_load(shared_con: Any, *, key: str | None = None, size: int | None 
         finally:
             with _REGISTRY_LOCK:
                 _BULK_LOADING.discard(r.seg_no)
-            _on_shared(mark_abandoned, shared_con, r.seg_no)
+            try:
+                _on_shared(mark_abandoned, shared_con, r.seg_no)
+            finally:
+                with _REGISTRY_LOCK:
+                    _rewrite_claim()
         raise

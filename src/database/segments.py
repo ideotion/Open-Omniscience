@@ -326,13 +326,18 @@ def reconcile(con: Any, identity_of: Any, *, skip: frozenset[int] = frozenset())
     for s in registry(con):
         if s.implicit or s.state != "reserved" or s.seg_no in skip:
             continue
-        seen = identity_of(s.file_name)
-        if seen is not None and seen == (s.seg_no, s.id_lo, s.id_hi):
-            if _set_state(con, s.seg_no, "reserved", "open"):
-                done["opened"].append(s.seg_no)
-        elif _set_state(con, s.seg_no, "reserved", "abandoned"):
-            done["abandoned"].append(s.seg_no)
+        outcome = reconcile_one(con, s, identity_of(s.file_name))
+        if outcome is not None:
+            done[outcome].append(s.seg_no)
     return done
+
+
+def reconcile_one(con: Any, s: Segment, seen: tuple[int, int, int] | None) -> str | None:
+    """One ``reserved`` row's settling (see :func:`reconcile`), given the identity its file records: ``"opened"``,
+    ``"abandoned"``, or None when the row was no longer reserved (another settle got there first)."""
+    if seen is not None and seen == (s.seg_no, s.id_lo, s.id_hi):
+        return "opened" if _set_state(con, s.seg_no, "reserved", "open") else None
+    return "abandoned" if _set_state(con, s.seg_no, "reserved", "abandoned") else None
 
 
 def ranges_overlap(segments: list[Segment]) -> list[tuple[int, int]]:

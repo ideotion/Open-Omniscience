@@ -880,10 +880,14 @@ def _read_only_uri(p: PurePath) -> str:
     return uri + "?mode=ro"
 
 
-def _read_only_target(p: Path) -> str:
+def _read_only_target(p: Path, *, immutable: bool = False) -> str:
     """The URI of ``p`` opened ``mode=ro`` (``uri=True`` goes with it). The path is made absolute and
-    percent-encoded by ``as_uri``, so a space or a ``?`` in a directory name is not read as URI syntax."""
-    return _read_only_uri(p.resolve())
+    percent-encoded by ``as_uri``, so a space or a ``?`` in a directory name is not read as URI syntax.
+
+    ``immutable`` (R826 stage 4a, the split corpus's identity confirmation only) adds ``immutable=1``: SQLite then takes no
+    lock and never looks at a ``-journal`` (measured on both drivers: a hot journal is left byte-identical, and nothing is
+    created beside the file), so the file is read exactly as it lies on disk, uncommitted pages included."""
+    return _read_only_uri(p.resolve()) + ("&immutable=1" if immutable else "")
 
 
 def _existing_no_follow_target(p: Path) -> str:
@@ -898,9 +902,10 @@ def _existing_no_follow_target(p: Path) -> str:
     file the connection holds) goes unseen, and a hot journal at the name is rolled into the link's target by the open
     itself. Doing that needs write access to the file's folder, which already lets that writer change the file directly,
     so it gains nothing; the caller's checks on the connection (schema, identity row, generation) still bound what such a
-    file can be. The hot-journal case is closed in stage 4, before any write path is on (docket row 409): a read-write open
-    only after a read-only open of the same name has confirmed its segment id and generation, and refused while a
-    ``-journal`` sits beside a file not yet confirmed."""
+    file can be. The hot-journal case is closed in stage 4a (docket row 409): a journal is rolled back only after an
+    ``immutable`` read-only open of the same name has confirmed its schema, segment id and generation
+    (``segment_open._confirm_beside_journal``), and the writer's read-write open is refused while a ``-journal`` sits
+    beside a file its read-only open did not confirm."""
     uri = _read_only_uri(p.parent.resolve() / p.name)
     if not uri.endswith("?mode=ro"):  # pragma: no cover - the helper above always ends so
         raise ValueError("unexpected database URI form")
@@ -941,6 +946,7 @@ def _try_open_encrypted(
     last_error=None,
     read_only: bool = False,
     existing_no_follow: bool = False,
+    immutable: bool = False,
 ):
     """One attempt: a FRESH sqlcipher3 connection, keyed, optionally declaring
     ``page_size``, verified readable. Returns the connection on success or
@@ -963,7 +969,9 @@ def _try_open_encrypted(
     conn = None
     try:
         if read_only:
-            conn = sqc.connect(_read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout)
+            conn = sqc.connect(
+                _read_only_target(p, immutable=immutable), uri=True, check_same_thread=check_same_thread, timeout=timeout
+            )
         elif existing_no_follow:
             conn = sqc.connect(_existing_no_follow_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout)
         else:
@@ -992,6 +1000,7 @@ def _connect(
     read_only: bool = False,
     sqlcipher_host: bool = False,
     existing_no_follow: bool = False,
+    immutable: bool = False,
 ):
     """Open ``path`` with the right driver and key for ITS state.
 
@@ -1109,6 +1118,8 @@ def _connect(
                 last_error=last_error,
                 read_only=read_only,
                 existing_no_follow=existing_no_follow,
+                # passed only when asked, so the stand-ins of this helper that tests install keep their signature
+                **({"immutable": True} if immutable else {}),
             )
             open_stats.end(counted, p, conn is not None)
             if conn is not None:
@@ -1158,11 +1169,13 @@ def _connect(
             from sqlcipher3 import dbapi2 as sqc
 
             if read_only:
-                return sqc.connect(_read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout)
+                return sqc.connect(
+                    _read_only_target(p, immutable=immutable), uri=True, check_same_thread=check_same_thread, timeout=timeout
+                )
             return sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
         if read_only:
             return sqlite3.connect(
-                _read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout
+                _read_only_target(p, immutable=immutable), uri=True, check_same_thread=check_same_thread, timeout=timeout
             )
         if existing_no_follow:
             return sqlite3.connect(
@@ -1240,6 +1253,7 @@ def connect(
     read_only: bool = False,
     sqlcipher_host: bool = False,
     existing_no_follow: bool = False,
+    immutable: bool = False,
 ):
     """Open ``path`` (see :func:`_connect` for the driver and key rules) with the search
     index's transform functions registered.
@@ -1257,6 +1271,11 @@ def connect(
     missing or empty file, a link or anything else at the name raises ``FileNotFoundError``. Every other caller's open is
     unchanged.
 
+    ``immutable=True`` (R826 stage 4a, opt-in, the split corpus's identity confirmation beside a hot journal only; it needs
+    ``read_only=True``) opens ``mode=ro&immutable=1``: no lock is taken and a ``-journal`` is neither read nor rolled back, so
+    the file is read as it lies, its uncommitted pages included, and nothing at all is written. Every other caller's open is
+    unchanged.
+
     ``sqlcipher_host=True`` opens a PLAINTEXT file through the encrypting driver, keyless, so the connection can attach
     an encrypted staged copy of an import (R829 A2 on a plaintext install). An encrypted file is unaffected.
 
@@ -1264,6 +1283,8 @@ def connect(
     would make a fresh store in the folder being erased, and one that is there is the erase's to destroy."""
     from src.paths import refuse_if_erased, sqlite_target
 
+    if immutable and not read_only:
+        raise ValueError("an immutable open is a read-only open")
     _target = sqlite_target(str(path))  # a "file:" URI is read the way SQLite reads it, never let through as a name
     if _target is not None:
         refuse_if_erased(_target)
@@ -1280,6 +1301,7 @@ def connect(
                 read_only=read_only,
                 sqlcipher_host=sqlcipher_host,
                 existing_no_follow=existing_no_follow,
+                immutable=immutable,
             )
     finally:
         _IN_FACTORY.depth -= 1

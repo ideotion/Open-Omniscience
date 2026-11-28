@@ -352,6 +352,177 @@ def test_a_linked_journal_is_never_rolled_into_the_segment(data, shared, tmp_pat
     assert other.read_bytes() == b"j" * 4096
 
 
+# --- stage 4a: a journal is rolled back only into a file confirmed as the segment ------------------------------------------
+
+
+def _foreign_with_hot_journal(p: Path, tmp_path: Path) -> None:
+    """Another program's SQLite database, crashed mid-write, put at the segment's name with its own hot journal."""
+    other = tmp_path / "foreign.db"
+    con = sqlite3.connect(other, isolation_level=None)
+    con.execute("CREATE TABLE notes (body TEXT)")
+    con.execute("INSERT INTO notes VALUES ('kept')")
+    con.close()
+    os.replace(other, p)
+    con = sqlite3.connect(p, isolation_level=None)
+    con.execute("PRAGMA cache_size = 1")
+    con.execute("BEGIN IMMEDIATE")
+    con.execute("UPDATE notes SET body = hex(randomblob(200000))")
+    db_copy, j_copy = tmp_path / "f.db", tmp_path / "f.db-journal"
+    shutil.copyfile(p, db_copy)
+    shutil.copyfile(f"{p}-journal", j_copy)
+    con.execute("ROLLBACK")
+    con.close()
+    os.replace(db_copy, p)
+    os.replace(j_copy, f"{p}-journal")
+
+
+def _bytes_beside(p: Path) -> dict[str, bytes]:
+    return {x.name: x.read_bytes() for x in sorted(p.parent.iterdir())}
+
+
+@posix_only
+def test_a_foreign_database_with_a_hot_journal_at_the_name_stays_byte_identical(data, shared, tmp_path):
+    segment_write.open_writer(shared).close()
+    p = data / "corpus" / "seg-1.db"
+    _foreign_with_hot_journal(p, tmp_path)
+    before = _bytes_beside(p)
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_open.open_segment(_row(shared, 1))
+    assert e.value.reason == "schema"
+    with pytest.raises(segment_open.SegmentUnavailable):
+        segment_write.SegmentWriter.open(shared, _row(shared, 1))
+    assert _bytes_beside(p) == before, "neither the file nor its journal was written, and nothing was made beside them"
+    assert sqlite3.connect(p).execute("SELECT body FROM notes").fetchall() == [("kept",)], "its own journal, rolled back by its own program"
+
+
+@posix_only
+def test_another_segments_file_with_a_hot_journal_is_never_rolled_back_under_this_name(data, shared, tmp_path):
+    segment_write.open_writer(shared).close()
+    other = sg.reserve_segment(shared, 10)
+    segment_open.create_segment(other)
+    p, q = data / "corpus" / "seg-1.db", data / "corpus" / other.file_name
+    os.replace(q, p)  # the right schema, another identity
+    _crash_mid_write(p, tmp_path)
+    before = _bytes_beside(p)
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_open.open_segment(_row(shared, 1))
+    assert e.value.reason == "identity"
+    assert _bytes_beside(p) == before
+
+
+@posix_only
+def test_an_older_copy_with_a_hot_journal_is_never_rolled_back(data, shared, tmp_path):
+    segment_write.open_writer(shared).close()
+    p = data / "corpus" / "seg-1.db"
+    old = tmp_path / "old.db"
+    shutil.copyfile(p, old)
+    w = segment_write.open_writer(shared)
+    with w.transaction() as t:
+        t.allocate(1)
+    w.close()
+    assert _row(shared, 1).generation > 1
+    os.replace(old, p)
+    _crash_mid_write(p, tmp_path)
+    before = _bytes_beside(p)
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_open.open_segment(_row(shared, 1))
+    assert e.value.reason == "older_copy"
+    assert _bytes_beside(p) == before
+
+
+@posix_only
+def test_the_writer_refuses_a_journal_its_read_only_open_did_not_confirm(data, shared, monkeypatch):
+    segment_write.open_writer(shared).close()
+    p = data / "corpus" / "seg-1.db"
+    real = segment_open.open_segment
+
+    def then_a_journal(seg, *, key=None):
+        con = real(seg, key=key)
+        Path(f"{p}-journal").write_bytes(b"\xd9\xd5\x05\xf9\x20\xa1\x63\xd7" + b"j" * 4088)  # appears after the confirmation
+        return con
+
+    monkeypatch.setattr(segment_open, "open_segment", then_a_journal)
+    before = _bytes_beside(p)
+    with pytest.raises(segment_open.SegmentUnavailable) as e:
+        segment_write.SegmentWriter.open(shared, _row(shared, 1))
+    assert e.value.reason == "unreadable"
+    after = _bytes_beside(p)
+    assert after.pop("seg-1.db-journal").startswith(b"\xd9\xd5") and after == before
+
+
+@posix_only
+def test_a_live_writers_journal_is_never_taken_for_a_crash(data, shared):
+    """A journal beside the file while another connection is inside a write transaction (it holds the lock): the reader
+    reads the last committed state, and neither the file nor the journal is touched. Only SQLite's own hot-journal
+    refusal leads to a rollback (security read 2 on stage 4a)."""
+    segment_write.open_writer(shared).close()
+    p = data / "corpus" / "seg-1.db"
+    next_id = _file_counters(data, 1)[1]
+    live = sqlite3.connect(p, isolation_level=None)
+    try:
+        live.execute("BEGIN IMMEDIATE")
+        live.execute("UPDATE segment_meta SET next_id = next_id + 1000")
+        assert Path(f"{p}-journal").stat().st_size > 0
+        file_before, journal_before = p.read_bytes(), Path(f"{p}-journal").read_bytes()
+        con = segment_open.open_segment(_row(shared, 1))
+        try:
+            assert sg.segment_counters(con)[1] == next_id, "the committed state"
+        finally:
+            con.close()
+        assert p.read_bytes() == file_before and Path(f"{p}-journal").read_bytes() == journal_before
+        live.execute("COMMIT")
+    finally:
+        live.close()
+    assert _file_counters(data, 1)[1] == next_id + 1000, "the live writer's transaction went through"
+
+
+@sqlcipher_only
+@posix_only
+def test_an_encrypted_segments_hot_journal_is_confirmed_and_rolled_back(data, shared, monkeypatch, tmp_path):
+    """sqlcipher3 names the refusal by its primary code only (SQLITE_READONLY): the encrypted path still finds the hot
+    journal, confirms the file read-only and rolls it back."""
+    from src.database.connect import connect
+
+    monkeypatch.setattr(segment_open, "_shared_is_encrypted", lambda: True)
+    segment_write.open_writer(shared, key=_PW).close()
+    p = data / "corpus" / "seg-1.db"
+    first = segment_open.open_segment(_row(shared, 1), key=_PW)
+    try:
+        next_id = sg.segment_counters(first)[1]
+    finally:
+        first.close()
+    con = connect(p, key=_PW, cipher_page_size=segment_open.SEGMENT_PAGE_SIZE)
+    con.isolation_level = None
+    con.execute("PRAGMA cache_size = 1")
+    con.execute("BEGIN IMMEDIATE")
+    con.execute("UPDATE segment_meta SET next_id = next_id + 1000, created_at = hex(randomblob(200000))")
+    db_copy, j_copy = tmp_path / "crash.db", tmp_path / "crash.db-journal"
+    shutil.copyfile(p, db_copy)
+    shutil.copyfile(f"{p}-journal", j_copy)
+    con.execute("ROLLBACK")
+    con.close()
+    os.replace(db_copy, p)
+    os.replace(j_copy, f"{p}-journal")
+    confirmed = []
+    real = segment_open._confirm_beside_journal
+    monkeypatch.setattr(segment_open, "_confirm_beside_journal", lambda *a: (confirmed.append(1), real(*a)))
+    got = segment_open.open_segment(_row(shared, 1), key=_PW)
+    try:
+        assert sg.segment_counters(got)[1] == next_id, "the committed state, not the crashed write"
+    finally:
+        got.close()
+    assert confirmed == [1] and not Path(f"{p}-journal").exists()
+
+
+def test_an_immutable_open_is_only_ever_read_only(tmp_path):
+    from src.database.connect import connect
+
+    p = tmp_path / "x.db"
+    sqlite3.connect(p).close()
+    with pytest.raises(ValueError):
+        connect(p, immutable=True)
+
+
 # --- the registry column on a store made before it ----------------------------------------------------------------------
 
 
