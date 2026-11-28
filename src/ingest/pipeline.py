@@ -743,11 +743,14 @@ def ingest_source(
         # is still the person's (never a host's words: the whole sentence at the start, as every writer raises it).
         refused_by_name = record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL)
         if not (kill_switch_engaged_since(pass_epoch) or refused_by_name):
-            # The failure is the feed's own answer, so it is RECORDED (field analysis 2026-11, finding 3): until
-            # then a failing feed wrote no state at all, so Coverage's "error" count could never fill and every
-            # export read a feed that failed every pass as "never checked".
-            _record_feed_failure(session, source.id, feed_failure_status(
-                record_text(exc, typed=False), robots=isinstance(exc, (RobotsDisallowed, RobotsUnavailable))))
+            # A Crawl-delay deferral is not a check at all: no request was sent (Q1013 = a, CrawlDelayDeferred's own
+            # docstring), so it records nothing and the last real answer stands.
+            if not isinstance(exc, CrawlDelayDeferred):
+                # The failure is the feed's own answer, so it is RECORDED (field analysis 2026-11, finding 3): until
+                # then a failing feed wrote no state at all, so Coverage's "error" count could never fill and every
+                # export read a feed that failed every pass as "never checked".
+                _record_feed_failure(session, source.id, feed_failure_status(
+                    record_text(exc, typed=False), robots=isinstance(exc, (RobotsDisallowed, RobotsUnavailable))))
             _update_feed_backoff(session, source.id, reset=True)
         _commit_feed_bookkeeping(session)
         # A refusal by the kill switch is the person's own setting, not the feed's behaviour:

@@ -140,3 +140,21 @@ def test_a_credentialed_address_never_reaches_the_record(db):
     row = {c.name: getattr(st, c.name) for c in st.__table__.columns}
     assert not any(isinstance(v, str) and ("hunter2" in v or "someone" in v or "token" in v or "feed.example" in v)
                    for v in row.values()), row
+
+
+def test_a_crawl_delay_deferral_records_no_check(db):
+    # Q1013 = a: a deferral sends no request, so it is not a check; a feed read last pass stays read
+    from src.ingest import CrawlDelayDeferred
+
+    src = _make_source(db)
+    when = datetime.now(UTC) - timedelta(hours=2)
+    db.add(FeedFetchState(source_id=src.id, last_status=200, last_checked_at=when.replace(tzinfo=None)))
+    db.commit()
+    P.ingest_source(db, src, fetcher=_Raise(CrawlDelayDeferred("Crawl-delay defers the feed", netloc="feed.example",
+                                                                delay_s=600.0, not_before=0.0)))
+    db.commit()
+    db.expire_all()
+    st = db.get(FeedFetchState, src.id)
+    assert st.last_status == 200
+    got = st.last_checked_at if st.last_checked_at.tzinfo else st.last_checked_at.replace(tzinfo=UTC)
+    assert abs((got - when).total_seconds()) < 1

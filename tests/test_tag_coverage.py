@@ -190,3 +190,15 @@ def test_the_payload_names_reason_classes_never_an_address(db):
     db.commit()
     text = repr(tag_coverage(db))
     assert "a.example" not in text and "http://" not in text and "https://" not in text
+
+
+@pytest.mark.parametrize("status", [204, 206, 301, 302])
+def test_a_failure_with_a_2xx_or_3xx_status_is_failed_not_read(db, status):
+    # the fetcher raises on every status but 200 (a 204, a 3xx with no Location), and that failure is recorded
+    # with its status: only 200 and 304 are reads
+    a = _src(db, "a", tags="news")
+    _state(db, a.id, checked=datetime.now(UTC), status=status)
+    db.commit()
+    news = next(t for t in tag_coverage(db)["tags"] if t["tag"] == "news")
+    assert news["reached"] == 0 and news["fresh"] == 0 and news["failed"] == 1
+    assert news["failed_by_reason"]["other"] == 1

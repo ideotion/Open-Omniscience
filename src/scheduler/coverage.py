@@ -46,9 +46,12 @@ def _split_tags(raw: str | None) -> list[str]:
 def _status_bucket(status: int | None) -> str:
     if status is None:
         return "unknown"
+    # The collector reads a feed only on a 200 or a 304 (``_record_feed_state``); the fetcher raises on every other
+    # status, a 204 or a 3xx with no Location included, and since row 448 that failure is recorded with its status
+    # (``_record_feed_failure``). So the stored status alone says which: 200 / 304 were read, anything else failed.
     if status == 304:
         return "unchanged"
-    if 200 <= status < 400:
+    if status == 200:
         return "ok"
     return "error"
 
