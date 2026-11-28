@@ -42,7 +42,7 @@ _PATTERN = re.compile(r"(?:slice|substring|substr)\(\s*0\s*,\s*1[06]\s*\)")
 _PINS = {
     "app-agenda.js": 1,
     "app-ai-tools.js": 2,
-    "app-analysis.js": 8,
+    "app-analysis.js": 6,
     "app-backup.js": 3,
     "app-claim.js": 1,
     "app-core.js": 3,
