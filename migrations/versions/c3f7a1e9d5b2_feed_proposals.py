@@ -6,7 +6,7 @@ any existing table touched, nothing re-extracted (R755).
 (``create_all`` already creates this on fresh stores; this migration keeps alembic-managed databases consistent.)
 
 Revision ID: c3f7a1e9d5b2
-Revises: b8d4f2a6c1e9
+Revises: c2f6a8e4d1b7
 Create Date: 2026-11-28
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c3f7a1e9d5b2"
-down_revision: str | None = "b8d4f2a6c1e9"
+down_revision: str | None = "c2f6a8e4d1b7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
