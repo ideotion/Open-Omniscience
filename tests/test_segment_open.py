@@ -603,7 +603,7 @@ def test_a_schema_that_could_not_be_read_is_never_reported_as_a_foreign_schema(d
 def test_check_schema_is_false_only_for_a_schema_it_read():
     con = sqlite3.connect(":memory:")
     try:
-        for ddl in segment_open.SEGMENT_DDL:
+        for ddl in segment_open.segment_ddl():
             con.execute(ddl)
         assert segment_open.check_schema(con) is True
         con.execute("CREATE TABLE evil(x)")
