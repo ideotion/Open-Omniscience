@@ -56,8 +56,8 @@ def test_one_article_per_source_and_a_manifest_row_for_an_empty_source(db):
     assert (nxt, covered, total) == (None, 2, 2)
     assert [r["source_id"] for r in man["sources"]] == [1]
     # field report 2026-11-14 5.4: ids above the shipped catalogue differ across instances, so each row carries the join key
-    assert man["sources_without_article"]["rows"] == [[2, "s2.example", "", 0]]
-    assert man["sources_without_article"]["columns"] == ["source_id", "domain", "feed_key", "class"]
+    assert man["sources_without_article"]["rows"] == [[2, "s2.example", "", 0, None]]
+    assert man["sources_without_article"]["columns"] == ["source_id", "domain", "feed_key", "class", "last_failing_criteria"]
     assert man["sources"][0]["domain"] == "s1.example" and man["sources"][0]["feed_key"] == ""
     assert man["sources_in_this_zip"] == 2
     from src.paths import instance_tag
@@ -210,7 +210,7 @@ def test_a_source_without_an_article_writes_its_kept_key_masked(db):
     data = build_sample_zip(db, after=0, seed=1, cap=4_000_000)[0]
     assert b"hunter2" not in _open(data).read("manifest.json")
     man = json.loads(_open(data).read("manifest.json"))
-    assert man["sources_without_article"]["rows"] == [[1, "news.example", "f:***@news.example/rss", 0]]
+    assert man["sources_without_article"]["rows"] == [[1, "news.example", "f:***@news.example/rss", 0, None]]
 
 
 def test_every_address_column_is_written_as_a_report_writes_it(db):

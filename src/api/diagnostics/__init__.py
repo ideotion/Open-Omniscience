@@ -472,6 +472,7 @@ from .source_samples import (
     _known_via,
     _WHOLE_ADDRESS,
     _class_of,
+    _criteria_names,
     _last_by_source,
     _newsletter_source_ids,
     _pick,

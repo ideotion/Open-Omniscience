@@ -344,6 +344,16 @@ def consecutive_disqualifications(session: Session, source_id: int) -> int:
     return consecutive_disqualifications_from_verdicts([r[0] for r in rows])
 
 
+def failing_criteria_names(failing_criteria: list[dict]) -> str:
+    """What an attempt row keeps of the failing criteria (row 450, R850): their NAMES, sorted, comma-separated, each
+    checked against ``source_audit.CRITERIA`` so nothing but a known name is ever stored (never article text, never a
+    value). ``""`` when nothing failed. A name the registry does not know is dropped, never copied."""
+    from src.analytics.source_audit import CRITERIA
+
+    known = {c["name"] for c in CRITERIA}
+    return ",".join(sorted({str(f.get("criterion")) for f in failing_criteria} & known))
+
+
 def decide_verdict(failing_criteria: list[dict]) -> str:
     """Map source_audit's categorical status onto a qualification verdict: disqualified
     ONLY on the extraction-failure signature (status degraded or failing -- pathology_rate,
@@ -1324,7 +1334,7 @@ def evaluate_and_stamp(
         verdict = decide_verdict(fails)
         session.add(SourceQualificationAttempt(
             source_id=source.id, attempted_at=now, verdict=verdict,
-            criteria_version=criteria_version,
+            criteria_version=criteria_version, failing_criteria=failing_criteria_names(fails),
         ))
         # Q1101 = a (2026-09-15): QUALIFICATION IS THE ADMISSION GATE. Read the prior
         # state BEFORE anything is written, because the audit row's whole purpose is to
