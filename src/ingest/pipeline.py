@@ -919,7 +919,7 @@ def _record_feed_state(session: Session, source_id: int, resp) -> None:
 
 #: The HTTP status a fetch failure names: the fetcher raises ``FetchFailed("HTTP 403 for <url>")`` for a non-200 answer
 #: (``src/ingest/__init__.py``), and every other failure (DNS, connect, TLS, timeout, a size or type refusal) names none.
-_FAILURE_HTTP_STATUS = re.compile(r"\bHTTP (\d{3})\b")
+_FAILURE_HTTP_STATUS = re.compile(r"HTTP (\d{3}) for ")
 
 
 def feed_failure_status(failure_text: str, *, robots: bool = False) -> int:
@@ -932,7 +932,9 @@ def feed_failure_status(failure_text: str, *, robots: bool = False) -> int:
     ``record_text(exc)``, never the exception. Pure; never raises."""
     if robots:
         return 0
-    match = _FAILURE_HTTP_STATUS.search(failure_text or "")
+    # Anchored at the start, where the fetcher writes it: a status quoted later in another failure's words (a host's
+    # message, an address) is not the feed's answer.
+    match = _FAILURE_HTTP_STATUS.match(failure_text or "")
     return int(match.group(1)) if match else 0
 
 

@@ -53,11 +53,26 @@ def _status_bucket(status: int | None) -> str:
     return "error"
 
 
+def _failure_class(status: int | None) -> str:
+    """The reason class of a failed check (R848), from the one thing the record keeps: the HTTP status the failure named, or
+    ``0`` when it named none (a network error, a refusal, or a robots refusal: ``src/ingest/pipeline.py:feed_failure_status``).
+    A class, never the failure's text: the record holds no address to show."""
+    if status is not None and 400 <= status < 500:
+        return "http_4xx"
+    if status is not None and 500 <= status < 600:
+        return "http_5xx"
+    if status == 0:
+        return "no_http_status"
+    return "other"
+
+
 def _new_bucket() -> dict:
     return {
         "total": 0,  # enabled RSS sources carrying this tag
-        "reached": 0,  # have been fetched at least once
-        "fresh": 0,  # fetched within the window
+        "reached": 0,  # last check was READ: a 200 or a 304 (R848)
+        "failed": 0,  # last check on record FAILED (an HTTP error, or no HTTP status)
+        "failed_by_reason": {"http_4xx": 0, "http_5xx": 0, "no_http_status": 0, "other": 0},
+        "fresh": 0,  # read within the window (a failed check is never fresh)
         "backed_off": 0,  # currently in de-churn backoff (not a failure)
         "crawl": 0,  # crawl (non-RSS) sources — reach not tracked
         "_oldest": None,  # oldest last_checked_at among reached (datetime)
@@ -69,7 +84,8 @@ def _finalize(bucket: dict, now: datetime) -> dict:
     total = bucket["total"]
     reached = bucket["reached"]
     oldest = bucket.pop("_oldest")
-    bucket["never_reached"] = total - reached
+    # "Not read": no check on record that was either read or failed (R848: never counted as fresh or reached).
+    bucket["not_read"] = total - reached - bucket["failed"]
     bucket["stale"] = reached - bucket["fresh"]
     bucket["reach_pct"] = round(reached / total, 4) if total else 0.0
     bucket["fresh_pct"] = round(bucket["fresh"] / total, 4) if total else 0.0
@@ -136,16 +152,25 @@ def tag_coverage(
         checked = st.last_checked_at if st else None
         if checked is not None and checked.tzinfo is None:
             checked = checked.replace(tzinfo=UTC)
-        fresh = checked is not None and (now - checked) <= window
+        sbucket = _status_bucket(st.last_status if st else None)
+        # R848: only a check that was READ (200 / 304) counts as reached or fresh. A failed check is recorded since row 448
+        # (pipeline._record_feed_failure) and counts as failed, with its reason class; a source with no check on record is
+        # "not read". The time alone is never evidence of a read.
+        read_ok = checked is not None and sbucket in ("ok", "unchanged")
+        failed = checked is not None and sbucket == "error"
+        reason = _failure_class(st.last_status) if failed and st is not None else None
+        fresh = read_ok and checked is not None and (now - checked) <= window
         skip_until = st.skip_until if st else None
         if skip_until is not None and skip_until.tzinfo is None:
             skip_until = skip_until.replace(tzinfo=UTC)
         backed_off = skip_until is not None and skip_until > now
-        sbucket = _status_bucket(st.last_status if st else None)
 
         for target in (totals, *(bucket_for(t) for t in tag_list)):
             target["total"] += 1
-            if checked is not None:
+            if failed and reason is not None:
+                target["failed"] += 1
+                target["failed_by_reason"][reason] += 1
+            if read_ok:
                 target["reached"] += 1
                 oldest = target["_oldest"]
                 if oldest is None or checked < oldest:
@@ -167,9 +192,12 @@ def tag_coverage(
         "as_of": now.isoformat(),
         "fresh_window_hours": int(fresh_window_hours),
         "method": (
-            "Reach = RSS sources ever fetched / total, per tag, from the "
-            "collector's own fetch timestamps. Fresh = fetched within the window "
-            "above. A source counts under each of its tags. Counts only, no score. "
+            "Reach = RSS sources whose last check was read (HTTP 200 or 304) / total, "
+            "per tag, from the collector's own fetch records. Failed = the last check "
+            "failed, by reason class (HTTP 4xx, HTTP 5xx, or no HTTP status: a network "
+            "error or a refusal). Not read = no check on record. Fresh = read within "
+            "the window above; a failed check is never fresh. A source counts under "
+            "each of its tags. Counts only, no score. "
             "The population is ENABLED sources — not the headline 'enabled and "
             "qualified', so these totals are larger than what collection reaches."
         ),

@@ -123,3 +123,20 @@ def test_recorded_failures_land_in_coverage_error_bucket():
     assert _status_bucket(403) == "error"
     assert _status_bucket(0) == "error"
     assert _status_bucket(None) == "unknown"
+
+
+def test_only_the_fetchers_leading_status_is_read():
+    # R848: the status is the one the fetcher wrote at the START ("HTTP 403 for <url>"); a status quoted later in some
+    # other failure's words is not the feed's answer
+    assert P.feed_failure_status("connection failed: proxy said HTTP 502 for the tunnel") == 0
+    assert P.feed_failure_status("HTTP 403 for https://x.example/rss") == 403
+
+
+def test_a_credentialed_address_never_reaches_the_record(db):
+    # R848 / R734 / R736: the record keeps the status NUMBER only; the failure's words (which name the address) are
+    # parsed and dropped, so no column of the row can carry a user name, a password or a host
+    st = _ingest_failing(db, FetchError("HTTP 401 for https://someone:hunter2@feed.example/rss?token=abc"))
+    assert st is not None and st.last_status == 401
+    row = {c.name: getattr(st, c.name) for c in st.__table__.columns}
+    assert not any(isinstance(v, str) and ("hunter2" in v or "someone" in v or "token" in v or "feed.example" in v)
+                   for v in row.values()), row
