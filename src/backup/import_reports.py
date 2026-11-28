@@ -405,6 +405,26 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             lines.append("- The number of articles in your corpus not screened yet could not be read.")
         lines.append("")
 
+    ana = report.get("analysis")
+    if isinstance(ana, dict):
+        # R832 / R830 Q3 (row 421): said while above 0, never at 0; an unread count is said, never left out or printed as 0.
+        na = ana.get("not_analysed_in_your_corpus")
+        if ana.get("not_analysed_unread"):
+            lines.append("## Analysis")
+            lines.append("")
+            lines.append("- The number of articles in your corpus not analysed yet could not be read.")
+            lines.append("")
+        elif isinstance(na, int) and na > 0:
+            lines.append("## Analysis")
+            lines.append("")
+            lines.append(
+                f"- {_fmt_count(na)} articles in your corpus were not analysed yet when this report was written "
+                "(across the whole corpus, not just this import). The re-index runs in the background; until it has "
+                "finished an article it stays readable and searchable, but some or all of its keywords, dates, places "
+                "and people may not be there yet, so the analyses may leave it out or count it only in part."
+            )
+            lines.append("")
+
     qs = report.get("quarantine_summary")
     if qs:
         lines.append("## Quarantine screening")

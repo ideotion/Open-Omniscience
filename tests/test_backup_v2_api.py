@@ -209,3 +209,9 @@ def test_legacy_restore_missing_file_is_honest_400(client):
     )
     assert r.status_code == 400
     assert "not a file" in r.json()["detail"]
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")

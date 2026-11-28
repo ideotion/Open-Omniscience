@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -742,6 +743,14 @@ def ingest_source(
         # is still the person's (never a host's words: the whole sentence at the start, as every writer raises it).
         refused_by_name = record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL)
         if not (kill_switch_engaged_since(pass_epoch) or refused_by_name):
+            # A Crawl-delay deferral is not a check at all: no request was sent (Q1013 = a, CrawlDelayDeferred's own
+            # docstring), so it records nothing and the last real answer stands.
+            if not isinstance(exc, CrawlDelayDeferred):
+                # The failure is the feed's own answer, so it is RECORDED (field analysis 2026-11, finding 3): until
+                # then a failing feed wrote no state at all, so Coverage's "error" count could never fill and every
+                # export read a feed that failed every pass as "never checked".
+                _record_feed_failure(session, source.id, feed_failure_status(
+                    record_text(exc, typed=False), robots=isinstance(exc, (RobotsDisallowed, RobotsUnavailable))))
             _update_feed_backoff(session, source.id, reset=True)
         _commit_feed_bookkeeping(session)
         # A refusal by the kill switch is the person's own setting, not the feed's behaviour:
@@ -909,6 +918,43 @@ def _record_feed_state(session: Session, source_id: int, resp) -> None:
         import logging
 
         log_failure(logging.getLogger(__name__), "recording feed fetch state failed", exc, level=logging.DEBUG)
+
+
+#: The HTTP status a fetch failure names: the fetcher raises ``FetchFailed("HTTP 403 for <url>")`` for a non-200 answer
+#: (``src/ingest/__init__.py``), and every other failure (DNS, connect, TLS, timeout, a size or type refusal) names none.
+_FAILURE_HTTP_STATUS = re.compile(r"HTTP (\d{3}) for ")
+
+
+def feed_failure_status(failure_text: str, *, robots: bool = False) -> int:
+    """The ``FeedFetchState.last_status`` a failed feed fetch records: the HTTP status the failure's (scrubbed) text
+    names, else ``0``.
+
+    ``0`` is the value the exports already document as "checked, no HTTP status" (a network error or a refusal,
+    ``src/api/diagnostics/source_samples.py``). A robots refusal or an unreadable robots.txt (``robots=True``) is not
+    the FEED's answer, so it reads ``0`` even when the robots read itself got an HTTP status. The caller passes
+    ``record_text(exc)``, never the exception. Pure; never raises."""
+    if robots:
+        return 0
+    # Anchored at the start, where the fetcher writes it: a status quoted later in another failure's words (a host's
+    # message, an address) is not the feed's answer.
+    match = _FAILURE_HTTP_STATUS.match(failure_text or "")
+    return int(match.group(1)) if match else 0
+
+
+def _record_feed_failure(session: Session, source_id: int, status: int) -> None:
+    """Record that the feed was checked and FAILED: ``last_checked_at`` now, ``last_status`` = ``status``
+    (:func:`feed_failure_status`). The validators (``etag`` / ``last_modified``) are kept: they belong to the last
+    answer that carried them. Best-effort, as :func:`_record_feed_state` is: bookkeeping never breaks ingestion."""
+    try:
+        state = session.get(FeedFetchState, source_id)
+        if state is None:
+            state = FeedFetchState(source_id=source_id)
+            session.add(state)
+            session.flush()  # the backoff reset right after reuses THIS row (session.get), never a second add
+        state.last_status = status
+        state.last_checked_at = datetime.now(UTC)
+    except Exception as exc:  # noqa: BLE001 - never let feed bookkeeping break ingestion
+        log_failure(logging.getLogger(__name__), "recording a feed fetch failure failed", exc, level=logging.DEBUG)
 
 
 def _update_feed_backoff(session: Session, source_id: int, *, reset: bool) -> None:

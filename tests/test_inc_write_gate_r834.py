@@ -269,3 +269,9 @@ def test_a_copy_with_a_journal_beside_it_is_walked_with_locks(tmp_path, sealed, 
     finally:
         Path(f"{inc}{beside}").unlink(missing_ok=True)
         staged_key.forget(inc)
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")

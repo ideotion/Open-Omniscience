@@ -1,0 +1,2 @@
+date,area,item,status,refs,key_paths,summary
+2026-11-28,tests,row 444: runner-dependent tests pinned,shipped,PR #2426,tests/conftest.py;tests/test_reindex_job.py;tests/test_repair_wal_row299.py;tests/test_batch_memory_footprint.py,"Suite swept under 1 CPU/300 MB free and 16 CPU/60 GB free profiles: 40 low-profile flips on main, all a test assuming a bigger machine (34 the encrypted-merge memory refusal; CPU count; disk reserve; a None that meant read-now). roomy_memory fixture in 11 files, CPU and disk pinned, no product fault found."

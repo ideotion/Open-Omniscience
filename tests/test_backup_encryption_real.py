@@ -133,3 +133,9 @@ def test_restore_preview_reports_encrypted_verdict():
             dest.unlink(missing_ok=True)
         assert prev.status_code == 200, prev.text
         assert prev.json()["encrypted"] is True
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")
