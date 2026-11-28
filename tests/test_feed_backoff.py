@@ -174,8 +174,8 @@ def test_cap_is_never_exceeded(db):
     assert delay <= P.BACKOFF_CAP_S + 1  # clamped, never unbounded
 
 
+# --------------------------------------------------------------------------- #
 # Reset conditions: new content / 304 clear the backoff; a fetch error advances it (row 454)
-# Reset conditions: new content / 304 / fetch error all clear the backoff
 # --------------------------------------------------------------------------- #
 
 
@@ -409,16 +409,23 @@ def _seed_climb(db, n=4):
 
 
 class _NoAnswer:
+    """The fetcher's own words for a failure where nothing came back: a name that did not resolve, a connection refused."""
+
+    def __init__(self, text="cannot resolve host feed.example"):
+        self.text = text
+
     def fetch(self, *a, **k):
-        raise FetchError("connection failed: name or service not known")
+        raise FetchError(self.text)
 
 
-def test_a_no_answer_failure_with_no_recent_read_leaves_the_climb(db):
+@pytest.mark.parametrize("text", ["cannot resolve host feed.example", "request error for https://feed.example/rss: refused"])
+def test_a_no_answer_failure_with_no_recent_read_leaves_the_climb(db, text):
     """Row 454: when no feed has been read lately, a failure that never reached the host (DNS, connect) may be this machine's
     network (Wi-Fi or a Tor circuit down fails every feed alike), so the back-off is left where it was: the failure is still
     RECORDED, and the whole catalogue is not held back for hours after the network returns."""
+    assert P._failure_reason(text) in {"dns", "connect"}  # the words really are a no-answer class
     src = _seed_climb(db)
-    P.ingest_source(db, src, fetcher=_NoAnswer())
+    P.ingest_source(db, src, fetcher=_NoAnswer(text))
     db.commit()
     st = db.get(FeedFetchState, src.id)
     assert st.consecutive_unchanged == 4
@@ -462,3 +469,18 @@ def test_a_read_is_noted_as_evidence(db):
     assert not P._network_seen_working()
     P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(304, etag='"v1"')]))
     assert P._network_seen_working()
+
+
+def test_a_robots_disallow_advances_with_no_recent_read(db):
+    """A robots.txt that DISALLOWS the feed is the host's own answer: it advances like an HTTP status."""
+    from src.ingest import RobotsDisallowed
+
+    src = _seed_climb(db)
+
+    class _Disallowed:
+        def fetch(self, *a, **k):
+            raise RobotsDisallowed("robots.txt disallows https://feed.example/rss")
+
+    P.ingest_source(db, src, fetcher=_Disallowed())
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 5

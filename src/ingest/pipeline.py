@@ -759,7 +759,7 @@ def ingest_source(
             # network as well as the feed's: Wi-Fi or a Tor circuit down fails every feed alike, and climbing them all would hold the
             # whole catalogue back for up to 6 h after the network returns. So such a failure advances only when another feed was
             # READ recently (``_network_seen_working``), the evidence that the network itself was up; otherwise the history is left
-            # as it was, the pre-row-454 cadence. An answer from the host (an HTTP status, a content verdict, a robots refusal) is
+            # as it was, the pre-row-454 cadence. An answer from the host (an HTTP status, a content verdict, a robots disallow) is
             # the feed's own and always advances.
             if _failure_answered_by_host(record_text(exc, typed=False), robots_disallowed=isinstance(exc, RobotsDisallowed),
                                          since=pass_epoch) or _network_seen_working():
@@ -1001,9 +1001,11 @@ def _network_seen_working() -> bool:
 
 
 def _failure_answered_by_host(detail: str, *, robots_disallowed: bool, since: int | None) -> bool:
-    """A failure carrying the HOST's answer (an HTTP status, a content or URL verdict, a robots refusal), as against one where
+    """A failure carrying the HOST's answer (an HTTP status, a content or URL verdict, a robots disallow), as against one where
     nothing came back (``dns``, ``connect``, ``other``), which this machine's own network can cause as well as the feed."""
-    if robots_disallowed:  # the host's robots.txt answered; an UNREACHABLE robots.txt is classified like any failure
+    if robots_disallowed:  # the host's robots.txt answered
+        # A robots.txt that COULD NOT BE DETERMINED (unreachable, refused, a server error, or a cached back-off that sent no request)
+        # classifies as ``other`` and so waits for a recent read like a connect failure: the cautious side, never a faster climb.
         return True
     reason = _failure_reason(detail, since=since)
     return reason.startswith("http_") or reason in _RESPONSE_ANSWERS
