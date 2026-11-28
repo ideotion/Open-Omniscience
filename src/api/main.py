@@ -84,6 +84,7 @@ from src.database.file_identity import REPLACED_WORDS, StoreReplacedError
 from src.database.fts import SearchQueryError, has_ranked_part, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
+from src.ingest.feed_entry_date import FEED_DATE_HOVER, FEED_DATE_LABEL, feed_date_fields
 from src.monitoring.secret_scrub import (
     http_detail,
     is_driver_text,
@@ -1938,6 +1939,8 @@ def _article_row(
         # than the curated `provenance` class above.
         "source_type": src.source_type if src else None,
         "published_at": a.published_at.isoformat() if a.published_at else None,
+        # Row 457 (R847): the feed entry's date when the page gave none of its own, flagged as the feed's on screen.
+        **feed_date_fields(a.published_at, a.feed_entry_published_at),
         "language": a.language,
         # SECONDARY/DEDUCED language (§2.6): set only when `language` is absent; the UI
         # shows it as "deduced", never as the authoritative language.
@@ -2796,6 +2799,9 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
                 # Queue item 61, last so every earlier column keeps its place: the host the page was fetched from, after
                 # its redirects (empty when not recorded).
                 "Fetched From Host",
+                # Row 457 (R847), after it for the same reason: the date the feed gave the item, only for an article whose
+                # page gave none of its own ("Published At" stays the article's own date, empty when it has none).
+                "Feed Entry Date (no date of its own)",
             ]
         )
         for a in articles:
@@ -2811,6 +2817,7 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
                     _c(a.content or ""),
                     _c(a.hash or ""),
                     _c(a.fetched_host or ""),
+                    (feed_date_fields(a.published_at, a.feed_entry_published_at)["feed_entry_published_at"] or ""),
                 ]
             )
         from src.utils.export_envelope import envelope_headers
@@ -2841,6 +2848,7 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
             "canonical_url": a.canonical_url,
             "source": _source_label(a.source.name, a.source.domain) if a.source else "Unknown",
             "published_at": a.published_at.isoformat() if a.published_at else None,
+            **feed_date_fields(a.published_at, a.feed_entry_published_at),
             "language": a.language,
             "content": a.content,
             "hash": a.hash,
@@ -2927,7 +2935,14 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             )
     else:
         _fetched_val = None
-    published = a.published_at.date().isoformat() if a.published_at else None
+    published = _html.escape(a.published_at.date().isoformat()) if a.published_at else None
+    if published is None and a.feed_entry_published_at is not None:
+        # Row 457 (R847): the page gave no date of its own, so the date its feed gave the item is shown, flagged as the
+        # feed's, with why on hover. Never shown bare: it is the feed's claim about the item, not the page's.
+        published = (
+            f"{_html.escape(a.feed_entry_published_at.date().isoformat())} <span class='muted feed-date' title='"
+            f"{_html.escape(FEED_DATE_HOVER)}'>· <span>{_html.escape(FEED_DATE_LABEL)}</span></span>"
+        )
     captured = a.created_at.date().isoformat() if a.created_at else None
     hash_short = (a.hash[:12] + "…") if a.hash else None
     safe_src = safe_href(a.url)
@@ -3006,7 +3021,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     source_rows = "".join(
         [
             _row("Source", src_name),
-            _row("Published", _html.escape(published) if published else None),
+            _row("Published", published),
             _row("Author", _html.escape(a.author) if a.author else None),
             _row("Language", lang if a.language else None),
             version_row,

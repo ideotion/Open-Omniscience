@@ -9,7 +9,7 @@ pending column is declared additive, is the audit's judgement and is not written
 
 ## 1. Main database: the migration chain
 
-Head: `b8d4f2a6c1e9` (89 migrations, base first).
+Head: `c2f6a8e4d1b7` (90 migrations, base first).
 
 | # | revision | after | file |
 |---|---|---|---|
@@ -102,6 +102,7 @@ Head: `b8d4f2a6c1e9` (89 migrations, base first).
 | 87 | `a7c2e9d4b1f3` | `e4b7c1d9a2f6` | `a7c2e9d4b1f3_screening_pending.py` |
 | 88 | `e4c1a7f3b9d2` | `a7c2e9d4b1f3` | `e4c1a7f3b9d2_corpus_segments.py` |
 | 89 | `b8d4f2a6c1e9` | `e4c1a7f3b9d2` | `b8d4f2a6c1e9_corpus_segment_generation.py` |
+| 90 | `c2f6a8e4d1b7` | `b8d4f2a6c1e9` | `c2f6a8e4d1b7_article_feed_entry_date.py` |
 
 ## 2. Main database: tables (66, from `src/database/models.py`)
 
@@ -317,6 +318,7 @@ Head: `b8d4f2a6c1e9` (89 migrations, base first).
 | `ip_observed_at` | DATETIME | yes |  |
 | `server_ip_reason` | VARCHAR(64) | yes |  |
 | `fetched_host` | VARCHAR(255) | yes |  |
+| `feed_entry_published_at` | DATETIME | yes |  |
 | `created_at` | DATETIME | yes |  |
 | `updated_at` | DATETIME | yes |  |
 | `region` | VARCHAR(50) | yes |  |

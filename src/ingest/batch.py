@@ -146,6 +146,8 @@ class _StagedArticle:
     links: list[dict] = field(default_factory=list)
     # The host the page was fetched from, after its redirects (queue item 61; src.utils.url_utils.fetched_host).
     fetched_host: str | None = None
+    # The feed entry's own date, for a page with none of its own (row 457, R847; src.ingest.feed_entry_date).
+    feed_entry_published_at: datetime | None = None
 
 
 class ArticleBatch:
@@ -198,7 +200,9 @@ class ArticleBatch:
     def has_canonical(self, canonical: str) -> bool:
         return canonical in self._pending_canonicals
 
-    def stage(self, fetched, doc, canonical: str, content_hash: str) -> None:
+    def stage(
+        self, fetched, doc, canonical: str, content_hash: str, *, feed_entry_published_at: datetime | None = None
+    ) -> None:
         """Buffer one extracted article (links pre-extracted, HTML dropped)."""
         entry = _StagedArticle(
             requested_url=fetched.requested_url,
@@ -214,6 +218,7 @@ class ArticleBatch:
             fetched_at=fetched.fetched_at,
             links=self._extract_links(fetched.content, fetched.final_url),
             fetched_host=_fetched_host_of(fetched.final_url),
+            feed_entry_published_at=feed_entry_published_at,
         )
         self._pending.append(entry)
         self._pending_hashes.add(content_hash)
@@ -439,6 +444,7 @@ class ArticleBatch:
             title=staged.title,
             content=staged.text,
             published_at=staged.published_at,
+            feed_entry_published_at=staged.feed_entry_published_at,
             language=staged.language,
             hash=staged.content_hash,
             author=staged.author,

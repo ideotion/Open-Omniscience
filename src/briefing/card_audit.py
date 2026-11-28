@@ -91,6 +91,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from src.ingest.feed_entry_date import feed_date_fields
 from src.monitoring.secret_scrub import log_failure
 from src.paths import diagnostics_dir as _report_dir
 from src.utils.url_utils import fetched_host_fields
@@ -999,6 +1000,7 @@ def _resolve_articles(session, ids: list[int], *, depth: str, excerpt_chars: int
                 Article.ip_observed_at,
                 Article.server_ip_reason,
                 Article.fetched_host,
+                Article.feed_entry_published_at,
                 Article.source_id,
                 Source.name,
                 Source.domain,
@@ -1031,6 +1033,8 @@ def _resolve_articles(session, ids: list[int], *, depth: str, excerpt_chars: int
                     "provenance_class": prov,
                 },
                 "published_at": r.published_at.isoformat() if r.published_at else None,
+                # Row 457 (R847): the feed's date when the page gave none, flagged as the feed's where it is shown.
+                **feed_date_fields(r.published_at, r.feed_entry_published_at),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "language": r.language,
                 "detected_language": r.detected_language,

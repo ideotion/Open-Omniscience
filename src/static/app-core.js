@@ -38,6 +38,19 @@
       const v = String(s == null ? "" : s).slice(0, 16).replace("T", " ");
       return (v && document.documentElement.dir === "rtl") ? "\u2068" + v + "\u2069" : v;
     }
+    // Row 457 (R847): an article's date, as escaped HTML. Its own date (published_at) exactly as before;
+    // for an article whose page gave none, the date its feed gave the item, always flagged as the feed's,
+    // with why on hover; "" when neither is recorded, so a caller that says "undated" still does. Only a
+    // payload the server gave feed_entry_published_at can show a feed date, so a surface nobody taught
+    // never shows one bare.
+    function ooArticleDateHtml(a, n) {
+      if (!a) return "";
+      if (a.published_at) return esc(ooIsoDate(a.published_at, n));
+      if (!a.feed_entry_published_at) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const why = t("This page gave no date of its own. This is the date the source's feed gave the item, which can be when it was posted or last updated in the feed rather than when it was first published.");
+      return `${esc(ooIsoDate(a.feed_entry_published_at, n))} <span class="muted feed-date" title="${esc(why)}">· ${esc(t("the feed's date"))}</span>`;
+    }
     // Row 286 (R775): the OpenStreetMap surfaces (the picker's lane cell, the map's OSM line, the
     // completeness heads, the object and place cards) state the date of the last daily change file
     // applied in order since the extract, BESIDE the extract's date and never in its place. dd is the
