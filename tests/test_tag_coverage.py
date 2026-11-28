@@ -107,6 +107,19 @@ def test_backed_off_is_not_a_failure_and_window_is_echoed(db):
     assert cov["fresh_window_hours"] == 6  # the window is always disclosed
 
 
+def test_a_failing_feed_that_is_backed_off_counts_as_failed_not_backed_off(db):
+    """Row 454: a failure now advances the back-off, so a failing feed carries a skip deadline too. It is counted under
+    "failed" with its reason, never under "Backed off (de-churn, not failures)", whose label would then be wrong."""
+    now = datetime.now(UTC)
+    a = _src(db, "a", tags="news")
+    _state(db, a.id, checked=now - timedelta(minutes=10), status=503, skip_until=now + timedelta(minutes=20))
+    db.commit()
+    news = next(t for t in tag_coverage(db, fresh_window_hours=6)["tags"] if t["tag"] == "news")
+    assert news["failed"] == 1 and news["failed_by_reason"]["http_5xx"] == 1
+    assert news["backed_off"] == 0
+    assert news["reached"] == 0 and news["fresh"] == 0
+
+
 def test_crawl_sources_counted_but_not_reach_tracked(db):
     _src(db, "rssone", tags="news", rss=True)
     _src(db, "crawlone", tags="news", rss=False)  # no rss_url -> crawl
