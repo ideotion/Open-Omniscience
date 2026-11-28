@@ -514,6 +514,38 @@ def test_an_encrypted_segments_hot_journal_is_confirmed_and_rolled_back(data, sh
     assert confirmed == [1] and not Path(f"{p}-journal").exists()
 
 
+def test_a_wrong_passphrase_beside_a_hot_journal_never_rolls_anything_back(data, shared, monkeypatch, tmp_path):
+    """SQLite refuses a hot journal before it decrypts page 1, so a wrong key is first taken for a crash. The read-only
+    confirmation is what stops it: the reason is wrong_key, no rollback runs and every file stays byte-identical."""
+    from src.database.connect import connect
+
+    monkeypatch.setattr(segment_open, "_shared_is_encrypted", lambda: True)
+    segment_write.open_writer(shared, key=_PW).close()
+    p = data / "corpus" / "seg-1.db"
+    con = connect(p, key=_PW, cipher_page_size=segment_open.SEGMENT_PAGE_SIZE)
+    con.isolation_level = None
+    con.execute("PRAGMA cache_size = 1")
+    con.execute("BEGIN IMMEDIATE")
+    con.execute("UPDATE segment_meta SET next_id = next_id + 1000, created_at = hex(randomblob(200000))")
+    db_copy, j_copy = tmp_path / "crash.db", tmp_path / "crash.db-journal"
+    shutil.copyfile(p, db_copy)
+    shutil.copyfile(f"{p}-journal", j_copy)
+    con.execute("ROLLBACK")
+    con.close()
+    os.replace(db_copy, p)
+    os.replace(j_copy, f"{p}-journal")
+    before = {x.name: x.read_bytes() for x in sorted(p.parent.iterdir())}
+    confirmed, rolled = [], []
+    real_confirm, real_roll = segment_open._confirm_beside_journal, segment_open._roll_back_journal
+    monkeypatch.setattr(segment_open, "_confirm_beside_journal", lambda *a: (confirmed.append(1), real_confirm(*a))[1])
+    monkeypatch.setattr(segment_open, "_roll_back_journal", lambda *a: (rolled.append(1), real_roll(*a))[1])
+    with pytest.raises(segment_open.SegmentUnavailable) as got:
+        segment_open.open_segment(_row(shared, 1), key="not-the-passphrase")
+    assert got.value.reason == "wrong_key"
+    assert confirmed == [1] and rolled == []
+    assert {x.name: x.read_bytes() for x in sorted(p.parent.iterdir())} == before
+
+
 def test_an_immutable_open_is_only_ever_read_only(tmp_path):
     from src.database.connect import connect
 
