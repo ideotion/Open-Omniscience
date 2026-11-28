@@ -10851,7 +10851,57 @@ def reindex_collecting_hold_target_s() -> float:
     return min(value, general)
 
 
-def reindex_flush_policy(target_s: float | None = None) -> Callable[[int, float], bool] | None:
+#: Row 446 (R852's P1, 2026-11-28): the hold target while nothing else should be writing, that is while an import owns the machine
+#: (the exclusive window) or while the backlog drain runs with the collector stopped and no window open. Measured on a 150k encrypted
+#: store (16 KiB pages): a commit writes about 3.6 MB of WAL per article, because the article's mention rows land at random places in
+#: ten indexes, so fewer and wider commits are the lever; batches of 500 instead of about 160 cut commit time by 51 % and writer time
+#: by 15 %. WHY 30 AND NOT MORE: a hold is the target, plus the article in flight, plus the commit (about 7 s at width 500 there, and
+#: the longest hold seen was 37.8 s), so 30 s keeps the worst case near 41 s, well under the write-gate watchdog's 60 s. The queued
+#: writer's 1 s rule is unchanged, so a UI save still waits about a second. ``OO_REINDEX_OWNED_HOLD_TARGET_S`` may LOWER it, never
+#: raise it past this cap; an explicit ``OO_REINDEX_HOLD_TARGET_S`` is the operator's word and applies here too.
+REINDEX_OWNED_HOLD_TARGET_S = 30.0
+
+#: Row 446: the batch width while the machine is owned (see above). The re-index's precompute window is 500 articles and a window's
+#: end always commits, so 500 lets the window be the batch. ``OO_IMPORT_REINDEX_COMMIT_BATCH``, when set, is the operator's width
+#: and wins; the owned width is never narrower than :func:`import_reindex_commit_batch`.
+REINDEX_OWNED_COMMIT_BATCH = 500
+
+
+def reindex_owned_hold_target_s() -> float:
+    """The hold target while the machine is owned (row 446): :data:`REINDEX_OWNED_HOLD_TARGET_S`, lowered by
+    ``OO_REINDEX_OWNED_HOLD_TARGET_S`` (never raised past the cap), and the general target whenever the operator set
+    ``OO_REINDEX_HOLD_TARGET_S`` (0 there is count-only everywhere). An unreadable override falls back to the cap's default, for
+    :func:`reindex_hold_target_s`'s reason; an override of 0 means "no owned target", that is the general one."""
+    general = reindex_hold_target_s()
+    if general <= 0 or os.getenv("OO_REINDEX_HOLD_TARGET_S", "").strip():
+        return general
+    value = REINDEX_OWNED_HOLD_TARGET_S
+    raw = os.getenv("OO_REINDEX_OWNED_HOLD_TARGET_S", "").strip()
+    if raw:
+        try:
+            parsed = float(raw)
+        except ValueError:
+            parsed = REINDEX_OWNED_HOLD_TARGET_S
+        if math.isfinite(parsed) and parsed >= 0:
+            value = parsed if parsed > 0 else general
+    return min(value, REINDEX_OWNED_HOLD_TARGET_S)
+
+
+def reindex_owned_commit_batch() -> int:
+    """The batch width while the machine is owned (row 446): ``OO_IMPORT_REINDEX_COMMIT_BATCH`` when the operator set it, else
+    :data:`REINDEX_OWNED_COMMIT_BATCH`, never narrower than :func:`import_reindex_commit_batch`."""
+    base = import_reindex_commit_batch()
+    if os.getenv("OO_IMPORT_REINDEX_COMMIT_BATCH", "").strip():
+        return base
+    return max(base, REINDEX_OWNED_COMMIT_BATCH)
+
+
+def reindex_flush_policy(
+    target_s: float | None = None,
+    *,
+    owned_target_s: float | None = None,
+    owned: Callable[[], bool] | None = None,
+) -> Callable[[int, float], bool] | None:
     """The drain's early-commit policy for :func:`~src.analytics.store.reindex_articles`' ``should_flush``.
 
     A batch commits at the next article after it has held the gate for ``target_s`` seconds, OR once it has held it for at least
@@ -10859,16 +10909,33 @@ def reindex_flush_policy(target_s: float | None = None) -> Callable[[int, float]
     the ceiling on its size. The question is only asked of a batch holding at least one article, so the floor is one article and a
     pass always makes progress however slow a single article is.
 
+    Row 446: with ``owned_target_s`` and ``owned``, the target is ``owned_target_s`` while ``owned()`` answers True, read again AT
+    EVERY QUESTION, so the batch falls back to ``target_s`` the moment the window ends or the collector starts (a collector that
+    starts is also a queued writer, under the same 1 s rule). An ``owned()`` that raises answers False: unknown ownership is never
+    assumed ownership.
+
     ``None`` when the target is 0 (the operator's way back to the count-only rule): the caller then passes no policy at all."""
     target = reindex_hold_target_s() if target_s is None else target_s
     if target <= 0:
         return None
     from src.database.writer import write_gate_waiters
 
+    wide = owned_target_s if owned is not None and owned_target_s is not None and owned_target_s > target else None
+
+    def _owned_now() -> bool:
+        try:
+            return bool(owned())  # type: ignore[misc]
+        except Exception:  # noqa: BLE001 - unknown ownership is never ownership
+            return False
+
     def _should_flush(staged: int, held_s: float) -> bool:
-        if held_s >= target:
+        if held_s >= REINDEX_QUEUED_WRITER_MIN_HOLD_S and write_gate_waiters() > 0:
             return True
-        return held_s >= REINDEX_QUEUED_WRITER_MIN_HOLD_S and write_gate_waiters() > 0
+        if held_s < target:
+            return False
+        if wide is None or held_s >= wide:
+            return True
+        return not _owned_now()
 
     return _should_flush
 
@@ -10882,7 +10949,18 @@ def _restore_reindex_policy(stats: dict) -> Callable[[int, float], bool] | None:
     ``OO_REINDEX_HOLD_TARGET_S`` is 0 (the count-only rule); ``stats["hold_target_s"]`` says which rule ran."""
     target = reindex_hold_target_s()
     stats["hold_target_s"] = target
+    owned_target = reindex_owned_hold_target_s()
+    if owned_target > target and _import_owns_the_machine():
+        # Row 446: the higher target while the import owns the machine, re-read at every question.
+        stats["owned_hold_target_s"] = owned_target
+        return reindex_flush_policy(target, owned_target_s=owned_target, owned=_import_owns_the_machine)
     return reindex_flush_policy(target)
+
+
+def _import_owns_the_machine() -> bool:
+    from src.shared import import_owns_the_machine
+
+    return import_owns_the_machine()
 
 
 class WriterJobsRefused(RestoreRefused):
@@ -11244,7 +11322,8 @@ def run_restore(
     _owned = exclusive or owns_the_machine()
     if _owned:
         if reindex_commit_batch is None:
-            reindex_commit_batch = import_reindex_commit_batch()
+            # Row 446: the owned width (500, the precompute window), bounded by the owned hold target's policy below.
+            reindex_commit_batch = reindex_owned_commit_batch()
         if reindex_workers is None:
             from src.analytics.reindex_parallel import all_cores_worker_count
 
