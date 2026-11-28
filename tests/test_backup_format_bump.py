@@ -226,3 +226,9 @@ def test_the_signature_gate_covers_EVERY_signed_format(tmp_path):
         assert "is not signed" in str(exc.value), (  # R800 words the gate by what it checked
             f"{schema} was merged without a verified signature -- the gate failed OPEN"
         )
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")

@@ -614,3 +614,9 @@ def test_prune_snapshots_never_deletes_a_sibling_restores_active_snapshot(client
     removed_after = merge_mod._prune_snapshots(keep=3)
     assert active_and_oldest.name in removed_after
     assert not active_and_oldest.exists()
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")

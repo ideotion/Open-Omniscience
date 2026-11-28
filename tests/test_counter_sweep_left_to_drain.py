@@ -345,3 +345,9 @@ def test_the_triage_proposal_states_the_counters_basis():
     from src.ai_layer import triage_proposal
 
     assert '"counts": _counter_basis(session)' in inspect.getsource(triage_proposal.build_triage_proposal)
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")
