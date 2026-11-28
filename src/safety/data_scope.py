@@ -188,7 +188,11 @@ SHAPED_DIRS: dict[str, tuple[dict, ...]] = {
     # src/llm/installer.py:318-333: the installer's staged script, a 16-hex token in its name
     "runtime": ({"re": r"ollama-install-[0-9a-f]{16}\.sh", "kind": "file"},),
     # src/*/corpus_lease.py:74-117: <lease name>.<uuid4 hex>.lease
-    "leases": ({"re": r"[a-z]+(?:-[a-z]+)*\.[0-9a-f]{32}\.lease", "kind": "file"},),
+    "leases": (
+        {"re": r"[a-z]+(?:-[a-z]+)*\.[0-9a-f]{32}\.lease", "kind": "file"},
+        # src/database/segment_write.py _write_claim: a live bulk load's claim, segment-load.<uuid4 hex>.claim (R826 stage 4a)
+        {"re": r"segment-load\.[0-9a-f]{32}\.claim", "kind": "file"},
+    ),
     # src/wiki/dumps.py:115-136, :214, :293 and src/wiki/dump_index.py:43
     "wiki_dumps": (
         {"re": r"downloads\.json(?:\.tmp)?", "kind": "file"},

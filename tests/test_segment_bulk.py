@@ -357,3 +357,102 @@ def test_two_threads_on_one_shared_connection_never_meet_inside_a_registry_trans
         assert result == ["ok"], "the check waited for the other thread's registry transaction to end"
     finally:
         w.close()
+
+
+# --- stage 4a: a live load's claim is honoured by every process on the data folder -------------------------------------
+
+_CHILD = r"""
+import json, os, sqlite3, sys
+from pathlib import Path
+d = Path(os.environ["OO_DATA_DIR"])
+import src.api.unlock as unlock
+unlock.main_db_path = lambda **_: d / "open_omniscience.db"
+from src.database import segment_open, segment_write
+segment_open.SEGMENT_WRITES_ENABLED = True
+segment_open._shared_is_encrypted = lambda: False
+con = sqlite3.connect(d / "open_omniscience.db", isolation_level=None, check_same_thread=False)
+load = segment_write.open_bulk_load(con, size=10)
+print(load.seg.seg_no, flush=True)
+sys.stdin.readline()
+"""
+
+
+def _claims(data: Path) -> list[str]:
+    return sorted(p.name for p in (data / "leases").glob("segment-load.*.claim")) if (data / "leases").exists() else []
+
+
+@posix_only
+def test_another_process_s_live_load_is_never_abandoned_and_a_dead_one_s_is(data, shared):
+    import subprocess
+    import sys
+
+    child = subprocess.Popen([sys.executable, "-c", _CHILD], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                             env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])})
+    try:
+        seg_no = int(child.stdout.readline())
+        assert len(_claims(data)) == 1, "the child's claim is on disk"
+        segment_write.open_writer(shared).close()  # a settle in THIS process, which knows nothing of the child's load
+        assert _row(shared, seg_no).state == "reserved", "another process's live load is left alone"
+    finally:
+        child.kill()
+        child.wait(10)
+    w = segment_write.open_writer(shared)
+    w.close()
+    assert _row(shared, seg_no).state == "abandoned", "its owner is gone: a crash's leftover"
+    assert _claims(data) == [], "the dead owner's claim was removed"
+
+
+@posix_only
+def test_an_unreadable_claim_holds_every_reservation(data, shared):
+    load = segment_write.open_bulk_load(shared, size=10)
+    seg_no = load.seg.seg_no
+    load._con.close()
+    segment_write._BULK_LOADING.clear()  # as if THIS process had died: only the claim file can speak for the load now
+    (data / "leases" / ("segment-load." + "e" * 32 + ".claim")).write_text("{not json", encoding="utf-8")
+    segment_write.open_writer(shared).close()
+    assert _row(shared, seg_no).state == "reserved", "a claim that cannot be read is never taken as no claim"
+
+
+def test_an_unreadable_claim_older_than_ten_seconds_is_a_leftover(data, shared):
+    """As ``corpus_lease`` treats an unreadable lease: held while new, removed once old (security reads on stage 4a)."""
+    load = segment_write.open_bulk_load(shared, size=10)
+    seg_no = load.seg.seg_no
+    load._con.close()
+    segment_write._BULK_LOADING.clear()
+    segment_write._rewrite_claim()  # this process's own claim goes with its loads
+    bad = data / "leases" / ("segment-load." + "e" * 32 + ".claim")
+    bad.write_text("{not json", encoding="utf-8")
+    old = bad.stat().st_mtime - segment_write._UNREADABLE_CLAIM_S - 5
+    os.utime(bad, (old, old))
+    segment_write.open_writer(shared).close()
+    assert not bad.exists() and _row(shared, seg_no).state == "abandoned"
+
+
+def test_no_bulk_load_starts_when_this_process_cannot_be_recorded(data, shared, monkeypatch):
+    """An empty owner record (psutil failed) would make a claim nobody can ever judge dead: the load is refused before
+    anything is reserved."""
+    from src.safety import process_owner
+
+    monkeypatch.setattr(process_owner, "owner_record", lambda: {})
+    before = [(s.seg_no, s.state) for s in sg.registry(shared)]
+    with pytest.raises(SegmentError):
+        segment_write.open_bulk_load(shared, size=10)
+    assert [(s.seg_no, s.state) for s in sg.registry(shared)] == before
+    assert _claims(data) == [] and not segment_write._RESERVING[0]
+
+
+@posix_only
+def test_this_process_s_claim_names_its_live_loads_and_goes_when_they_end(data, shared):
+    assert _claims(data) == []
+    a = segment_write.open_bulk_load(shared, size=10)
+    b = segment_write.open_bulk_load(shared, size=10)
+    (claim,) = (data / "leases").glob("segment-load.*.claim")
+    rec = json.loads(claim.read_text(encoding="utf-8"))
+    assert rec["seg_nos"] == sorted([a.seg.seg_no, b.seg.seg_no]) and rec["reserving"] is False
+    assert oct(os.stat(data / "leases").st_mode & 0o777) == "0o700"
+    with a.transaction() as t:
+        _load(t, 1, 2)
+    a.seal()
+    assert json.loads(claim.read_text(encoding="utf-8"))["seg_nos"] == [b.seg.seg_no]
+    b.abandon()
+    assert _claims(data) == []

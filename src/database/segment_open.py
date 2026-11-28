@@ -301,20 +301,51 @@ def open_segment(seg: Segment, *, key: str | None = None):
     """Open one registered segment for reading, checked as the module text says. Returns the connection (the caller
     closes it) or raises :class:`SegmentUnavailable`. ``key`` defaults to the process passphrase."""
     path, before, shared_encrypted = _prechecked(seg)
-    absent_before = _absent_sidecars(path)
-    if _journal_left(path):
-        if not SEGMENT_WRITES_ENABLED:
-            # Rolling a journal back writes the file, and this build writes no segment (the switch stays off): such a
-            # segment is unreadable here, and its file and journal are left exactly as they are.
-            raise SegmentUnavailable(seg.seg_no, "unreadable")
-        _roll_back_journal(seg, path, before, key, bool(shared_encrypted))
+    encrypted = bool(shared_encrypted)
+    # A journal beside the file is either a live writer's (it holds the lock, and the read-only open below reads the last
+    # committed state or waits) or a crash's: a HOT journal, which SQLite itself detects and refuses to roll back through a
+    # read-only open. Only that refusal leads to a rollback, so a live transaction is never mistaken for a crash.
     try:
-        con = _checked_connect(seg, path, key, bool(shared_encrypted), read_only=True)
+        return _open_and_check(seg, path, before, key, encrypted)
+    except _HotJournal:
+        pass
+    if not SEGMENT_WRITES_ENABLED:
+        # Rolling a journal back writes the file, and this build writes no segment (the switch stays off): such a
+        # segment is unreadable here, and its file and journal are left exactly as they are.
+        raise SegmentUnavailable(seg.seg_no, "unreadable")
+    _confirm_beside_journal(seg, path, before, key, encrypted)
+    _roll_back_journal(seg, path, before, key, encrypted)
+    try:
+        return _open_and_check(seg, path, before, key, encrypted)
+    except _HotJournal:
+        raise SegmentUnavailable(seg.seg_no, "unreadable") from None
+
+
+class _HotJournal(SegmentUnavailable):
+    """The read-only open met a hot journal (SQLITE_READONLY_ROLLBACK): a crash's, never a live writer's."""
+
+
+def _is_hot_journal_refusal(exc: BaseException, path: Path) -> bool:
+    """SQLite's refusal to roll a hot journal back through a read-only open. The standard driver names it
+    (SQLITE_READONLY_ROLLBACK); sqlcipher3 gives only the primary code (SQLITE_READONLY), so there it also needs a
+    journal beside the file. Measured on both drivers (R826 stage 4a): a live writer's journal gives "database is
+    locked" or a clean read instead, never this."""
+    name = getattr(exc, "sqlite_errorname", None)
+    if name == "SQLITE_READONLY_ROLLBACK":
+        return True
+    return name in (None, "SQLITE_READONLY") and "readonly database" in str(exc) and _journal_left(path)
+
+
+def _open_and_check(seg: Segment, path: Path, before: tuple[int, int], key: str | None, encrypted: bool):
+    """The read-only open and every check after it. Raises :class:`_HotJournal` when SQLite meets a hot journal."""
+    absent_before = _absent_sidecars(path)
+    try:
+        con = _checked_connect(seg, path, key, encrypted, read_only=True)
     except SegmentUnavailable:
         _remove_sidecars_made(path, absent_before)
         raise
     try:
-        _check_open(seg, con, path, before, bool(shared_encrypted))
+        _check_open(seg, con, path, before, encrypted)
     except SegmentUnavailable:
         con.close()
         _remove_sidecars_made(path, absent_before)
@@ -322,6 +353,8 @@ def open_segment(seg: Segment, *, key: str | None = None):
     except Exception as exc:  # noqa: BLE001 - see above
         con.close()
         _remove_sidecars_made(path, absent_before)
+        if _is_hot_journal_refusal(exc, path):
+            raise _HotJournal(seg.seg_no, "unreadable") from None
         log_failure(_LOG, "a corpus segment could not be checked", exc, level=logging.DEBUG)
         raise SegmentUnavailable(seg.seg_no, _held_or_unreadable(exc)) from None
     return con
@@ -381,6 +414,49 @@ def _no_log_beside(path: Path) -> bool:
     return True
 
 
+def _confirm_beside_journal(
+    seg: Segment, path: Path, before: tuple[int, int], key: str | None, shared_encrypted: bool
+) -> None:
+    """Before a hot journal is rolled back (a write to the file), prove the file is THIS segment, without writing anything:
+    an ``immutable`` read-only open (no lock, the journal neither read nor touched) must show the same file, the same
+    driver, the exact schema, this segment's identity and a generation no older than the registry's. The file is read as
+    it lies, its uncommitted pages included: the identity is written once and never changes, and a generation only rises,
+    so an interrupted transaction can show the committed number or a newer one, never an older. Anything else (a file
+    swapped in under the name, another program's database with a journal of its own) is refused, and the file and its
+    journal are left byte-identical (R826 stage 4a, docket row 409)."""
+    from src.database.connect import _is_sqlcipher_conn
+
+    try:
+        con = _checked_connect(seg, path, key, shared_encrypted, read_only=True, immutable=True)
+    except SegmentUnavailable:
+        raise
+    try:
+        if _identity_of_name(path) != before:
+            raise SegmentUnavailable(seg.seg_no, "changed_while_opening")
+        if _is_sqlcipher_conn(con) != shared_encrypted:
+            raise SegmentUnavailable(seg.seg_no, "encryption_differs")
+        harden(con, closed=True)
+        if not check_schema(con):
+            raise SegmentUnavailable(seg.seg_no, "schema")
+        if segment_identity(con) != (seg.seg_no, seg.id_lo, seg.id_hi):
+            raise SegmentUnavailable(seg.seg_no, "identity")
+        counters = segment_counters(con)
+        if counters is None:
+            raise SegmentUnavailable(seg.seg_no, "identity")
+        if seg.generation is not None and counters[0] < seg.generation:
+            raise SegmentUnavailable(seg.seg_no, "older_copy")
+    except SegmentUnavailable:
+        raise
+    except Exception as exc:  # noqa: BLE001 - torn or damaged pages: one fixed reason, the text stays in the debug log
+        # A TORN page (a power cut inside the commit's page writes; a segment page is 16 KiB, more than a disk writes
+        # atomically) also lands here: the file and its journal are then left as they are, and the segment stays
+        # unavailable until it is recovered. Stage 4's writes-on gate carries the recovery (docket row 409).
+        log_failure(_LOG, "a corpus segment beside a journal could not be confirmed", exc, level=logging.DEBUG)
+        raise SegmentUnavailable(seg.seg_no, _held_or_unreadable(exc)) from None
+    finally:
+        con.close()
+
+
 def _roll_back_journal(seg: Segment, path: Path, before: tuple[int, int], key: str | None, shared_encrypted: bool) -> None:
     """Roll a hot journal back with one read-write open of the checked file through the app's factory (SQLite rolls back on
     the first read), so the read-only open that follows sees the last committed state. The journal is SQLite's own record
@@ -390,9 +466,9 @@ def _roll_back_journal(seg: Segment, path: Path, before: tuple[int, int], key: s
     if not _no_log_beside(path):
         raise SegmentUnavailable(seg.seg_no, "not_a_segment_file")
     absent_before = _absent_sidecars(path)
-    # The factory's open reads page 1 before the identity below is checked again, so a rollback may already have run by
-    # then: the name was checked a moment before (a regular file with one name in the app's 0700 corpus folder), and
-    # swapping it in that moment needs write access to that folder, which already grants more than this.
+    # The file was confirmed as this segment a moment before (:func:`_confirm_beside_journal`). The factory's open reads
+    # page 1 before the identity below is checked again, so a rollback may already have run by then: swapping the name in
+    # that moment needs write access to the app's 0700 corpus folder, which already grants more than this.
     con = _checked_connect(seg, path, key, shared_encrypted, read_only=False)
     try:
         if _identity_of_name(path) != before:
@@ -410,7 +486,9 @@ def _roll_back_journal(seg: Segment, path: Path, before: tuple[int, int], key: s
         _remove_sidecars_made(path, absent_before)
 
 
-def _checked_connect(seg: Segment, path: Path, key: str | None, shared_encrypted: bool, *, read_only: bool):
+def _checked_connect(
+    seg: Segment, path: Path, key: str | None, shared_encrypted: bool, *, read_only: bool, immutable: bool = False
+):
     """The factory's open of a prechecked segment, its failures named with the fixed reasons."""
     from src.database.connect import (
         DatabaseLockedError,
@@ -424,13 +502,18 @@ def _checked_connect(seg: Segment, path: Path, key: str | None, shared_encrypted
             path,
             key=key,
             read_only=read_only,
+            immutable=immutable,
             existing_no_follow=not read_only,  # a read-write open never creates the file and never follows a link (3b)
             check_same_thread=False,
             cipher_page_size=SEGMENT_PAGE_SIZE,
         )
     except StoreHeldError:
         raise SegmentUnavailable(seg.seg_no, "in_use") from None
-    except WrongPassphraseError:
+    except WrongPassphraseError as exc:
+        # The factory names every failed keyed open a wrong passphrase, chained from the error that got past page 1: a hot
+        # journal's refusal is one of those, and is told apart here (measured: sqlcipher3, code 8 under the right key).
+        if read_only and not immutable and exc.__cause__ is not None and _is_hot_journal_refusal(exc.__cause__, path):
+            raise _HotJournal(seg.seg_no, "unreadable") from None
         raise SegmentUnavailable(seg.seg_no, "wrong_key") from None
     except DatabaseLockedError:
         # No key: the corpus is locked, or (a plaintext corpus) the file is not plaintext like the corpus is.
@@ -439,6 +522,8 @@ def _checked_connect(seg: Segment, path: Path, key: str | None, shared_encrypted
     except FileNotFoundError:
         raise SegmentUnavailable(seg.seg_no, "missing") from None
     except Exception as exc:  # noqa: BLE001 - damaged, held, I/O: one fixed reason, the text stays in the debug log
+        if read_only and not immutable and _is_hot_journal_refusal(exc, path):
+            raise _HotJournal(seg.seg_no, "unreadable") from None
         log_failure(_LOG, "a corpus segment could not be opened", exc, level=logging.DEBUG)
         raise SegmentUnavailable(seg.seg_no, _held_or_unreadable(exc)) from None
 
