@@ -6429,7 +6429,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: ar
+  language: en
   country: LBN
   region: asia
   source_type: scientific-journal
@@ -7893,7 +7893,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: sr
   country: SRB
   region: europe
   source_type: scientific-journal
@@ -8704,7 +8704,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: ru
   country: RUS
   region: europe
   source_type: scientific-journal
