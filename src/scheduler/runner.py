@@ -1652,19 +1652,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
         max_pages=max_pages,
     )
     candidates = _select_crawl_candidates(session, settings, settings.crawl_per_pass)
-    # Row 463 (R852): a feed-less source whose exact host another source of this install already reads gets that feed as a
-    # PROPOSAL (database only, no request). Committed before the first fetch below, so no write holds the gate across one.
-    feed_proposals = 0
-    try:
-        from src.ingest.feed_proposals import record_same_domain
-
-        feed_proposals = record_same_domain(session)
-        if feed_proposals:
-            session.commit()
-    except Exception as exc:  # noqa: BLE001 - a proposal is a by-product: it never stops the crawl
-        log_failure(_LOG, "crawl supplement: same-domain feed proposals failed", exc, level=logging.WARNING)
-        session.rollback()
-        feed_proposals = 0
+    feed_proposals = 0  # row 463 (R852): feed links read off a feed-less outlet's start page, recorded as proposals only
     sources_crawled = 0
     pages_fetched = 0
     sitemap_urls_ingested = 0

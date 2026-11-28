@@ -444,7 +444,6 @@ Heads: `c2f6a8e4d1b7`, `c3f7a1e9d5b2` (92 migrations, base first).
 | `url` | VARCHAR(500) | no |  |
 | `host` | VARCHAR(255) | no |  |
 | `origin` | VARCHAR(20) | no |  |
-| `sibling_source_id` | INTEGER | yes |  |
 | `status` | VARCHAR(12) | no |  |
 | `found_at` | DATETIME | yes |  |
 | `decided_at` | DATETIME | yes |  |

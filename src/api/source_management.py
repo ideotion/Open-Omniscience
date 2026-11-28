@@ -187,7 +187,7 @@ def dismiss_source_candidate(
 
 # ==================== FEED PROPOSALS (row 463, R852) ====================
 # A feed address proposed for a feed-less source, found without a request of its own: a feed link on a start page the crawl
-# supplement already read, or the feed of another source on the exact same host. Nothing is fetched until the operator
+# supplement already read. Nothing is fetched until the operator
 # accepts ONE proposal with a click; accepting sets the source's feed address and the next collection reads it.
 
 
@@ -196,7 +196,6 @@ def _feed_proposal_row(db: Session, p) -> dict:
     from src.ingest.feed_proposals import _site
 
     src = db.get(Source, p.source_id)
-    sibling = db.get(Source, p.sibling_source_id) if p.sibling_source_id else None
     domain = src.domain if src is not None else None
     return {
         "id": p.id,
@@ -208,7 +207,6 @@ def _feed_proposal_row(db: Session, p) -> dict:
         # a feed on another host is another party (R761): said in words, never left to the reader to spot
         "other_host": bool(domain) and _site(p.host) != _site(domain),
         "origin": p.origin,
-        "sibling_source": ({"id": sibling.id, "name": sibling.name, "domain": sibling.domain} if sibling is not None else None),
         "status": p.status,
         "found_at": p.found_at.isoformat() if p.found_at else None,
     }
@@ -243,14 +241,20 @@ def accept_feed_proposal(request: Request, proposal_id: int, db: Session = Depen
     p = accept(db, proposal_id)
     if isinstance(p, Refusal):
         raise HTTPException(status_code=p.code, detail=p.message)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # The (domain, feed) index refused it: another row of this domain stores that feed by now. Answered as the refusal
+        # it is, never the driver's text.
+        db.rollback()
+        raise HTTPException(status_code=409, detail="another source on this site already reads this feed") from None
     from src.database.models import Source
 
     src = db.get(Source, p.source_id)
     return {"accepted": p.id, "source_id": p.source_id,
             "source_name": src.name if src is not None else None,
             "source_domain": src.domain if src is not None else None,
-            "note": "The feed address is set. Nothing was fetched; the next collection reads it."}
+            "note": "The feed address is set. Nothing was fetched; it is read when this source is next collected."}
 
 
 @router.post("/feed-proposals/{proposal_id}/dismiss", response_model=dict)

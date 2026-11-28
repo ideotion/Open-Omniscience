@@ -1,7 +1,6 @@
 """feed_proposals -- feed addresses proposed for feed-less sources, awaiting a click (row 463, R852).
 
-A proposal is found without a request of its own (a feed link on a start page the crawl supplement already fetched, or
-a same-host sibling source's feed) and changes nothing until the operator accepts it. Additive: a new table, no row of
+A proposal is found without a request of its own (a feed link on a start page the crawl supplement already fetched) and changes nothing until the operator accepts it. Additive: a new table, no row of
 any existing table touched, nothing re-extracted (R755).
 
 (``create_all`` already creates this on fresh stores; this migration keeps alembic-managed databases consistent.)
@@ -43,7 +42,6 @@ def upgrade() -> None:
         sa.Column("url", sa.String(length=500), nullable=False),
         sa.Column("host", sa.String(length=255), nullable=False),
         sa.Column("origin", sa.String(length=20), nullable=False),
-        sa.Column("sibling_source_id", sa.Integer(), nullable=True),
         sa.Column("status", sa.String(length=12), nullable=False),
         sa.Column("found_at", sa.DateTime(), nullable=True),
         sa.Column("decided_at", sa.DateTime(), nullable=True),

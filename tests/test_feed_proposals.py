@@ -3,9 +3,9 @@
 What is pinned here: a proposal is found without a request (the module imports no fetcher and no network library, and a
 run with every socket call refused still records one); the untrusted page is checked before anything is recorded
 (scheme, user info, length, internal names and addresses, at most three per page); a proposal is never an ``rss_url``
-change until one click accepts ONE proposal; a dismissed address is never proposed again; same-domain proposals match
-the exact host only (``www.`` ignored, a subdomain is another site) and name their sibling; the crawl reads the start
-page of a feed-less source only, and never stages a row between two fetches.
+change until one click accepts ONE proposal; a dismissed address is never proposed again; a feed another source on the
+same site already reads is never proposed nor accepted (the sources table's one row per domain and feed); the crawl reads
+the start page of a feed-less source only, and never stages a row between two fetches.
 """
 
 from __future__ import annotations
@@ -69,6 +69,12 @@ def _page(*hrefs, kind="application/rss+xml"):
     ("http://printer.local/feed", "internal_name"),
     ("http://db.internal/feed", "internal_name"),
     ("http://router.lan/feed", "internal_name"),
+    ("http://127.1/feed", "numeric_address"),
+    ("http://0x7f.1/feed", "numeric_address"),
+    ("http://0177.0.0.1/feed", "numeric_address"),
+    ("http://\uff11\uff12\uff17.0.0.1/feed", "internal_address"),
+    ("http://2130706433/feed", "numeric_address"),
+    ("https://" + "a" * 250 + ".example.com/f", "length"),
 ])
 def test_an_address_the_app_will_not_record(url, reason):
     from src.ingest.feed_proposals import address_refusal
@@ -146,31 +152,29 @@ def test_record_links_checks_and_caps_again(db):
     assert fp.record_links(db, s.id, urls) == 2  # the first three only, of which one is refused
 
 
-# ---------------------------------------------------------------- same domain
+# ---------------------------------------------------------------- a feed another source on the site already reads
 
 
-def test_same_domain_matches_the_exact_host_and_names_the_sibling(db):
-    from src.database.models import FeedProposal
+def test_a_feed_held_on_the_same_site_is_not_proposed(db):
     from src.ingest import feed_proposals as fp
 
-    fed = _src(db, "Fed", "www.example.com", rss="https://example.com/rss")
+    _src(db, "Fed", "www.example.com", rss="https://example.com/rss")
     bare = _src(db, "Bare", "example.com")
-    sub = _src(db, "Edition", "en.example.com")
-    other = _src(db, "Other", "example.org")
-    assert fp.record_same_domain(db) == 1
-    db.commit()
-    p = db.query(FeedProposal).one()
-    assert (p.source_id, p.sibling_source_id, p.origin, p.url) == (bare.id, fed.id, "same_domain", "https://example.com/rss")
-    assert sub.id != p.source_id and other.id != p.source_id
-    assert fp.record_same_domain(db) == 0, "proposed once"
+    assert fp.record_links(db, bare.id, ["https://example.com/rss/", "https://example.com/other"]) == 1
 
 
-def test_same_domain_does_not_propose_a_refused_address(db):
+def test_accept_refuses_a_feed_held_on_the_same_site(db):
+    from src.database.models import FeedProposal, Source
     from src.ingest import feed_proposals as fp
 
-    _src(db, "Fed", "example.com", rss="http://localhost/rss")
-    _src(db, "Bare", "www.example.com")
-    assert fp.record_same_domain(db) == 0
+    bare = _src(db, "Bare", "example.com")
+    db.add(FeedProposal(source_id=bare.id, url="https://example.com/rss", host="example.com", origin="crawl_page"))
+    db.commit()
+    _src(db, "Fed", "example.com", rss="https://example.com/rss")  # same domain: the (domain, feed) index would refuse it
+    r = fp.accept(db, db.query(FeedProposal).one().id)
+    assert isinstance(r, fp.Refusal) and r.code == 409
+    db.commit()
+    assert db.get(Source, bare.id).rss_url is None
 
 
 # ---------------------------------------------------------------- the click
@@ -349,6 +353,7 @@ _ALLOWED_FROM = {
     "src.ingest": {"_carries_userinfo", "_unsafe_url_text"},
     "src.ingest.feed_find": {"feed_links_in_page"},
     "src.ingest.ssrf_guard": {"is_blocked_ip"},
+    "src.database.feed_key": {"feed_key"},
     "src.database.models": {"FeedProposal", "Source"},
 }
 
@@ -386,11 +391,8 @@ def test_the_discovery_path_runs_with_every_socket_call_refused(db, monkeypatch)
     monkeypatch.setattr(socket.socket, "connect", _refuse)
     monkeypatch.setattr(EthicalFetcher, "fetch", _refuse)
     s = _src(db, "Ex", "example.com")
-    _src(db, "Fed", "www.example.org", rss="https://example.org/rss")
-    _src(db, "Bare", "example.org")
     urls = fp.links_from_page(s, _page("https://example.com/feed", "https://feeds.example.net/x"), "https://example.com/")
     assert fp.record_links(db, s.id, urls) == 2
-    assert fp.record_same_domain(db) == 1
     db.commit()
     pid = db.execute(__import__("sqlalchemy").text("select id from feed_proposals order by id")).scalars().first()
     fp.accept(db, pid)

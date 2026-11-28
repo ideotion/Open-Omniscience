@@ -49,9 +49,8 @@
       }
     }
 
-    // Feed addresses PROPOSED for feed-less sources (row 463, R852). Found offline: on a start
-    // page the crawl had already read, or as the feed of another source on the exact same host.
-    // Nothing is fetched for a proposal; Accept sets that ONE source's feed address and the next
+    // Feed addresses PROPOSED for feed-less sources (row 463, R852). Found offline, on a start
+    // page the crawl had already read. Nothing is fetched for a proposal; Accept sets that ONE source's feed address and the next
     // collection reads it like any feed. One click per proposal, never in bulk. The counts are
     // proposals only, kept apart from sources and from discovery candidates (R773).
     function _fpT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
@@ -69,10 +68,7 @@
         list.innerHTML = "<table><tr><th>" + esc(_fpT("Source")) + "</th><th>" + esc(_fpT("Feed address")) +
           "</th><th>" + esc(_fpT("Where it came from")) + "</th><th><span class='sr-only'>" + esc(_fpT("Actions")) + "</span></th></tr>" +
           r.proposals.map(p => {
-            const where = p.origin === "same_domain"
-              ? esc(_tfn("same domain, not verified — the feed of {name}",
-                  { name: (p.sibling_source && (p.sibling_source.name || p.sibling_source.domain)) || "?" }))
-              : esc(_fpT("found on a page the crawl already read"));
+            const where = esc(_fpT("found on a page the crawl already read"));
             const host = p.other_host
               ? `<div class="card-caveat">${esc(_tfn("on another host than the source's site: {host}", { host: p.host }))}</div>`
               : `<div class="muted">${esc(_tfn("host: {host}", { host: p.host }))}</div>`;
@@ -88,7 +84,7 @@
       try {
         const r = await api(`/api/sources/feed-proposals/${Number(id)}/${action}`, {method: "POST"});
         toast(action === "accept"
-          ? _tfn("Feed address set for {name}. The next collection reads it.", { name: r.source_name || r.source_domain || "" })
+          ? _tfn("Feed address set for {name}. Nothing was fetched; it is read when this source is next collected.", { name: r.source_name || r.source_domain || "" })
           : _fpT("Proposal dismissed."));
         loadFeedProposals(); loadManagedSources();
       } catch (e) {
