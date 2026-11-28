@@ -489,6 +489,14 @@
             ? `<div>` + ooLabelHtml(esc(t("Checked first")),
                 esc(tf("{n} sources whose verdict a backup disagrees with, checked ahead of the rest", {n: n(rc.flagged)}))) + `</div>`
             : ""),
+          // R850 / R851: how many of the sources link density alone disqualified had their one re-check, and how many could not be told
+          ((rc.recheck_once && rc.recheck_once.selected)
+            ? `<div title="${esc(t("Chosen by recomputing the criteria from each source's stored articles, never from a stored verdict."))}">`
+              + ooLabelHtml(esc(t("One-time re-check")),
+                esc(tf("{rechecked} of {chosen} sources that link density alone disqualified have been re-checked once; {undetermined} could not be determined (too few stored articles).",
+                       {rechecked: n(rc.recheck_once.rechecked), chosen: n(rc.recheck_once.chosen), undetermined: n(rc.recheck_once.not_determined)})))
+              + `</div>`
+            : ""),
           (rc.next && rc.next.length)
             ? `<div class="muted">` + ooLabelHtml(esc(t("Next up")), doms(rc.next.map((r) => r.domain))) + `</div>` : "",
           `<div>` + ooLabelHtml(esc(t("Not due yet")),

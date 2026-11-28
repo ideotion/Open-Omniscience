@@ -28,6 +28,11 @@ NOW = datetime(2026, 11, 28, tzinfo=UTC)
 JUDGED = NOW - timedelta(days=3)          # well inside the first ladder step: not due on its own
 
 
+@pytest.fixture(autouse=True)
+def _no_pause_memory(monkeypatch):
+    monkeypatch.setattr(q, "_recheck_once_paused_at", None)
+
+
 @pytest.fixture()
 def db():
     engine = app_sqlite_engine(":memory:", future=True)
@@ -147,7 +152,7 @@ def test_an_unreadable_selection_makes_nothing_due(db, monkeypatch, four):
     assert q.select_due_disqualified(db, now=NOW, limit=10) == []
 
 
-def test_a_paused_selection_stores_nothing_and_is_tried_next_pass(db, store, monkeypatch, four):
+def test_a_paused_selection_stores_nothing_and_is_tried_again_later(db, store, monkeypatch, four):
     from src.analytics import source_quality as sq
 
     def paused(*_a, **_kw):
@@ -200,3 +205,89 @@ def test_the_real_recompute_reads_and_writes_nothing():
     s.commit()
     assert writes == []
     assert sel == {"chosen": [], "not_determined": [thin.id]}, "three stored articles are too few to recompute"
+
+
+def _choose(store, *sources):
+    store[q.RECHECK_ONCE_KEY] = {"selection": q.RECHECK_ONCE_SELECTION, "label": q.RECHECK_ONCE_LABEL,
+                                 "selected_at": "2026-11-28T00:00:00", "chosen": len(sources), "not_determined": 0,
+                                 "entries": {str(s.id): {"tried_at": None} for s in sources}}
+
+
+def test_the_chosen_go_first_only_within_the_pass_s_own_re_check_budget(db, store):
+    """Never on top of qualification_recheck_per_pass: with one re-check slot a pass judges one chosen source, and the
+    other stays chosen for the next pass."""
+    a, b = _disqualified(db, "a.example"), _disqualified(db, "b.example")
+    _choose(store, a, b)
+    one = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=1, now=NOW, cohort_provider=_frozen)
+    assert one["evaluated"] == 1
+    assert q.pending_recheck_once(db) != [] and len(q.pending_recheck_once(db)) == 1, "the one not reached stays chosen"
+    two = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=1, now=NOW, cohort_provider=_frozen)
+    assert two["evaluated"] == 1 and q.pending_recheck_once(db) == []
+    assert q.recheck_once_counts()["rechecked"] == 2
+
+
+def test_nothing_is_taken_while_qualification_is_off(db, store):
+    a = _disqualified(db, "a.example")
+    _choose(store, a)
+    out = q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=0, now=NOW, cohort_provider=_frozen)
+    assert out == {"enabled": False}
+    assert q.pending_recheck_once(db) == [a.id]
+    assert db.query(SourceQualificationAttempt).filter(SourceQualificationAttempt.source_id == a.id).count() == 1
+
+
+def test_a_paused_selection_waits_before_it_is_asked_again(db, store, monkeypatch, four):
+    from src.analytics import source_quality as sq
+
+    calls = []
+
+    def paused(*_a, **_kw):
+        calls.append(1)
+        raise sq.ScanPaused("memory")
+
+    monkeypatch.setattr(sa, "scoped_metrics", paused)
+    q._select_recheck_once_if_owed(db, _frozen(), should_pause=None, now=NOW)
+    again = q._select_recheck_once_if_owed(db, _frozen(), should_pause=None, now=NOW)
+    assert len(calls) == 1 and again["selected"] is False, "the same read is not asked for on the next pass"
+
+
+def test_the_recompute_reads_in_chunks_of_a_pass_s_own_size(db, monkeypatch):
+    for i in range(q._RECHECK_ONCE_CHUNK * 2 + 1):
+        db.add(Source(name=f"d{i}.example", domain=f"d{i}.example", status=q.STATUS_DISQUALIFIED, enabled=True))
+    db.commit()
+    sizes = []
+    monkeypatch.setattr(sa, "scoped_metrics", lambda session, ids, frozen, **kw: sizes.append(len(ids)) or {})
+    out = q.select_link_density_only(db, _frozen())
+    assert sizes == [q._RECHECK_ONCE_CHUNK, q._RECHECK_ONCE_CHUNK, 1]
+    assert len(out["not_determined"]) == q._RECHECK_ONCE_CHUNK * 2 + 1
+
+
+def test_the_queue_view_carries_the_counts_the_summary_shows(db, store):
+    a = _disqualified(db, "a.example")
+    _choose(store, a)
+    rc = q.qualification_queue(db, now=NOW)["rechecks"]
+    assert rc["recheck_once"]["selected"] is True and rc["recheck_once"]["chosen"] == 1
+    assert rc["recheck_once"]["rechecked"] == 0 and rc["recheck_once"]["not_determined"] == 0
+
+
+def test_a_restore_never_brings_another_install_s_marker():
+    """The marker lives in app_state, which a merge restore never adopts (local wins entirely) and which is not one of the
+    settings carried over the swap, so a backup from another install cannot mark this one's selection done."""
+    from src.backup import merge
+
+    assert "app_state" in merge._MERGE_IGNORED
+    assert not q.RECHECK_ONCE_KEY.startswith(merge._CARRIED_SETTINGS_KEYS)
+
+
+def test_the_summary_says_both_counts_in_every_language():
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "src" / "static" / "app-ai-tools.js").read_text(encoding="utf-8")
+    frame = ("{rechecked} of {chosen} sources that link density alone disqualified have been re-checked once; "
+             "{undetermined} could not be determined (too few stored articles).")
+    assert frame in js and "rc.recheck_once.not_determined" in js
+    for lang in ("ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
+        d = json.loads((root / "src" / "static" / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
+        for var in ("{rechecked}", "{chosen}", "{undetermined}"):
+            assert var in d[frame], (lang, var)

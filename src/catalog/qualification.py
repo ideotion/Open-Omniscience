@@ -924,6 +924,12 @@ def pending_forced(session: Session, limit: int | None = None) -> tuple[list[Sou
 RECHECK_ONCE_KEY = "qualification.recheck_once"
 RECHECK_ONCE_SELECTION = "r851-link-density-only-recomputed"
 RECHECK_ONCE_LABEL = "chosen by recomputing from stored articles"
+#: How many disqualified sources the recompute reads at a time (a generous pass's candidate list).
+_RECHECK_ONCE_CHUNK = 50
+#: After a selection the memory guard paused, the next try waits this long (in this process), so a machine short of
+#: memory is not asked for the same read on every pass.
+_RECHECK_ONCE_RETRY_S = 24 * 3600
+_recheck_once_paused_at: float | None = None
 
 
 def _load_recheck_once() -> dict[str, Any] | None:
@@ -950,9 +956,14 @@ def select_link_density_only(
     ids = sorted(int(r[0]) for r in session.query(Source.id).filter(Source.status == STATUS_DISQUALIFIED).all())
     if not ids:
         return {"chosen": [], "not_determined": []}
-    per = sa.scoped_metrics(
-        session, set(ids), frozen, should_pause=should_pause, per_source_recent=candidate_history_cap(len(ids)),
-    )
+    # Read in chunks the size of a pass's own candidate list, each at a pass's own per-source history cap, so the
+    # recompute never holds more in memory than one ordinary pass does, however many sources are disqualified.
+    per: dict[int, dict] = {}
+    for at in range(0, len(ids), _RECHECK_ONCE_CHUNK):
+        chunk = ids[at:at + _RECHECK_ONCE_CHUNK]
+        per.update(sa.scoped_metrics(
+            session, set(chunk), frozen, should_pause=should_pause, per_source_recent=candidate_history_cap(len(chunk)),
+        ))
     floor = sa._MIN_PATHOLOGY_ARTICLES
     readable = {sid: m for sid, m in per.items() if int(m.get("article_count") or 0) >= floor}
     fails = sa.flag_criteria(readable, min_articles=TRIAL_MIN_ARTICLES, cohort_cut=frozen["cohort_cut"])
@@ -1022,16 +1033,25 @@ def _select_recheck_once_if_owed(
 ) -> dict[str, Any]:
     """Run the R851 selection when this install has not stored one by today's rule; else the stored counts.
     A paused or failed read stores nothing, so the next pass tries again."""
+    global _recheck_once_paused_at
     stored = _load_recheck_once()
     if stored and stored.get("selection") == RECHECK_ONCE_SELECTION:
         return recheck_once_counts()
+    if _recheck_once_paused_at is not None and time.monotonic() - _recheck_once_paused_at < _RECHECK_ONCE_RETRY_S:
+        return {"selected": False, "reason": "waiting after a paused read"}
     try:
         selection = select_link_density_only(session, frozen, should_pause=should_pause)
         session.rollback()  # the read opened a transaction; nothing was written in it
         store_recheck_once(selection, now=now)
-    except Exception as exc:  # noqa: BLE001 - a selection that could not run is tried again next pass
+    except Exception as exc:  # noqa: BLE001 - a selection that could not run is tried again later
+        session.rollback()  # end the read before the pass goes on, whatever stopped it
+        from src.analytics.source_quality import ScanPaused
+
+        if isinstance(exc, ScanPaused):
+            _recheck_once_paused_at = time.monotonic()
         log_failure(_LOG, "the one-time re-check selection did not run", exc, level=logging.INFO)
         return {"selected": False, "reason": record_text(exc)}
+    _recheck_once_paused_at = None
     return recheck_once_counts()
 
 
@@ -1199,6 +1219,8 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
             "qualified_rechecks_on": ql_on,
             "flagged": len(forced_all),
             "next": next_rechecks,
+            # R850 / R851: the one-time re-check of the sources link density alone disqualified (absent until chosen).
+            "recheck_once": recheck_once_counts(),
         },
         "waiting": {
             "qualified": ql_waiting,
@@ -2212,6 +2234,7 @@ def run_qualification_pass(
     # Plain ints, read before the commit: reading ``.id`` off an expired row afterwards would
     # begin a new transaction on the session just before the key-value write below.
     forced_tried = {int(x.id) for x in rechecks if int(x.id) in forced_ids} if forced else set()
+    once_tried = {int(x.id) for x in candidates}  # R850: read before the commit expires the rows, like forced_tried
     session.commit()
 
     # C15 (2026-07-24 throughput brief, S-E slice 2): auto-enqueue a BOUNDED
@@ -2228,7 +2251,7 @@ def run_qualification_pass(
         record_forced_tries(forced_tried, now=now, odd_budget=slot_contested)
     # R850 / R851: the chosen sources this pass tried have had their one re-check, whatever it decided. Then, once per
     # install, the choice itself, recomputed read-only from the cohort this pass froze (the next passes take them first).
-    record_recheck_once_tries({int(x.id) for x in candidates}, now=now)
+    record_recheck_once_tries(once_tried, now=now)
     recheck_once = _select_recheck_once_if_owed(session, frozen, should_pause=should_pause, now=now)
     # R728 B: the reversible mark on a held candidate's off-site articles, after the hold is committed.
     # The hold queued them in its own transaction, so a failure here leaves them owed, never lost.
