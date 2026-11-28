@@ -2594,6 +2594,7 @@ class EthicalFetcher:
 
         if wait <= 0:
             self._stamp_host_schedule(netloc, interval, declared_delay)
+            self._note_spacing(netloc, last, 0.0, interval)
             return
 
         cap = _crawl_delay_max_wait_s()
@@ -2608,6 +2609,7 @@ class EthicalFetcher:
             # filing it against the page it asked for still says whose Crawl-delay it was. Readers key on the type and on the
             # "deferred" prefix law/track.py writes before it (src/api/law.py _verdict_of), never on these words.
             where = f", for {failure_url(hop_url)!r} ({_REDIRECT_HOP_NOTE})" if hop_url else ""
+            self._note_deferred()
             raise CrawlDelayDeferred(
                 f"Crawl-delay {declared_delay or interval:g} s: not before "
                 f"{datetime.fromtimestamp(resume_at, UTC).isoformat(timespec='seconds')}{where}",
@@ -2617,6 +2619,27 @@ class EthicalFetcher:
             )
         self._sleep(wait)
         self._stamp_host_schedule(netloc, interval, declared_delay)
+        self._note_spacing(netloc, last, wait, interval)
+
+    def _note_spacing(self, netloc: str, last: float | None, waited_s: float, interval_s: float) -> None:
+        """Record the spacing this request was let go at (row 465, :mod:`src.ingest.spacing_stats`): the time since the
+        host's previous request ended, on this fetcher's own clock, or first contact. Never raises into a fetch."""
+        try:
+            from src.ingest import spacing_stats
+
+            gap = None if last is None else self._now() - last
+            spacing_stats.record(netloc, gap_s=gap, waited_s=waited_s, interval_s=interval_s)
+        except Exception:  # noqa: BLE001 - a statistic never changes a fetch
+            return
+
+    @staticmethod
+    def _note_deferred() -> None:
+        try:
+            from src.ingest import spacing_stats
+
+            spacing_stats.record_deferred()
+        except Exception:  # noqa: BLE001 - a statistic never changes a fetch
+            return
 
     def _stamp_host_schedule(self, netloc: str, interval: float, declared_delay: float) -> float:
         """Record when this host may next be fetched, and return that wall time.

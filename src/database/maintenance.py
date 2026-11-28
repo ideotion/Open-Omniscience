@@ -345,6 +345,8 @@ def ensure_hot_indexes(engine: Engine, *, include_deferred: bool = True) -> list
 _FEED_BACKOFF_COLUMNS: dict[str, str] = {
     "consecutive_unchanged": "ALTER TABLE feed_fetch_state ADD COLUMN consecutive_unchanged INTEGER",
     "skip_until": "ALTER TABLE feed_fetch_state ADD COLUMN skip_until DATETIME",
+    # Row 465: the rolling per-pass outcome counter (src.ingest.outcome_history). NULL until the feed's next pass.
+    "recent_outcomes": "ALTER TABLE feed_fetch_state ADD COLUMN recent_outcomes TEXT",
 }
 
 

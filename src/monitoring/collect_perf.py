@@ -560,6 +560,13 @@ class CollectionMonitor:
             flush_stats.reset()
         except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
             log_failure(_LOG, "collector flush window could not be reset", exc, level=logging.DEBUG)
+        # And the window of the politeness actually applied (see ``host_spacing_block``, row 465).
+        try:
+            from src.ingest import spacing_stats
+
+            spacing_stats.reset()
+        except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
+            log_failure(_LOG, "host spacing window could not be reset", exc, level=logging.DEBUG)
         # So is the window of the encrypted opens (see ``encrypted_opens_block``).
         try:
             from src.database import open_stats
@@ -1296,6 +1303,17 @@ class CollectionMonitor:
             return {"unavailable": type(exc).__name__}
         return flush_stats.safe_snapshot()
 
+    @staticmethod
+    def host_spacing_block() -> dict:
+        """How far apart this pass's requests to one host really were (``src.ingest.spacing_stats``, row 465), or the class of
+        the failure that kept it from being read."""
+        try:
+            from src.ingest import spacing_stats
+        except Exception as exc:  # noqa: BLE001 - the summary is written without it, saying so
+            log_failure(_LOG, "host spacing statistics unavailable", exc, level=logging.DEBUG)
+            return {"unavailable": type(exc).__name__}
+        return spacing_stats.safe_snapshot()
+
     def _write_summary(self, result: dict | None) -> dict | None:
         if self._n == 0:
             return None
@@ -1331,6 +1349,9 @@ class CollectionMonitor:
             # Row 446: the collector flushes' hold of the single-writer gate, split into insert, index writes, links and commit,
             # beside the phases that run outside it. The November field analysis measured 74 s per flush and could not say which.
             "collector_flush": self.collector_flush_block(),
+            # Row 465 (Q8): the politeness actually applied, as two histograms of the spacing between requests to one host
+            # (every gap, and each host by its smallest), with the waits slept. Counts and seconds; no host name.
+            "host_spacing": self.host_spacing_block(),
         }
         if result:
             summary["articles_stored"] = result.get("articles_stored")

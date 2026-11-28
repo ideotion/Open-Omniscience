@@ -84,6 +84,10 @@ FEED_FETCH_STATE_OMITTED: dict[str, str] = {
         "machine's reach, so a foreign timestamp would claim a check that never "
         "happened here. No fetch decision reads it (feed_is_due reads skip_until only)"
     ),
+    "recent_outcomes": (
+        "what THIS instance's last passes did with the feed (row 465); another machine's "
+        "passes are not this one's, and no fetch decision reads it"
+    ),
 }
 
 

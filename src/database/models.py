@@ -674,6 +674,10 @@ class FeedFetchState(Base):
     # capped UTC deadline before which the feed is skipped (NULL = no backoff).
     consecutive_unchanged: Mapped[int | None] = mapped_column(Integer)
     skip_until: Mapped[datetime | None] = mapped_column(DateTime)
+    # Row 465: what the last 8 checked passes did with this feed, counts only (src.ingest.outcome_history writes and reads
+    # it; compact JSON, newest pass last). THIS instance's own observation, never adopted from a backup. NULL = no pass
+    # recorded since the column arrived.
+    recent_outcomes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     def __repr__(self):
         return f"<FeedFetchState(source_id={self.source_id}, status={self.last_status})>"

@@ -150,7 +150,7 @@ main corpus_segments: seg_no, file_name, state, id_lo, id_hi, created_at, state_
 main derived_meta: key, value, updated_at
 main event_imports: id, family_key, fingerprint, family_name, family_user, imported_at, title, date, sources, uids, updated_at
 main external_sources: id, domain, name, url, source_type, credibility_score, political_bias, country, language, description, founded_year, alexa_rank, social_media_followers, is_verified, discovered_via, last_verified_at, created_at, updated_at
-main feed_fetch_state: source_id, etag, last_modified, last_status, last_checked_at, consecutive_unchanged, skip_until
+main feed_fetch_state: source_id, etag, last_modified, last_status, last_checked_at, consecutive_unchanged, skip_until, recent_outcomes
 main hazard_event_details: id, article_id, provider, event_id, event_type, severity, magnitude, lat, lon, place, event_time, source_url, created_at, updated_at
 main host_mismatch_confirmed: id, source_id, article_site, confirmed_at, note
 main index_engines: engine, stage, components, recorded_at
