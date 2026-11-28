@@ -2611,7 +2611,7 @@
       const key = method.mode === "hierarchical"
         ? "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together."
         : "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.";
-      const txt = tf ? tf(key, {n: method.parts}) : key.replace("{n}", method.parts);
+      const txt = tf ? tf(key, {n: method.parts}) : key.replace("{n}", () => method.parts);
       return `<div class="card-caveat">${esc(txt)}</div>`;
     }
 

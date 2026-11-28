@@ -326,7 +326,7 @@
           + `<circle cx="${xm.toFixed(1)}" cy="${cy}" r="4" fill="var(--muted)" title="${nm}: ${r.mentions} ${esc(t("mentions"))}"></circle></g>`;
       }).join("");
       const legend = `<div class="hint" style="margin-top:2px"><span style="color:var(--accent)">●</span> ${esc(t("articles"))} · <span style="color:var(--muted)">●</span> ${esc(t("mentions"))}`
-        + (dropped ? ` · <span class="muted">${esc(t("+ {n} more (not shown)").replace("{n}", dropped))}</span>` : "") + `</div>`;
+        + (dropped ? ` · <span class="muted">${esc(t("+ {n} more (not shown)").replace("{n}", () => dropped))}</span>` : "") + `</div>`;
       return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(t("Per-country articles vs mentions"))}" style="max-width:${W}px;height:auto">${grid}${bars}</svg>${legend}`;
     }
     // Cross-language ring -> per-language mention breakdown, indexed from /top?group=true
@@ -1829,19 +1829,19 @@
       const clock = iso => { if (!iso) return "—"; try { return new Date(iso).toLocaleTimeString(); } catch (e) { return iso; } };
       if (s.index_counts_state === "computing") {
         return t("Counting every keyword mention in the background since {t}; the other figures are exact now.")
-          .replace("{t}", clock(s.pending_since));
+          .replace("{t}", () => clock(s.pending_since));
       }
       if (s.index_counts_state === "failed" && s.index_counts_failure) {
         const f = s.index_counts_failure;
-        const why = f.kind === "statement-deadline" ? t("passed its {s} s limit").replace("{s}", String(f.deadline_s))
+        const why = f.kind === "statement-deadline" ? t("passed its {s} s limit").replace("{s}", () => String(f.deadline_s))
           : f.kind === "memory-short" ? t("stopped because the machine was nearly out of memory") : String(f.kind);
         return t("Not counted: the keyword-mention count stopped ({why}) at {t}; it is tried again after {m} min.")
-          .replace("{why}", why).replace("{t}", clock(f.at)).replace("{m}", String(Math.round((f.retry_after_s || 0) / 60)));
+          .replace("{why}", () => why).replace("{t}", () => clock(f.at)).replace("{m}", () => String(Math.round((f.retry_after_s || 0) / 60)));
       }
       if (s.index_counts_state === "counted" && s.index_counts_computed_at) {
         return t("Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.")
-          .replace("{t}", clock(s.index_counts_computed_at))
-          .replace("{m}", String(Math.max(1, Math.round((s.index_counts_recount_after_s || 0) / 60))));
+          .replace("{t}", () => clock(s.index_counts_computed_at))
+          .replace("{m}", () => String(Math.max(1, Math.round((s.index_counts_recount_after_s || 0) / 60))));
       }
       return "";
     }

@@ -64,7 +64,7 @@
   // binary steps of 1024 under the SI-style names.
   function fmtBytes(n) {
     if (n == null || !isFinite(Number(n))) return "—";
-    var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{n}", o.n); };
+    var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{n}", () => o.n); };
     var v = Number(n), i = 0;
     while (v >= 1024 && i < 4) { v /= 1024; i++; }
     // The app's one number convention (a decimal POINT in every locale, as fmtNum and
@@ -78,7 +78,7 @@
     return "\u2068" + s.replace(/ /g, "\u00a0") + "\u2069";
   }
   function fmtRate(bps) {
-    var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{rate}", o.rate); };
+    var TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : function (s, o) { return s.replace("{rate}", () => o.rate); };
     return bps == null ? "—" : TF("{rate}/s", { rate: fmtBytes(bps) });
   }
   function tf(s, v) {
