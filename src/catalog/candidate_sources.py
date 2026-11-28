@@ -18,6 +18,9 @@ WHAT IT REFUSES:
     rows from several instances into a review table, and only a reviewed PR changes a catalogue.
   * AN INHERITED VERDICT IS NOT A CANDIDATE. Only sources with a judging attempt this install made (``measured``, the same
     rule ``qualification_export`` applies) are listed; one a backup brought in is counted apart.
+  * THE APP'S OWN CHANNELS ARE NOT CANDIDATES. A Wikipedia edition, a hazard provider, a law store or official statistics
+    is qualified like any source but is no web outlet a catalogue could ship; such rows are counted as
+    ``not_a_web_source`` (field analysis 2026-11, ``docs/field-analysis-2026-11/catalogue.md`` §4).
   * PRIVATE SOURCES STAY HOME. Newsletter and mailbox sources (their domain can name a person's subscriptions: a
     mailbox domain, a newsletter-tagged row, or a publisher row the newsletter import made, ``source_type`` newsletter)
     are left out and counted, and newsletters attached to a web source stay out of its counts. A feed address keeps
@@ -35,7 +38,12 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.catalog.provenance import HAZARD, LAW, NEWSLETTER, STATISTICS, WIKIPEDIA, provenance_of
+
 SCHEMA = "oo-candidate-sources-1"
+#: Provenance classes that are not scraped web outlets: the same set the source-quality export exempts from its web
+#: cohorts (``src.analytics.source_quality._AUDIT_EXEMPT_CLASSES``). ``cited`` and ``web`` ARE web outlets and stay.
+NOT_WEB_SOURCES = frozenset({HAZARD, LAW, WIKIPEDIA, NEWSLETTER, STATISTICS})
 PROPOSED = "proposed"
 
 
@@ -117,7 +125,7 @@ def build_candidate_sources(session: Session, *, now: datetime | None = None) ->
         .order_by(Source.domain.asc())
         .all()
     )
-    skipped = {"in_a_shipped_catalogue": 0, "inherited_not_measured": 0, "newsletter_or_mailbox": 0}
+    skipped = {"in_a_shipped_catalogue": 0, "inherited_not_measured": 0, "newsletter_or_mailbox": 0, "not_a_web_source": 0}
     kept: list[Any] = []
     for s in rows:
         domain = (s.domain or "").lower()
@@ -125,6 +133,11 @@ def build_candidate_sources(session: Session, *, now: datetime | None = None) ->
         if (domain in private or (s.source_type or "").strip().lower() == "newsletter"
                 or any("newsletter" in t.lower() or "mailbox" in t.lower() for t in tags)):
             skipped["newsletter_or_mailbox"] += 1
+        elif provenance_of(domain, s.source_type) in NOT_WEB_SOURCES:
+            # The app's own channels (a Wikipedia edition, a hazard provider, a law store, official statistics) are
+            # qualified like any source but are not web outlets a catalogue could ship: field analysis 2026-11 found
+            # Wikipedia-edition rows and a hazard row as the top "candidates" on all four instances. Counted, not listed.
+            skipped["not_a_web_source"] += 1
         elif domain in shipped:
             skipped["in_a_shipped_catalogue"] += 1
         elif s.id not in measured:
