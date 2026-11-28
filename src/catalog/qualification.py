@@ -1063,11 +1063,11 @@ def _select_recheck_once_if_owed(
         raw = kv_get_json_strict(RECHECK_ONCE_KEY)
     except Exception as exc:  # noqa: BLE001 - tried again next pass
         log_failure(_LOG, "the one-time re-check list could not be read", exc, level=logging.INFO)
-        return {"selected": False, "reason": "the stored list could not be read"}
+        return {"selected": False, "unread": True}  # the stored list could not be read
     if isinstance(raw, dict) and raw.get("selection") == RECHECK_ONCE_SELECTION:
         return recheck_once_counts()
     if _recheck_once_paused_at is not None and time.monotonic() - _recheck_once_paused_at < _RECHECK_ONCE_RETRY_S:
-        return {"selected": False, "reason": "waiting after a selection that did not run"}
+        return {"selected": False, "waiting": True}  # after a selection that did not run
     try:
         selection = select_link_density_only(session, frozen, should_pause=should_pause)
         session.rollback()  # the read opened a transaction; nothing was written in it
