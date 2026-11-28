@@ -3198,6 +3198,9 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     # is exactly what the note forbids. It now has a handler (`_merge_fetch_history`)
     # whose adoption the operator's trust toggle gates.
     "stat_snapshots": "local hourly counters; recording resumes, history is machine-local",
+    # Row 463 (R852): feed addresses proposed on THIS machine, keyed by its own source ids; the next crawl and the same-domain
+    # check propose again over the merged sources, and a carried decision would name another corpus's source.
+    "feed_proposals": "feed addresses proposed by this machine's crawl, per source id; proposed again after a restore",
     # R826 (row 409, stage 1): the split corpus's registry and id counter describe THIS machine's own files. Another
     # corpus's rows would name files that are not here and ranges this counter never gave out.
     "corpus_segments": "this machine's segment files and their id ranges (R826)",

@@ -1652,6 +1652,19 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
         max_pages=max_pages,
     )
     candidates = _select_crawl_candidates(session, settings, settings.crawl_per_pass)
+    # Row 463 (R852): a feed-less source whose exact host another source of this install already reads gets that feed as a
+    # PROPOSAL (database only, no request). Committed before the first fetch below, so no write holds the gate across one.
+    feed_proposals = 0
+    try:
+        from src.ingest.feed_proposals import record_same_domain
+
+        feed_proposals = record_same_domain(session)
+        if feed_proposals:
+            session.commit()
+    except Exception as exc:  # noqa: BLE001 - a proposal is a by-product: it never stops the crawl
+        log_failure(_LOG, "crawl supplement: same-domain feed proposals failed", exc, level=logging.WARNING)
+        session.rollback()
+        feed_proposals = 0
     sources_crawled = 0
     pages_fetched = 0
     sitemap_urls_ingested = 0
@@ -1695,6 +1708,12 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
                     start_url=crawl_start_url_for(source),
                 )
                 pages_fetched += report.pages_fetched
+                feed_links = getattr(report, "feed_links", None)
+                if feed_links:
+                    from src.ingest.feed_proposals import record_links
+
+                    # staged here and made durable by the stamp's commit below (R852: proposals only)
+                    feed_proposals += record_links(session, source_id, feed_links)
             if kill_switch_engaged_since(epoch):
                 break  # stopped inside this outlet's step (or stopped and cleared again, R614): what it fetched is kept, but it was not crawled
             now = datetime.now(UTC)
@@ -1715,6 +1734,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
         "sources_crawled": sources_crawled,
         "pages_fetched": pages_fetched,
         "sitemap_urls_ingested": sitemap_urls_ingested,
+        "feed_proposals": feed_proposals,
     }
 
 

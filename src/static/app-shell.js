@@ -657,7 +657,7 @@
       // loadSources moved off the boot path the only thing that ever asked for that
       // panel was a section the reader may never expand. A panel that used to appear
       // must not stop appearing because its data now rides on a different fold.
-      sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadUnmanagedLanguages(); },
+      sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadFeedProposals(); loadUnmanagedLanguages(); },
       // SAFETY, folded in from its retired subtab (rulings 26/42). Its loaders came WITH
       // it: on the subtab they ran on select, and here they run on EXPAND -- folded must
       // not mean fetched. loadAtRestState is a loopback read of the store's encryption

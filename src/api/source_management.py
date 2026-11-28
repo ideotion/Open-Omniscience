@@ -185,6 +185,87 @@ def dismiss_source_candidate(
     return {"dismissed": cand.domain}
 
 
+# ==================== FEED PROPOSALS (row 463, R852) ====================
+# A feed address proposed for a feed-less source, found without a request of its own: a feed link on a start page the crawl
+# supplement already read, or the feed of another source on the exact same host. Nothing is fetched until the operator
+# accepts ONE proposal with a click; accepting sets the source's feed address and the next collection reads it.
+
+
+def _feed_proposal_row(db: Session, p) -> dict:
+    from src.database.models import Source
+    from src.ingest.feed_proposals import _site
+
+    src = db.get(Source, p.source_id)
+    sibling = db.get(Source, p.sibling_source_id) if p.sibling_source_id else None
+    domain = src.domain if src is not None else None
+    return {
+        "id": p.id,
+        "source_id": p.source_id,
+        "source_name": src.name if src is not None else None,
+        "source_domain": domain,
+        "url": p.url,
+        "host": p.host,
+        # a feed on another host is another party (R761): said in words, never left to the reader to spot
+        "other_host": bool(domain) and _site(p.host) != _site(domain),
+        "origin": p.origin,
+        "sibling_source": ({"id": sibling.id, "name": sibling.name, "domain": sibling.domain} if sibling is not None else None),
+        "status": p.status,
+        "found_at": p.found_at.isoformat() if p.found_at else None,
+    }
+
+
+@router.get("/feed-proposals", response_model=dict)
+@limiter.limit("100/hour")
+def list_feed_proposals(
+    request: Request,
+    status: str = Query("proposed", pattern="^(proposed|accepted|dismissed|all)$"),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """Feed proposals with their origin, and the counts by status (kept apart from sources and candidates, R773)."""
+    from src.database.models import FeedProposal
+    from src.ingest.feed_proposals import counts
+
+    q = db.query(FeedProposal)
+    if status != "all":
+        q = q.filter(FeedProposal.status == status)
+    rows = q.order_by(FeedProposal.found_at.desc(), FeedProposal.id.desc()).limit(limit).all()
+    return {"counts": counts(db), "proposals": [_feed_proposal_row(db, p) for p in rows]}
+
+
+@router.post("/feed-proposals/{proposal_id}/accept", response_model=dict)
+@limiter.limit("100/hour")
+def accept_feed_proposal(request: Request, proposal_id: int, db: Session = Depends(get_db)):
+    """Set ONE source's feed address to the proposed one. Nothing is fetched here: the next collection reads it, under the
+    consent and transport in force, through the fetcher's full address guard."""
+    from src.ingest.feed_proposals import Refusal, accept
+
+    p = accept(db, proposal_id)
+    if isinstance(p, Refusal):
+        raise HTTPException(status_code=p.code, detail=p.message)
+    db.commit()
+    from src.database.models import Source
+
+    src = db.get(Source, p.source_id)
+    return {"accepted": p.id, "source_id": p.source_id,
+            "source_name": src.name if src is not None else None,
+            "source_domain": src.domain if src is not None else None,
+            "note": "The feed address is set. Nothing was fetched; the next collection reads it."}
+
+
+@router.post("/feed-proposals/{proposal_id}/dismiss", response_model=dict)
+@limiter.limit("100/hour")
+def dismiss_feed_proposal(request: Request, proposal_id: int, db: Session = Depends(get_db)):
+    """Dismiss a proposal (remembered: the same address is never proposed again for this source)."""
+    from src.ingest.feed_proposals import Refusal, dismiss
+
+    p = dismiss(db, proposal_id)
+    if isinstance(p, Refusal):
+        raise HTTPException(status_code=p.code, detail=p.message)
+    db.commit()
+    return {"dismissed": p.id}
+
+
 @router.post("/preflight", response_model=dict)
 @limiter.limit("10/hour")
 def run_source_preflight(

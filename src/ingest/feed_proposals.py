@@ -33,10 +33,11 @@ that by reading this file's own syntax tree.
 from __future__ import annotations
 
 import ipaddress
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.database.models import FeedProposal, Source
@@ -101,22 +102,41 @@ def _known(session: Session, source_id: int) -> set[str]:
     return {u for (u,) in session.execute(select(FeedProposal.url).where(FeedProposal.source_id == source_id)).all()}
 
 
-def record_from_page(session: Session, source: Source, html: str, page_url: str) -> int:
-    """Record up to :data:`MAX_PER_PAGE` feed links named on ``html``, the start page the crawl already fetched for
-    ``source``. Only for a source with no feed. Returns how many were recorded. Never raises; makes no request."""
+def links_from_page(source: Source, html: str, page_url: str) -> list[str]:
+    """Up to :data:`MAX_PER_PAGE` feed links named on ``html``, the start page the crawl already fetched for ``source``,
+    each passing :func:`address_refusal`. Only for a source with no feed. Pure: no database write and no request, so the
+    crawl can call it between two fetches without staging a row (the fetcher hands a connection back only for a session
+    with nothing pending). Never raises."""
     try:
         if getattr(source, "rss_url", None) or not html:
-            return 0
+            return []
         from src.ingest.feed_find import feed_links_in_page
 
-        known = _known(session, source.id)
-        added = 0
+        out: list[str] = []
         for url in feed_links_in_page(html, page_url):
-            if added >= MAX_PER_PAGE:
+            if len(out) >= MAX_PER_PAGE:
                 break
+            if url not in out and address_refusal(url) is None:
+                out.append(url)
+        return out
+    except Exception:  # noqa: BLE001 - a proposal is a by-product: it never fails the crawl
+        return []
+
+
+def record_links(session: Session, source_id: int, urls: list[str]) -> int:
+    """Record ``urls`` (from :func:`links_from_page`) as ``crawl_page`` proposals for ``source_id``, skipping any address
+    already proposed for it whatever its status. Checked again here, capped again here. Returns how many were added; the
+    caller commits. Never raises."""
+    try:
+        src = session.get(Source, source_id)
+        if src is None or src.rss_url:
+            return 0
+        known = _known(session, source_id)
+        added = 0
+        for url in urls[:MAX_PER_PAGE]:
             if url in known or address_refusal(url) is not None:
                 continue
-            session.add(FeedProposal(source_id=source.id, url=url, host=_host(url) or "", origin=ORIGIN_CRAWL_PAGE,
+            session.add(FeedProposal(source_id=source_id, url=url, host=_host(url) or "", origin=ORIGIN_CRAWL_PAGE,
                                      status="proposed"))
             known.add(url)
             added += 1
@@ -135,14 +155,18 @@ def record_same_domain(session: Session) -> int:
         key = _site(domain)
         if key and rss and key not in fed:
             fed[key] = (int(sid), str(rss))
+    if not fed:
+        return 0
+    known = {(int(s), str(u)) for s, u in session.execute(select(FeedProposal.source_id, FeedProposal.url)).all()}
     added = 0
-    for sid, domain in session.execute(select(Source.id, Source.domain).where(Source.rss_url.is_(None))).all():
+    for sid, domain in session.execute(select(Source.id, Source.domain).where(or_(Source.rss_url.is_(None), Source.rss_url == ""))).all():
         hit = fed.get(_site(domain))
         if hit is None or hit[0] == sid:
             continue
         sibling, url = hit
-        if address_refusal(url) is not None or url in _known(session, int(sid)):
+        if address_refusal(url) is not None or (int(sid), url) in known:
             continue
+        known.add((int(sid), url))
         session.add(FeedProposal(source_id=int(sid), url=url, host=_host(url) or "", origin=ORIGIN_SAME_DOMAIN,
                                  sibling_source_id=sibling, status="proposed"))
         added += 1
@@ -157,41 +181,48 @@ def counts(session: Session) -> dict[str, int]:
     return out
 
 
-class ProposalError(Exception):
-    """A proposal that cannot be decided as asked; ``code`` is the HTTP status the API answers with."""
+@dataclass(frozen=True)
+class Refusal:
+    """A proposal that cannot be decided as asked; ``code`` is the HTTP status the API answers with. Returned, never
+    raised, so no caller turns an exception into a served record."""
 
-    def __init__(self, message: str, code: int) -> None:
-        super().__init__(message)
-        self.code = code
+    code: int
+    message: str
 
 
-def accept(session: Session, proposal_id: int) -> FeedProposal:
-    """The operator's click: set the source's ``rss_url`` to the proposed address. ONE proposal; nothing is fetched here.
-    The address is checked again first, and a source that has a feed by now is left as it is."""
+def _decidable(session: Session, proposal_id: int) -> FeedProposal | Refusal:
     p = session.get(FeedProposal, proposal_id)
     if p is None:
-        raise ProposalError("proposal not found", 404)
+        return Refusal(404, "proposal not found")
     if p.status != "proposed":
-        raise ProposalError(f"proposal is already {p.status}", 409)
+        return Refusal(409, f"proposal is already {p.status}")
+    return p
+
+
+def accept(session: Session, proposal_id: int) -> FeedProposal | Refusal:
+    """The operator's click: set the source's ``rss_url`` to the proposed address. ONE proposal; nothing is fetched here.
+    The address is checked again first, and a source that has a feed by now is left as it is."""
+    p = _decidable(session, proposal_id)
+    if isinstance(p, Refusal):
+        return p
     src = session.get(Source, p.source_id)
     if src is None:
-        raise ProposalError("source not found", 404)
+        return Refusal(404, "source not found")
     if src.rss_url:
-        raise ProposalError("this source already has a feed address", 409)
+        return Refusal(409, "this source already has a feed address")
     if address_refusal(p.url) is not None:
-        raise ProposalError("the proposed address is not one the app will fetch", 422)
+        return Refusal(422, "the proposed address is not one the app will fetch")
     src.rss_url = p.url
     p.status = "accepted"
     p.decided_at = datetime.now(UTC)
     return p
 
 
-def dismiss(session: Session, proposal_id: int) -> FeedProposal:
-    p = session.get(FeedProposal, proposal_id)
-    if p is None:
-        raise ProposalError("proposal not found", 404)
-    if p.status != "proposed":
-        raise ProposalError(f"proposal is already {p.status}", 409)
+def dismiss(session: Session, proposal_id: int) -> FeedProposal | Refusal:
+    """Dismiss ONE proposal; it is remembered, so the same address is never proposed again for that source."""
+    p = _decidable(session, proposal_id)
+    if isinstance(p, Refusal):
+        return p
     p.status = "dismissed"
     p.decided_at = datetime.now(UTC)
     return p

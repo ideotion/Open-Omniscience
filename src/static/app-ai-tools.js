@@ -49,6 +49,53 @@
       }
     }
 
+    // Feed addresses PROPOSED for feed-less sources (row 463, R852). Found offline: on a start
+    // page the crawl had already read, or as the feed of another source on the exact same host.
+    // Nothing is fetched for a proposal; Accept sets that ONE source's feed address and the next
+    // collection reads it like any feed. One click per proposal, never in bulk. The counts are
+    // proposals only, kept apart from sources and from discovery candidates (R773).
+    function _fpT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    async function loadFeedProposals() {
+      try {
+        const r = await api("/api/sources/feed-proposals?status=proposed&limit=50");
+        const panel = $("feed-proposals-panel"), list = $("feed-proposals-list"), cnt = $("feed-proposals-counts");
+        if (!panel || !list) return;
+        const c = r.counts || {};
+        if (!(r.proposals || []).length && !c.accepted && !c.dismissed) { panel.style.display = "none"; return; }
+        panel.style.display = "";
+        if (cnt) cnt.textContent = _tfn("{proposed} proposed · {accepted} accepted · {dismissed} dismissed",
+          { proposed: c.proposed || 0, accepted: c.accepted || 0, dismissed: c.dismissed || 0 });
+        if (!(r.proposals || []).length) { list.innerHTML = ""; return; }
+        list.innerHTML = "<table><tr><th>" + esc(_fpT("Source")) + "</th><th>" + esc(_fpT("Feed address")) +
+          "</th><th>" + esc(_fpT("Where it came from")) + "</th><th><span class='sr-only'>" + esc(_fpT("Actions")) + "</span></th></tr>" +
+          r.proposals.map(p => {
+            const where = p.origin === "same_domain"
+              ? esc(_tfn("same domain, not verified — the feed of {name}",
+                  { name: (p.sibling_source && (p.sibling_source.name || p.sibling_source.domain)) || "?" }))
+              : esc(_fpT("found on a page the crawl already read"));
+            const host = p.other_host
+              ? `<div class="card-caveat">${esc(_tfn("on another host than the source's site: {host}", { host: p.host }))}</div>`
+              : `<div class="muted">${esc(_tfn("host: {host}", { host: p.host }))}</div>`;
+            return `<tr><td>${esc(p.source_name || p.source_domain || "")}<div class="muted">${esc(p.source_domain || "")}</div></td>` +
+              `<td><code>${esc(p.url)}</code>${host}</td><td>${where}</td>` +
+              `<td><button class="secondary tiny" data-on-click="feedProposalAct(${Number(p.id)}, 'accept')">${esc(_fpT("Accept"))}</button> ` +
+              `<button class="ghost tiny" data-on-click="feedProposalAct(${Number(p.id)}, 'dismiss')">${esc(_fpT("Dismiss"))}</button></td></tr>`;
+          }).join("") + "</table>";
+      } catch (e) { /* proposals are an optional surface; stay quiet */ }
+    }
+    async function feedProposalAct(id, action) {
+      if (action !== "accept" && action !== "dismiss") return;
+      try {
+        const r = await api(`/api/sources/feed-proposals/${Number(id)}/${action}`, {method: "POST"});
+        toast(action === "accept"
+          ? _tfn("Feed address set for {name}. The next collection reads it.", { name: r.source_name || r.source_domain || "" })
+          : _fpT("Proposal dismissed."));
+        loadFeedProposals(); loadManagedSources();
+      } catch (e) {
+        toast(_failMsg(action === "accept" ? "Accept failed: {error}" : "Dismiss failed: {error}", e), "err");
+      }
+    }
+
     // Bulk source QUALIFICATION (2026-07-23 field-feedback S1.2): the manual catch-up
     // for the steady-state ride-along (5 candidates/pass — far too slow to drain a
     // Wikidata-discovery-scale backlog). Networked (each judgment trial-fetches a few
