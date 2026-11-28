@@ -282,14 +282,14 @@ def test_a_give_up_removes_the_file_even_when_the_registry_step_fails(data, shar
     def busy(con, seg_no):
         raise sqlite3.OperationalError("database is locked")
 
-    monkeypatch.setattr(segment_write, "mark_abandoned", busy)
-    with pytest.raises(sqlite3.OperationalError):
-        load.abandon()
-    assert not path.exists(), "a reserved row whose file is gone is abandoned safely by the next settle"
+    with monkeypatch.context() as m:
+        m.setattr(segment_write, "mark_abandoned", busy)
+        with pytest.raises(sqlite3.OperationalError):
+            load.abandon()
+    assert not path.exists(), (
+        "a reserved row whose file is gone is abandoned safely by the next settle"
+    )
     assert load.seg.seg_no not in segment_write._BULK_LOADING
-    monkeypatch.undo()
-    monkeypatch.setattr(segment_open, "SEGMENT_WRITES_ENABLED", True)
-    monkeypatch.setattr(segment_open, "_shared_is_encrypted", lambda: False)
     w = segment_write.open_writer(shared)
     w.close()
     assert _row(shared, load.seg.seg_no).state == "abandoned"
