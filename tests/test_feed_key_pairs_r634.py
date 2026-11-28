@@ -504,6 +504,7 @@ _NAMES_FEED_KEY = {
     "src/database/source_identity.py",
     "src/database/source_lookup.py",
     "src/database/source_manager.py",
+    "src/ingest/feed_proposals.py",  # row 463: matches a proposed feed against the sources on its site; never shows the key
     "src/ingest/seed_plan.py",
     "src/ingest/seed_sources.py",
     "src/testing/corpus_gen.py",

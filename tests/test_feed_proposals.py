@@ -74,7 +74,13 @@ def _page(*hrefs, kind="application/rss+xml"):
     ("http://0177.0.0.1/feed", "numeric_address"),
     ("http://\uff11\uff12\uff17.0.0.1/feed", "internal_address"),
     ("http://2130706433/feed", "numeric_address"),
-    ("https://" + "a" * 250 + ".example.com/f", "length"),
+    ("https://" + "ab." * 85 + "example.com/f", "length"),
+    ("https://" + "a" * 70 + ".example.com/f", "unreadable"),
+    ("http://127\u30020.0.1/feed", "internal_address"),
+    ("http://127\uff610.0.1/feed", "internal_address"),
+    ("http://127.0.0.1\u3002/feed", "internal_address"),
+    ("http://127.0.0.1\u00ad/feed", "internal_address"),
+    ("http://a.localhost\u3002/feed", "internal_name"),
 ])
 def test_an_address_the_app_will_not_record(url, reason):
     from src.ingest.feed_proposals import address_refusal
@@ -403,3 +409,75 @@ def test_backup_merge_lists_the_table():
     from src.backup.merge import _MERGE_NOT_CARRIED
 
     assert "feed_proposals" in _MERGE_NOT_CARRIED
+
+
+# ---------------------------------------------------------------- an accepted feed keeps its entries to the source's site
+
+
+def _rss(*links):
+    items = "".join(f"<item><title>t</title><link>{u}</link></item>" for u in links)
+    return f"<?xml version='1.0'?><rss version='2.0'><channel><title>x</title>{items}</channel></rss>"
+
+
+class _FeedRecorder:
+    def __init__(self, pages):
+        self.pages = pages
+        self.log: list[str] = []
+
+    def fetch(self, url, **_kw):
+        from datetime import UTC, datetime
+
+        from src.ingest import FetchFailed, FetchResult
+
+        self.log.append(url)
+        if url not in self.pages:
+            raise FetchFailed(f"404 for {url}")
+        content, ctype = self.pages[url]
+        return FetchResult(requested_url=url, final_url=url, status_code=200, content=content, content_type=ctype,
+                           fetched_at=datetime.now(UTC))
+
+
+def _ingest(db, source, monkeypatch, feed_url):
+    from src.ingest import FetchFailed, pipeline
+
+    def fake_ingest_url(session, src, url, *, fetcher, batch=None):
+        try:
+            fetcher.fetch(url)
+        except FetchFailed:
+            return pipeline.IngestOutcome(url=url, result=pipeline.IngestResult.FETCH_FAILED, detail="404")
+        return pipeline.IngestOutcome(url=url, result=pipeline.IngestResult.STORED, article_id=1)
+
+    monkeypatch.setattr(pipeline, "ingest_url", fake_ingest_url)
+    art = ("<html><body>x</body></html>", "text/html")
+    rec = _FeedRecorder({
+        feed_url: (_rss("https://example.com/a1", "https://elsewhere.test/b", "https://www.example.com/a2"),
+                   "application/rss+xml"),
+        "https://example.com/a1": art, "https://www.example.com/a2": art, "https://elsewhere.test/b": art,
+    })
+    return pipeline.ingest_source(db, source, fetcher=rec), rec
+
+
+def test_a_feed_accepted_from_a_page_keeps_its_entries_on_the_source_site(db, monkeypatch):
+    from src.database.models import FeedProposal
+    from src.ingest import feed_proposals as fp
+
+    s = _src(db, "Ex", "example.com")
+    feed = "https://feeds.service.test/example.rss"  # a feed hosted elsewhere still works for the outlet's own entries
+    db.add(FeedProposal(source_id=s.id, url=feed, host="feeds.service.test", origin="crawl_page"))
+    db.commit()
+    fp.accept(db, db.query(FeedProposal).one().id)
+    db.commit()
+    assert fp.entry_site_for(db, s) == "example.com"
+    tally, rec = _ingest(db, s, monkeypatch, feed)
+    assert tally.get("off_site_entries") == 1 and tally["entries"] == 2
+    assert "https://elsewhere.test/b" not in rec.log, "an off-site entry is counted, never fetched"
+
+
+def test_a_feed_the_operator_typed_is_left_as_it_is(db, monkeypatch):
+    from src.ingest import feed_proposals as fp
+
+    feed = "https://feeds.service.test/example.rss"
+    s = _src(db, "Ex", "example.com", rss=feed)
+    assert fp.entry_site_for(db, s) is None
+    tally, rec = _ingest(db, s, monkeypatch, feed)
+    assert "off_site_entries" not in tally and "https://elsewhere.test/b" in rec.log

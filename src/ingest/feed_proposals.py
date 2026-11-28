@@ -94,7 +94,15 @@ def address_refusal(url: str) -> str | None:
     host = _host(url)
     if not host:
         return "no_host"
-    host = unicodedata.normalize("NFKC", host).lower().rstrip(".")  # fullwidth digits and dots read as the ASCII ones
+    # Read the host as the resolver would: NFKC (fullwidth digits and dots), then IDNA's own mapping (the ideographic and
+    # halfwidth full stops become dots, a soft hyphen or zero-width character is dropped), so no spelling of an internal
+    # address or name passes because it is written in other characters.
+    try:
+        host = unicodedata.normalize("NFKC", host).encode("idna").decode("ascii").lower().rstrip(".")
+    except (UnicodeError, ValueError):
+        return "unreadable"
+    if not host:
+        return "no_host"
     if len(host) > HOST_MAX_CHARS:
         return "length"
     try:
@@ -130,6 +138,26 @@ def held_on_site(session: Session, source: Source, url: str) -> Source | None:
         select(Source).where(Source.domain.in_((site, "www." + site)), Source.id != source.id)
     ).scalars().all()
     return next((r for r in rows if r.rss_url and feed_key(r.rss_url) == key), None)
+
+
+def entry_site_for(session: Session, source: Source) -> str | None:
+    """The site a feed's entries are kept to: ``source.domain`` when the source's current feed address is one the operator
+    accepted from a crawl-page proposal, else ``None`` (nothing changes). Such a feed came from an untrusted page and the
+    click accepted that page's say-so, so its entries are collected only on the source's own site (the R773 trial's rule,
+    :func:`src.ingest.feed_find.same_site`) and the others are counted as ``off_site_entries``, never fetched. A feed the
+    operator typed is the operator's own choice and is left as it is. A failed read keeps the rule (fail closed)."""
+    rss = getattr(source, "rss_url", None)
+    if not rss:
+        return None
+    try:
+        hit = session.execute(
+            select(FeedProposal.id).where(FeedProposal.source_id == source.id, FeedProposal.url == rss,
+                                          FeedProposal.status == "accepted", FeedProposal.origin == ORIGIN_CRAWL_PAGE)
+            .limit(1)
+        ).first()
+    except Exception:  # noqa: BLE001 - fail closed: the restriction holds when it cannot be read
+        return source.domain or None
+    return (source.domain or None) if hit is not None else None
 
 
 def links_from_page(source: Source, html: str, page_url: str) -> list[str]:
