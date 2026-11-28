@@ -243,7 +243,7 @@ def test_a_never_collected_source_says_why_by_class_and_the_first_zip_counts_the
     db.add(Source(id=2, name="Cand", domain="cand.example", enabled=False, status="unqualified",
                   tags="news,via:wikidata-discovery"))
     db.add(Source(id=3, name="Cand2", domain="cand2.example", enabled=False, status="unqualified",
-                  tags="via:wikidata-discovery"))
+                  tags="via:wikidata-discovery", last_crawled_at=datetime(2026, 11, 3)))  # row 462 Q7: crawled, no article
     db.add(Source(id=4, name="Dead", domain="dead.example", enabled=True, status="qualified",
                   rss_url="https://alice:hunter2@dead.example/rss?token=abc", tags="via:curated"))
     db.flush()
@@ -259,11 +259,12 @@ def test_a_never_collected_source_says_why_by_class_and_the_first_zip_counts_the
     man = json.loads(raw)
     block = man["sources_without_article"]
     assert block["classes"]["columns"] == ["enabled", "status", "via", "has_feed", "last_qualification",
-                                           "last_feed_status", "sources_in_this_zip"]
+                                           "last_feed_status", "crawled", "sources_in_this_zip"]
     by_id = {r[0]: block["classes"]["rows"][r[3]] for r in block["rows"]}
-    assert by_id[2] == [False, "unqualified", "wikidata-discovery", False, None, None, 1]
-    assert by_id[3] == [False, "unqualified", "wikidata-discovery", False, "no_evidence", None, 1]
-    assert by_id[4] == [True, "qualified", "curated", True, None, 404, 1]
+    assert by_id[2] == [False, "unqualified", "wikidata-discovery", False, None, None, False, 1]
+    assert by_id[3] == [False, "unqualified", "wikidata-discovery", False, "no_evidence", None, True, 1]
+    assert by_id[4] == [True, "qualified", "curated", True, None, 404, False, 1]
+    assert b"2026-11-03" not in raw   # crawled is a boolean: the crawl time does not leave
     tally = man["never_collected_in_set"]
     assert tally["sources"] == 3 and tally["columns"][-1] == "sources"
     assert sorted(tally["rows"], key=str) == sorted([r[:-1] + [1] for r in block["classes"]["rows"]], key=str)
@@ -276,7 +277,7 @@ def test_the_whole_set_tally_rides_in_the_first_zip_only_and_one_class_is_writte
     first, nxt, _c, _t = build_sample_zip(db, after=0, seed=3, cap=6_000)
     assert nxt is not None
     man = json.loads(_open(first).read("manifest.json"))
-    assert man["never_collected_in_set"]["rows"] == [[False, "unqualified", "wikidata-discovery", False, None, None, 300]]
+    assert man["never_collected_in_set"]["rows"] == [[False, "unqualified", "wikidata-discovery", False, None, None, False, 300]]
     assert len(man["sources_without_article"]["classes"]["rows"]) == 1
     assert {r[3] for r in man["sources_without_article"]["rows"]} == {0}
     later, _n, _c, _t = build_sample_zip(db, after=nxt, seed=3, cap=6_000)

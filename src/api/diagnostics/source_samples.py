@@ -181,9 +181,11 @@ def _newsletter_source_ids(db: Session) -> set[int]:
 #: WHY A SOURCE HAS NO ARTICLE (row 248, from row 39: about 25,000 sources of one press had never stored one, and the
 #: compact list could not say why). Each never-collected row carries an index into ``classes``: whether collection may
 #: take it (``enabled``, ``status``), where it came from (its ``via:`` tag), whether it has a feed address to try,
-#: the last qualification verdict recorded for it, and the last HTTP status its feed answered (null = never fetched).
+#: the last qualification verdict recorded for it, the last HTTP status its feed answered (null = never fetched), and
+#: whether the crawl supplement ever read its pages (``crawled``: ``last_crawled_at`` set; row 462, #2418 OPEN-QUESTIONS
+#: Q7, which could see a crawl only for sources that already had an article).
 #: Booleans and short codes only: never an address (R734), never free text, so a row grows by a few bytes.
-CLASS_COLUMNS = ["enabled", "status", "via", "has_feed", "last_qualification", "last_feed_status"]
+CLASS_COLUMNS = ["enabled", "status", "via", "has_feed", "last_qualification", "last_feed_status", "crawled"]
 _KNOWN_STATUS = ("qualified", "unqualified", "disqualified")
 _VERDICT = re.compile(r"[a-z_]{1,20}")
 #: The whole-set tally lists at most this many classes (about 80 bytes each), so it can never crowd the first zip.
@@ -232,11 +234,12 @@ def _last_by_source(db: Session, ids: list[int]) -> tuple[dict[int, str], dict[i
     return verdicts, fetched
 
 
-def _class_of(enabled: Any, status: Any, tags: Any, rss_url: Any, verdict: str | None, feed_status: int | None) -> tuple:
+def _class_of(enabled: Any, status: Any, tags: Any, rss_url: Any, verdict: str | None, feed_status: int | None,
+              crawled_at: Any = None) -> tuple:
     st = str(status or "")
     return (
         bool(enabled), st if st in _KNOWN_STATUS else "other", _via(tags),
-        bool(rss_url), verdict, feed_status,
+        bool(rss_url), verdict, feed_status, crawled_at is not None,
     )
 
 
@@ -244,15 +247,15 @@ def never_collected_in_set(db: Session) -> dict[str, Any]:
     """Counts only: every source with no stored article, by class, across the whole set (in the first zip)."""
     has_article = select(Article.id).where(Article.source_id == Source.id).exists()
     rows = db.execute(
-        select(Source.id, Source.enabled, Source.status, Source.tags, Source.rss_url)
+        select(Source.id, Source.enabled, Source.status, Source.tags, Source.rss_url, Source.last_crawled_at)
         .where(~has_article).order_by(Source.id)
     ).all()
     counts: dict[tuple, int] = {}
     for start in range(0, len(rows), 900):   # under SQLite's bound-parameter limit
         chunk = rows[start:start + 900]
         verdicts, fetched = _last_by_source(db, [int(r[0]) for r in chunk])
-        for sid, enabled, status, tags, rss in chunk:
-            k = _class_of(enabled, status, tags, rss, verdicts.get(int(sid)), fetched.get(int(sid)))
+        for sid, enabled, status, tags, rss, crawled_at in chunk:
+            k = _class_of(enabled, status, tags, rss, verdicts.get(int(sid)), fetched.get(int(sid)), crawled_at)
             counts[k] = counts.get(k, 0) + 1
     ordered = sorted(counts.items(), key=lambda kv: (-kv[1], [str(x) for x in kv[0]]))
     kept, left = ordered[:_TALLY_MAX_CLASSES], ordered[_TALLY_MAX_CLASSES:]
@@ -337,7 +340,8 @@ def build_sample_zip(
                     row["bytes"] = len(data)
                 new_class: tuple | None = None
                 if row is None:
-                    k = _class_of(src.enabled, src.status, src.tags, src.rss_url, verdicts.get(sid), fetched.get(sid))
+                    k = _class_of(src.enabled, src.status, src.tags, src.rss_url, verdicts.get(sid), fetched.get(sid),
+                                  src.last_crawled_at)
                     idx = classes.get(k)
                     if idx is None:
                         idx, new_class = len(classes), k
