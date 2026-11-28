@@ -2397,6 +2397,13 @@ def _db_copies(folder: Path, base: Path, dbs: list[Path], unlisted=None, dfd: in
 #: ``seg-<n>.db`` (n from 1, at most four digits) and its log, journal and index. Anything else there is not the app's.
 CORPUS_DIR = "corpus"
 _SEGMENT_RE = re.compile(r"^(seg-[1-9][0-9]{0,3})\.db(-wal|-shm|-journal)?\Z")  # \Z: "seg-1.db\n" is never a segment's name
+#: R854: the one folder inside ``corpus`` where a torn segment's recovery copy is made (``<data>/corpus/recovery``), and the only
+#: names in it that are the app's: a copy ``seg-<n>.check.db`` and its rollback journal. A copy of a plaintext segment is
+#: plaintext, and nothing names a copy in the at-rest record, so the sweep handles each one as a segment WITHOUT evidence: its
+#: page 1 in the key-material pass (never capped, R797), then the whole file rewritten (R815/R820: neither the name nor the
+#: folder is evidence, R823). Anything else in the folder is not the app's: left, counted, never named (R806).
+RECOVERY_DIR = "recovery"
+_RECOVERY_RE = re.compile(r"^(seg-[1-9][0-9]{0,3})\.check\.db(-journal)?\Z")
 
 
 def _corpus_open(base: Path, generation: int, named_by: list[bytes] | None = None, records: list[bytes] | None = None) -> dict:
@@ -2433,11 +2440,25 @@ def _corpus_open(base: Path, generation: int, named_by: list[bytes] | None = Non
         except OSError:
             out["state"] = "unreached"
             return out
-        foreign = sum(1 for n in names if _SEGMENT_RE.match(n) is None)
+        foreign = sum(1 for n in names if _SEGMENT_RE.match(n) is None and n != RECOVERY_DIR)
+        app_files = len(names) - foreign - (RECOVERY_DIR in names)
+        if RECOVERY_DIR in names:
+            # R854: the recovery copies' folder, looked at by path here as the rest is; a link or a file at its name is foreign
+            try:
+                if _kind(folder / RECOVERY_DIR) == "dir":   # a junction is a link here (security reads, R854)
+                    inner = os.listdir(folder / RECOVERY_DIR)
+                    copies = sum(1 for n in inner if _RECOVERY_RE.match(n) is not None)
+                    foreign += len(inner) - copies
+                    app_files += copies
+                else:
+                    foreign += 1
+            except OSError:
+                out["state"] = "unreached"
+                return out
         if foreign or named_by is not None:
             # App-only scope (R711): the corpus folder is not one the walks reach, and no record can be checked by handle here,
             # so its segments are said as left, never passed over in silence (security reads, row 402).
-            out.update(foreign=foreign, left=len(names) - foreign)
+            out.update(foreign=foreign, left=app_files)
         return out
     try:
         dfd = os.open(folder, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
@@ -2458,6 +2479,8 @@ def _corpus_open(base: Path, generation: int, named_by: list[bytes] | None = Non
         return out
     out.update(state="open", dfd=dfd)
     for name in names:
+        if name == RECOVERY_DIR:
+            continue  # R854: walked after the segments (below), so an app-only scope knows which segments are the app's first
         m = _SEGMENT_RE.match(name)
         if m is None:
             out["foreign"] += 1
@@ -2529,7 +2552,103 @@ def _corpus_open(base: Path, generation: int, named_by: list[bytes] | None = Non
                 head_ok = False
         out["files"].append({"name": name, "seg": m.group(1), "fd": fd, "kind": kind, "ident": (fs.st_dev, fs.st_ino),
                              "head16": head, "head_ok": head_ok})
+    if RECOVERY_DIR in names:
+        _recovery_open(out, dfd, generation, named if named_by is not None else None)
     return out
+
+
+def _recovery_open(out: dict, dfd: int, generation: int, named: set[str] | None) -> None:
+    """R854, in the key-material pass: ``corpus/recovery`` opened no-follow through the corpus folder's handle (anything but a
+    folder at its name is never followed: one foreign item), each copy opened no-follow through that handle, a regular file with
+    one name only (a second name is never written: left), kept with this wipe's descriptors (R789), and its page 1 destroyed at
+    once. Each is added to ``out["files"]`` as a segment file of its own (``seg`` = ``recovery:seg-<n>``, which no record entry
+    names, so it never has evidence and :func:`_corpus_settle` rewrites it whole). ``named`` (app-only scope, R711): a copy is the
+    app's only beside a segment a record named. Anything else in the folder is counted, never named, never touched. Never raises."""
+    try:
+        st = os.lstat(RECOVERY_DIR, dir_fd=dfd)
+    except FileNotFoundError:
+        return
+    except OSError:
+        out["left"] += 1  # there, but not looked at: never said as clean
+        return
+    if not stat.S_ISDIR(st.st_mode):
+        out["foreign"] += 1  # a link or a file at the folder's name: never followed, never written, left
+        return
+    try:
+        rfd = os.open(RECOVERY_DIR, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0), dir_fd=dfd)
+    except OSError:
+        out["left"] += 1
+        return
+    try:
+        rst = os.fstat(rfd)
+        if (rst.st_dev, rst.st_ino) != (st.st_dev, st.st_ino):
+            os.close(rfd)
+            out["foreign"] += 1  # swapped between the look and the open
+            return
+        names = sorted(os.listdir(rfd))
+        # R711: in app-only scope the folder is the app's only once a copy in it is; an operator's empty folder is left alone
+        out["recovery_ours"] = named is None
+    except (OSError, NotImplementedError):
+        with contextlib.suppress(OSError):
+            os.close(rfd)
+        out["left"] += 1
+        return
+    out["recovery_dfd"] = rfd
+    for name in names:
+        m = _RECOVERY_RE.match(name)
+        if m is None:
+            out["foreign"] += 1
+            continue
+        kind = "whole" if m.group(2) else "head"
+        try:
+            pre = os.lstat(name, dir_fd=rfd)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            pre = None
+        if pre is None or not stat.S_ISREG(pre.st_mode):
+            out["left"] += 1  # a link, a device, a FIFO at a copy's name: never opened, never written
+            continue
+        try:
+            fd = os.open(name, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOCTTY", 0),
+                         dir_fd=rfd)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            out["left"] += 1
+            continue
+        try:
+            fs = os.fstat(fd)
+        except OSError:
+            fs = None
+        if fs is None or not stat.S_ISREG(fs.st_mode) or fs.st_nlink != 1:
+            # Another name holds it (writing would reach that file; no record ever names a copy, so it is never the app's by
+            # evidence, R840), or not a regular file: never written, kept (R789), let go by the late pass.
+            if fs is not None and stat.S_ISREG(fs.st_mode):
+                _note_link(fs, refused=True)
+                _HELD.setdefault(generation, []).append((fd, "park", 0))
+            else:
+                os.close(fd)
+            out["left"] += 1
+            continue
+        if named is not None and m.group(1) not in named:
+            _HELD.setdefault(generation, []).append((fd, "park", 0))  # app-only scope: beside no segment a record named
+            out["foreign"] += 1
+            continue
+        _HELD.setdefault(generation, []).append((fd, kind, fs.st_size + _HELD_GROWTH))
+        head_ok = True
+        if kind == "head":
+            try:
+                n = min(fs.st_size, _SQLCIPHER_PAGE1)
+                if n:
+                    head_ok = _write_at(fd, os.urandom(n), 0) == n
+                os.fsync(fd)
+            except OSError:
+                head_ok = False
+        out["files"].append({"name": name, "seg": "recovery:" + m.group(1), "fd": fd, "kind": kind,
+                             "ident": (fs.st_dev, fs.st_ino), "head16": b"", "head_ok": head_ok, "dir_fd": rfd,
+                             "rel": f"{RECOVERY_DIR}/{name}", "copy": True})
+        out["recovery_ours"] = True
 
 
 def _records_before(base: Path, main_db: Path | None) -> list[bytes]:
@@ -2553,13 +2672,17 @@ def _corpus_logs(sweep: dict) -> None:
     for f in sweep["files"]:
         if f["kind"] == "whole":
             written, _total, stop = _rewrite_fd(f["fd"], capped=False)  # R797 (a): a log holds copies of the salt page
-            f["state"] = "destroyed" if stop is None else ("partially_overwritten" if written else "not_overwritten")
+            # "Overwritten" until :func:`_corpus_settle` finds its segment proven: a settle that never runs (the drive changed)
+            # never leaves a log, or a recovery copy's journal, said "destroyed" (security reads, R854)
+            f["state"] = "overwritten" if stop is None else ("partially_overwritten" if written else "not_overwritten")
         if f["kind"] != "head":
             _corpus_unlink(f, dfd)
 
 
 def _corpus_unlink(f: dict, dfd: int) -> None:
-    """One segment file's name unlinked through the folder handle, only while it still holds the file judged. Never raises."""
+    """One segment file's name unlinked through the folder handle, only while it still holds the file judged (a recovery copy
+    through its own folder's handle, R854). Never raises."""
+    dfd = f.get("dir_fd", dfd)
     try:
         again = os.lstat(f["name"], dir_fd=dfd)
         if (again.st_dev, again.st_ino) == f["ident"]:
@@ -2578,6 +2701,8 @@ def _corpus_settle(sweep: dict, raws: list[bytes]) -> None:
 
     proven: set[str] = set()
     for f in sweep["files"]:
+        if f.get("copy"):
+            continue  # R854: a recovery copy is never named by a record; its name and folder are never evidence
         if f["kind"] == "head" and f["head_ok"] and any(
                 record_names_identity(raw, f["ident"], f["head16"], name=SEGMENT_PREFIX + f["seg"]) for raw in raws):
             proven.add(f["seg"])
@@ -2591,6 +2716,8 @@ def _corpus_settle(sweep: dict, raws: list[bytes]) -> None:
                 f["state"] = "destroyed" if f["head_ok"] else "not_overwritten"
             if f.get("state") == "destroyed" and f["seg"] not in proven:
                 f["state"] = "overwritten"
+            elif f["kind"] == "whole" and f.get("state") == "overwritten" and f["seg"] in proven:
+                f["state"] = "destroyed"   # a log rewritten whole beside a segment with evidence (never a copy's: R854)
             continue
         if f["seg"] in proven:
             f["state"] = "destroyed"
@@ -2630,6 +2757,8 @@ def _corpus_report(sweep: dict) -> dict:
         worst = None  # no segment there (or Windows, where steps 5b and 6 rewrite the folder's every byte, as before)
     out: dict = dict(counts)
     out["corpus"] = worst
+    # R854: of those files, how many were a torn segment's recovery copy (or its journal) left behind; counted, never named
+    out["recovery_copies"] = sum(1 for f in sweep.get("files", []) if f.get("copy"))
     return out
 
 
@@ -4230,7 +4359,14 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
     for f in corpus_sweep.get("files", []):
         if f["kind"] != "head" or f.get("state") not in ("partially_overwritten", "not_overwritten"):
             continue
-        _keep_name(base / CORPUS_DIR / f["name"])
+        _keep_name(base / CORPUS_DIR / f.get("rel", f["name"]))
+    if corpus_sweep.get("recovery_dfd") is not None:
+        with contextlib.suppress(OSError):
+            os.close(corpus_sweep["recovery_dfd"])  # R854: its copies' own handles stay with this wipe's kept descriptors (R789)
+        corpus_sweep["recovery_dfd"] = None
+        if corpus_sweep.get("dfd") is not None and corpus_sweep.get("recovery_ours"):
+            with contextlib.suppress(OSError):
+                os.rmdir(RECOVERY_DIR, dir_fd=corpus_sweep["dfd"])  # only when empty: what is left in it is not the app's
     if corpus_sweep.get("dfd") is not None:
         with contextlib.suppress(OSError):
             os.close(corpus_sweep["dfd"])  # the folder's handle; the files' own stay with this wipe's kept descriptors (R789)

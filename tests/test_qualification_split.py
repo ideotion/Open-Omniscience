@@ -375,7 +375,7 @@ def test_an_ltr_value_is_bidi_isolated_before_it_enters_a_translated_sentence() 
     assert "⁨" in app and "⁩" in app, "the isolate characters themselves"
     assert "function _ltrIsolate" in app
     body = strip_comments(function_body(app, "_libQualificationTile"))
-    assert '.replace("{x}", _ltrIsolate(began))' in body, (
+    assert '.replace("{x}", () => _ltrIsolate(began))' in body, (
         "the timestamp is the value that needs it: digits joined by punctuation are what "
         "bidi reorders, which is why the bare counts beside it do not get one"
     )
