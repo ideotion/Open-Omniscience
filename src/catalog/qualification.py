@@ -953,7 +953,12 @@ def select_link_density_only(
     from src.analytics import source_audit as sa
     from src.database.models import Source
 
+    from src.catalog import off_site as _off_site
+
     ids = sorted(int(r[0]) for r in session.query(Source.id).filter(Source.status == STATUS_DISQUALIFIED).all())
+    # A source held because its pages came from another site was not judged on its extraction: never chosen here.
+    held = _off_site.latest_attempt_versions(session, ids) if ids else {}
+    ids = [sid for sid in ids if held.get(sid) not in _off_site.HOLD_VERSIONS]
     if not ids:
         return {"chosen": [], "not_determined": []}
     # Read in chunks the size of a pass's own candidate list, each at a pass's own per-source history cap, so the
@@ -1000,7 +1005,7 @@ def pending_recheck_once(session: Session) -> list[int]:
     if not stored:
         return []
     want = sorted(int(k) for k, v in stored["entries"].items()
-                  if str(k).isdigit() and not (isinstance(v, dict) and v.get("tried_at")))
+                  if str(k).isascii() and str(k).isdigit() and not (isinstance(v, dict) and v.get("tried_at")))
     out: list[int] = []
     for chunk in _id_chunks(want):
         out += [int(r[0]) for r in session.query(Source.id).filter(
@@ -1034,8 +1039,14 @@ def _select_recheck_once_if_owed(
     """Run the R851 selection when this install has not stored one by today's rule; else the stored counts.
     A paused or failed read stores nothing, so the next pass tries again."""
     global _recheck_once_paused_at
-    stored = _load_recheck_once()
-    if stored and stored.get("selection") == RECHECK_ONCE_SELECTION:
+    from src.config.kv_store import kv_get_json_strict
+
+    try:  # strict: a read that failed is never taken for "nothing stored", which would rerun and drop the stamps
+        raw = kv_get_json_strict(RECHECK_ONCE_KEY)
+    except Exception as exc:  # noqa: BLE001 - tried again next pass
+        log_failure(_LOG, "the one-time re-check list could not be read", exc, level=logging.INFO)
+        return {"selected": False, "reason": "the stored list could not be read"}
+    if isinstance(raw, dict) and raw.get("selection") == RECHECK_ONCE_SELECTION:
         return recheck_once_counts()
     if _recheck_once_paused_at is not None and time.monotonic() - _recheck_once_paused_at < _RECHECK_ONCE_RETRY_S:
         return {"selected": False, "reason": "waiting after a paused read"}

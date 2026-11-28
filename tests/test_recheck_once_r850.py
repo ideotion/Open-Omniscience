@@ -291,3 +291,35 @@ def test_the_summary_says_both_counts_in_every_language():
         d = json.loads((root / "src" / "static" / "locales" / f"{lang}.json").read_text(encoding="utf-8"))
         for var in ("{rechecked}", "{chosen}", "{undetermined}"):
             assert var in d[frame], (lang, var)
+
+
+def test_an_odd_stored_key_never_breaks_the_pass(db, store):
+    a = _disqualified(db, "a.example")
+    _choose(store, a)
+    store[q.RECHECK_ONCE_KEY]["entries"]["²"] = {"tried_at": None}  # passes str.isdigit(), fails int()
+    store[q.RECHECK_ONCE_KEY]["entries"]["x"] = "junk"
+    assert q.pending_recheck_once(db) == [a.id]
+
+
+def test_an_unreadable_list_is_never_taken_for_none_stored(db, store, monkeypatch, four):
+    """A read that fails must not rerun the selection, which would rebuild the list and drop its tried stamps."""
+    import src.config.kv_store as kv
+
+    def locked(_key):
+        raise RuntimeError("database is locked")
+
+    ran = []
+    monkeypatch.setattr(kv, "kv_get_json_strict", locked)
+    monkeypatch.setattr(q, "select_link_density_only", lambda *a, **k: ran.append(1) or {"chosen": [], "not_determined": []})
+    out = q._select_recheck_once_if_owed(db, _frozen(), should_pause=None, now=NOW)
+    assert ran == [] and out["selected"] is False
+
+
+def test_a_source_held_off_site_is_never_chosen(db, four):
+    from src.catalog import off_site
+
+    link = four[0]
+    db.add(SourceQualificationAttempt(source_id=link.id, attempted_at=NOW, verdict=q.STATUS_DISQUALIFIED,
+                                      criteria_version=off_site.CRITERIA_VERSION))
+    db.commit()
+    assert q.select_link_density_only(db, _frozen())["chosen"] == []

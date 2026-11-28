@@ -8940,7 +8940,7 @@
   "{rate} kbit/s": "{rate} kbit/s",
   "{rate}/s": "{rate}/s",
   "{reason} ({qualified} · {disqualified} · {no_evidence})": "{reason} ({qualified} · {disqualified} · {no_evidence})",
-  "{rechecked} of {chosen} sources that link density alone disqualified have been re-checked once; {undetermined} could not be determined (too few stored articles).": "Se han vuelto a comprobar una vez {rechecked} de {chosen} fuentes que la densidad de enlaces descalificó por sí sola; {undetermined} no se pudieron determinar (demasiados pocos artículos guardados).",
+  "{rechecked} of {chosen} sources that link density alone disqualified have been re-checked once; {undetermined} could not be determined (too few stored articles).": "Se han vuelto a comprobar una vez {rechecked} de {chosen} fuentes que la densidad de enlaces descalificó por sí sola; {undetermined} no se pudieron determinar (demasiado pocos artículos guardados).",
   "{rows} values from {vintages} fetches": "{rows} valores de {vintages} obtenciones",
   "{rule} near {place}: independent weather check available": "{rule} cerca de {place}: comprobación meteorológica independiente disponible",
   "{scanned} articles scanned · {counted} had a word count · {excluded} excluded as not space-separated": "{scanned} artículos analizados · {counted} tenían recuento de palabras · {excluded} excluidos por no estar separados por espacios",
