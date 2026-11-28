@@ -86,8 +86,16 @@ def corpus_anomalies(
         )
     }
     anomalies = volume_anomalies(daily, z_threshold=z_threshold)
+    from sqlalchemy import select
+
+    from src.analytics.undated import KIND_LEFT_OUT_FIGURE, undated_in_select
+    from src.database.models import Article
+
     return {
         "days_observed": len(daily),
         "z_threshold": z_threshold,
         "anomalies": [a.to_dict() for a in anomalies],
+        # Row 459 (R853): the daily volume reads published_at alone (every article, as the counts above), so an article
+        # whose page gave no date is not in it; this says how many.
+        "undated": undated_in_select(db, select(Article.id), kind=KIND_LEFT_OUT_FIGURE),
     }

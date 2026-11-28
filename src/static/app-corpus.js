@@ -448,15 +448,20 @@
           `<button class="tiny secondary" data-on-click="openCorpus(${esc(JSON.stringify(r.term))})" title="${esc(t8("Open this keyword as a corpus window: trend, member articles, and shared outbound links (the sources' sources)."))}">⊞ ${esc(t8("Corpus"))}</button></div>` +
           `<div style="margin-bottom:8px"><div class="hint">${esc(t8("Time range"))}</div>` +
           `<div id="ins-trend-scope"></div></div>` +
-          `<div id="ins-trend-oo"></div>`;
+          `<div id="ins-trend-oo"></div><div id="ins-trend-undated"></div>`;
         // FULL bucketed series fetched once; the ooTimeScope window FILTERS it
         // client-side (invariant #16 — never thinned; ooChart unchanged).
         const allPts = tr.points || [];
         // The unit is chrome, so it is keyed (M-10: the legend read "n=20 · mentions" in zh).
-        const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, labelIsData: true, unit: t8("mentions"),
-          points: pts.map(pt => ({t: pt.date, v: pt.count}))}],
-          {height: 180, zeroBase: true, lineMin: 8, bucket: "week",
-           onSelectRange: _brushToCorpus(r.term, "week")});
+        const insDraw = (pts) => {
+          ooChart($("ins-trend-oo"), [{label: r.term, labelIsData: true, unit: t8("mentions"),
+            points: pts.map(pt => ({t: pt.date, v: pt.count}))}],
+            {height: 180, zeroBase: true, lineMin: 8, bucket: "week",
+             onSelectRange: _brushToCorpus(r.term, "week")});
+          // Row 459 (R853): how many of the drawn articles have no date of their own, for the range drawn.
+          const ud = $("ins-trend-undated");
+          if (ud) ud.innerHTML = ooUndatedLine(tr.undated, pts.length === allPts.length ? null : pts.map(pt => pt.date));
+        };
         const insDef = _buildTrendScope($("ins-trend-scope"), allPts, insDraw);
         insDraw(_windowTrendPoints(allPts, insDef.from, insDef.to));
         // A language switch re-runs this; it must redraw the level the reader was on, not
@@ -1196,6 +1201,8 @@
         const t = _conjI18n().t;
         ooChart(host, [{label: _conjExpr(h.last), unit: t("articles"),
           points: pts.map((p2) => ({t: p2.date, v: p2.count}))}], {height: 180, zeroBase: true});
+        // Row 459 (R853): how many of the set's drawn articles have no date of their own.
+        host.insertAdjacentHTML("afterend", ooUndatedLine((h.last.trend || {}).undated));
       }
       if (h.contrast) {
         const t = _conjI18n().t, tf = _conjI18n().tf;
@@ -1590,7 +1597,7 @@
                 <a href="#" data-on-click='pickTerm(${esc(JSON.stringify(x.term))});return false'>${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
                 <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>
                 <button class="ghost tiny" style="margin-inline-start:auto" data-on-click="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
-              </div>${dashChartSvg(pts, "", axis)}</div>`;
+              </div>${dashChartSvg(pts, "", axis)}${ooUndatedMark(x.undated)}</div>`;
           }).join("");
           const rest = terms.filter(x => !Array.isArray(x.series));
           const restList = rest.length
@@ -1622,7 +1629,9 @@
       const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
       const title = x.term + " — " + (LABELS[w.label] || w.label);
       const points = x.series.map(p => ({t: p.date, v: p.count}));
-      chartEnlarge(title, [{label: x.term, labelIsData: true, unit: t("mentions"), points}], d.caveat ? t(d.caveat) : "", {titleIsData: true});
+      // Row 459 (R853): the enlarged chart carries the undated line beside the caveat.
+      const note = [d.caveat ? t(d.caveat) : "", ooUndatedText(x.undated)].filter(Boolean).join(" ");
+      chartEnlarge(title, [{label: x.term, labelIsData: true, unit: t("mentions"), points}], note, {titleIsData: true});
     }
 
     // -- ooViz honest lenses over the trending-windows payload (batch F item 2) ---- //

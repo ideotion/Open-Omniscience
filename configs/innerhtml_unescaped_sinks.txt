@@ -65,6 +65,7 @@ app-analysis.js _anRenderProvenance 1
 app-analysis.js _anRenderStrip 1
 app-analysis.js _anRepaintOnLangChange 3
 app-analysis.js _anRepaintXLang 1
+app-analysis.js _anTrendUndated 1
 app-analysis.js _bulkRenderQueue 1
 app-analysis.js _concept 1
 app-analysis.js _drawAnTrendByLang 1
@@ -126,8 +127,9 @@ app-corpus.js _chartEnlargeExtra 1
 app-corpus.js anRenderKwChips 2
 app-corpus.js chartEnlarge 1
 app-corpus.js conjContrast 1
-app-corpus.js conjRepaint 2
+app-corpus.js conjRepaint 3
 app-corpus.js exploreTerm 3
+app-corpus.js insDraw 1
 app-corpus.js loadTrendWindows 1
 app-corpus.js loadTrends 3
 app-corpus.js openConjunctionLens 1

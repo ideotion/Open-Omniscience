@@ -1748,7 +1748,7 @@ def insights_corpus_algebra(
     if "intensity" in wanted:
         result["intensity"] = _intensity_with_titles(db, per_article_intensity(db, ids, term_list))
     if "trend" in wanted:
-        result["trend"] = conditional_trend(db, ids, bucket=bucket)
+        result["trend"] = conditional_trend(db, ids, bucket=bucket, undated=True)
     near = near_match_expression([t["term"] for t in result["terms"]], distance=NEAR_DEFAULT)
     result["near"] = {"query": near, "distance": NEAR_DEFAULT} if near else None
     return result
@@ -2251,10 +2251,12 @@ def insights_trending_windows(
     # cached compute costs nothing and lets ONE entry serve every UI language.
     key = trending_windows_key(country=country, kind=kind, limit=limit, series_top=series_top)
     budget = _trending_live_budget_s()
-    out = _deadlined(db, key, lambda: rm.trending_windows(
+    # Row 459 (R853): a card with a sparkline says how many of its articles are drawn at their collection date (a
+    # no-op without series_top, since only a card that carries a series is counted).
+    out = _deadlined(db, key, lambda: q.annotate_trending_undated(db, rm.trending_windows(
         db, country=country, kind=_kind(kind), limit=limit, series_top=series_top,
         target_lang=None, live_budget_s=budget,
-    ), degraded_replay=True)
+    ), country=country), degraded_replay=True)
     return _annotate_windows(out, tl, db, country)
 
 
@@ -2494,6 +2496,7 @@ def insights_trend(
         concept=_concept_for(
             db, term, expand=expand, ui_lang=ui_lang, sense=sense, literal_cap=literal_cap
         ),
+        undated=True,  # row 459 (R853): the chart says how many of its articles are drawn at their collection date
     )
     tl = _tlang(target_lang)
     resolved = out.get("resolved")
@@ -3165,9 +3168,11 @@ def warm_cache(db: Session) -> dict:
                 _bind_key(db, trending_windows_key(
                     country=None, kind=None, limit=lim, series_top=st,
                 )),
-                lambda lim=lim, st=st: rm.trending_windows(
+                # Row 459 (R853): the warmed payload carries the same undated marks the endpoint adds, or the
+                # cards read from this warm entry would show none for the whole TTL.
+                lambda lim=lim, st=st: q.annotate_trending_undated(db, rm.trending_windows(
                     db, country=None, kind=None, limit=lim, series_top=st, target_lang=None
-                ),
+                ), country=None),
             )
         )
     specs.append(
