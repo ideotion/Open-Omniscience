@@ -2264,7 +2264,10 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
                 # Z5); each label is a key in all twelve locales.
                 "label": _CRITERION_LABELS[c["name"]],
                 "bad_direction": c["bad"],
-                "can_disqualify": bool(c["extraction_failure"]),
+                # R844: a corroborating-only criterion never disqualifies on its own, so it
+                # is not marked as one that can; the panel says it corroborates instead.
+                "can_disqualify": bool(c["extraction_failure"]) and not c.get("corroborates_only"),
+                "corroborates_only": bool(c.get("corroborates_only")),
                 "desc": c["desc"],
                 # Per-criterion, and NULL is a real answer: `link_density_rate` has no
                 # absolute floor because none has been measured for it.

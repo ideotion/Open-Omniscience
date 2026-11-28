@@ -323,9 +323,12 @@ def test_every_criterion_reaches_the_config_payload(tmp_path) -> None:
     # WHICH -- a reader cannot tell from the list otherwise -- and each must carry its OWN
     # absolute floor, because they do not share one.
     disqualifiers = {c["name"] for c in payload["criteria"] if c["can_disqualify"]}
-    assert disqualifiers == {"pathology_rate", "link_density_rate"}, (
+    # AMENDED by R844 (row 449): link density only corroborates, so the panel no longer marks
+    # it as able to disqualify, and says it corroborates instead.
+    assert disqualifiers == {"pathology_rate"}, (
         f"the panel's disqualifying set drifted from the engine's: {disqualifiers}"
     )
+    assert {c["name"] for c in payload["criteria"] if c["corroborates_only"]} == {"link_density_rate"}
     by_name = {c["name"]: c for c in payload["criteria"]}
     assert by_name["pathology_rate"]["absolute_floor"] == 0.5
     # NULL is a real answer here, and the panel says why rather than leaving a blank.

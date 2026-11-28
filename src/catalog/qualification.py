@@ -72,7 +72,12 @@ _LOG = logging.getLogger("catalog.qualification")
 # The criteria VERSION stamped on every verdict (Source.qualification_criteria_version +
 # SourceQualificationAttempt.criteria_version). Bump this if the judging criteria change
 # so the history stays honest about which rules judged an old attempt.
-CRITERIA_VERSION = "oo-source-qualification-3"
+CRITERIA_VERSION = "oo-source-qualification-4"
+# -4 (R844, row 449, 2026-11-28): `link_density_rate` became corroborating only -- it can no
+# longer disqualify a source on its own (alone, or with soft signals only, it is `watch`). A
+# LABEL like the bumps below: nothing re-judges on it. The sources it disqualified come back on
+# their ladder, and R850/R851 make the ones a recompute from stored articles shows it disqualified
+# alone due ONCE through the ordinary scheduler (RECHECK_ONCE_KEY). No re-extraction.
 # -3 (B6, 2026-09-15): the criteria SET changed -- `link_density_rate` joins `pathology_rate`
 # as a second extraction-failure criterion, so a source can now reach `failing` on two
 # independent extraction signatures rather than one signature plus a soft corroborator. That
@@ -357,7 +362,7 @@ def failing_criteria_names(failing_criteria: list[dict]) -> str:
 def decide_verdict(failing_criteria: list[dict]) -> str:
     """Map source_audit's categorical status onto a qualification verdict: disqualified
     ONLY on the extraction-failure signature (status degraded or failing -- pathology_rate,
-    alone or corroborated); qualified otherwise (healthy, or watch = soft-only flags,
+    alone or corroborated, link_density_rate only as a corroborator, R844); qualified otherwise (healthy, or watch = soft-only flags,
     which the reframe forbids ever failing a source for). Reuses derive_status -- never
     re-derives the criteria logic."""
     from src.analytics.source_audit import derive_status
@@ -562,6 +567,15 @@ def select_due_disqualified(
 
     if limit <= 0:
         return []
+    # R850: the sources chosen for one re-check come first, due now whatever their ladder says.
+    once_ids = pending_recheck_once(session)[:limit]
+    due: list[Source] = []
+    if once_ids:
+        by_id = {int(x.id): x for x in session.query(Source).filter(Source.id.in_(once_ids)).all()}
+        due = [by_id[i] for i in once_ids if i in by_id]
+    if len(due) >= limit:
+        return due
+    taken = {int(x.id) for x in due}
     pool_size = max(limit * pool_multiplier, limit)
     last_attempt = (
         session.query(
@@ -579,10 +593,11 @@ def select_due_disqualified(
         .limit(pool_size)
         .all()
     )
-    due: list[Source] = []
     for source, last_at in rows:
         if len(due) >= limit:
             break
+        if int(source.id) in taken:
+            continue
         # SQLite/SQLAlchemy round-trips a DateTime as NAIVE even when an aware UTC
         # value was stored -- the coverage.py skip_until convention: re-attach UTC
         # explicitly before comparing against an aware ``now``.
@@ -907,6 +922,191 @@ def pending_forced(session: Session, limit: int | None = None) -> tuple[list[Sou
     return [by_id[sid] for sid in take if sid in by_id], ids
 
 
+# R850 / R851 (row 449, amending R844): ONE re-check, through the ordinary scheduler, for each source
+# that link density alone disqualified. Nothing stored says why a source was disqualified (an attempt
+# row is source, date, verdict and criteria version), so the sources are CHOSEN BY RECOMPUTING the
+# criteria, read-only, from their stored articles with the same ``flag_criteria`` call a re-check
+# runs; a source whose stored articles are too few to recompute is "not determined" and stays on its
+# ladder. A chosen source is made due once: :func:`select_due_disqualified` puts it first, so it is
+# judged in an ordinary pass with that pass's consent, transport, pacing and per-host limits, and
+# nothing runs while qualification is off. The selection itself runs inside a pass, from the cohort
+# that pass froze, once per install (the stored ``selection`` names the rule that chose).
+RECHECK_ONCE_KEY = "qualification.recheck_once"
+RECHECK_ONCE_SELECTION = "r851-link-density-only-recomputed"
+RECHECK_ONCE_LABEL = "chosen by recomputing from stored articles"
+#: How many disqualified sources the recompute reads at a time (a generous pass's candidate list).
+_RECHECK_ONCE_CHUNK = 50
+#: After a selection the memory guard paused, the next try waits this long (in this process), so a machine short of
+#: memory is not asked for the same read on every pass.
+_RECHECK_ONCE_RETRY_S = 24 * 3600
+_recheck_once_paused_at: float | None = None
+
+
+def _load_recheck_once() -> dict[str, Any] | None:
+    """The stored selection, or None when there is none or it cannot be read (then nothing is made due)."""
+    from src.config.kv_store import kv_get_json
+
+    try:
+        raw = kv_get_json(RECHECK_ONCE_KEY)
+    except Exception:  # noqa: BLE001 - an ordering hint, never a dependency of the pass
+        return None
+    return raw if isinstance(raw, dict) and isinstance(raw.get("entries"), dict) else None
+
+
+def select_link_density_only(
+    session: Session, frozen: dict, *, should_pause: Callable[[], bool] | None = None,
+) -> dict[str, list[int]]:
+    """R851: the disqualified sources whose ONLY failing extraction-failure criterion, recomputed now from
+    their stored articles, is ``link_density_rate``. READ-ONLY: it writes no article, no attempt row and
+    no stamp. ``not_determined`` are the disqualified sources with too few stored articles to recompute
+    (fewer than the criterion's own evidence minimum). May raise ``ScanPaused`` like any scoped read."""
+    from src.analytics import source_audit as sa
+    from src.catalog import off_site as _off_site
+    from src.database.models import Source
+
+    ids = sorted(int(r[0]) for r in session.query(Source.id).filter(Source.status == STATUS_DISQUALIFIED).all())
+    # A source held because its pages came from another site was not judged on its extraction: never chosen here.
+    held = _off_site.latest_attempt_versions(session, ids) if ids else {}
+    ids = [sid for sid in ids if held.get(sid) not in _off_site.HOLD_VERSIONS]
+    if not ids:
+        return {"chosen": [], "not_determined": []}
+    # Read in chunks the size of a pass's own candidate list, each at a pass's own per-source history cap, so the
+    # recompute never holds more in memory than one ordinary pass does, however many sources are disqualified.
+    per: dict[int, dict] = {}
+    for at in range(0, len(ids), _RECHECK_ONCE_CHUNK):
+        chunk = ids[at:at + _RECHECK_ONCE_CHUNK]
+        per.update(sa.scoped_metrics(
+            session, set(chunk), frozen, should_pause=should_pause, per_source_recent=candidate_history_cap(len(chunk)),
+        ))
+    floor = sa._MIN_PATHOLOGY_ARTICLES
+    readable = {sid: m for sid, m in per.items() if int(m.get("article_count") or 0) >= floor}
+    fails = sa.flag_criteria(readable, min_articles=TRIAL_MIN_ARTICLES, cohort_cut=frozen["cohort_cut"])
+    chosen = [
+        sid for sid in ids if sid in readable
+        and {f["criterion"] for f in fails.get(sid, []) if f["extraction_failure"]} == {"link_density_rate"}
+    ]
+    return {"chosen": chosen, "not_determined": [sid for sid in ids if sid not in readable]}
+
+
+def store_recheck_once(selection: dict[str, list[int]], *, now: datetime) -> dict[str, Any]:
+    """Write the selection (after the pass committed: never inside an ORM write). Once: a source already
+    listed keeps its entry, and a later run of the SAME rule never lists anything again."""
+    from src.config.kv_store import kv_set_json
+
+    stamp = (now if now.tzinfo else now.replace(tzinfo=UTC)).astimezone(UTC).replace(tzinfo=None).isoformat()
+    old = _load_recheck_once() or {}
+    entries = dict(old.get("entries") or {})
+    for sid in selection["chosen"]:
+        entries.setdefault(str(int(sid)), {"tried_at": None})
+    value = {
+        "selection": RECHECK_ONCE_SELECTION, "label": RECHECK_ONCE_LABEL, "selected_at": stamp,
+        "entries": entries, "chosen": len(selection["chosen"]), "not_determined": len(selection["not_determined"]),
+    }
+    kv_set_json(RECHECK_ONCE_KEY, value)
+    return value
+
+
+def pending_recheck_once(session: Session) -> list[int]:
+    """The chosen sources not yet re-checked once that are still disqualified, by id."""
+    from src.database.models import Source
+
+    stored = _load_recheck_once()
+    if not stored:
+        return []
+    want = sorted(int(k) for k, v in stored["entries"].items()
+                  if str(k).isascii() and str(k).isdigit() and not (isinstance(v, dict) and v.get("tried_at")))
+    out: list[int] = []
+    for chunk in _id_chunks(want):
+        out += [int(r[0]) for r in session.query(Source.id).filter(
+            Source.id.in_(chunk), Source.status == STATUS_DISQUALIFIED).all()]
+    return sorted(out)
+
+
+def record_recheck_once_tries(ids: set[int], *, now: datetime) -> None:
+    """Stamp the chosen sources a pass just tried, whatever it decided: each is made due ONCE. After the
+    commit; an unreadable list is left as it was."""
+    from src.config.kv_store import kv_get_json_strict, kv_set_json
+
+    if not ids:
+        return
+    try:
+        raw = dict(kv_get_json_strict(RECHECK_ONCE_KEY) or {})
+        entries = {str(k): (dict(v) if isinstance(v, dict) else {}) for k, v in (raw.get("entries") or {}).items()}
+        stamp = (now if now.tzinfo else now.replace(tzinfo=UTC)).astimezone(UTC).replace(tzinfo=None).isoformat()
+        for sid in ids:
+            if str(sid) in entries and not entries[str(sid)].get("tried_at"):
+                entries[str(sid)]["tried_at"] = stamp
+        raw["entries"] = entries
+        kv_set_json(RECHECK_ONCE_KEY, raw)
+    except Exception as exc:  # noqa: BLE001 - bookkeeping never fails a pass
+        log_failure(_LOG, "could not record the one-time re-check tries", exc, level=logging.WARNING)
+
+
+def _note_recheck_once_paused() -> None:
+    global _recheck_once_paused_at
+    _recheck_once_paused_at = time.monotonic()
+
+
+def _recheck_once_owed() -> bool:
+    """Whether a pass should make the R851 choice now: no choice by today's rule is stored (read strictly: a read that
+    fails is never taken for "nothing stored") and no memory pause asked this process to wait."""
+    from src.config.kv_store import kv_get_json_strict
+
+    if _recheck_once_paused_at is not None and time.monotonic() - _recheck_once_paused_at < _RECHECK_ONCE_RETRY_S:
+        return False
+    try:
+        raw = kv_get_json_strict(RECHECK_ONCE_KEY)
+    except Exception:  # noqa: BLE001 - tried again next pass
+        return False
+    return not (isinstance(raw, dict) and raw.get("selection") == RECHECK_ONCE_SELECTION)
+
+
+def _select_recheck_once_if_owed(
+    session: Session, frozen: dict, *, should_pause: Callable[[], bool] | None, now: datetime,
+) -> dict[str, Any]:
+    """Run the R851 selection when this install has not stored one by today's rule; else the stored counts.
+    A paused or failed read stores nothing, so the next pass tries again."""
+    global _recheck_once_paused_at
+    from src.config.kv_store import kv_get_json_strict
+
+    try:  # strict: a read that failed is never taken for "nothing stored", which would rerun and drop the stamps
+        raw = kv_get_json_strict(RECHECK_ONCE_KEY)
+    except Exception as exc:  # noqa: BLE001 - tried again next pass
+        log_failure(_LOG, "the one-time re-check list could not be read", exc, level=logging.INFO)
+        return {"selected": False, "unread": True}  # the stored list could not be read
+    if isinstance(raw, dict) and raw.get("selection") == RECHECK_ONCE_SELECTION:
+        return recheck_once_counts()
+    if _recheck_once_paused_at is not None and time.monotonic() - _recheck_once_paused_at < _RECHECK_ONCE_RETRY_S:
+        return {"selected": False, "waiting": True}  # after a selection that did not run
+    try:
+        selection = select_link_density_only(session, frozen, should_pause=should_pause)
+        session.rollback()  # the read opened a transaction; nothing was written in it
+        store_recheck_once(selection, now=now)
+    except Exception as exc:  # noqa: BLE001 - a selection that could not run is tried again later
+        session.rollback()  # end the read before the pass goes on, whatever stopped it
+        # Any failure waits, not only a pause: a store that keeps refusing the write (or a recompute that keeps
+        # failing) would otherwise make every pass pay a whole-corpus freeze plus this read, for nothing.
+        _recheck_once_paused_at = time.monotonic()
+        log_failure(_LOG, "the one-time re-check selection did not run", exc, level=logging.INFO)
+        return {"selected": False, "reason": record_text(exc)}
+    _recheck_once_paused_at = None
+    return recheck_once_counts()
+
+
+def recheck_once_counts() -> dict[str, Any]:
+    """The counts the release line and the diagnostics state: chosen, re-checked so far, not determined."""
+    stored = _load_recheck_once()
+    if not stored:
+        return {"selected": False}
+    entries = stored["entries"]
+    return {
+        "selected": True, "selection": stored.get("selection"), "label": stored.get("label"),
+        "selected_at": stored.get("selected_at"), "chosen": len(entries),
+        "rechecked": sum(1 for v in entries.values() if isinstance(v, dict) and v.get("tried_at")),
+        "not_determined": int(stored.get("not_determined") or 0),
+    }
+
+
 def pending_forced_rechecks(session: Session, limit: int | None = None) -> list[Source]:
     """:func:`pending_forced` without the full id list (the first ``limit`` sources, in order)."""
     return pending_forced(session, limit)[0]
@@ -1057,6 +1257,8 @@ def qualification_queue(session: Session, *, now: datetime | None = None,
             "qualified_rechecks_on": ql_on,
             "flagged": len(forced_all),
             "next": next_rechecks,
+            # R850 / R851: the one-time re-check of the sources link density alone disqualified (absent until chosen).
+            "recheck_once": recheck_once_counts(),
         },
         "waiting": {
             "qualified": ql_waiting,
@@ -1846,6 +2048,49 @@ def run_qualification_pass(
 
     now = now or datetime.now(UTC)
 
+    # R850 / R851, before anything is picked: an install whose queue is empty is exactly the one this is for (new
+    # candidates run out, nothing due on the ladder for months), so the choice is made on any pass that runs, from the
+    # cohort this pass freezes, and the chosen are then due in this same pass. Only a read (and a key-value write before
+    # any ORM write of the pass); every network gate still sits ahead of each trial fetch below.
+    frozen_early: dict | None = None
+    chose_now = False
+    recheck_once: dict[str, Any] = recheck_once_counts()
+    # Nothing disqualified = nothing to choose: one indexed EXISTS, so a pass with nothing to judge still never pays
+    # for a whole-corpus freeze (the rule the frozen-cohort tests pin).
+    if _recheck_once_owed():
+        try:
+            from src.database.models import Source as _DqSource
+
+            if session.query(session.query(_DqSource.id).filter(_DqSource.status == STATUS_DISQUALIFIED).exists()).scalar():
+                frozen_early = cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
+                    session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
+                    sample_articles=(QUALIFICATION_SAMPLE_ARTICLES if plan["mode"] == "sample" else None),
+                )
+        except Exception as exc:  # noqa: BLE001 - the one-time choice never fails a pass; it waits and is tried later
+            # A pause, or any other failure of this extra freeze: before R850 a pass with nothing to judge never froze,
+            # so a freeze that cannot run must not stop that pass now. The wait applies either way.
+            import contextlib
+
+            with contextlib.suppress(Exception):  # nothing was written; a session that cannot roll back is the pass's to meet
+                session.rollback()
+            _note_recheck_once_paused()  # after the rollback: the read is ended first, then the wait is recorded
+            log_failure(_LOG, "the one-time re-check selection waited: the cohort freeze did not run", exc, level=logging.INFO)
+        else:
+            # Never store a choice made from another baseline: the check below the trial fetches refuses that cut.
+            if frozen_early is None:
+                pass  # nothing disqualified, so nothing to choose and no wait: the next pass looks again
+            elif isinstance(frozen_early, dict) and frozen_early.get("min_articles") == TRIAL_MIN_ARTICLES:
+                recheck_once = _select_recheck_once_if_owed(session, frozen_early, should_pause=should_pause, now=now)
+                chose_now = bool(recheck_once.get("selected"))
+            else:
+                _note_recheck_once_paused()  # a cut this choice cannot use waits too, or every pass would freeze again
+    # The pass that made the choice says so even when it returns early; any other pass keeps its old result shape.
+    # An empty choice (nothing to choose) is not reported, so an install with nothing disqualified keeps it too.
+    _once_note: dict[str, Any] = (
+        {"recheck_once": recheck_once}
+        if chose_now and (recheck_once.get("chosen") or recheck_once.get("not_determined")) else {}
+    )
+
     # ---- candidate selection: NEW candidates and RE-CHECKS have SEPARATE budgets ----
     # (2026-09-04 ruling.) Until now they shared ``per_pass``, and new candidates were
     # taken first: with a backlog of tens of thousands of unqualified sources (42.6k-66.7k
@@ -1916,7 +2161,7 @@ def run_qualification_pass(
             _seen_ids.add(int(_cand.id))
             candidates.append(_cand)
     if not candidates:
-        return {"enabled": True, "evaluated": 0}
+        return {"enabled": True, "evaluated": 0, **_once_note}
 
     trial_errors = 0
     deferred = 0
@@ -1978,7 +2223,7 @@ def run_qualification_pass(
             # own airplane skip, so the bulk job pauses on it instead of reading ``evaluated: 0`` as an empty backlog.
             return {
                 "enabled": True, "evaluated": 0, "skipped": "airplane mode engaged",
-                "trial_fetch_errors": trial_errors, "deferred": deferred,
+                "trial_fetch_errors": trial_errors, "deferred": deferred, **_once_note,
             }
 
     # S5.1: the COHORT is frozen (once per run, by the caller that knows what a run is) and
@@ -1991,6 +2236,8 @@ def run_qualification_pass(
     # CALLABLE rather than a dict for exactly that reason -- a caller that memoises it gets
     # one freeze per run, and a pass that never needs one never triggers it.
     try:
+        # Frozen again here, after the trial fetches, so the baseline holds what this pass fetched (the old order); the
+        # early freeze served only the one-time choice. A memoising provider (the bulk job) still freezes once a run.
         frozen = cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
             session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
             sample_articles=(
@@ -2004,7 +2251,7 @@ def run_qualification_pass(
         log_failure(_LOG, "qualification pass paused during the cohort freeze", exc, level=logging.INFO)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": record_text(exc),
-            "trial_fetch_errors": trial_errors, "deferred": deferred,
+            "trial_fetch_errors": trial_errors, "deferred": deferred, **_once_note,
         }
     # A cut frozen at another threshold is a DIFFERENT baseline -- it decides which sources
     # form the cohort at all. Refused rather than answered, because the failure is invisible:
@@ -2029,7 +2276,7 @@ def run_qualification_pass(
         log_failure(_LOG, "qualification pass paused", exc, level=logging.INFO)
         return {
             "enabled": True, "evaluated": 0, "paused": "memory", "reason": record_text(exc),
-            "trial_fetch_errors": trial_errors, "deferred": deferred,
+            "trial_fetch_errors": trial_errors, "deferred": deferred, **_once_note,
         }
     fails_by_source = sa.flag_criteria(
         per, min_articles=TRIAL_MIN_ARTICLES, cohort_cut=frozen["cohort_cut"],
@@ -2070,6 +2317,7 @@ def run_qualification_pass(
     # Plain ints, read before the commit: reading ``.id`` off an expired row afterwards would
     # begin a new transaction on the session just before the key-value write below.
     forced_tried = {int(x.id) for x in rechecks if int(x.id) in forced_ids} if forced else set()
+    once_tried = {int(x.id) for x in candidates}  # R850: read before the commit expires the rows, like forced_tried
     session.commit()
 
     # C15 (2026-07-24 throughput brief, S-E slice 2): auto-enqueue a BOUNDED
@@ -2084,6 +2332,9 @@ def run_qualification_pass(
     # and the odd slot of an odd budget changes hands.
     if forced:
         record_forced_tries(forced_tried, now=now, odd_budget=slot_contested)
+    # R850 / R851: the chosen sources this pass tried have had their one re-check, whatever it decided.
+    record_recheck_once_tries(once_tried, now=now)
+    recheck_once = recheck_once_counts() if recheck_once.get("selected") else recheck_once
     # R728 B: the reversible mark on a held candidate's off-site articles, after the hold is committed.
     # The hold queued them in its own transaction, so a failure here leaves them owed, never lost.
     off_site_marked = 0
@@ -2112,6 +2363,8 @@ def run_qualification_pass(
         # R728: candidates held because their recent pages came from another site, and the articles marked for it.
         "off_site_held": len(held_off_site),
         "off_site_articles_marked": off_site_marked,
+        # R850 / R851: the one-time re-check of the sources link density alone disqualified (counts only).
+        "recheck_once": recheck_once,
         # Reported apart because they answer different questions: "is the backlog draining"
         # and "is the recurrent verification actually running". One number cannot say both,
         # and it was precisely the absence of the second that hid a ladder that never ran.
