@@ -339,10 +339,10 @@ def test_both_exports_carry_it_and_the_csv_keeps_every_earlier_column_in_place(c
     r = client.get("/api/articles/export?format=csv")
     assert r.status_code == 200, r.text
     rows = list(csv.reader(io.StringIO(r.text)))
-    assert rows[0] == [
+    assert rows[0][:10] == [
         "ID", "Title", "URL", "Canonical URL", "Source", "Published At", "Language", "Content", "Hash", "Fetched From Host",
-    ]
-    assert {row[0]: row[-1] for row in rows[1:]} == {"1": ELSEWHERE, "2": SUBDOMAIN, "3": "", "4": HOSTILE}
+    ]  # row 457 appended the feed entry's date after it, so every column here keeps its place
+    assert {row[0]: row[9] for row in rows[1:]} == {"1": ELSEWHERE, "2": SUBDOMAIN, "3": "", "4": HOSTILE}
     j = client.get("/api/articles/export?format=json").json()
     assert {a["id"]: a["fetched_host"] for a in j["articles"]} == {1: ELSEWHERE, 2: SUBDOMAIN, 3: None, 4: HOSTILE}
 
@@ -517,7 +517,7 @@ _SPA_ROWS = [
     ("app-analysis.js", r'<td>\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\}</td>'),
     ("app-analysis.js", r"<td>\$\{esc\(a\.source\)\}\$\{ooFetchedOffSiteNote\(a\)\}\$\{_anToneChip\(a\)\}</td>"),
     ("app-analysis.js", r'font-size:12px">\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\} · '),
-    ("app-home.js", r'\[esc\(a\.source \|\| ""\) \+ ooFetchedOffSiteNote\(a\), esc\(ooIsoDate'),
+    ("app-home.js", r'\[esc\(a\.source \|\| ""\) \+ ooFetchedOffSiteNote\(a\), ooArticleDateHtml\(a\)\]'),
     ("app-home.js", r'feed-meta muted">\$\{esc\(a\.source \|\| ""\)\}\$\{ooFetchedOffSiteNote\(a\)\}'),
     ("investigate.js", r'<td>\$\{esc\(a\.source \|\| ""\)\}\$\{offSiteNote\(a\)\}</td>'),
     ("app-home.js", r'\[esc\(src\.name \|\| src\.domain \|\| ""\) \+ ooFetchedOffSiteNote\(a\), esc\(date\)\]'),

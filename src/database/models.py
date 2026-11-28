@@ -908,6 +908,13 @@ class Article(Base):
     # and the paths that store without that fetch record (the Wikipedia, law, hazards, IPCC and statistics imports, and the
     # local PDF import).
     fetched_host: Mapped[str | None] = mapped_column(String(255))
+    # THE FEED ENTRY'S OWN DATE (row 457, R847): the date the source's feed gave this item, kept ONLY for an article whose
+    # page carried no date of its own (``published_at`` NULL at store time). Naive UTC like every timestamp here. It is the
+    # FEED's claim, never the page's, so it is never written into ``published_at``: a surface that uses it reads both through
+    # ``src.ingest.feed_entry_date.article_date`` and shows it flagged as the feed's date. NULL means not recorded, never a
+    # guess: an article that has its own date, one stored before this column existed (no backfill, no rewrite of stored rows),
+    # one whose feed entry gave no usable date, and every path that stores without a feed entry.
+    feed_entry_published_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=lambda: datetime.now(UTC))
 
