@@ -107,9 +107,10 @@ def test_the_coverage_loop_reads_four_columns_and_gives_the_same_buckets(db):
 
     totals = out["totals"]
     assert totals["total"] == 6
-    assert totals["reached"] == 5 and totals["never_reached"] == 1
+    assert totals["reached"] == 4 and totals["failed"] == 1 and totals["not_read"] == 1  # R848: the 500 is failed, not reached
     assert totals["backed_off"] == 1
     assert totals["status"]["error"] == 1
+    assert totals["failed_by_reason"]["http_5xx"] == 1
 
 
 def test_the_language_equilibrium_filter_answers_the_same_from_the_projection_the_runner_reads(db):

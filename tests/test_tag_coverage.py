@@ -1,6 +1,6 @@
 """Per-tag scraping coverage (src.scheduler.coverage.tag_coverage).
 
-Pins the honest contract: reach/fresh/backed-off/never-reached come only from
+Pins the honest contract: reach/fresh/failed/backed-off/not-read come only from
 real FeedFetchState timestamps, a multi-tag source counts under each tag, crawl
 sources are counted but not reach-tracked, and NO score field appears anywhere.
 
@@ -64,7 +64,7 @@ def test_reach_and_fresh_from_real_timestamps(db):
     now = datetime.now(UTC)
     a = _src(db, "a", tags="news, politics")  # fetched 1h ago -> reached + fresh
     b = _src(db, "b", tags="news")  # fetched 40h ago -> reached, stale
-    _src(db, "c", tags="news")  # no state row -> never reached
+    _src(db, "c", tags="news")  # no state row -> not read
     _state(db, a.id, checked=now - timedelta(hours=1), status=200)
     _state(db, b.id, checked=now - timedelta(hours=40), status=304)
     db.commit()
@@ -74,7 +74,7 @@ def test_reach_and_fresh_from_real_timestamps(db):
 
     news = tags["news"]
     assert news["total"] == 3
-    assert news["reached"] == 2 and news["never_reached"] == 1
+    assert news["reached"] == 2 and news["not_read"] == 1 and news["failed"] == 0
     assert news["fresh"] == 1 and news["stale"] == 1
     assert news["reach_pct"] == round(2 / 3, 4)
     assert news["fresh_pct"] == round(1 / 3, 4)
@@ -145,3 +145,60 @@ def test_no_score_or_ranking_fields(db):
     db.commit()
     keys = {k.lower() for k in _walk_keys(tag_coverage(db))}
     assert not any(("score" in k or "ranking" in k or k == "rank") for k in keys)
+
+
+# ---- R848 (row 448): only a READ check (200 / 304) is reached or fresh; a failed check is "failed" with its reason class;
+# no check on record is "not read". Since #2419 a failed feed fetch writes last_checked_at + last_status, so the time alone
+# must never read as a fetch.
+def test_a_failed_check_is_never_reached_or_fresh_and_carries_its_reason_class(db):
+    now = datetime.now(UTC)
+    ok = _src(db, "ok", tags="news")
+    e403 = _src(db, "e403", tags="news")
+    e503 = _src(db, "e503", tags="news")
+    e0 = _src(db, "e0", tags="news")
+    _src(db, "none", tags="news")
+    _state(db, ok.id, checked=now - timedelta(hours=1), status=200)
+    _state(db, e403.id, checked=now - timedelta(minutes=5), status=403)
+    _state(db, e503.id, checked=now - timedelta(minutes=5), status=503)
+    _state(db, e0.id, checked=now - timedelta(minutes=5), status=0)
+    db.commit()
+
+    news = next(t for t in tag_coverage(db, fresh_window_hours=24)["tags"] if t["tag"] == "news")
+    assert news["total"] == 5
+    assert news["reached"] == 1 and news["fresh"] == 1  # the three recent FAILED checks count as neither
+    assert news["failed"] == 3
+    assert news["failed_by_reason"] == {"http_4xx": 1, "http_5xx": 1, "no_http_status": 1, "other": 0}
+    assert news["not_read"] == 1
+    assert news["reached"] + news["failed"] + news["not_read"] == news["total"]
+    assert news["reach_pct"] == round(1 / 5, 4)
+    # the oldest READ age is the 200's, never a failed check's
+    assert news["oldest_reached_age_seconds"] >= 3500
+
+
+def test_a_record_with_no_check_time_is_not_read(db):
+    # a back-off-only row (no last_checked_at) is no evidence of a check of either kind
+    a = _src(db, "a", tags="news")
+    _state(db, a.id, checked=None, status=None, skip_until=datetime.now(UTC) + timedelta(hours=1))
+    db.commit()
+    news = next(t for t in tag_coverage(db)["tags"] if t["tag"] == "news")
+    assert news["reached"] == 0 and news["failed"] == 0 and news["fresh"] == 0 and news["not_read"] == 1
+
+
+def test_the_payload_names_reason_classes_never_an_address(db):
+    a = _src(db, "a", tags="news")
+    _state(db, a.id, checked=datetime.now(UTC), status=403)
+    db.commit()
+    text = repr(tag_coverage(db))
+    assert "a.example" not in text and "http://" not in text and "https://" not in text
+
+
+@pytest.mark.parametrize("status", [204, 206, 301, 302])
+def test_a_failure_with_a_2xx_or_3xx_status_is_failed_not_read(db, status):
+    # the fetcher raises on every status but 200 (a 204, a 3xx with no Location), and that failure is recorded
+    # with its status: only 200 and 304 are reads
+    a = _src(db, "a", tags="news")
+    _state(db, a.id, checked=datetime.now(UTC), status=status)
+    db.commit()
+    news = next(t for t in tag_coverage(db)["tags"] if t["tag"] == "news")
+    assert news["reached"] == 0 and news["fresh"] == 0 and news["failed"] == 1
+    assert news["failed_by_reason"]["other"] == 1

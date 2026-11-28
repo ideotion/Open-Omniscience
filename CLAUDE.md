@@ -467,7 +467,7 @@ finding things, or it finds so much that every answer is the same answer).
    catalog tags have been reached, how many sources remain, at what percentage —
    built ONLY from the collector's own fetch timestamps
    (`FeedFetchState.last_checked_at`/`last_status`/`skip_until`): reach/fresh/
-   never_reached/backed_off counts, status mix, oldest-age, least-reached-first
+   not_read/failed (R848)/backed_off counts, status mix, oldest-age, least-reached-first
    ordering, honest method+caveat strings — counts only, NEVER a fabricated
    completion claim or score. `loadTagCoverage`/`_renderCoverage` read the
    read-only `/api/scheduler/coverage` endpoint, loaded lazily when the subtab
