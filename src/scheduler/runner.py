@@ -1652,6 +1652,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
         max_pages=max_pages,
     )
     candidates = _select_crawl_candidates(session, settings, settings.crawl_per_pass)
+    feed_proposals = 0  # row 463 (R852): feed links read off a feed-less outlet's start page, recorded as proposals only
     sources_crawled = 0
     pages_fetched = 0
     sitemap_urls_ingested = 0
@@ -1695,6 +1696,12 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
                     start_url=crawl_start_url_for(source),
                 )
                 pages_fetched += report.pages_fetched
+                feed_links = getattr(report, "feed_links", None)
+                if feed_links:
+                    from src.ingest.feed_proposals import record_links
+
+                    # staged here and made durable by the stamp's commit below (R852: proposals only)
+                    feed_proposals += record_links(session, source_id, feed_links)
             if kill_switch_engaged_since(epoch):
                 break  # stopped inside this outlet's step (or stopped and cleared again, R614): what it fetched is kept, but it was not crawled
             now = datetime.now(UTC)
@@ -1715,6 +1722,7 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
         "sources_crawled": sources_crawled,
         "pages_fetched": pages_fetched,
         "sitemap_urls_ingested": sitemap_urls_ingested,
+        "feed_proposals": feed_proposals,
     }
 
 

@@ -843,6 +843,7 @@
         extract_failed: "no readable text",
         non_article: "not an article (menu, index or notice page)",
         errors: "could not be saved",
+        off_site_entries: "entries on another site, skipped",
       };
       const label = (k) => Object.prototype.hasOwnProperty.call(words, k) ? tr(words[k]) : k;
       const counts = Object.entries(t || {})

@@ -105,6 +105,8 @@ class CrawlReport:
     tally: dict[str, int] = field(default_factory=dict)
     # Distinct links on the fetched pages that urllib.parse could not read: skipped, never followed (R626, see _harvest_links).
     skipped_unreadable: int = 0
+    # Row 463: feed links read off this walk's start page, held in memory for the caller to record as proposals (R852).
+    feed_links: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -114,6 +116,7 @@ class CrawlReport:
             "stopped_reason": self.stopped_reason,
             "tally": self.tally,
             "skipped_unreadable": self.skipped_unreadable,
+            "feed_links": len(self.feed_links),
         }
 
 
@@ -292,6 +295,14 @@ def crawl_source(
                 continue
 
             report.pages_fetched += 1
+
+            if depth == 0 and not source.rss_url:
+                # Row 463 (R852): the start page of a feed-less outlet, ALREADY fetched for this walk, is read in memory for
+                # the feed links it names. Held on the report, never staged here (a pending row would make the fetcher decline
+                # its connection for the rest of the walk); the caller records them as proposals. No request is made for one.
+                from src.ingest.feed_proposals import links_from_page
+
+                report.feed_links = links_from_page(source, fetched.content, fetched.final_url)
 
             # Store the page if it is a real article (dedup handled inside).
             outcome = store_fetched(session, source, fetched, batch=batch)

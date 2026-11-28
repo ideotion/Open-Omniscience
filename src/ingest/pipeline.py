@@ -713,7 +713,8 @@ def ingest_source(
     ``entry_site`` (R773 (3), a candidate's qualification trial on a feed its own page named): only entries whose
     address is on that site (the same host, `www.` ignored, the crawler's rule: a subdomain is another site) are fetched; the others are counted in ``off_site_entries``
     and never asked for, so a trial reaches the candidate and nothing else. None (every collection pass) changes
-    nothing.
+    nothing, except for a feed the operator accepted from a crawl-page proposal (row 463), which is always kept to the
+    source's own site (:func:`src.ingest.feed_proposals.entry_site_for`).
 
     Returns a tally keyed by IngestResult value, plus the feed entry count. ``skipped_offline: 1``
     is present ONLY when the kill switch (airplane mode) refused the feed fetch, so an all-zero tally
@@ -804,6 +805,11 @@ def ingest_source(
     for e in parsed.entries:
         if getattr(e, "link", None):
             entry_dates.setdefault(e.link, entry_date(e, read_at=read_at))
+    if entry_site is None:
+        # Row 463: a feed accepted from a crawl-page proposal keeps its entries to the source's own site.
+        from src.ingest.feed_proposals import entry_site_for
+
+        entry_site = entry_site_for(session, source)
     if entry_site:
         from src.ingest.feed_find import same_site
 

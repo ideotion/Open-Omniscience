@@ -522,7 +522,7 @@ def test_a_merge_carries_the_feed_date_of_a_new_article(tmp_path):
 
 def test_a_backup_made_before_the_column_restores_with_null(tmp_path):
     """The staged copy goes through the migration chain first (prepare_staged_corpus), which adds the column empty."""
-    from src.database.migrate import file_revision, upgrade_database_file
+    from src.database.migrate import file_revision, schema_head, upgrade_database_file
 
     staged, working = tmp_path / "inc.db", tmp_path / "live.db"
     _side(working, OWN_DATE, None, h="H1")
@@ -534,7 +534,7 @@ def test_a_backup_made_before_the_column_restores_with_null(tmp_path):
         c.exec_driver_sql("INSERT INTO alembic_version VALUES ('b8d4f2a6c1e9')")
     con_engine.dispose()
     upgrade_database_file(staged)
-    assert file_revision(staged) == "c2f6a8e4d1b7"
+    assert file_revision(staged) == schema_head()  # the whole chain ran (a later migration may follow c2f6a8e4d1b7)
     counts, got = _merge(staged, working)
     assert counts["articles"]["new"] == 1
     assert got == {"H1": (OWN_DATE, None), "H2": (None, None)}

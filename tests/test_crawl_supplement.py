@@ -284,7 +284,7 @@ def test_step_stamps_last_crawled_at_for_attempted_sources(monkeypatch):
     assert before is None
     assert src.last_crawled_at is not None
     assert calls == ["a.example"]
-    assert result == {"sources_crawled": 1, "pages_fetched": 3, "sitemap_urls_ingested": 0}
+    assert result == {"sources_crawled": 1, "pages_fetched": 3, "sitemap_urls_ingested": 0, "feed_proposals": 0}
 
 
 def test_one_source_failing_does_not_abort_the_rest(monkeypatch):
