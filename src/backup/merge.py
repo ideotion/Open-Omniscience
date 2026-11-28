@@ -3076,6 +3076,8 @@ _MERGE_HANDLED = {
     "law_format_changes",
     "link_classification_rules", "source_credibility_rules", "source_candidates",
     "source_qualification_attempts", "host_mismatch_confirmed",
+    # 2026-11-28, row 463 (R852): feed addresses proposed from a crawled page, and the operator's accept or dismiss of each.
+    "feed_proposals",
     # 2026-11-17, row 121 (G4): a person's keep / set-aside decision on a suggested IPCC prediction.
     "ipcc_predictions",
     # 2026-08-03, from the P0 validation on the operator's 16.5 GB corpus: these rode
@@ -3200,7 +3202,6 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
     "stat_snapshots": "local hourly counters; recording resumes, history is machine-local",
     # Row 463 (R852): feed addresses proposed on THIS machine, keyed by its own source ids; the next crawl and the same-domain
     # check propose again over the merged sources, and a carried decision would name another corpus's source.
-    "feed_proposals": "feed addresses proposed by this machine's crawl, per source id; proposed again after a restore",
     # R826 (row 409, stage 1): the split corpus's registry and id counter describe THIS machine's own files. Another
     # corpus's rows would name files that are not here and ranges this counter never gave out.
     "corpus_segments": "this machine's segment files and their id ranges (R826)",
@@ -4045,6 +4046,28 @@ def _merge_host_confirmations(con, batch_id: int) -> DomainResult:
     return d
 
 
+def _merge_feed_proposals(con, batch_id: int) -> DomainResult:
+    """Feed proposals (row 463, R852), carried by a restore: each is an operator decision or awaits one. Above all an
+    ACCEPTED one says the source's feed came from an untrusted page, and its entries are kept to the source's own site
+    (``src.ingest.feed_proposals.entry_site_for``): dropped, the merged source's feed would read as one the operator typed and
+    collect entries from anywhere. ``source_id`` is REMAPPED through ``temp.map_sources``; a pair (source, address) the local
+    store already holds keeps the local row and status (local wins, as for every decision here). Undo removes what this
+    batch inserted."""
+    d = DomainResult()
+    if not _inc_has_table(con, "feed_proposals"):
+        return d  # a backup written before the table existed carries none
+    d.new = _insert_tracked(
+        con, batch_id, "feed_proposals",
+        "INSERT INTO main.feed_proposals (source_id, url, host, origin, status, found_at, decided_at)"
+        " SELECT ms.new, i.url, i.host, i.origin, i.status, i.found_at, i.decided_at FROM inc.feed_proposals i"
+        " JOIN temp.map_sources ms ON ms.old = i.source_id"
+        " WHERE NOT EXISTS (SELECT 1 FROM main.feed_proposals m2 WHERE m2.source_id = ms.new AND m2.url = i.url)"
+        " GROUP BY ms.new, i.url",
+    )
+    d.duplicate = max(0, _count(con, "SELECT COUNT(*) FROM inc.feed_proposals") - d.new)
+    return d
+
+
 def _incoming_feed_keys(con) -> dict[int, str]:
     """The key each incoming source is matched and written under (R628, R634, the R628 reads): ``feed_key`` of its ``rss_url``,
     except where a rule below applies. For a URL that carries a userinfo, first:
@@ -4438,6 +4461,7 @@ def _merge_sources(con, batch_id, results) -> None:
     )
     results["source_qualification_attempts"] = q
     results["host_mismatch_confirmed"] = _merge_host_confirmations(con, batch_id)
+    results["feed_proposals"] = _merge_feed_proposals(con, batch_id)
     results["sources"] = r
 
 

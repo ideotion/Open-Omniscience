@@ -405,10 +405,10 @@ def test_the_discovery_path_runs_with_every_socket_call_refused(db, monkeypatch)
     db.commit()
 
 
-def test_backup_merge_lists_the_table():
-    from src.backup.merge import _MERGE_NOT_CARRIED
+def test_backup_merge_handles_the_table():
+    from src.backup.merge import _MERGE_HANDLED
 
-    assert "feed_proposals" in _MERGE_NOT_CARRIED
+    assert "feed_proposals" in _MERGE_HANDLED
 
 
 # ---------------------------------------------------------------- an accepted feed keeps its entries to the source's site
@@ -481,3 +481,51 @@ def test_a_feed_the_operator_typed_is_left_as_it_is(db, monkeypatch):
     assert fp.entry_site_for(db, s) is None
     tally, rec = _ingest(db, s, monkeypatch, feed)
     assert "off_site_entries" not in tally and "https://elsewhere.test/b" in rec.log
+
+
+# ---------------------------------------------------------------- a restore carries the decisions, and the restriction
+
+
+def test_a_merge_restore_carries_an_accepted_proposal_so_the_restriction_survives(tmp_path):
+    from sqlalchemy import text
+
+    from src.backup.merge import merge_corpus
+    from src.database.models import Base, FeedProposal, Source
+    from src.ingest import feed_proposals as fp
+
+    meta = {"artifact_kind": "oo-backup-2", "origin_fingerprint": "test", "app_version": "0.5.0",
+            "alembic_rev": "head", "manifest": None}
+
+    def corpus(path):
+        engine = app_sqlite_engine(path, future=True)
+        Base.metadata.create_all(engine)
+        return sessionmaker(bind=engine, future=True)
+
+    inc, live = tmp_path / "inc.db", tmp_path / "live.db"
+    with corpus(live)() as s:
+        s.add(Source(name="pad", domain="pad.example"))  # shifts ids so a raw copy would point at the wrong source
+        s.commit()
+    feed = "https://feeds.other.net/x"
+    with corpus(inc)() as s:
+        src = Source(name="Ex", domain="example.com")
+        s.add(src)
+        s.commit()
+        s.add(FeedProposal(source_id=src.id, url=feed, host="feeds.other.net", origin="crawl_page"))
+        s.add(FeedProposal(source_id=src.id, url="https://example.com/no", host="example.com", origin="crawl_page",
+                           status="dismissed"))
+        s.commit()
+        fp.accept(s, s.query(FeedProposal).filter_by(url=feed).one().id)
+        s.commit()
+    results, batch = merge_corpus(inc, live, meta)
+    assert results["feed_proposals"]["new"] == 2
+    with corpus(live)() as s:
+        ex = s.query(Source).filter_by(domain="example.com").one()
+        assert ex.rss_url == feed
+        assert fp.entry_site_for(s, ex) == "example.com", "the accepted page feed stays kept to the source's site"
+        assert {(p.url, p.status, p.source_id) for p in s.query(FeedProposal)} == {
+            (feed, "accepted", ex.id), ("https://example.com/no", "dismissed", ex.id)}
+        n = s.execute(text("SELECT COUNT(*) FROM merged_rows WHERE batch_id=:b AND table_name='feed_proposals'"),
+                      {"b": batch}).scalar()
+        assert n == 2
+    results, _ = merge_corpus(inc, live, meta)
+    assert results["feed_proposals"]["new"] == 0, "a re-restore changes nothing"
