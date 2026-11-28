@@ -1173,6 +1173,7 @@
       // the last time the dialog was open, whatever _uxImReattach then decided. Emptied
       // here with their signatures, so the reattach renders onto a genuinely blank page.
       _uxImResetRunView();
+      _uxSafetyCopiesReset();
       document.getElementById("ux-import").showModal();
       // A FRESH PAGE (R1, Q201 = a). Reopening after an import used to re-render the
       // whole previous run here -- summary, per-item rows, corpus delta -- so the
@@ -3476,6 +3477,119 @@
       loadAlternates();
     }
 
+    // Row 428 (R835 (b)): the safety copies in the data folder, each one the app recorded when it made it, with ONE Delete
+    // button per copy (never a "delete all"). Built from DOM nodes and textContent, never markup: a file name is data. The
+    // list loads when the section is opened, and again after each delete, so it says what the folder holds now.
+    // A language switch redraws the open list in the new language (the list host is data-i18n-dyn).
+    document.addEventListener("oo:langchange", () => {
+      const box = document.getElementById("ux-imp-copies");
+      if (box && box.open) _uxSafetyCopiesLoad();
+    });
+
+    function _uxSafetyCopiesReset() {
+      const box = document.getElementById("ux-imp-copies");
+      if (!box) return;
+      box.open = false;
+      const list = document.getElementById("ux-imp-copies-list");
+      if (list) list.replaceChildren();
+      if (!box.dataset.wired) {
+        box.dataset.wired = "1";
+        box.addEventListener("toggle", () => { if (box.open) _uxSafetyCopiesLoad(); });
+      }
+    }
+
+    function _uxSafetyCopiesLine(text, cls) {
+      const d = document.createElement("div");
+      if (cls) d.className = cls;
+      d.textContent = text;
+      return d;
+    }
+
+    async function _uxSafetyCopiesLoad() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const list = document.getElementById("ux-imp-copies-list");
+      if (!list) return;
+      let d = null;
+      try { d = await api("/api/backup/safety-copies"); } catch (e) {
+        list.replaceChildren(_uxSafetyCopiesLine(t("The safety copies could not be read.") + " " + (e.message || e), "card-caveat"));
+        return;
+      }
+      const rows = [];
+      const copies = (d && d.copies) || [];
+      if (d && d.count == null) {
+        rows.push(_uxSafetyCopiesLine(t("The safety copies could not be read."), "card-caveat"));
+      } else if (!copies.length && !(d.unrecorded > 0)) {
+        rows.push(_uxSafetyCopiesLine(t("No safety copies in your data folder."), "hint"));
+      }
+      const busy = (d && d.busy && d.busy.length) ? true : false;
+      if (busy) rows.push(_uxSafetyCopiesLine(t("A safety copy cannot be deleted while an import, restore, backup, snapshot or erase is running."), "card-caveat"));
+      for (const c of copies) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.style.gap = "8px";
+        row.style.alignItems = "center";
+        const name = document.createElement("bdi");
+        name.setAttribute("translate", "no");
+        name.dir = "ltr";
+        name.textContent = String(c.name);
+        const facts = document.createElement("span");
+        facts.className = "muted";
+        facts.textContent = tf("{size} · made {date}", { size: humanBytes(c.bytes || 0), date: String(c.made_at || "").replace("T", " ").replace("+00:00", " UTC") });
+        row.append(name, facts);
+        if (c.deletable && !busy) {
+          const btn = document.createElement("button");
+          btn.className = "tiny secondary";
+          btn.type = "button";
+          btn.textContent = t("Delete");
+          btn.addEventListener("click", () => _uxSafetyCopyDelete(btn, c, (d.count || 0) === 1));
+          row.append(btn);
+        } else if (c.reason) {
+          const why = document.createElement("span");
+          why.className = "hint";
+          why.textContent = t(String(c.reason));
+          row.append(why);
+        }
+        rows.push(row);
+      }
+      if (d && d.unrecorded > 0) {
+        rows.push(_uxSafetyCopiesLine(tf("{n} more could not be identified as copies this app made, so they are not offered here. You can delete them by hand from your data folder.", { n: fmtNum(d.unrecorded, 0) }), "hint"));
+      }
+      list.replaceChildren(...rows);
+    }
+
+    async function _uxSafetyCopyDelete(btn, c, onlyOne) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      const date = String(c.made_at || "").replace("T", " ").replace("+00:00", " UTC");
+      let msg = tf("Delete the safety copy {name} ({size}, made {date})?", { name: String(c.name), size: humanBytes(c.bytes || 0), date });
+      if (onlyOne) msg += "\n\n" + t("It is the only safety copy of your corpus.");
+      if (c.plaintext === true) msg += "\n\n" + t("This copy is not encrypted: its data may remain recoverable on the disk after it is deleted.");
+      else if (c.plaintext !== false) msg += "\n\n" + t("If this copy is not encrypted, its data may remain recoverable on the disk after it is deleted.");
+      if (!confirm(msg)) return;
+      btn.disabled = true;
+      let r = null;
+      try {
+        r = await api("/api/backup/safety-copies/delete", { method: "POST", body: JSON.stringify({ name: String(c.name), confirm: true }) });
+      } catch (e) {
+        toast(tf("The safety copy could not be deleted: {reason}.", { reason: String((e && e.message) || e) }), "err");
+      }
+      if (r && r.removed) {
+        toast(typeof r.freed === "number" && r.freed > 0
+          ? tf("Safety copy deleted. Free space on that drive went up by {size}.", { size: humanBytes(r.freed) })
+          : t("Safety copy deleted."));
+      } else if (r) {
+        toast(r.reason
+          ? tf("The safety copy could not be deleted: {reason}.", { reason: String(r.reason) })
+          : t(String(r.message || "The safety copy could not be deleted.")), "err");
+      }
+      _uxSafetyCopiesLoad();
+    }
+
     // Stop the run. The two halves are genuinely different, so the confirmation says
     // which one the user is about to get rather than implying an undo that does not
     // exist for an already-swapped backup.
@@ -4788,6 +4902,10 @@
         const holder = r.other_holder || "unknown";
         // R798: a folder the erase could not list holds files it never checked, so that result is never clean either.
         const unlisted = Number(r.unlisted_folders) || 0;
+        // R797 (row 332): a file whose rewrite stopped short (to keep free disk space, or on an error) was only partially overwritten.
+        const partial = Number(r.partially_overwritten) || 0;
+        // Row 332, Revision 3: a file it could not overwrite at all (a read-only key file), counted once, apart from the two above.
+        const failed = Number(r.not_overwritten) || 0;
         // R802: a data folder the erase removed whole that is there again when it ends was written into after it, so that result is never clean.
         const back = r.folder_back === true;
         // A data folder the erase could not remove at all (a link, an entry it could not delete) is said as that, never as "came back".
@@ -4827,7 +4945,7 @@
         // Security reads (row 402): a corpus folder that could not be reached counts too (the server says "not_overwritten" with no file)
         const segShort = Math.max((Number(seg.partially_overwritten) || 0) + (Number(seg.not_overwritten) || 0) + (Number(seg.left) || 0),
           (seg.corpus === "not_overwritten" || seg.corpus === "partially_overwritten") ? 1 : 0);
-        const clean = holder === "none" && unlisted === 0 && !back && !notRemoved && !keysLink && !leftOver && !shapedN && !hfTokenLeft.length && !linkedLeft && !linkedRefused && !linkedKeys && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
+        const clean = holder === "none" && unlisted === 0 && partial === 0 && failed === 0 && !back && !notRemoved && !keysLink && !leftOver && !shapedN && !hfTokenLeft.length && !linkedLeft && !linkedRefused && !linkedKeys && !driveAbsent && !driveLost && !plaintext && !keyLeft && !recordLeft && !copiesShort && !segShort;
         // R815 (2)/(4): the plaintext main database kept outside the data folder, said apart from the file count, never in it.
         const tfwNow = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf
@@ -4953,6 +5071,8 @@
           (keysLink ? `<div class="card-caveat">${esc(tfw("The {folder} folder in the data folder is a link, which the erase never follows: the app’s signing keys may be where it points, and they were not destroyed. Remove them there by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}</div>` : "") +
           (notRemoved ? `<div class="card-caveat">${esc(t("The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."))}</div>` : "") +
           (back ? `<div class="card-caveat">${esc(t("The data folder existed again when the erase ended, although the erase had removed it: something recreated it afterwards, so the erase may be incomplete. Restart the app, run the wipe again, then run the full free-space overwrite below."))}</div>` : "") +
+          (failed ? `<div class="card-caveat">${esc(tfw("Some files could not be overwritten before they were deleted (files: {n}; the app log names them), so the erase may be incomplete. Make them writable, then run the wipe again and a full overwrite of free disk space below.", { n: fmtNum(failed, 0) }))}</div>` : "") +
+          (partial ? `<div class="card-caveat">${esc(tfw("Some files were only partially overwritten before they were deleted (files: {n}; {done} of {known}): the rewrite stopped to keep free disk space, or on an error, so the erase may be incomplete. Free some disk space, then run a full overwrite of free disk space below.", { n: fmtNum(partial, 0), done: humanBytes(Number(r.partial_bytes_done) || 0), known: humanBytes(Number(r.partial_bytes_known) || 0) }))}</div>` : "") +
           (unlisted ? `<div class="card-caveat">${esc(tfw("The erase could not list {n} of the folders it was to erase, so it could not check the files in them: the erase may be incomplete. Make those folders readable (the app log names them), then run the wipe again and a full overwrite of free disk space below.", { n: fmtNum(unlisted, 0) }))}</div>` : "") +
           // R711: in a folder the app does not own, only its files went; the folder and the rest stayed, and the names are in the report.
           (r.scope === "app-only"

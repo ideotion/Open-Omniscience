@@ -122,13 +122,9 @@ def _not_counted(db: Session) -> dict:
     except Exception:  # noqa: BLE001 - an unreadable count is not a zero: say nothing
         out.pop("quarantined", None)
     # R832: the imported articles the re-index has not finished may not carry all their keywords, dates, places or people
-    # yet, so an analysis may leave them out or count them in part; "N articles not analysed yet", from the re-index
-    # backlog read at query time (30 s at most old).
-    from src.api.jobs import reindex_backlog_cached
-
-    bk = reindex_backlog_cached()
-    if bk.get("available"):
-        out["not_analysed"] = int(bk.get("articles_pending") or 0)
+    # yet, so an analysis may leave them out or count them in part; "N articles not analysed yet". It comes from the tally
+    # above (row 421: one notion, so an article queued for screening or quarantined is never also named here), read at query
+    # time (30 s at most old), and is absent when it could not be read.
     # Any queued row counts here, a quarantined one too (the tally names it as quarantined): the worker owes it a judgement.
     if out.get("not_screened") or any_pending(db):
         # R830: while anything waits, the worker is running or is started here (idempotent), so a worker that stopped on an

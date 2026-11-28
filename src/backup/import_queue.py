@@ -454,6 +454,12 @@ class ImportQueueManager:
         # R827 R7(a): the whole-file check owed after an activation that was checked only on the tables it wrote
         # (None = nothing owed this run; else {"state": "ok" | "failed" | "unchecked", ...}). Persisted with the run.
         self._corpus_check: dict[str, Any] | None = None
+        #: Row 428 (R843): the live corpus file's (st_dev, st_ino) when a whole-file check passed on it during this run --
+        #: after a whole-file-checked activation, or the owed check passing. None until one does. Not persisted.
+        self._checked_whole_ident: tuple[int, int] | None = None
+        #: The safety copies' last serial (``own_net.current_seq``) read together with ``_checked_whole_ident``: the mark
+        #: covers no copy made after the check passed.
+        self._checked_whole_seq: int | None = None
         # R833: the run's own safety copy (removed or kept, and why) and the copies left in the data folder by count and size.
         self._safety_copies: dict[str, Any] | None = None
         # Whether the item in flight is the run's last activation (R7(a)); True = the whole-file check.
@@ -696,6 +702,8 @@ class ImportQueueManager:
             self._tuning_done = False
             self._tuned = None
             self._corpus_check = None
+            self._checked_whole_ident = None
+            self._checked_whole_seq = None
             self._safety_copies = None
             self._collection_window_failed = False
             self._run_id = secrets.token_hex(6)
@@ -893,12 +901,13 @@ class ImportQueueManager:
         # import that already started. (A first cut called _drive() from the except
         # block, which would have run the whole import TWICE if _drive itself raised.)
         drove = False
+        mark: tuple[str, int | None] | None = None
         try:
             with exclusive_window():
                 with self._lock:
                     self._collection_paused = True
                 drove = True
-                self._drive()
+                mark = self._drive()
         except Exception as exc:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
             log_failure(_LOG, "the exclusive window for the import failed", exc, *self._secrets(), level=logging.WARNING)
             if not drove:
@@ -910,7 +919,8 @@ class ImportQueueManager:
         if not drove:
             # The pause is a throughput courtesy; the import is the point. A scheduler
             # that refused to stop must not cost the user their import.
-            self._drive()
+            mark = self._drive()
+        self._note_safety_copy_mark(mark)
 
         # THE ONLY THING THAT STARTS THE DRAIN FOR A QUEUED RUN. Each item's own
         # hand-off correctly declines while the window is open -- a parallel re-index
@@ -931,7 +941,7 @@ class ImportQueueManager:
         except Exception as exc:  # noqa: BLE001
             log_failure(_LOG, "could not start the post-import re-index drain", exc, *self._secrets(), level=logging.WARNING)
 
-    def _drive(self) -> None:
+    def _drive(self) -> tuple[str, int | None] | None:
         """Walk the queue. Separated from :meth:`_run` so the exclusive window is a
         plain ``with`` block -- the courtesy pause must never be able to skip the
         import it was only meant to make faster."""
@@ -963,6 +973,11 @@ class ImportQueueManager:
                     hold = False
                 # Read by _run_corpus (an attribute, not a parameter: _run_item's signature is the tests' seam).
                 self._final_activation = self._is_final_activation(idx, item, hold)
+                if item.get("kind") != "blobs":
+                    # R843: an item that may write the corpus voids an earlier whole-file check; only a check after the
+                    # last such write counts (a corpus item's own full-checked commit, or the owed check, sets it again).
+                    self._checked_whole_ident = None
+                    self._checked_whole_seq = None
                 with self._lock:
                     self._cursor = idx
                     item["state"] = "running"
@@ -1085,6 +1100,18 @@ class ImportQueueManager:
         self._settle_safety_copy()
         if corpus_check is None or corpus_check.get("state") == "ok":
             self._tune_after_run()
+        # Row 428 (R835 (b), R843): a run that completes AND whose corpus was checked whole frees the copies made up to the
+        # check for a removal by hand. "done" alone is never taken as "checked": the mark moves only on positive evidence for
+        # THE SAME FILE STATE (_corpus_checked_whole); otherwise the copies stay held and say the corpus has not been checked
+        # whole since they were made. The serial is the one read when the check passed (verified), or now (unchecked): a
+        # copy made later is never covered. Decided HERE, while the state is still "running" so start() cannot reset this
+        # run's evidence, and RETURNED (never left on the instance for a new run to clear); ``_run_with_keys`` writes it
+        # once the exclusive window has closed. (``_tune_after_run`` above writes in place, same (dev, inode): an
+        # optimize, not a change of content, so the evidence stands.)
+        if _corpus_checked_whole(self._checked_whole_ident) and self._checked_whole_seq is not None:
+            decided: tuple[str, int | None] = ("verified", self._checked_whole_seq)
+        else:
+            decided = ("unchecked", _current_copy_seq())
         with self._lock:
             stopped = self._stop.is_set()
             for it in self._items:
@@ -1102,6 +1129,32 @@ class ImportQueueManager:
             self._ended_at = time.time()
             self._drop_keys()  # drop the keys the moment the run ends
             self._save()
+            completed = self._state == "done"
+        return decided if completed else None
+
+    def _note_checked_whole(self) -> None:
+        """R843: a whole-file check just passed on the live corpus: keep its file identity and the safety copies' serial
+        read now. An unreadable serial or identity is no evidence."""
+        ident, seq = _live_corpus_identity(), _current_copy_seq()
+        if ident is None or seq is None:
+            ident = seq = None
+        self._checked_whole_ident, self._checked_whole_seq = ident, seq
+
+    def _note_safety_copy_mark(self, mark: tuple[str, int | None] | None) -> None:
+        """Write the safety-copy mark the run's end decided (row 428, R843). Never raises: an unwritten mark only keeps the
+        copies held."""
+        if mark is None:
+            return
+        try:
+            from src.backup import own_net
+
+            kind, covers = mark
+            if kind == "verified":
+                own_net.note_run_verified(covers)
+            else:
+                own_net.note_run_unchecked(covers)
+        except Exception as exc:  # noqa: BLE001 - the copies stay held
+            log_failure(_LOG, "could not note the safety-copy mark after the import", exc, level=logging.WARNING)
 
     def _check_owed_corpus(self, *, at_start: bool = False) -> dict[str, Any] | None:
         """Run the whole-file check an unverified activation owes (R827 R7(a); R830 stop rules (2) and (3)).
@@ -1136,6 +1189,9 @@ class ImportQueueManager:
         if got.get("state") == "none":
             return None
         got = _corpus_check_for_status(got)
+        if not at_start and got.get("state") == "ok":
+            # R843: the check passed on the file live now (it refuses as "superseded" when the file it read was replaced)
+            self._note_checked_whole()
         with self._lock:
             if at_start and (self._state == "running" or got.get("reason") == "superseded"):
                 # the run's own end reports the check; and a check superseded by a newer activation is no verdict on the
@@ -1564,6 +1620,11 @@ class ImportQueueManager:
             return
         report = summary.get("report") or {}
         if report.get("committed"):
+            # R843: a whole-file-checked activation is evidence for the file it put in place, read right after its swap.
+            # A scoped one is not; the owed check that follows it is (``_check_owed_corpus``).
+            ver = report.get("verification")
+            if isinstance(ver, dict) and ver.get("file_check") == "full" and ver.get("file_ok") is True:
+                self._note_checked_whole()
             self._commit_group(committed_by=item)
             # After the held reports, so the committing backup's report stays the newest
             # file of its group -- the history lists them in the order they landed.
@@ -2334,6 +2395,51 @@ class ImportQueueManager:
 
 _MANAGER: ImportQueueManager | None = None
 _MANAGER_LOCK = threading.Lock()
+
+
+def _live_corpus_identity() -> tuple[int, int] | None:
+    """(st_dev, st_ino) of the live corpus file, or None when it cannot be read (``merge._live_file_identity``)."""
+    try:
+        from src.backup.merge import _live_file_identity
+
+        return _live_file_identity()
+    except Exception:  # noqa: BLE001 - unread is no identity
+        return None
+
+
+def _current_copy_seq() -> int | None:
+    """The safety copies' last serial (``own_net.current_seq``), or None when it cannot be read."""
+    try:
+        from src.backup import own_net
+
+        return own_net.current_seq()
+    except Exception:  # noqa: BLE001 - unread is no serial
+        return None
+
+
+def _corpus_checked_whole(checked_ident: tuple[int, int] | None) -> bool:
+    """Whether the corpus now live passed a whole-file check (R827) IN THIS FILE STATE: the positive evidence the
+    safety-copy mark needs (row 428, R843). Never inferred from the run's state.
+
+    Two facts, both required. (1) ``checked_ident``: the live file's (st_dev, st_ino) recorded by this run right after a
+    whole-file check passed on it -- a whole-file-checked activation (its report's ``verification.file_check == "full"``
+    and ``file_ok``) or the owed check passing (``_check_owed_corpus``) -- and it must equal the live file's identity now,
+    so a pass on an earlier state, or a file replaced since, never counts; a run that checked nothing whole has none.
+    (2) No activation record:
+    the activation record of R827 R7(a) (``merge.unverified_activation``). It is written durably before
+    every activation checked only on the tables it wrote (``merge.py`` ``_note_unverified_activation``), and removed only
+    when a whole-file check passed on the corpus in place: by a whole-file-checked activation after its swap
+    (``_clear_unverified_activation()`` beside ``_carry_and_swap``) or by the owed check passing
+    (``check_live_after_scoped_activation``, ``qc == "ok" and not fk``). So no record means the live file state passed a
+    whole-file check. A record that is present, unreadable, or cannot be read at all is not that evidence."""
+    if checked_ident is None or _live_corpus_identity() != checked_ident:
+        return False
+    try:
+        from src.backup.merge import unverified_activation
+
+        return unverified_activation() is None
+    except Exception:  # noqa: BLE001 - an unread record is no evidence: the mark stays where it was
+        return False
 
 
 def _corpus_check_for_status(got: dict) -> dict:

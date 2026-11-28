@@ -97,7 +97,6 @@ def test_stats_say_quarantined_and_not_analysed_beside_not_screened(monkeypatch)
     from sqlalchemy.orm import Session
 
     from src.api import database as dbapi
-    from src.api import jobs as jobs_api
     from src.database.models import Article, Base, Source
     from tests._app_engine import app_sqlite_engine
 
@@ -111,14 +110,17 @@ def test_stats_say_quarantined_and_not_analysed_beside_not_screened(monkeypatch)
         sess.add(Article(url=f"https://a.test/{n}", canonical_url=f"https://a.test/{n}", source_id=src.id, title="t",
                          content="x", hash=f"{n:064d}", quarantined=q))
     sess.commit()
-    monkeypatch.setattr(jobs_api, "_backlog_cache", {"at": 0.0, "value": None})
-    monkeypatch.setattr("src.backup.merge.reindex_backlog", lambda: {"available": True, "articles_pending": 7})
+    # Row 421: "not analysed" is the shared tally's second reason (quarantine_scope.not_analysed_count), read at query time
+    monkeypatch.setattr("src.analytics.quarantine_scope.not_analysed_count", lambda _s: 7)
     monkeypatch.setattr("src.analytics.screening_drain.kick_if_allowed", lambda: False)
     out = dbapi._not_counted(sess)
     assert out["quarantined"] == 1 and out["not_analysed"] == 7 and out["not_screened"] == 0
-    monkeypatch.setattr(jobs_api, "_backlog_cache", {"at": 0.0, "value": None})
-    monkeypatch.setattr("src.backup.merge.reindex_backlog", lambda: {"available": False, "reason": "locked"})
-    assert "not_analysed" not in dbapi._not_counted(sess), "an unread backlog is absent, never a 0"
+
+    def unread(_s):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr("src.analytics.quarantine_scope.not_analysed_count", unread)
+    assert "not_analysed" not in dbapi._not_counted(sess), "an unread count is absent, never a 0"
 
 
 def test_search_fed_figures_disclose_and_lists_keep_every_result():
@@ -153,7 +155,7 @@ def test_a_queued_article_that_is_already_quarantined_is_counted_once(s):
     assert q is not None, "the fixture carries a quarantined article"
     plain = s.query(Article).filter(Article.quarantined.isnot(True)).first()
     _queue(s, [q.id, plain.id])
-    assert not_counted_tally(s) == {"not_screened": 1}
+    assert not_counted_tally(s) == {"not_screened": 1, "not_analysed": 0}
 
 
 def test_the_late_review_sites_say_what_they_left_out():

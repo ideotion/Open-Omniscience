@@ -285,6 +285,12 @@
         html += `<div class="hint dossier-not-counted" title="${esc(t("These results were imported and the junk screening has not reached them yet. The list shows them; this figure leaves them out until they are screened, which happens in the background after an import."))}">`
           + `${esc(tf("{n} of these results not counted yet", {n: (typeof fmtNum === "function" ? fmtNum(d.not_counted_yet, 0) : String(d.not_counted_yet))}))}</div>`;
       }
+      // R832 (row 421): the dossier counts through the re-index's mentions, so an article it has not finished is missing without
+      // a trace and cannot be named; the corpus-wide count is said once per dossier, with the per-tab line's words and hover.
+      if (typeof d.not_analysed_in_corpus === "number" && d.not_analysed_in_corpus > 0) {
+        html += `<div class="hint dossier-not-analysed" title="${esc(t("Imported articles the re-index has not finished yet. They are readable and searchable, but some or all of their keywords, dates, places and people may not be there yet, so the analyses may leave them out or count them only in part until it does."))}">`
+          + `${esc(tf("{n} articles not analysed yet", {n: (typeof fmtNum === "function" ? fmtNum(d.not_analysed_in_corpus, 0) : String(d.not_analysed_in_corpus))}))}</div>`;
+      }
       if (item.description) {
         html += `<p class="dossier-desc" dir="auto">${esc(item.description)} <span class="muted small">— ${esc(t("Wikidata"))}</span></p>`;
       } else {

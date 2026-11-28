@@ -81,12 +81,13 @@ def test_a_store_without_the_tables_is_also_legacy_segment_0(tmp_path):
 def test_nothing_in_the_app_calls_the_writing_functions_yet():
     """Stage 1 adds bookkeeping only (R826 g): no module outside this one reserves, commits or opens a segment. Stage 2's
     opener (``segment_open.py``) commits a new segment's identity only behind ``SEGMENT_WRITES_ENABLED``, which nothing
-    in ``src`` turns on (tests/test_segment_open.py pins both)."""
+    in ``src`` turns on (tests/test_segment_open.py pins both). Stage 3a's writer (``segment_write.py``) is behind the
+    same switch, and nothing in ``src`` imports it (tests/test_segment_write.py pins both)."""
     root = Path(__file__).resolve().parents[1] / "src"
     callers = [
         p.relative_to(root).as_posix()
         for p in root.rglob("*.py")
-        if p.name not in ("segments.py", "segment_open.py")
+        if p.name not in ("segments.py", "segment_open.py", "segment_write.py")
         and any(
             f in p.read_text(encoding="utf-8")
             for f in ("reserve_segment(", "commit_segment(", "mark_open(", "reconcile(")
@@ -176,7 +177,7 @@ def _create_segment(tmp_path, con, size, crash_at: str | None):
     if crash_at == "inside_segment_commit":
         seg.execute("BEGIN IMMEDIATE")
         seg.execute(sg._SEGMENT_META_DDL)
-        seg.execute("INSERT INTO segment_meta VALUES (?, ?, ?, 'x')", (r.seg_no, r.id_lo, r.id_hi))
+        seg.execute("INSERT INTO segment_meta VALUES (?, ?, ?, 'x', 1, ?)", (r.seg_no, r.id_lo, r.id_hi, r.id_lo))
         seg.close()  # closed with the transaction open: SQLite rolls it back, as a kill would
         raise _Crash
     sg.commit_segment(seg, r)

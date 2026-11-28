@@ -1948,3 +1948,92 @@ def reindex_backlog_resume_cancel() -> dict:
     """Stop at the next batch boundary. The durable watermark resumes exactly."""
     _REINDEX_RESUME_JOB.cancel()
     return _REINDEX_RESUME_JOB.status()
+
+
+# --------------------------------------------------------------------------------------------------------------------------
+# Row 428 (R835 (b)): the safety copies, and one deleted by hand per click.
+# --------------------------------------------------------------------------------------------------------------------------
+
+
+def _safety_copy_busy() -> list[str]:
+    """What is running that a safety copy is never deleted beside: an import, a restore, a backup, a snapshot or an erase. A
+    source that cannot say is named as running, never as idle."""
+    busy: list[str] = []
+
+    def ask(label: str, probe: Callable[[], bool]) -> None:
+        try:
+            running = bool(probe())
+        except Exception:  # noqa: BLE001 - unreadable = running
+            running = True
+        if running and label not in busy:
+            busy.append(label)
+
+    def _import_running() -> bool:
+        from src.backup.import_queue import get_import_queue
+
+        return get_import_queue().status().get("state") == "running"
+
+    def _export_running() -> bool:
+        from src.backup.export_job import running_export_label
+
+        return running_export_label() is not None
+
+    def _folder_running() -> bool:
+        from src.backup.folder_backup import get_folder_manager
+
+        return bool(get_folder_manager().status().get("running"))
+
+    def _volume_running() -> bool:
+        from src.backup.volume_job import get_volume_manager
+
+        return bool(get_volume_manager().status().get("running"))
+
+    def _staging() -> bool:
+        from src.backup.stream_backup import any_active_staging
+
+        return any_active_staging()
+
+    def _erase() -> bool:
+        from src.api import safety
+
+        # an erase running (the panic wipe or the full overwrite), or one that ran: the app must be restarted after it (R805)
+        return safety._PANIC_RUNNING.is_set() or safety._ERASE_LOCK.locked() or safety._PANIC_DONE.is_set()
+
+    ask("an import", _import_running)
+    ask("an import or restore", exclusive_window_open)
+    ask("a restore", restore_marker.restore_in_progress)
+    ask("a backup", _export_running)
+    ask("a backup", _folder_running)
+    ask("a backup or restore", _volume_running)
+    ask("a backup, restore or snapshot", _staging)
+    ask("an erase", _erase)
+    return busy
+
+
+@router.get("/safety-copies")
+def safety_copies_list() -> dict:
+    """The safety copies in the data folder (row 428): each one the app recorded when it made it, with its size, the date it
+    was made and whether it can be deleted now; the others counted only. ``busy`` names what is running, if anything, during
+    which none can be deleted. File names only, never the folder's path."""
+    from src.backup import own_net
+
+    out = own_net.list_copies()
+    out["busy"] = _safety_copy_busy()
+    return out
+
+
+class SafetyCopyDeleteBody(BaseModel):
+    name: str
+    confirm: bool = False
+
+
+@router.post("/safety-copies/delete")
+def safety_copy_delete(body: SafetyCopyDeleteBody) -> dict:
+    """Delete ONE safety copy (row 428, R835 (b)). POST only, through the Origin check every state-changing request passes,
+    and only with ``confirm: true`` (the page's confirmation names the copy, its size and date). Never a bulk delete."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirm=true is required: this deletes a safety copy of your corpus.")
+    from src.backup import own_net
+
+    # the function itself: asked first, and again under the delete's own lock just before the file is opened
+    return own_net.remove_copy(body.name, busy=_safety_copy_busy)

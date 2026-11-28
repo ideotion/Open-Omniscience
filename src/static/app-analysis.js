@@ -2692,16 +2692,27 @@
     // reached; the Articles list beside it still shows every result. The payload says how many it
     // left out (``not_counted_yet``) and this line says so, inside the panel, so a copy or an enlarged
     // view of the panel carries it too. Nothing at 0.
+    // R832 (row 421): the second reason, beside it and never the same article twice (the server counts it over the results the
+    // figure DOES count): ``not_analysed_yet``, the results the re-index has not finished, which the figure may count only in part.
     function anNotCountedYetHtml(d) {
       const n = d && typeof d.not_counted_yet === "number" ? d.not_counted_yet : 0;
-      if (n <= 0) return "";
+      const na = d && typeof d.not_analysed_yet === "number" ? d.not_analysed_yet : 0;
+      if (n <= 0 && na <= 0) return "";
       const i18n = window.OOI18N || null;
       const F = (i18n && i18n.tf) ? i18n.tf
         : ((s2, v) => String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
       const T = (i18n && i18n.t) ? i18n.t : ((x) => x);
-      const num = (typeof fmtNum === "function") ? fmtNum(n, 0) : String(n);
-      return `<div class="hint an-not-counted" title="${esc(T("These results were imported and the junk screening has not reached them yet. The list shows them; this figure leaves them out until they are screened, which happens in the background after an import."))}">`
-        + `${esc(F("{n} of these results not counted yet", {n: num}))}</div>`;
+      const num = (x) => (typeof fmtNum === "function") ? fmtNum(x, 0) : String(x);
+      let html = "";
+      if (n > 0) {
+        html += `<div class="hint an-not-counted" title="${esc(T("These results were imported and the junk screening has not reached them yet. The list shows them; this figure leaves them out until they are screened, which happens in the background after an import."))}">`
+          + `${esc(F("{n} of these results not counted yet", {n: num(n)}))}</div>`;
+      }
+      if (na > 0) {
+        html += `<div class="hint an-not-analysed" title="${esc(T("Imported articles the re-index has not finished yet. They are readable and searchable, but some or all of their keywords, dates, places and people may not be there yet, so the analyses may leave them out or count them only in part until it does."))}">`
+          + `${esc(F("{n} of these results not analysed yet", {n: num(na)}))}</div>`;
+      }
+      return html;
     }
     // THE THREE CAVEATS ARE FIXED SERVER SENTENCES, so each is keyed x12 and goes through
     // t() -- appended verbatim they read in English in every locale, beside labels that
