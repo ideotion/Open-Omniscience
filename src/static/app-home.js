@@ -154,7 +154,7 @@
       const run = payload.recount_running_s, ttl = payload.cache_ttl_s;
       const busy = typeof run === "number" && typeof ttl === "number" && run >= ttl;
       const frame = busy ? t("as of {time} (server busy)") : t("as of {time} (recount pending)");
-      return frame.replace("{time}", stamp);
+      return frame.replace("{time}", () => stamp);
     }
     function renderHomeStats(counts, payload, fromCache) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -544,11 +544,11 @@
         const N = (x) => (typeof fmtNum === "function") ? fmtNum(x, 0) : String(x);
         if (held.source_not_qualified) {
           bits.push(t("{n} held back: their source has not been qualified yet")
-            .replace("{n}", N(held.source_not_qualified)));
+            .replace("{n}", () => N(held.source_not_qualified)));
         }
         if (held.quarantined) {
           bits.push(t("{n} held back as quarantined")
-            .replace("{n}", N(held.quarantined)));
+            .replace("{n}", () => N(held.quarantined)));
         }
         h += `<div class="card-caveat">${esc(bits.join(" · "))}</div>`;
       }
@@ -859,7 +859,7 @@
         const d = await api("/api/articles?source_type=" + encodeURIComponent(st) + "&limit=1000");
         const ids = (d.results || []).map(a => a.id).filter(Boolean);
         if (!ids.length) { toast(t("No articles for this channel yet.")); return; }
-        openAnalysisForIds(ids, t("Channel: {c}").replace("{c}", homeChannelLabel(st)));
+        openAnalysisForIds(ids, t("Channel: {c}").replace("{c}", () => homeChannelLabel(st)));
       } catch (e) { toast((e && e.message) || String(e), "err"); }
     }
     // Home "Most recent by tag" (item #36 / Home helicopter view): a recency LENS onto the
@@ -1135,7 +1135,7 @@
       // provider statement. Both providers are named.
       const provs = (h.providers && h.providers.length) ? h.providers : (h.source ? [h.source] : []);
       const prov = provs.length
-        ? ` <span class="muted">${esc(t("via {p}").replace("{p}", provs.join(" + ")))}</span>`
+        ? ` <span class="muted">${esc(t("via {p}").replace("{p}", () => provs.join(" + ")))}</span>`
         : "";
       const grouped = h.grouped
         ? ` <span class="pill tiny" title="${esc(t("Same hazard type, within 0.5° and 2 hours — a deduced grouping of two providers' reports of one event, never a merge of the stored records."))}">${esc(t("grouped"))}</span>`
@@ -1178,8 +1178,8 @@
             ? t("{n} more, below the M{m} display floor — open the World map")
             : t("{n} more — open the World map");
           items.push(`<li class="alert-more"><button class="ghost tiny" data-on-click="openWorldMapHazards()">`
-            + esc(note.replace("{n}", String(hidden))
-                     .replace("{m}", fmtNum(d.major_min_magnitude != null ? d.major_min_magnitude : 6, 1)))
+            + esc(note.replace("{n}", () => String(hidden))
+                     .replace("{m}", () => fmtNum(d.major_min_magnitude != null ? d.major_min_magnitude : 6, 1)))
             + ` →</button></li>`);
         }
         (T.watches || []).forEach(w => {

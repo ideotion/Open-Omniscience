@@ -1568,7 +1568,7 @@
       const msg = t("Your database is about {size} — compacting typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). It will pause writes for the duration. Continue?");
       const filled = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf(msg, {size: _fmtBytes(_dbFileBytes), lo, hi})
-        : msg.replace("{size}", _fmtBytes(_dbFileBytes)).replace("{lo}", lo).replace("{hi}", hi);
+        : msg.replace("{size}", () => _fmtBytes(_dbFileBytes)).replace("{lo}", () => lo).replace("{hi}", () => hi);
       return window.confirm(filled);
     }
 

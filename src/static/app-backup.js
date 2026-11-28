@@ -350,7 +350,7 @@
       const tf = (window.OOI18N && OOI18N.tf)
         ? OOI18N.tf
         : ((str, vars) => str.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
-      const bad = verify.bad || [];
+      const bad = Array.isArray(verify.bad) ? verify.bad.map(String) : [];  // row 461: a non-array reads as empty
       if (verify.state === "verified") return tf("Verified — all {total} volumes were re-read and matched their checksums.", { total: verify.total });
       if (verify.state === "failed") return tf("NOT verified — {n} of {total} volumes no longer match their checksum: {names}. Treat this backup as unreliable until it is written again.", { n: bad.length, total: verify.total, names: bad.join(", ") });
       if (verify.state === "off") return t("Not verified — verify-after-write was turned off for this export.");
@@ -438,7 +438,7 @@
           // R746: a store the backup does not carry yet is said in plain, VISIBLE words under
           // its row (never only in a hover), with why that costs little.
           const waitingNote = d.waiting_note ? `<div class="muted" data-waiting-note="1" style="font-size:12px;margin:0 0 4px 28px">${esc(t(d.waiting_note))}</div>` : "";
-          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((d.categories || []).join(","))}"${needs} ${state}> ${esc(label)} <span class="muted">${esc(tf("({text})", { text: `${files(d.count || 0)} · ${humanBytes(d.bytes || 0)}` }))}</span></label>${waitingNote}`;
+          return `<label class="switch" style="margin:0"${title ? ` title="${esc(title)}"` : ""}><input type="checkbox" id="ux-c-${id}" data-cats="${esc((Array.isArray(d.categories) ? d.categories : []).join(","))}"${needs} ${state}> ${esc(label)} <span class="muted">${esc(tf("({text})", { text: `${files(d.count || 0)} · ${humanBytes(d.bytes || 0)}` }))}</span></label>${waitingNote}`;
         };
         // ONE ordered list from the server drives the rows AND the categories each one
         // exports (`data-cats`), so a lane that lands later becomes a row with a real
@@ -1595,7 +1595,7 @@
         notes.push(esc(ooLabelText(t("Hugging Face models will not be restored on this computer"), _hfTargetWhy(hf.refused, t)))
           + (hf.path ? " " + ltrPath() : ""));
       } else if (hf && hf.path) {
-        notes.push(esc(ooLabelText(t("Hugging Face models are restored to"), "\u0001")).replace("\u0001", ltrPath));
+        notes.push(esc(ooLabelText(t("Hugging Face models are restored to"), "\u0001")).replace("\u0001", () => ltrPath()));
       }
       if (b.hf_models.layout_unrecorded) {
         notes.push(esc(t("This backup was made before it recorded which Hugging Face cache folder it read: if that computer's cache folder was not named “hub”, its models are not in this backup.")));

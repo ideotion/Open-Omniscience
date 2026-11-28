@@ -1461,7 +1461,7 @@
         const dot = (anc !== "middle")
           ? `<circle r="2.5" fill="var(--accent)"></circle>` : "";
         const tagA = tag && anc !== "middle"
-          ? tag.replace('text-anchor="middle"', `text-anchor="${anc}" x="${dx}"`) : tag;
+          ? tag.replace('text-anchor="middle"', () => `text-anchor="${anc}" x="${dx}"`) : tag;
         return `<g transform="translate(${n._x.toFixed(1)},${n._y.toFixed(1)})" data-i18n-dyn${title}>${dot}`
           + `<text text-anchor="${anc}" x="${dx}" dominant-baseline="central" font-size="${fs.toFixed(1)}"`
           + ` font-weight="${n.id === center.id ? 700 : 500}" fill="${col}">${esc(lp.shown || n.label || n.id)}</text>`

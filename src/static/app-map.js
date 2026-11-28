@@ -416,7 +416,7 @@
         if (hit) { _ooMapDetailCache.delete(key); _ooMapDetailCache.set(key, hit); return hit.p.then(d => mine(a3, d)); }
         const ent = { n: 0, p: null };
         const drop = () => { if (_ooMapDetailCache.get(key) === ent) _ooMapDetailCache.delete(key); return false; };
-        ent.p = fetch("/static/" + template.replace("{a3}", a3)).then(r => r.ok ? r.json() : false)
+        ent.p = fetch("/static/" + template.replace("{a3}", () => a3)).then(r => r.ok ? r.json() : false)
           .then(doc => {
             if (!doc) return drop();
             ent.n = _ooRingsVertices((doc.country || {}).rings)
@@ -5495,7 +5495,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const wiki = (($("dumpfts-wiki") || {}).value || "").trim();   // "" = all editions
       const which = wiki || t("all editions");
-      if (!confirm(t("Clear the full-text index for {w}? It is rebuildable from the local dump.").replace("{w}", which))) return;
+      if (!confirm(t("Clear the full-text index for {w}? It is rebuildable from the local dump.").replace("{w}", () => which))) return;
       try {
         await api("/api/wiki/dumps/index" + (wiki ? "?wiki=" + encodeURIComponent(wiki) : ""), {method:"DELETE"});
         toast(t("Index cleared.")); loadDumpIndexStatus();

@@ -1712,7 +1712,7 @@
         return segs + dots + lbl;
       }).join("");
       const legend = `<div class="hint" style="margin-top:2px"><span style="color:var(--ok)">▲</span> ${esc(t("rising"))} · <span style="color:var(--err)">▼</span> ${esc(t("falling"))}`
-        + (dropped ? ` · <span class="muted">${esc(t("+ {n} more (not shown)").replace("{n}", dropped))}</span>` : "") + `</div>`;
+        + (dropped ? ` · <span class="muted">${esc(t("+ {n} more (not shown)").replace("{n}", () => dropped))}</span>` : "") + `</div>`;
       return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(spec.aria || t("Slope chart"))}" style="max-width:${W}px;height:auto">${grid}${xlab}${lines}</svg>${legend}`
         + (spec.caveat ? `<div class="card-caveat" style="margin-top:3px">${esc(spec.caveat)}</div>` : "");
     }
@@ -1836,7 +1836,7 @@
       const cav = `<div class="card-caveat" style="margin-top:5px">${esc(opts.caveat || t("All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score."))}`
         + `${anyGap ? " " + esc(t("Periods with no data are drawn as gaps, never as zero.")) : ""}`
         + ` ${esc(t("Shared max:"))} ${esc(fmtNum(maxV))}`
-        + `${emptied ? " · " + esc(t("Panels with no data, not shown: {n}").replace("{n}", emptied)) : ""}</div>`;
+        + `${emptied ? " · " + esc(t("Panels with no data, not shown: {n}").replace("{n}", () => emptied)) : ""}</div>`;
       return `<div style="display:grid;grid-template-columns:repeat(${lay.cols},minmax(0,1fr));gap:8px">${live.map(cell).join("")}</div>${cav}`;
     }
 

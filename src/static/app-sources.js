@@ -1499,7 +1499,7 @@
       // as the raw key, never relabelled as a real one (the same refusal as the toggle's).
       const key = (!walk.state || walk.state === "off")
         ? (walk.state === "off" ? "not_started" : "not_running") : walk.state;
-      return t9("Page walk: {state}").replace("{state}", words[key] ? t9(words[key]) : String(key));
+      return t9("Page walk: {state}").replace("{state}", () => words[key] ? t9(words[key]) : String(key));
     }
     function _paintWikiLane(state, active) {
       const btn = $("wiki-toggle");
@@ -1542,7 +1542,7 @@
       const detail = holdLines ? holdLines.why + " " + holdLines.over
         : (running && why.reason === "transport-waiting")
         ? t9("Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.")
-            .replace("{why}", why.waitingOn || t9("no reason was reported"))
+            .replace("{why}", () => why.waitingOn || t9("no reason was reported"))
         : (running && !_wikiLaneActive)
         ? (why.reason === "airplane-mode"
             ? t9("Chosen; airplane mode is holding it until you go online.")
@@ -1946,7 +1946,7 @@
         if (known) bits.unshift(_wikiLaneHeading(lane.state || "running", lane.active === true, why));
         if (known && lane.reason === "transport-waiting") {
           bits.splice(1, 0, t9("Waiting for a connection: {why}. It retries on its own and never falls back to a direct connection.")
-            .replace("{why}", lane.waiting_on || t9("no reason was reported")));
+            .replace("{why}", () => lane.waiting_on || t9("no reason was reported")));
         }
         const wl = _wikiWalkLine(why.walk);
         if (wl) bits.splice(known ? (lane.reason === "transport-waiting" ? 2 : 1) : 0, 0, wl);

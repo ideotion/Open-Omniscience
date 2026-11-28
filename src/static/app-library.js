@@ -432,23 +432,23 @@
       if (fig.keyword_mentions_state === "computing") {
         return tile(t("counting…"), label,
           t("Counting every keyword mention in the background since {t}; the other figures are exact now.")
-            .replace("{t}", clock(fig.pending_since)));
+            .replace("{t}", () => clock(fig.pending_since)));
       }
       if (fig.keyword_mentions_state === "failed" && fig.keyword_mentions_failure) {
         const f = fig.keyword_mentions_failure;
-        const why = f.kind === "statement-deadline" ? t("passed its {s} s limit").replace("{s}", String(f.deadline_s))
+        const why = f.kind === "statement-deadline" ? t("passed its {s} s limit").replace("{s}", () => String(f.deadline_s))
           : f.kind === "memory-short" ? t("stopped because the machine was nearly out of memory") : String(f.kind);
         return tile(t("not counted"), label,
           t("Not counted: the keyword-mention count stopped ({why}) at {t}; it is tried again after {m} min.")
-            .replace("{why}", why).replace("{t}", clock(f.at)).replace("{m}", String(Math.round((f.retry_after_s || 0) / 60))));
+            .replace("{why}", () => why).replace("{t}", () => clock(f.at)).replace("{m}", () => String(Math.round((f.retry_after_s || 0) / 60))));
       }
       // A counted figure says WHEN it was counted: the count is a slow scan, so it is carried between counts (never recounted more
       // often than ten times its own duration) and the hover bubble states the age rather than letting it read as live.
       if (fig.keyword_mentions_computed_at) {
         return tile(num(fig.avg_keywords_per_article), label,
           t("Counted at {t}; counting every keyword mention is slow, so it is repeated no more often than every {m} min.")
-            .replace("{t}", clock(fig.keyword_mentions_computed_at))
-            .replace("{m}", String(Math.max(1, Math.round((fig.keyword_mentions_recount_after_s || 0) / 60)))));
+            .replace("{t}", () => clock(fig.keyword_mentions_computed_at))
+            .replace("{m}", () => String(Math.max(1, Math.round((fig.keyword_mentions_recount_after_s || 0) / 60)))));
       }
       return tile(num(fig.avg_keywords_per_article), label);
     }
@@ -604,7 +604,7 @@
                         t0: series[0] && series[0].t, t1: series[series.length - 1] && series[series.length - 1].t,
                         nUnit: t(LIB_METRIC_N_UNIT_KEYS[metric] || LIB_DEFAULT_N_UNIT)});
       const began = d.recording_began_at
-        ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", d.recording_began_at))}</div>`
+        ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", () => d.recording_began_at))}</div>`
         : "";
       return `<div id="lib-tile-${esc(metric)}" style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
         <div style="display:flex;align-items:baseline;gap:6px;justify-content:space-between">
@@ -709,7 +709,7 @@
       const logY = _libQualSpread(_libQualSeries) > 50 && _libQualLogOk(_libQualSeries);
       const began = payloads.map(p => p.recording_began_at).filter(Boolean).sort()[0];
       const beganNote = began
-        ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", _ltrIsolate(began)))}</div>`
+        ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", () => _ltrIsolate(began)))}</div>`
         : "";
       const body = flat
         ? `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`
@@ -1156,7 +1156,7 @@
       if (!d || !Array.isArray(d.series)) return;   // defensive: nothing to enlarge
       const label = t(LIB_METRIC_LABEL_KEYS[metric] || metric);
       const caveat = d.recording_began_at
-        ? t("Recording began at {x}.").replace("{x}", d.recording_began_at) : "";
+        ? t("Recording began at {x}.").replace("{x}", () => d.recording_began_at) : "";
       chartEnlarge(label, [{label, unit: label,
         points: d.series.map(p => ({t: p.t, v: p.n}))}], caveat);
     }

@@ -198,7 +198,10 @@ def test_the_record_holds_numbers_only_never_the_url_or_the_page(clock, monkeypa
         "hold_max_s": float,
         "hold_total_s": float,
         "hold_max_html_utf8_bytes": int,
+        "by_method": dict,  # row 462: counts by extraction path, names from a fixed list
     }
+    assert set(snap["by_method"]) <= {*lock_stats.OUTCOMES, "other"}
+    assert all(type(v) is int for v in snap["by_method"].values())
 
 
 def test_the_statistic_is_taken_after_the_extraction_lock_is_given_up(clock, monkeypatch):
