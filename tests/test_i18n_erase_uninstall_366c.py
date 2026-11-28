@@ -70,7 +70,7 @@ def test_the_wipe_result_translates_inside_its_render():
 def test_an_overwrite_is_listed_under_the_wipe_and_redrawn_with_it():
     erase = function_body(JS, "secureErase")
     assert "_panicScrubs.push(r)" in erase
-    assert "ooLiveHtml(box, _panicPaint || " in erase
+    assert 'ooLiveHtml(box, _panicPaint || (() => _panicScrubs.map(_panicScrubHtml).join("")))' in erase
     scrub = function_body(JS, "_panicScrubHtml")
     assert "OOI18N.t" in scrub, "it translates where it is called, so a redraw follows a switch"
 
