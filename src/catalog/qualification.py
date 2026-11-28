@@ -72,7 +72,11 @@ _LOG = logging.getLogger("catalog.qualification")
 # The criteria VERSION stamped on every verdict (Source.qualification_criteria_version +
 # SourceQualificationAttempt.criteria_version). Bump this if the judging criteria change
 # so the history stays honest about which rules judged an old attempt.
-CRITERIA_VERSION = "oo-source-qualification-4"
+CRITERIA_VERSION = "oo-source-qualification-5"
+# -5 (R845, row 452, 2026-11-28): no verdict until the source has at least 5 stored articles and
+# its newest article, by the article's OWN published date, is at most 180 days old. Until then the
+# attempt is `not_enough_data` (attempt log only, like `no_evidence`). A LABEL like the bumps below:
+# nothing re-judges on it, and nothing is re-extracted.
 # -4 (R844, row 449, 2026-11-28): `link_density_rate` became corroborating only -- it can no
 # longer disqualify a source on its own (alone, or with soft signals only, it is `watch`). A
 # LABEL like the bumps below: nothing re-judges on it. The sources it disqualified come back on
@@ -222,6 +226,19 @@ TRIAL_MIN_ARTICLES = 1
 # fourth, ATTEMPT-LOG-only verdict recording "we tried, there was nothing to judge".
 VERDICT_NO_EVIDENCE = "no_evidence"
 
+# R845 (row 452): NO VERDICT ON TOO LITTLE OR TOO OLD EVIDENCE. A source is judged only once it has
+# at least EVIDENCE_MIN_ARTICLES stored articles and its newest article was published at most
+# EVIDENCE_RECENT_DAYS ago, by the article's OWN published date: the fetch date never counts, and an
+# undated article never makes a source recent. Until then the attempt is `not_enough_data`, an
+# ATTEMPT-LOG-only verdict like `no_evidence`: Source.status and enabled are untouched, the ladder is
+# neither advanced nor reset, and the re-verification clock does not move (it is in neither
+# JUDGING_VERDICTS nor CLOCK_VERDICTS). A re-check that ends this way is not tried again for
+# EVIDENCE_RETRY_DAYS, so a dormant source cannot take a re-check slot (and a trial fetch) every pass.
+VERDICT_NOT_ENOUGH_DATA = "not_enough_data"
+EVIDENCE_MIN_ARTICLES = 5
+EVIDENCE_RECENT_DAYS = 180
+EVIDENCE_RETRY_DAYS = 30
+
 # A stamp this instance did NOT earn -- adopted from a restored backup or from the shipped
 # qualification overlay (configs/source_qualification.yml). Like VERDICT_NO_EVIDENCE this is
 # an ATTEMPT-LOG-only verdict and NEVER a Source.status value: the three-state admission-gate
@@ -329,7 +346,7 @@ def consecutive_disqualifications_from_verdicts(verdicts_newest_first: list[str]
     for v in verdicts_newest_first:
         if v == STATUS_DISQUALIFIED:
             n += 1
-        elif v in (VERDICT_NO_EVIDENCE, VERDICT_INHERITED, VERDICT_CURATED):
+        elif v in (VERDICT_NO_EVIDENCE, VERDICT_NOT_ENOUGH_DATA, VERDICT_INHERITED, VERDICT_CURATED):
             continue
         else:
             break
@@ -577,18 +594,23 @@ def select_due_disqualified(
         return due
     taken = {int(x.id) for x in due}
     pool_size = max(limit * pool_multiplier, limit)
+    # R845: a `not_enough_data` attempt does not move the ladder's clock, so the clock is the newest
+    # OTHER attempt; one tried that way recently waits EVIDENCE_RETRY_DAYS before it is tried again.
     last_attempt = (
         session.query(
             SourceQualificationAttempt.source_id.label("source_id"),
             func.max(SourceQualificationAttempt.attempted_at).label("last_at"),
         )
+        .filter(SourceQualificationAttempt.verdict != VERDICT_NOT_ENOUGH_DATA)
         .group_by(SourceQualificationAttempt.source_id)
         .subquery()
     )
+    short_wait = _recent_not_enough_data_subquery(session, now=now)
     rows = (
         session.query(Source, last_attempt.c.last_at)
         .join(last_attempt, last_attempt.c.source_id == Source.id)
-        .filter(Source.status == STATUS_DISQUALIFIED)
+        .outerjoin(short_wait, short_wait.c.source_id == Source.id)
+        .filter(Source.status == STATUS_DISQUALIFIED, short_wait.c.source_id.is_(None))
         .order_by(last_attempt.c.last_at.asc())
         .limit(pool_size)
         .all()
@@ -614,7 +636,9 @@ def select_due_disqualified(
 UNMEASURED_MIN_STORED = 10
 
 
-def select_unmeasured_qualified(session: Session, *, limit: int, exclude: set[int] | None = None) -> list[Source]:
+def select_unmeasured_qualified(
+    session: Session, *, limit: int, exclude: set[int] | None = None, now: datetime | None = None,
+) -> list[Source]:
     """R728 C: enabled qualified sources that were NEVER judged here (no ``JUDGING_VERDICTS`` attempt:
     a curated or inherited stamp, never measured) and have at least ``UNMEASURED_MIN_STORED`` stored
     articles, least-recently-attempted first (the same rotation as :func:`select_unqualified`, so one
@@ -648,14 +672,37 @@ def select_unmeasured_qualified(session: Session, *, limit: int, exclude: set[in
         .limit(1).offset(UNMEASURED_MIN_STORED - 1).exists()
     )
     skip = ~Source.id.in_(sorted(exclude)) if exclude else true()
+    # R845: one found short of evidence waits its 30 days here too, or it would take a spare slot on every pass.
+    short_wait = _recent_not_enough_data_subquery(session, now=now or datetime.now(UTC))
     return (
         session.query(Source)
         .outerjoin(last_attempt, last_attempt.c.source_id == Source.id)
+        .outerjoin(short_wait, short_wait.c.source_id == Source.id)
         .filter(Source.status == STATUS_QUALIFIED, Source.enabled.is_(True), ~judged, enough, skip,
-                not_a_stand_in_source())
+                not_a_stand_in_source(), short_wait.c.source_id.is_(None))
         .order_by(last_attempt.c.last_at.asc().nullsfirst(), Source.id.asc())
         .limit(limit)
         .all()
+    )
+
+
+def _recent_not_enough_data_subquery(session: Session, *, now: datetime):
+    """R845: sources whose newest attempt is a ``not_enough_data`` one made in the last
+    EVIDENCE_RETRY_DAYS. The re-check pools skip them, because that verdict leaves the clock where it
+    was: without this a dormant source would stay due and be tried (with a trial fetch) every pass."""
+    from src.database.models import SourceQualificationAttempt as A
+
+    cutoff = (now - timedelta(days=EVIDENCE_RETRY_DAYS)).astimezone(UTC).replace(tzinfo=None)
+    newest = (
+        session.query(A.source_id.label("source_id"), func.max(A.attempted_at).label("last_at"))
+        .group_by(A.source_id).subquery()
+    )
+    return (
+        session.query(A.source_id.label("source_id"))
+        .join(newest, (newest.c.source_id == A.source_id) & (newest.c.last_at == A.attempted_at))
+        .filter(A.verdict == VERDICT_NOT_ENOUGH_DATA, A.attempted_at > cutoff)
+        .group_by(A.source_id)  # one row per source, so the outer join never repeats a source
+        .subquery()
     )
 
 
@@ -740,10 +787,12 @@ def select_due_qualified(
     if limit <= 0:
         return []
     last_judged = _last_clock_subquery(session)
+    short_wait = _recent_not_enough_data_subquery(session, now=now)  # R845: the clock stays, the retry waits
     rows = (
         session.query(Source, last_judged.c.last_at)
         .outerjoin(last_judged, last_judged.c.source_id == Source.id)
-        .filter(Source.status == STATUS_QUALIFIED)
+        .outerjoin(short_wait, short_wait.c.source_id == Source.id)
+        .filter(Source.status == STATUS_QUALIFIED, short_wait.c.source_id.is_(None))
         # Oldest clock first, and a row with no clock at all (the anomaly above) first of
         # all. COALESCE in SQL so the ordering is done by the database rather than by
         # loading every qualified source into Python -- there can be tens of thousands.
@@ -1914,6 +1963,58 @@ def log_no_evidence_attempts(
     return len(sources)
 
 
+def evidence_shortfall(session: Session, source_ids: list[int], *, now: datetime) -> dict[int, dict]:
+    """R845: the sources among ``source_ids`` that may not be judged yet, each with why.
+
+    Read from the stored articles the verdict reads (quarantined ones are left out, as there): the
+    number of articles, and the newest article's OWN published date. A date later than now is not a
+    publication date anyone can rely on, so it is treated as no date. A source with fewer than
+    EVIDENCE_MIN_ARTICLES, or with no dated article in the last EVIDENCE_RECENT_DAYS, is returned as
+    ``{"articles": n, "dated": d, "newest": datetime | None}``; ``dated == 0`` is the "no dated
+    articles" the summary counts. Read only; one grouped query per chunk on (source_id, published_at)."""
+    from sqlalchemy import case
+
+    out: dict[int, dict] = {}
+    if not source_ids:
+        return out
+    now_naive = now.astimezone(UTC).replace(tzinfo=None)
+    recent_from = now_naive - timedelta(days=EVIDENCE_RECENT_DAYS)
+    dated_col = case((Article.published_at <= now_naive, Article.published_at), else_=None)
+    ids = sorted({int(i) for i in source_ids})
+    seen: dict[int, tuple[int, int, datetime | None]] = {}
+    for at in range(0, len(ids), 500):
+        chunk = ids[at:at + 500]
+        rows = (
+            session.query(Article.source_id, func.count(Article.id), func.count(dated_col), func.max(dated_col))
+            .filter(Article.source_id.in_(chunk), Article.quarantined.isnot(True))
+            .group_by(Article.source_id)
+            .all()
+        )
+        for sid, n, dated, newest in rows:
+            seen[int(sid)] = (int(n or 0), int(dated or 0), newest)
+    for sid in ids:
+        n, dated, newest = seen.get(sid, (0, 0, None))
+        if n >= EVIDENCE_MIN_ARTICLES and newest is not None and newest >= recent_from:
+            continue
+        out[sid] = {"articles": n, "dated": dated, "newest": newest}
+    return out
+
+
+def log_not_enough_data_attempts(
+    session: Session, sources: list[Source], *, now: datetime, criteria_version: str = CRITERIA_VERSION,
+) -> int:
+    """R845: one ``not_enough_data`` attempt row per source; ``Source.status``, ``enabled`` and the
+    qualified stamp are never touched (the latest attempt shows it beside the status it keeps)."""
+    from src.database.models import SourceQualificationAttempt
+
+    for source in sources:
+        session.add(SourceQualificationAttempt(
+            source_id=source.id, attempted_at=now, verdict=VERDICT_NOT_ENOUGH_DATA,
+            criteria_version=criteria_version,
+        ))
+    return len(sources)
+
+
 def _corpus_articles(session: Session) -> int:
     """Cheap indexed COUNT of articles — the scale the scan's need is sized from.
 
@@ -2148,7 +2249,7 @@ def run_qualification_pass(
     unmeasured: list[Source] = []
     if reserved > 0 and total > len(rechecks):
         taken = {int(x.id) for x in [*new_candidates, *rechecks]}
-        unmeasured = select_unmeasured_qualified(session, limit=total - len(rechecks), exclude=taken)
+        unmeasured = select_unmeasured_qualified(session, limit=total - len(rechecks), exclude=taken, now=now)
         rechecks = [*rechecks, *unmeasured]
     offline_ids = {int(x.id) for x in unmeasured}
 
@@ -2306,6 +2407,13 @@ def run_qualification_pass(
             held_off_site.append((int(s.id), str(finding.other_site)))
             judged.remove(s)
 
+    # R845: no verdict on too little or too old evidence. After the off-site check, which reads where
+    # the pages came from and holds a taken-over domain however few its articles are.
+    _short = evidence_shortfall(session, [int(s.id) for s in judged], now=now)
+    not_enough = [s for s in judged if int(s.id) in _short]
+    judged = [s for s in judged if int(s.id) not in _short]
+    not_enough_undated = sum(1 for v in _short.values() if v["dated"] == 0)
+
     # The label follows the cohort ACTUALLY used, not the plan: a caller's provider (the bulk
     # job freezes once per run) may have frozen under a different plan than this pass read.
     sampled = frozen.get("sample_articles") is not None
@@ -2314,6 +2422,7 @@ def run_qualification_pass(
         session, judged, fails_by_source, now=now, criteria_version=criteria_version,
     )
     log_no_evidence_attempts(session, no_evidence, now=now, criteria_version=criteria_version)
+    log_not_enough_data_attempts(session, not_enough, now=now, criteria_version=criteria_version)
     # Plain ints, read before the commit: reading ``.id`` off an expired row afterwards would
     # begin a new transaction on the session just before the key-value write below.
     forced_tried = {int(x.id) for x in rechecks if int(x.id) in forced_ids} if forced else set()
@@ -2360,6 +2469,9 @@ def run_qualification_pass(
         # were not attempted, so they are first in line next pass.
         "deferred": deferred,
         "no_evidence": len(no_evidence),
+        # R845: judged nothing on too little or too old evidence; of them, how many have no dated article at all.
+        "not_enough_data": len(not_enough),
+        "not_enough_data_undated": not_enough_undated,
         # R728: candidates held because their recent pages came from another site, and the articles marked for it.
         "off_site_held": len(held_off_site),
         "off_site_articles_marked": off_site_marked,

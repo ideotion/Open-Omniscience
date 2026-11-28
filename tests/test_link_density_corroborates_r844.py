@@ -81,7 +81,7 @@ def test_the_criterion_keeps_its_evidence_and_record():
 
 
 def test_the_criteria_version_moved():
-    assert CRITERIA_VERSION == "oo-source-qualification-4"
+    assert CRITERIA_VERSION == "oo-source-qualification-5"
 
 
 def test_a_source_link_density_disqualified_comes_back_at_its_ladder_time_and_is_qualified():
