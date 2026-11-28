@@ -155,8 +155,9 @@ def test_a_thin_candidate_gets_no_verdict_and_keeps_everything(db, judge_clean):
     db.refresh(ready)
     assert thin.status == q.STATUS_UNQUALIFIED and thin.enabled is False and thin.qualified_at is None
     assert ready.status == q.STATUS_QUALIFIED and ready.enabled is True, "the control: a verdict would flip it"
-    verdicts = [a.verdict for a in db.query(SourceQualificationAttempt).filter_by(source_id=thin.id)]
-    assert verdicts == [q.VERDICT_NOT_ENOUGH_DATA]
+    rows = [(a.verdict, a.failing_criteria) for a in db.query(SourceQualificationAttempt).filter_by(source_id=thin.id)]
+    # row 450's column: no criterion was evaluated, so "not recorded" (NULL), never "" ("nothing failed")
+    assert rows == [(q.VERDICT_NOT_ENOUGH_DATA, None)]
 
 
 def test_the_pass_counts_the_sources_with_no_dated_article(db, judge_clean):
