@@ -166,7 +166,9 @@ def tag_coverage(
         skip_until = st.skip_until if st else None
         if skip_until is not None and skip_until.tzinfo is None:
             skip_until = skip_until.replace(tzinfo=UTC)
-        backed_off = skip_until is not None and skip_until > now
+        # "Backed off" is the de-churn of a feed that was READ (the label says "not failures"): since row 454 a failing feed
+        # is backed off too, and it is counted under "failed" with its reason, never here.
+        backed_off = skip_until is not None and skip_until > now and not failed
 
         for target in (totals, *(bucket_for(t) for t in tag_list)):
             target["total"] += 1

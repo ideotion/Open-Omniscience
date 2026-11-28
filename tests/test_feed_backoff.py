@@ -7,7 +7,7 @@ Field log 2026-06-13: some servers IGNORE conditional-GET headers and return a
 full 200 every pass even when nothing changed (~93% duplicate rate at 1-minute
 intervals). When a 200 fetch yields ZERO new articles we delay this ONE feed's
 next re-check by a CAPPED, TEMPORARY, SELF-RESETTING amount — a transport
-de-churn, NEVER an exclusion. ANY new article, a 304, or a fetch error resets it.
+de-churn, NEVER an exclusion. ANY new article or a 304 resets it; a fetch error advances it (row 454).
 
 These tests cover the state machine (increment / reset / cap) and the collect
 loop's additive due-check (a backed-off feed is skipped THIS pass, counted
@@ -175,7 +175,7 @@ def test_cap_is_never_exceeded(db):
 
 
 # --------------------------------------------------------------------------- #
-# Reset conditions: new content / 304 / fetch error all clear the backoff
+# Reset conditions: new content / 304 clear the backoff; a fetch error advances it (row 454)
 # --------------------------------------------------------------------------- #
 
 
@@ -218,11 +218,13 @@ def test_304_does_not_penalize(db):
     assert st.skip_until is None  # an honest "unchanged" is not a penalty
 
 
-def test_fetch_error_resets_backoff(db):
+def test_fetch_error_advances_backoff(db):
+    """Row 454: a failed fetch ADVANCES the back-off like a quiet 200 (it used to reset it, so a dead feed was asked at the
+    full cadence forever). Still capped, so the feed is asked again within BACKOFF_CAP_S."""
     src = _make_source(db)
     db.add(FeedFetchState(
         source_id=src.id, consecutive_unchanged=4,
-        skip_until=datetime.now(UTC) + timedelta(hours=2),
+        skip_until=datetime.now(UTC) - timedelta(minutes=1),
     ))
     db.commit()
 
@@ -230,12 +232,99 @@ def test_fetch_error_resets_backoff(db):
         def fetch(self, *a, **k):
             raise FetchError("feed unreachable")
 
+    P._note_feed_read()  # another feed was just read: the network is up, so a no-answer failure is this feed's own
+    before = datetime.now(UTC)
     tally = P.ingest_source(db, src, fetcher=_Boom())
     db.commit()
     assert tally["stored"] == 0
     st = db.get(FeedFetchState, src.id)
-    assert st.consecutive_unchanged == 0
-    assert st.skip_until is None
+    assert st.consecutive_unchanged == 5
+    assert st.skip_until is not None and not P.feed_is_due(st)
+    _skip_if_clock_inconclusive(before, 5.0)
+    delay = (st.skip_until.replace(tzinfo=UTC) - before).total_seconds()
+    assert delay <= P.BACKOFF_CAP_S + 5  # capped: never dropped
+
+
+def test_consecutive_failures_climb_from_a_fresh_feed(db):
+    """Three failures in a row on a feed with no history: 1, 2, 3, each with a later deadline (5, 10, 20 min by default)."""
+    src = _make_source(db)
+
+    class _Boom:
+        def fetch(self, *a, **k):
+            raise FetchError("HTTP 503 for https://feed.example/rss")
+
+    deadlines = []
+    for want in (1, 2, 3):
+        P.ingest_source(db, src, fetcher=_Boom())
+        db.commit()
+        st = db.get(FeedFetchState, src.id)
+        assert st.consecutive_unchanged == want
+        assert st.last_status == 503
+        deadlines.append(st.skip_until)
+    assert deadlines[0] < deadlines[1] < deadlines[2]
+
+
+def test_a_single_read_after_failures_resets_the_climb(db):
+    """The first READ ends the failures' climb (row 454): a 304 clears it, as before."""
+    src = _make_source(db)
+    db.add(FeedFetchState(
+        source_id=src.id, consecutive_unchanged=6, last_status=0, last_checked_at=datetime.now(UTC),
+        skip_until=datetime.now(UTC) - timedelta(minutes=1),
+    ))
+    db.commit()
+    P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(304)]))
+    db.commit()
+    st = db.get(FeedFetchState, src.id)
+    assert st.consecutive_unchanged == 0 and st.skip_until is None
+
+
+def test_a_quiet_200_after_failures_starts_the_count_at_one(db):
+    """A 200 with nothing new after a run of failures: the failures' count is reset, and the quiet 200 counts as the
+    first of its own run (1, so the 5-minute base wait), never the failures' count plus one."""
+    src = _make_source(db)
+    db.add(FeedFetchState(
+        source_id=src.id, consecutive_unchanged=6, last_status=503, last_checked_at=datetime.now(UTC),
+        skip_until=datetime.now(UTC) - timedelta(minutes=1),
+    ))
+    db.commit()
+    P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(200)]))
+    db.commit()
+    st = db.get(FeedFetchState, src.id)
+    assert st.consecutive_unchanged == 1
+    assert st.last_status == 200
+
+
+def test_a_quiet_200_after_a_quiet_200_still_climbs(db):
+    """The control: with no failure before it, a quiet 200 keeps the de-churn count climbing (unchanged rule)."""
+    src = _make_source(db)
+    db.add(FeedFetchState(
+        source_id=src.id, consecutive_unchanged=3, last_status=200, last_checked_at=datetime.now(UTC),
+        skip_until=datetime.now(UTC) - timedelta(minutes=1),
+    ))
+    db.commit()
+    P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(200)]))
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 4
+
+
+def test_a_crawl_delay_deferral_moves_nothing(db):
+    """No request was sent, so nothing is recorded and the count stays where it was (row 454)."""
+    from src.ingest import CrawlDelayDeferred
+
+    src = _make_source(db)
+    until = datetime.now(UTC) - timedelta(minutes=1)
+    db.add(FeedFetchState(source_id=src.id, consecutive_unchanged=2, last_status=200,
+                          last_checked_at=datetime.now(UTC) - timedelta(hours=1), skip_until=until))
+    db.commit()
+
+    class _Defer:
+        def fetch(self, *a, **k):
+            raise CrawlDelayDeferred("crawl delay not elapsed", netloc="feed.example", delay_s=600.0, not_before=0.0)
+
+    P.ingest_source(db, src, fetcher=_Defer())
+    db.commit()
+    st = db.get(FeedFetchState, src.id)
+    assert st.consecutive_unchanged == 2 and st.last_status == 200
 
 
 # --------------------------------------------------------------------------- #
@@ -310,3 +399,88 @@ def test_collect_loop_runs_all_when_none_backed_off(db):
     # Both now carry a backoff window from their all-duplicate 200.
     assert not P.feed_is_due(db.get(FeedFetchState, a.id))
     assert not P.feed_is_due(db.get(FeedFetchState, b.id))
+
+
+def _seed_climb(db, n=4):
+    src = _make_source(db)
+    db.add(FeedFetchState(source_id=src.id, consecutive_unchanged=n, skip_until=datetime.now(UTC) - timedelta(minutes=1)))
+    db.commit()
+    return src
+
+
+class _NoAnswer:
+    """The fetcher's own words for a failure where nothing came back: a name that did not resolve, a connection refused."""
+
+    def __init__(self, text="cannot resolve host feed.example"):
+        self.text = text
+
+    def fetch(self, *a, **k):
+        raise FetchError(self.text)
+
+
+@pytest.mark.parametrize("text", ["cannot resolve host feed.example", "request error for https://feed.example/rss: refused"])
+def test_a_no_answer_failure_with_no_recent_read_leaves_the_climb(db, text):
+    """Row 454: when no feed has been read lately, a failure that never reached the host (DNS, connect) may be this machine's
+    network (Wi-Fi or a Tor circuit down fails every feed alike), so the back-off is left where it was: the failure is still
+    RECORDED, and the whole catalogue is not held back for hours after the network returns."""
+    assert P._failure_reason(text) in {"dns", "connect"}  # the words really are a no-answer class
+    src = _seed_climb(db)
+    P.ingest_source(db, src, fetcher=_NoAnswer(text))
+    db.commit()
+    st = db.get(FeedFetchState, src.id)
+    assert st.consecutive_unchanged == 4
+    assert st.last_status == 0 and st.last_checked_at is not None  # still recorded as a failed check
+
+
+def test_a_no_answer_failure_after_a_recent_read_advances(db):
+    src = _seed_climb(db)
+    P._note_feed_read()
+    P.ingest_source(db, src, fetcher=_NoAnswer())
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 5
+
+
+def test_a_stale_read_is_not_evidence_the_network_is_up(db, monkeypatch):
+    src = _seed_climb(db)
+    P._note_feed_read()
+    monkeypatch.setattr(P, "NETWORK_SEEN_WORKING_S", -1.0)  # the read is older than the window
+    P.ingest_source(db, src, fetcher=_NoAnswer())
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 4
+
+
+def test_a_host_answer_advances_with_no_recent_read(db):
+    """An HTTP status is the host's own answer, whatever the rest of the network did: it always advances."""
+    src = _seed_climb(db)
+
+    class _Http:
+        def fetch(self, *a, **k):
+            raise FetchError("HTTP 503 for https://feed.example/rss")
+
+    P.ingest_source(db, src, fetcher=_Http())
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 5
+
+
+def test_a_read_is_noted_as_evidence(db):
+    """A 304 (or a 200) is what marks the network as seen working."""
+    src = _seed_climb(db)
+
+    assert not P._network_seen_working()
+    P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(304, etag='"v1"')]))
+    assert P._network_seen_working()
+
+
+def test_a_robots_disallow_advances_with_no_recent_read(db):
+    """A robots.txt that DISALLOWS the feed is the host's own answer: it advances like an HTTP status."""
+    from src.ingest import RobotsDisallowed
+
+    src = _seed_climb(db)
+
+    class _Disallowed:
+        def fetch(self, *a, **k):
+            raise RobotsDisallowed("robots.txt disallows https://feed.example/rss")
+
+    P.ingest_source(db, src, fetcher=_Disallowed())
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 5

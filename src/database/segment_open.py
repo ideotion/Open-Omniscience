@@ -474,13 +474,10 @@ def _check_open(seg: Segment, con: Any, path: Path, before: tuple[int, int], sha
         raise SegmentUnavailable(seg.seg_no, "older_copy")
 
 
-def create_segment(r: Reservation, *, key: str | None = None) -> Path:
-    """Make the new, empty segment file of a reservation (``segments.reserve_segment`` step 2): created through the app's
-    factory with the corpus key (SQLCipher gives every new file its own random salt in page 1), the schema of
-    :func:`segment_ddl` and its identity written in the file's own transaction, then read back with the key and named in
-    the at-rest record while that keyed read is open (R828). Refused unless :data:`SEGMENT_WRITES_ENABLED`."""
-    from src.database.at_rest_state import record_segment
-    from src.database.connect import connect
+def _take_name(r: Reservation) -> tuple[Path, Path, tuple[int, int], bool]:
+    """Take the reservation's file name, EMPTY, for this call alone: (folder, path, the new file's (device, inode), whether
+    the shared file is encrypted). O_EXCL refuses any file or link already there, O_NOFOLLOW any link, and the factory then
+    treats the empty file as fresh. Refused unless :data:`SEGMENT_WRITES_ENABLED`."""
     from src.paths import refuse_if_erased
 
     if not SEGMENT_WRITES_ENABLED:
@@ -498,9 +495,6 @@ def create_segment(r: Reservation, *, key: str | None = None) -> Path:
     if encrypted is None:
         raise SegmentError("the shared file's encryption could not be read")
     path = folder / r.file_name
-    # The name is TAKEN here, empty, by this call alone: O_EXCL refuses any file or link already there, O_NOFOLLOW any link,
-    # and the factory then treats the empty file as fresh. Its (device, inode) is checked again before anything is written,
-    # so a name swapped for a link to another file (the shared corpus, under the same key) gets no table and no row.
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o600)
     except FileExistsError:
@@ -509,46 +503,100 @@ def create_segment(r: Reservation, *, key: str | None = None) -> Path:
         made = os.fstat(fd)
     finally:
         os.close(fd)  # nothing of this process holds the new, empty file yet (R789)
-    ident = (made.st_dev, made.st_ino)
+    return folder, path, (made.st_dev, made.st_ino), bool(encrypted)
+
+
+def _connect_new(path: Path, ident: tuple[int, int], key: str | None, encrypted: bool, statements: tuple[str, ...]) -> Any:
+    """The factory's connection to the new, empty file at ``path``, in autocommit mode, with ``statements`` run. Its
+    (device, inode) is checked against ``ident`` before and after, so a name swapped for a link to another file (the shared
+    corpus, under the same key) gets no table and no row."""
+    from src.database.connect import connect
+
+    if encrypted:
+        con = connect(path, key=key, create_encrypted=True, cipher_page_size=SEGMENT_PAGE_SIZE)
+    else:
+        con = connect(path, create_encrypted=False)
     try:
-        if encrypted:
-            con = connect(path, key=key, create_encrypted=True, cipher_page_size=SEGMENT_PAGE_SIZE)
-        else:
-            con = connect(path, create_encrypted=False)
+        if _identity_of_name(path) != ident:
+            raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
+        con.isolation_level = None
+        for ddl in statements:
+            con.execute(ddl)
+        if _identity_of_name(path) != ident:
+            raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
+    except BaseException:
+        con.close()
+        raise
+    return con
+
+
+def _free_failed(folder: Path, path: Path, ident: tuple[int, int]) -> None:
+    """After a create or a bulk load failed: free its name (:func:`_remove_failed_create`) and forget any at-rest entry that
+    named the file (R828 (4)); a name that leads to another file is left in place and said so."""
+    if _remove_failed_create(folder, path.name, ident):
+        from src.database.at_rest_state import forget_segment
+
+        forget_segment(path)
+        return
+    raise SegmentError(
+        "the segment could not be made, and the file at its name is not the one this call made; it was left in place"
+    ) from None
+
+
+def record_keyed(seg: Segment, path: Path, key: str | None) -> None:
+    """Name a new encrypted segment in the at-rest record while a keyed read of it is open (lane D, R828): a fresh file
+    counts as keyed only once it is reopened with the key, here by the reader with every check."""
+    from src.database.at_rest_state import record_segment
+
+    back = open_segment(seg, key=key)
+    try:
+        if not record_segment(path):
+            raise SegmentError("the new segment could not be named in the at-rest record")
+    finally:
+        back.close()
+
+
+def create_segment(r: Reservation, *, key: str | None = None) -> Path:
+    """Make the new, empty segment file of a reservation (``segments.reserve_segment`` step 2): created through the app's
+    factory with the corpus key (SQLCipher gives every new file its own random salt in page 1), the schema of
+    :func:`segment_ddl` and its identity written in the file's own transaction, then read back with the key and named in
+    the at-rest record while that keyed read is open (R828). Refused unless :data:`SEGMENT_WRITES_ENABLED`."""
+    if not SEGMENT_WRITES_ENABLED:
+        raise SegmentError("segment files are not written by this build yet")
+    folder, path, ident, encrypted = _take_name(r)
+    try:
+        con = _connect_new(path, ident, key, encrypted, tuple(d for d in segment_ddl() if d is not _SEGMENT_META_DDL))
         try:
-            if _identity_of_name(path) != ident:
-                raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
-            con.isolation_level = None
-            for ddl in segment_ddl():
-                if ddl is _SEGMENT_META_DDL:
-                    continue
-                con.execute(ddl)
-            if _identity_of_name(path) != ident:
-                raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
             commit_segment(con, r)
         finally:
             con.close()
         if encrypted:
-            # A fresh file counts as keyed only once it is reopened with the key (lane D, R828).
-            seg = Segment(r.seg_no, r.file_name, "reserved", r.id_lo, r.id_hi)
-            back = open_segment(seg, key=key)
-            try:
-                if not record_segment(path):
-                    raise SegmentError("the new segment could not be named in the at-rest record")
-            finally:
-                back.close()
+            record_keyed(Segment(r.seg_no, r.file_name, "reserved", r.id_lo, r.id_hi), path, key)
     except BaseException:
-        if _remove_failed_create(folder, r.file_name, ident):
-            # The file is gone: an at-rest entry naming it (written just before a later step failed) goes too (R828 (4)).
-            from src.database.at_rest_state import forget_segment
-
-            forget_segment(path)
-        else:
-            raise SegmentError(
-                "the segment could not be made, and the file at its name is not the one this call made; it was left in place"
-            ) from None
+        _free_failed(folder, path, ident)
         raise
     return path
+
+
+def create_bulk_segment(r: Reservation, *, key: str | None = None) -> tuple[Path, tuple[int, int], Any, bool]:
+    """The new file of a bulk load (``segment_write.BulkLoad``): taken and made as :func:`create_segment` makes a segment,
+    but with only the statements :func:`segment_schema.bulk_split` keeps for the load (no non-unique index, no search sync
+    trigger) and NO identity: until the seal writes one, the file proves nothing, so a crash mid-load leaves a reservation
+    that ``segments.reconcile`` abandons, and the half-loaded file is never read. Returns (path, its (device, inode), the
+    open connection, whether it is encrypted). The at-rest record names the file only at the seal (until then an erase
+    treats it as of unknown encryption and overwrites it whole)."""
+    from src.database.segment_schema import bulk_split
+
+    if not SEGMENT_WRITES_ENABLED:
+        raise SegmentError("segment files are not written by this build yet")
+    folder, path, ident, encrypted = _take_name(r)
+    try:
+        now, _later = bulk_split(segment_ddl())
+        con = _connect_new(path, ident, key, encrypted, tuple(d for d in now if d is not _SEGMENT_META_DDL))
+    except BaseException:
+        _free_failed(folder, path, ident)
+        raise
+    return path, ident, con, encrypted
 
 
 def _remove_failed_create(folder: Path, name: str, ident: tuple[int, int]) -> bool:

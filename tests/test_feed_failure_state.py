@@ -92,7 +92,7 @@ def test_a_stop_records_nothing(db):
     assert st is None  # no row: the person's setting says nothing about the feed
 
 
-def test_failure_keeps_validators_and_still_resets_backoff(db):
+def test_failure_keeps_validators_and_advances_backoff(db):
     src = _make_source(db)
     db.add(FeedFetchState(source_id=src.id, etag='"v1"', last_modified="Mon, 02 Nov 2026 00:00:00 GMT",
                           last_status=200, consecutive_unchanged=3,
@@ -103,7 +103,7 @@ def test_failure_keeps_validators_and_still_resets_backoff(db):
     st = db.get(FeedFetchState, src.id)
     assert st.last_status == 503
     assert st.etag == '"v1"' and st.last_modified == "Mon, 02 Nov 2026 00:00:00 GMT"
-    assert st.consecutive_unchanged == 0 and st.skip_until is None
+    assert st.consecutive_unchanged == 4 and st.skip_until is not None  # row 454: a failure advances the back-off
 
 
 @pytest.mark.parametrize(("text", "status"), [

@@ -334,6 +334,16 @@ def _serving_gate_open_for_in_process_clients():
 
 
 @pytest.fixture(autouse=True)
+def _no_feed_read_held_over():
+    """Row 454: a feed read in one test (``pipeline._note_feed_read``) is the evidence that lets a no-answer failure in the NEXT test
+    advance its back-off. Cleared per test, so each test says for itself whether the network was seen working."""
+    pipeline = sys.modules.get("src.ingest.pipeline")
+    if pipeline is not None:
+        pipeline._LAST_FEED_READ_AT.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_failed_open_held_over():
     """Row 435: a ``sqlite3.connect`` that raises never reports its handle, so ``src.database.connect`` counts it as an open in
     flight for ``_AUDIT_STALE_S`` (60 s) and every reader sweep of that minute closes nothing (by design: an open that may be

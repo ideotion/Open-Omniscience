@@ -351,11 +351,12 @@ def test_a_disposal_then_init_db_opens_the_segments_again(monkeypatch):
     session._open_segments()  # never fails the init
 
 
-def test_the_opener_creates_and_writes_only_behind_the_switch():
+@pytest.mark.parametrize("maker", ["create_segment", "create_bulk_segment", "_take_name"])
+def test_the_opener_creates_and_writes_only_behind_the_switch(maker):
     import ast
     import inspect
 
-    fn = ast.parse(inspect.getsource(segment_open.create_segment)).body[0]
+    fn = ast.parse(inspect.getsource(getattr(segment_open, maker))).body[0]
     first = fn.body[1] if isinstance(fn.body[0], ast.Expr) else fn.body[0]
     while isinstance(first, ast.ImportFrom):
         first = fn.body[fn.body.index(first) + 1]

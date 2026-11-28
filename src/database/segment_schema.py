@@ -92,3 +92,24 @@ def segment_search_ddl() -> tuple[str, ...]:
     from src.database import fts, fts_title
 
     return tuple(str(s).strip() for s in (*fts._FTS_DDL, *fts_title._ddl()))
+
+
+def _deferred_in_bulk(sql: str) -> bool:
+    """A statement a bulk load runs only when it seals the segment: a non-unique index (maintained per row otherwise) or one
+    of the article search index's sync triggers (each runs the text transform per row; the seal indexes every article once
+    instead, ``fts.rebuild_index``). The unique indexes stay from the start: they are constraints, not speed (the same rule
+    as ``analytics.bulk_build``), so a load can never insert a row they would refuse."""
+    from src.database import fts
+
+    head = " ".join(sql.split()).upper()
+    if head.startswith("CREATE INDEX "):
+        return True
+    return any(head.startswith(f"CREATE TRIGGER IF NOT EXISTS {t.upper()} ") for t in fts._FTS_TRIGGERS)
+
+
+def bulk_split(ddl: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """``ddl`` (``segment_open.segment_ddl``, in order) split into what a bulk-loaded segment is made with and what its seal
+    adds, each in the original order, so the sealed file's schema is exactly the one every segment is made with."""
+    now = tuple(s for s in ddl if not _deferred_in_bulk(s))
+    later = tuple(s for s in ddl if _deferred_in_bulk(s))
+    return now, later

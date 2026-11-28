@@ -48,15 +48,20 @@ from src.database.segment_open import (
     _held_or_unreadable,
     _prechecked,
     _remove_sidecars_made,
+    create_bulk_segment,
     create_segment,
     require_writes,
 )
 from src.database.segment_schema import SEGMENT_TABLES, SHARED_REFERENCES
 from src.database.segments import (
+    Reservation,
     Segment,
     SegmentError,
+    commit_segment,
+    mark_abandoned,
     mark_closed,
     mark_open,
+    mark_sealed,
     next_segment_size,
     reconcile,
     record_generation,
@@ -74,6 +79,9 @@ _WRITER_LOCK = threading.Lock()
 #: Held across every registry step of :func:`open_writer`, :func:`rollover` and :meth:`SegmentWriter.open`, so two threads never
 #: both find "no open segment" and each make one, and settling never closes the segment a live writer holds.
 _REGISTRY_LOCK = threading.RLock()
+#: The reservations a live :class:`BulkLoad` of this process holds (changed only under :data:`_REGISTRY_LOCK`): settling the
+#: registry leaves them alone, since a file with no identity yet is a load in progress, not a crash's leftover.
+_BULK_LOADING: set[int] = set()
 
 
 class SegmentFull(SegmentError):
@@ -377,7 +385,7 @@ def _settle(shared_con: Any, key: str | None) -> list[Segment]:
         finally:
             con.close()
 
-    reconcile(shared_con, identity_of)
+    reconcile(shared_con, identity_of, skip=frozenset(_BULK_LOADING))
     segs = registry(shared_con)
     opens = sorted((s for s in segs if not s.implicit and s.seg_no >= 1 and s.state == "open"), key=lambda s: s.seg_no)
     for s in opens[:-1]:
@@ -427,3 +435,231 @@ def rollover(writer: SegmentWriter, *, key: str | None = None) -> SegmentWriter:
         writer.close()
         mark_closed(shared_con, seg_no)
         return open_writer(shared_con, key=key)
+
+
+class _BulkTransaction(SegmentTransaction):
+    """One transaction of a :class:`BulkLoad`: ids come from the load's own counter (the file records no identity, and so
+    no ``next_id``, until the seal), taken for good only when the transaction commits."""
+
+    def __init__(self, con: Any, seg: Segment, shared_con: Any, next_id: int) -> None:
+        super().__init__(con, seg, shared_con)
+        self.next_id = next_id
+
+    def allocate(self, n: int) -> range:
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            raise SegmentError("ids are taken a whole number at a time, at least 1")
+        _still_in_transaction(self.con)
+        lo, hi = self.next_id, self.seg.id_hi
+        if hi is None or lo < self.seg.id_lo or lo + n - 1 > hi:
+            raise SegmentFull("the segment being loaded cannot hold that many more articles")
+        self.next_id = lo + n
+        return range(lo, lo + n)
+
+
+class BulkLoad:
+    """AN IMPORT'S ROWS LOADED INTO A FRESH SEGMENT (R826 stage 3c, row 409; the index window's segment form, row 407).
+
+    :func:`open_bulk_load` reserves a new segment and makes its file with the per-article tables, their UNIQUE indexes and
+    the title index, but none of the non-unique indexes and none of the article search index's sync triggers, and no
+    identity. Each :meth:`transaction` then writes rows exactly as the open segment's writer does (ids from the segment's
+    range, every shared-file reference checked first), without paying per row for an index nobody reads yet. :meth:`seal`
+    adds the deferred indexes and triggers and indexes every article for search once (``fts.rebuild_index``), all in one
+    transaction; writes the identity; reads the file back with every reader check (the exact schema among them); names it
+    in the at-rest record; and moves the registry row from ``reserved`` to ``closed``. The segment the app writes to stays
+    the one already open.
+
+    A CRASH LEAVES NOTHING READABLE. Until the identity is written the file proves nothing, so the reservation of a process
+    that died mid-load is abandoned by ``segments.reconcile`` and the file is never read; its ids are never given out again.
+    A crash after the identity and before the registry step leaves a complete segment that ``reconcile`` opens, and
+    settling then keeps it as the open segment (the newest); nothing is lost. A load that fails in this process (an error,
+    :meth:`abandon`) abandons its reservation and removes its own file, as a failed create does.
+
+    ONE PROCESS. The reservation is left alone only by THIS process's settles (``_BULK_LOADING``): another process that
+    settles the registry during the load sees a reserved row whose file proves nothing yet and abandons it, and the seal
+    then fails and removes the file. Before stage 4 turns any write path on, either every settle runs in the app's one
+    process or the load holds a lock other processes honour.
+
+    Temporary storage is memory only (R825), and nothing is read from the file before the seal checks it, so no sync
+    trigger of anyone else's can run: the schema the load writes under is the one this call made, on a file name this call
+    took empty."""
+
+    def __init__(self, shared_con: Any, r: Reservation, path: Any, ident: tuple[int, int], con: Any, encrypted: bool,
+                 key: str | None) -> None:
+        self._shared = shared_con
+        self._r = r
+        self.seg = Segment(r.seg_no, r.file_name, "reserved", r.id_lo, r.id_hi)
+        self._path = path
+        self._ident = ident
+        self._con = con
+        self._encrypted = encrypted
+        self._key = key
+        self._next = r.id_lo
+        self._done = False
+        self._lock = threading.Lock()
+        # The schema this call made: a change by anyone else is refused before any trigger can run (as the writer does).
+        self._schema_version = con.execute("PRAGMA schema_version").fetchone()[0]
+
+    def __enter__(self) -> BulkLoad:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """A load left unsealed when its ``with`` block ends is abandoned, so it never holds its reservation."""
+        if not self._done:
+            self.abandon()
+
+    def _check_schema(self, con: Any) -> None:
+        if con.execute("PRAGMA schema_version").fetchone()[0] != self._schema_version:
+            raise SegmentError("the segment's schema changed while it was loaded; it is not written")
+
+    @property
+    def next_id(self) -> int:
+        """The first id the load has not used."""
+        return self._next
+
+    @contextlib.contextmanager
+    def transaction(self) -> Iterator[SegmentTransaction]:
+        """One write transaction on the segment being loaded (BEGIN IMMEDIATE): ``add_articles`` takes ids from the
+        segment's range and raises :class:`SegmentFull` when it cannot hold them; ``add_rows`` writes the other per-article
+        tables. An error before the commit rolls this transaction back and keeps the load usable."""
+        require_writes()
+        if not self._lock.acquire(blocking=False):
+            raise WriterBusy("a transaction is already open on this bulk load")
+        try:
+            if self._done:
+                raise SegmentError("this bulk load is sealed or abandoned")
+            con = self._con
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                self._check_schema(con)
+                tx = _BulkTransaction(con, self.seg, self._shared, self._next)
+                yield tx
+                _still_in_transaction(con)
+                con.execute("COMMIT")
+            except BaseException:
+                if getattr(con, "in_transaction", False):
+                    con.execute("ROLLBACK")
+                raise
+            self._next = tx.next_id
+        finally:
+            self._lock.release()
+
+    def seal(self) -> Segment:
+        """Finish the load (see the class note) and return the segment as the registry now has it, ``closed``. On any
+        failure the load is abandoned and its file removed, and the error is raised."""
+        from src.database import fts
+        from src.database.segment_open import _identity_of_name, record_keyed, segment_ddl
+        from src.database.segment_schema import bulk_split
+
+        require_writes()
+        if not self._lock.acquire(blocking=False):
+            raise WriterBusy("the bulk load is sealed outside its own transaction")
+        try:
+            if self._done:
+                raise SegmentError("this bulk load is sealed or abandoned")
+            con = self._con
+            try:
+                con.execute("BEGIN IMMEDIATE")
+                try:
+                    self._check_schema(con)
+                    for ddl in bulk_split(segment_ddl())[1]:
+                        con.execute(ddl)
+                    fts.rebuild_index(con)  # after the triggers: the index is written the way their delete side reads it
+                    _still_in_transaction(con)
+                    con.execute("COMMIT")
+                except BaseException:
+                    if getattr(con, "in_transaction", False):
+                        con.execute("ROLLBACK")
+                    raise
+                if _identity_of_name(self._path) != self._ident:
+                    raise SegmentError("the segment's name led to another file while it was loaded; it is not sealed")
+                commit_segment(con, self._r, next_id=self._next)
+                con.close()
+                if self._encrypted:
+                    record_keyed(self.seg, self._path, self._key)
+                else:
+                    segment_open.open_segment(self.seg, key=self._key).close()  # every reader check, the schema among them
+                if _identity_of_name(self._path) != self._ident:
+                    raise SegmentError("the segment's name led to another file while it was checked; it is not sealed")
+                record_generation(self._shared, self._r.seg_no, 1)
+                mark_sealed(self._shared, self._r)
+            except BaseException:
+                self._give_up()
+                raise
+            self._finish()
+        finally:
+            self._lock.release()
+        return next(s for s in registry(self._shared) if s.seg_no == self._r.seg_no)
+
+    def abandon(self) -> None:
+        """Give the load up: its reservation is abandoned and its file removed. Nothing of it was ever readable."""
+        if not self._lock.acquire(blocking=False):
+            raise WriterBusy("the bulk load is abandoned outside its own transaction")
+        try:
+            if not self._done:
+                self._give_up()
+        finally:
+            self._lock.release()
+
+    def _give_up(self) -> None:
+        from src.database.segment_open import _free_failed, corpus_folder
+
+        # The file goes first and the registry step runs whatever that did: a reserved row whose file is gone is always
+        # abandoned safely, where a kept file with an identity would be opened by the next settle. A row the registry
+        # already has ``closed`` (a seal whose last commit raised yet landed) keeps its file; a registry that cannot be
+        # read keeps it too, since removing a closed segment's file would lose it.
+        try:
+            with contextlib.suppress(Exception):
+                self._con.close()
+            try:
+                closed = any(s.seg_no == self._r.seg_no and s.state == "closed" for s in registry(self._shared))
+            except Exception:
+                closed = True
+            try:
+                if not closed:
+                    _free_failed(corpus_folder(), self._path, self._ident)
+            finally:
+                mark_abandoned(self._shared, self._r.seg_no)
+        finally:
+            self._finish()
+
+    def _finish(self) -> None:
+        self._done = True
+        with _REGISTRY_LOCK:
+            _BULK_LOADING.discard(self._r.seg_no)
+
+
+def open_bulk_load(shared_con: Any, *, key: str | None = None, size: int | None = None) -> BulkLoad:
+    """A :class:`BulkLoad` into a new segment of ``size`` articles (by default the size R826 Q4 gives the next segment).
+    ``shared_con`` is a DB-API connection to the SHARED file in autocommit mode. The registry is settled first, as
+    :func:`open_writer` settles it, unless this process has a writer open: settling then could close the segment it is
+    writing, and that writer's own open already settled what a crash left."""
+    require_writes()
+    with _REGISTRY_LOCK:
+        segs = registry(shared_con) if _WRITER_LOCK.locked() else _settle(shared_con, key)
+        r = reserve_segment(shared_con, size if size is not None else next_segment_size(segs))
+        _BULK_LOADING.add(r.seg_no)
+        try:
+            path, ident, con, encrypted = create_bulk_segment(r, key=key)
+        except BaseException:
+            _BULK_LOADING.discard(r.seg_no)
+            mark_abandoned(shared_con, r.seg_no)
+            raise
+    try:
+        con.execute("PRAGMA temp_store = MEMORY")  # R825: never a plaintext temporary file
+        con.execute("PRAGMA foreign_keys = ON")  # article_id -> articles, inside the file
+        # The title index's sync triggers call the app's own functions, which SQLite refuses inside a trigger while
+        # trusted_schema is off. The schema is the one this call just made, on a name it took empty.
+        con.execute("PRAGMA trusted_schema = ON")
+        return BulkLoad(shared_con, r, path, ident, con, encrypted, key)
+    except BaseException:
+        from src.database.segment_open import _free_failed, corpus_folder
+
+        with contextlib.suppress(Exception):
+            con.close()
+        try:
+            _free_failed(corpus_folder(), path, ident)
+        finally:
+            with _REGISTRY_LOCK:
+                _BULK_LOADING.discard(r.seg_no)
+            mark_abandoned(shared_con, r.seg_no)
+        raise
