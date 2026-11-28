@@ -2926,6 +2926,39 @@ class SourceCandidate(Base):
         return f"<SourceCandidate(domain={self.domain!r}, channel={self.channel!r}, status={self.status!r})>"
 
 
+class FeedProposal(Base):
+    """A feed address PROPOSED for a feed-less source, awaiting the operator's click (row 463, R852).
+
+    Found two ways, both without a request of their own: ``crawl_page`` = a ``<link rel="alternate">`` feed link on a
+    start page the crawl supplement had already fetched for its own walk, read in memory and never stored; and
+    ``same_domain`` = another source of this install on the exact same host already has a feed (``sibling_source_id``;
+    "same domain, not verified"). A proposal changes nothing: the address is not fetched, probed or validated until the
+    operator accepts it, which sets the source's ``rss_url`` and lets the normal collection read it under the consent and
+    transport in force. Statuses: proposed -> accepted | dismissed (a dismissed address is never proposed again).
+    Counted apart from sources and from discovery candidates (R773).
+    """
+
+    __tablename__ = "feed_proposals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    origin: Mapped[str] = mapped_column(String(20), nullable=False)  # crawl_page | same_domain
+    sibling_source_id: Mapped[int | None] = mapped_column(Integer)  # same_domain: the source the address came from
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="proposed")
+    found_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint("source_id", "url", name="uq_feed_proposal_source_url"),
+        Index("idx_feed_proposal_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<FeedProposal(source_id={self.source_id}, origin={self.origin!r}, status={self.status!r})>"
+
+
 class WikiPage(Base):
     """A tracked Wikipedia page in one language edition (e.g. en, fr, ar).
 
