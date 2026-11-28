@@ -264,8 +264,8 @@ def test_the_warmed_trending_payload_carries_the_marks_too(db):
     """The pass-tail warmer writes the exact keys Home and Insights read; a warmed entry without the block would
     serve cards with no mark for the whole cache TTL."""
     ins = (ROOT / "src" / "api" / "insights.py").read_text(encoding="utf-8")
-    warm = ins[ins.index("def warm_cache("):]
-    assert "q.annotate_trending_undated(db, rm.trending_windows(" in warm[: warm.index("\ndef ", 1)]
+    warm = re.search(r"\ndef warm_cache\((?:(?!\ndef ).)*", ins, re.S)
+    assert warm and "q.annotate_trending_undated(db, rm.trending_windows(" in warm.group(0)
 
 
 def test_a_statement_deadline_is_not_swallowed_into_not_counted(db, monkeypatch):

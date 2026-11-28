@@ -81,15 +81,15 @@
       const v = {n: num(c.n), m: c.m == null ? "" : num(c.m)};
       const kind = u.kind;
       if (kind === "left_out") {
-        return c.m == null ? tf("Articles without a date of their own: {n}, left out of this chart; feed dates not counted", v)
-          : tf("Articles without a date of their own: {n}, left out of this chart; with the feed's date: {m}", v);
+        return c.m == null ? tf("Articles without a date of their own: {n}, left out of this chart; feed dates not counted", {n: v.n})
+          : tf("Articles without a date of their own: {n}, left out of this chart; with the feed's date: {m}", {n: v.n, m: v.m});
       }
       if (kind === "left_out_figure") {
-        return c.m == null ? tf("Articles without a date of their own: {n}, left out of this figure; feed dates not counted", v)
-          : tf("Articles without a date of their own: {n}, left out of this figure; with the feed's date: {m}", v);
+        return c.m == null ? tf("Articles without a date of their own: {n}, left out of this figure; feed dates not counted", {n: v.n})
+          : tf("Articles without a date of their own: {n}, left out of this figure; with the feed's date: {m}", {n: v.n, m: v.m});
       }
-      return c.m == null ? tf("Articles without a date of their own: {n}, drawn at the day the app collected them; feed dates not counted", v)
-        : tf("Articles without a date of their own: {n}, drawn at the day the app collected them; with the feed's date: {m}", v);
+      return c.m == null ? tf("Articles without a date of their own: {n}, drawn at the day the app collected them; feed dates not counted", {n: v.n})
+        : tf("Articles without a date of their own: {n}, drawn at the day the app collected them; with the feed's date: {m}", {n: v.n, m: v.m});
     }
     function ooUndatedMethod(u) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);

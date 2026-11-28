@@ -67,9 +67,10 @@ const T = (lang, s) => { const v = table(lang)[s]; return v == null ? s : v; };
 const NAMES = [
   // app-core
   "ooLabelHtml", "ooLabelText", "ooListJoin", "_tfn",
+  "ooUndatedCounts", "ooUndatedText", "ooUndatedMethod",  // row 459: the trend's undated line
   // app-analysis
   "commodityOverlaySvg", "_anPriceHtml", "_anLensSuffix", "commoditiesForTerm",
-  "renderAnTrend", "_anCtlLabel", "drawAnTrend", "renderAnMindmap",
+  "renderAnTrend", "_anCtlLabel", "drawAnTrend", "_anTrendUndated", "renderAnMindmap",
   "_anLinksHtml", "_anFurnitureHtml", "_anSentimentHtml", "_anSourcesHtml", "_anSourceCatalogHtml", "_anSourcesCutHtml",
   "_anRepaintOnLangChange", "_anFormCountsHtml", "_anFormCountsFailedHtml",
   "_anRefillFormSlots",

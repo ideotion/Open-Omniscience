@@ -36,6 +36,7 @@ from sqlalchemy import func, select
 
 from src.database.maintenance import StatementTimeout
 from src.database.models import Article
+from src.monitoring.secret_scrub import log_failure
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +118,8 @@ def undated_in_select(session, id_select, *, kind: str) -> dict[str, Any]:
         return _from_undated_ids(session, kind, ids)
     except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
         raise
-    except Exception:  # noqa: BLE001 - a count that cannot be taken is "not counted", never a broken chart
-        logger.warning("undated count failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - a count that cannot be taken is "not counted", never a broken chart
+        log_failure(logger, "undated count failed", exc, level=logging.WARNING)
         return not_counted_block(kind)
 
 
@@ -140,8 +141,8 @@ def undated_in_ids(session, article_ids: Iterable[int], *, kind: str) -> dict[st
         return _from_undated_ids(session, kind, found)
     except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
         raise
-    except Exception:  # noqa: BLE001 - see undated_in_select
-        logger.warning("undated count failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - see undated_in_select
+        log_failure(logger, "undated count failed", exc, level=logging.WARNING)
         return not_counted_block(kind)
 
 
@@ -188,8 +189,8 @@ def undated_by_bucket(session, date_id_select, *, kind: str, bucket_key) -> dict
         return out
     except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
         raise
-    except Exception:  # noqa: BLE001 - see undated_in_select
-        logger.warning("undated count failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - see undated_in_select
+        log_failure(logger, "undated count failed", exc, level=logging.WARNING)
         return not_counted_block(kind)
 
 
@@ -204,8 +205,8 @@ def undated_pairs(session, pair_select, *, limit: int) -> list[tuple[int, int]] 
         ).all()
     except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
         raise
-    except Exception:  # noqa: BLE001 - see undated_in_select
-        logger.warning("undated pair read failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - see undated_in_select
+        log_failure(logger, "undated pair read failed", exc, level=logging.WARNING)
         return None
     if len(rows) > limit:
         return None
@@ -220,6 +221,6 @@ def block_for_undated_set(session, kind: str, undated_ids: set[int]) -> dict[str
         return _from_undated_ids(session, kind, sorted(undated_ids))
     except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
         raise
-    except Exception:  # noqa: BLE001 - see undated_in_select
-        logger.warning("undated feed count failed", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 - see undated_in_select
+        log_failure(logger, "undated feed count failed", exc, level=logging.WARNING)
         return not_counted_block(kind)
