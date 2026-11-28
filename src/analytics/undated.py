@@ -34,6 +34,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from src.database.maintenance import StatementTimeout
 from src.database.models import Article
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,8 @@ def undated_in_select(session, id_select, *, kind: str) -> dict[str, Any]:
             n = int(session.execute(select(func.count()).select_from(undated.subquery())).scalar() or 0)
             return _from_undated_ids(session, kind, [], over_cap_n=n)
         return _from_undated_ids(session, kind, ids)
+    except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
+        raise
     except Exception:  # noqa: BLE001 - a count that cannot be taken is "not counted", never a broken chart
         logger.warning("undated count failed", exc_info=True)
         return not_counted_block(kind)
@@ -135,6 +138,8 @@ def undated_in_ids(session, article_ids: Iterable[int], *, kind: str) -> dict[st
         if len(found) > FEED_COUNT_CAP:
             return _from_undated_ids(session, kind, [], over_cap_n=len(found))
         return _from_undated_ids(session, kind, found)
+    except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
+        raise
     except Exception:  # noqa: BLE001 - see undated_in_select
         logger.warning("undated count failed", exc_info=True)
         return not_counted_block(kind)
@@ -181,6 +186,8 @@ def undated_by_bucket(session, date_id_select, *, kind: str, bucket_key) -> dict
         out = _block(kind, len(ids), len(feed), None)
         out["by_bucket"] = [{"date": k, "n": len(a), "feed_dated": len(f)} for k, (a, f) in sorted(per.items())]
         return out
+    except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
+        raise
     except Exception:  # noqa: BLE001 - see undated_in_select
         logger.warning("undated count failed", exc_info=True)
         return not_counted_block(kind)
@@ -195,6 +202,8 @@ def undated_pairs(session, pair_select, *, limit: int) -> list[tuple[int, int]] 
         rows = session.execute(
             select(group_col, id_col).where(id_col.in_(undated_ids_select())).distinct().limit(limit + 1)
         ).all()
+    except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
+        raise
     except Exception:  # noqa: BLE001 - see undated_in_select
         logger.warning("undated pair read failed", exc_info=True)
         return None
@@ -209,6 +218,8 @@ def block_for_undated_set(session, kind: str, undated_ids: set[int]) -> dict[str
         if len(undated_ids) > FEED_COUNT_CAP:
             return _from_undated_ids(session, kind, [], over_cap_n=len(undated_ids))
         return _from_undated_ids(session, kind, sorted(undated_ids))
+    except StatementTimeout:  # the request's deadline is the caller's to handle, never a "not counted" to cache
+        raise
     except Exception:  # noqa: BLE001 - see undated_in_select
         logger.warning("undated feed count failed", exc_info=True)
         return not_counted_block(kind)

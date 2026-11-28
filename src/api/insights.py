@@ -3168,9 +3168,11 @@ def warm_cache(db: Session) -> dict:
                 _bind_key(db, trending_windows_key(
                     country=None, kind=None, limit=lim, series_top=st,
                 )),
-                lambda lim=lim, st=st: rm.trending_windows(
+                # Row 459 (R853): the warmed payload carries the same undated marks the endpoint adds, or the
+                # cards read from this warm entry would show none for the whole TTL.
+                lambda lim=lim, st=st: q.annotate_trending_undated(db, rm.trending_windows(
                     db, country=None, kind=None, limit=lim, series_top=st, target_lang=None
-                ),
+                ), country=None),
             )
         )
     specs.append(

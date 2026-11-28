@@ -258,3 +258,28 @@ def test_the_page_helpers_run_as_real_code():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
+
+
+def test_the_warmed_trending_payload_carries_the_marks_too(db):
+    """The pass-tail warmer writes the exact keys Home and Insights read; a warmed entry without the block would
+    serve cards with no mark for the whole cache TTL."""
+    ins = (ROOT / "src" / "api" / "insights.py").read_text(encoding="utf-8")
+    warm = ins[ins.index("def warm_cache("):]
+    assert "q.annotate_trending_undated(db, rm.trending_windows(" in warm[: warm.index("\ndef ", 1)]
+
+
+def test_a_statement_deadline_is_not_swallowed_into_not_counted(db, monkeypatch):
+    """A request deadline belongs to the caller (it degrades the whole payload); caught here it would be cached as a
+    full answer reading "not counted"."""
+    from src.database.maintenance import StatementTimeout
+
+    _seed(db)
+
+    def boom(*a, **k):
+        raise StatementTimeout("deadline")
+
+    monkeypatch.setattr(db, "execute", boom)
+    with pytest.raises(StatementTimeout):
+        u.undated_in_select(db, select(Article.id), kind=u.KIND_LEFT_OUT)
+    with pytest.raises(StatementTimeout):
+        u.undated_in_ids(db, [1, 2], kind=u.KIND_LEFT_OUT)
