@@ -886,6 +886,40 @@ def _read_only_target(p: Path) -> str:
     return _read_only_uri(p.resolve())
 
 
+def _existing_no_follow_target(p: Path) -> str:
+    """R826 stage 3b: the URI of an EXISTING ``p`` opened read-write, ``mode=rw``: SQLite never creates the file (a missing
+    one fails). The folder is resolved, the file's own name never is (a link there stays a link, which
+    :func:`_refuse_unless_regular` refuses).
+
+    SQLite CANNOT be told here not to follow a link: its no-follow is an ``sqlite3_open_v2`` flag (SQLITE_OPEN_NOFOLLOW) that
+    Python's drivers do not pass, and it has no URI parameter (``nofollow=1`` is silently ignored, measured on both drivers).
+    So the link refusal is the ``lstat`` just before the open. That is NOT airtight: a link swapped in after the ``lstat`` and
+    swapped back out before the caller's identity check (``segment_open._check_open``, which re-reads the NAME, not the
+    file the connection holds) goes unseen, and a hot journal at the name is rolled into the link's target by the open
+    itself. Doing that needs write access to the file's folder, which already lets that writer change the file directly,
+    so it gains nothing; the caller's checks on the connection (schema, identity row, generation) still bound what such a
+    file can be. The hot-journal case is closed in stage 4, before any write path is on (docket row 409): a read-write open
+    only after a read-only open of the same name has confirmed its segment id and generation, and refused while a
+    ``-journal`` sits beside a file not yet confirmed."""
+    uri = _read_only_uri(p.parent.resolve() / p.name)
+    if not uri.endswith("?mode=ro"):  # pragma: no cover - the helper above always ends so
+        raise ValueError("unexpected database URI form")
+    return uri[: -len("?mode=ro")] + "?mode=rw"
+
+
+def _refuse_unless_regular(p: Path) -> None:
+    """The name must be a regular file itself (never a symbolic link, a folder or anything else) with one name only (never
+    a hard link to a file named elsewhere) before an existing-only open."""
+    try:
+        st = os.lstat(p)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"{p.name} does not exist: this open never creates a file") from None
+    if not stat.S_ISREG(st.st_mode):
+        raise FileNotFoundError(f"{p.name} is not a regular file: this open never follows a link")
+    if st.st_nlink != 1:
+        raise FileNotFoundError(f"{p.name} has another name: this open never follows a link")
+
+
 #: SQLite's primary "busy" and "locked" result codes (an extended code, such as SQLITE_BUSY_SNAPSHOT, is masked to its primary).
 _HELD_CODES = (5, 6)
 
@@ -898,7 +932,15 @@ def held_by_another(exc: BaseException | None) -> bool:
 
 
 def _try_open_encrypted(
-    p: Path, key: str, check_same_thread: bool, timeout: float, page_size, *, last_error=None, read_only: bool = False
+    p: Path,
+    key: str,
+    check_same_thread: bool,
+    timeout: float,
+    page_size,
+    *,
+    last_error=None,
+    read_only: bool = False,
+    existing_no_follow: bool = False,
 ):
     """One attempt: a FRESH sqlcipher3 connection, keyed, optionally declaring
     ``page_size``, verified readable. Returns the connection on success or
@@ -922,6 +964,8 @@ def _try_open_encrypted(
     try:
         if read_only:
             conn = sqc.connect(_read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout)
+        elif existing_no_follow:
+            conn = sqc.connect(_existing_no_follow_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout)
         else:
             conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
         _apply_key(conn, key)
@@ -947,6 +991,7 @@ def _connect(
     cipher_page_size: int | None = None,
     read_only: bool = False,
     sqlcipher_host: bool = False,
+    existing_no_follow: bool = False,
 ):
     """Open ``path`` with the right driver and key for ITS state.
 
@@ -1005,8 +1050,14 @@ def _connect(
     them the open fails and reads as a wrong key.
     """
     p = Path(path)
+    if existing_no_follow:
+        if read_only or sqlcipher_host:
+            raise ValueError("existing_no_follow is a read-write open of its own")
+        _refuse_unless_regular(p)
     state = is_encrypted_file(p)
     use_key = key if key is not None else get_passphrase()
+    if existing_no_follow and state is None:
+        raise FileNotFoundError(f"{p.name} is empty: this open never makes a fresh file")
     if read_only and state is None:
         raise FileNotFoundError(f"{p.name} does not exist or is empty: a read-only open never creates a file")
 
@@ -1050,7 +1101,14 @@ def _connect(
             # handed the path and whether the file opened, never the key or the exception).
             counted = open_stats.begin()
             conn = _try_open_encrypted(
-                p, use_key, check_same_thread, timeout, candidate, last_error=last_error, read_only=read_only
+                p,
+                use_key,
+                check_same_thread,
+                timeout,
+                candidate,
+                last_error=last_error,
+                read_only=read_only,
+                existing_no_follow=existing_no_follow,
             )
             open_stats.end(counted, p, conn is not None)
             if conn is not None:
@@ -1105,6 +1163,10 @@ def _connect(
         if read_only:
             return sqlite3.connect(
                 _read_only_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout
+            )
+        if existing_no_follow:
+            return sqlite3.connect(
+                _existing_no_follow_target(p), uri=True, check_same_thread=check_same_thread, timeout=timeout
             )
         return sqlite3.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
 
@@ -1177,6 +1239,7 @@ def connect(
     cipher_page_size: int | None = None,
     read_only: bool = False,
     sqlcipher_host: bool = False,
+    existing_no_follow: bool = False,
 ):
     """Open ``path`` (see :func:`_connect` for the driver and key rules) with the search
     index's transform functions registered.
@@ -1187,6 +1250,12 @@ def connect(
 
     ``read_only=True`` opens an existing file ``mode=ro`` and writes nothing, its leftover log included:
     see :func:`_connect` for why ``PRAGMA query_only`` is not that.
+
+    ``existing_no_follow=True`` (R826 stage 3b, opt-in, the split corpus's segment opens only) opens an EXISTING regular file
+    read-write and never creates one: ``mode=rw``, after an ``lstat`` that the name is a regular file itself (see
+    :func:`_existing_no_follow_target` for why the link refusal is that ``lstat`` and not SQLite's). A
+    missing or empty file, a link or anything else at the name raises ``FileNotFoundError``. Every other caller's open is
+    unchanged.
 
     ``sqlcipher_host=True`` opens a PLAINTEXT file through the encrypting driver, keyless, so the connection can attach
     an encrypted staged copy of an import (R829 A2 on a plaintext install). An encrypted file is unaffected.
@@ -1210,6 +1279,7 @@ def connect(
                 cipher_page_size=cipher_page_size,
                 read_only=read_only,
                 sqlcipher_host=sqlcipher_host,
+                existing_no_follow=existing_no_follow,
             )
     finally:
         _IN_FACTORY.depth -= 1

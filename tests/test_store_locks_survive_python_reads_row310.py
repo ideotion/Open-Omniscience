@@ -692,8 +692,9 @@ def test_an_open_that_starts_between_the_listing_and_the_close_stops_the_close(t
 # already made), and the sqlite_opening wrappers that cover some of them. Each file's count is pinned with the reason no
 # Python read of ours can race it, so a new opener, or a wrapper removed, is classified by whoever makes the change.
 _UNAUDITED_OPENERS = {
-    ("sqlcipher-connect", "src/database/connect.py"): (8, "six inside _connect/_try_open_encrypted, under connect()'s "
-        "sqlite_opening (two are the keyless sqlcipher_host open of a plaintext store, R829 A2); reencrypt_plain_to and "
+    ("sqlcipher-connect", "src/database/connect.py"): (9, "seven inside _connect/_try_open_encrypted, under connect()'s "
+        "sqlite_opening (two are the keyless sqlcipher_host open of a plaintext store, R829 A2; one is the existing-only "
+        "segment open, R826 stage 3b, which opens a corpus segment, never the live main store); reencrypt_plain_to and "
         "copy_at_current_settings wrap theirs"),
     ("sqlcipher-connect", "src/backup/staged_key.py"): (3, "_open_with's two and seal_plaintext's, each inside "
         "sqlite_opening; they open an import's staged copy, never a live store"),

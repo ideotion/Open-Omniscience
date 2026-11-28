@@ -288,6 +288,9 @@ _RAW_CEILING: dict[str, int] = {
     "src/database/migrate.py": 2,
     "src/database/read_snapshot.py": 2,
     "src/database/session.py": 1,
+    # R826 stage 3b (row 409): the segment schema names the per-article tables a segment file holds, keyword_mentions
+    # among them (the module docstring twice, SEGMENT_TABLES and the two SHARED_REFERENCES keys): a schema, never a read.
+    "src/database/segment_schema.py": 5,
     "src/monitoring/benchmark.py": 3,
     "src/monitoring/expedition.py": 1,
     # Reads go through the view since F9 (R459); the one name left is the physical table PRAGMA foreign_key_check skips.

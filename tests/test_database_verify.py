@@ -367,7 +367,7 @@ def test_a_damaged_schema_page_under_the_right_key_is_damage_not_a_wrong_passphr
     con.close()
     tried: list[int | None] = []
 
-    def fake(_p, _key, _cst, _timeout, page_size, *, last_error=None, read_only=False):
+    def fake(_p, _key, _cst, _timeout, page_size, *, last_error=None, read_only=False, existing_no_follow=False):
         tried.append(page_size)
         if last_error is not None:
             err = _driver_corrupt() if len(tried) == 1 else _driver_hmac()
@@ -391,7 +391,7 @@ def test_a_damaged_schema_page_under_the_right_key_is_damage_not_a_wrong_passphr
     # candidate that got past page 1 is the one that says what happened
     tried.clear()
 
-    def fake_later(_p, _key, _cst, _timeout, page_size, *, last_error=None, read_only=False):
+    def fake_later(_p, _key, _cst, _timeout, page_size, *, last_error=None, read_only=False, existing_no_follow=False):
         tried.append(page_size)
         if last_error is not None:
             last_error[:] = [_driver_corrupt() if len(tried) == 3 else _driver_hmac()]

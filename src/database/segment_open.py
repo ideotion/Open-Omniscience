@@ -27,7 +27,7 @@ EVERY OPEN (R826 b and d):
 4. Before any row is read: ``trusted_schema`` off, ``cell_size_check`` on, ``writable_schema`` off, no memory map,
    and SQLite's defensive setting where the driver exposes it (the standard driver does; SQLCipher's driver has no
    ``db_config``, so on an encrypted segment the exact schema check below is what stands in its place).
-5. The schema must be EXACTLY the schema this build makes a segment with (:data:`SEGMENT_DDL`, compared object by
+5. The schema must be EXACTLY the schema this build makes a segment with (:func:`segment_ddl`, compared object by
    object, SQL text included): no trigger, view, virtual table, index or table more or less. Only SQLite's own
    statistics tables may be there besides, with SQLite's own SQL.
 6. The file's recorded identity (number and id range, written by ``segments.commit_segment``) must equal its
@@ -76,7 +76,12 @@ SEGMENT_WRITES_ENABLED = False
 
 #: The schema a segment of this build is made with, in order. Stage 3 adds the per-article tables here; the opener's
 #: check compares against exactly what these statements make, so the two can never drift apart.
-SEGMENT_DDL: tuple[str, ...] = (_SEGMENT_META_DDL,)
+def segment_ddl() -> tuple[str, ...]:
+    """Every statement a segment is made with, in order: its identity table, the per-article tables and indexes, and the two
+    search indexes (``segment_schema``: derived from the models and the shared file's own DDL, never typed)."""
+    from src.database.segment_schema import segment_search_ddl, segment_table_ddl
+
+    return (_SEGMENT_META_DDL, *segment_table_ddl(), *segment_search_ddl())
 
 #: SQLite's own statistics tables (``ANALYZE``, ``PRAGMA optimize``), allowed with exactly the SQL this SQLite writes for them:
 #: read from an in-memory database ``ANALYZE`` just ran in, on the driver that opened the segment, never typed here.
@@ -144,16 +149,19 @@ def _normal_sql(sql: Any) -> str:
     return " ".join(str(sql or "").split())
 
 
-def reference_schema() -> frozenset[tuple[str, str, str, str]]:
-    """What :data:`SEGMENT_DDL` makes, as (type, name, tbl_name, SQL with whitespace folded), read from an in-memory
+def reference_schema(con: Any = None) -> frozenset[tuple[str, str, str, str]]:
+    """What :func:`segment_ddl` makes, as (type, name, tbl_name, SQL with whitespace folded), read from an in-memory
     database the statements just ran in. Computed on every call: cheap, and never a stale copy."""
-    con = sqlite3.connect(":memory:")
+    import importlib
+
+    driver = importlib.import_module(type(con).__module__) if con is not None else sqlite3
+    mem = driver.connect(":memory:")
     try:
-        for ddl in SEGMENT_DDL:
-            con.execute(ddl)
-        return _schema_of(con)
+        for ddl in segment_ddl():
+            mem.execute(ddl)
+        return _schema_of(mem)
     finally:
-        con.close()
+        mem.close()
 
 
 def _schema_of(con: Any) -> frozenset[tuple[str, str, str, str]]:
@@ -166,7 +174,7 @@ def check_schema(con: Any) -> bool:
     False only for a schema that was READ and differs. A read that fails raises (the opener names it: "in_use" when another
     program holds a lock, "unreadable" otherwise), so a held or damaged file is never reported as a foreign schema. Reads
     ``sqlite_master`` only."""
-    return _schema_of(con) - _sqlite_own(con) == reference_schema()
+    return _schema_of(con) - _sqlite_own(con) == reference_schema(con)
 
 
 def harden(con: Any, *, closed: bool) -> bool:
@@ -412,7 +420,14 @@ def _checked_connect(seg: Segment, path: Path, key: str | None, shared_encrypted
     )
 
     try:
-        return connect(path, key=key, read_only=read_only, check_same_thread=False, cipher_page_size=SEGMENT_PAGE_SIZE)
+        return connect(
+            path,
+            key=key,
+            read_only=read_only,
+            existing_no_follow=not read_only,  # a read-write open never creates the file and never follows a link (3b)
+            check_same_thread=False,
+            cipher_page_size=SEGMENT_PAGE_SIZE,
+        )
     except StoreHeldError:
         raise SegmentUnavailable(seg.seg_no, "in_use") from None
     except WrongPassphraseError:
@@ -462,7 +477,7 @@ def _check_open(seg: Segment, con: Any, path: Path, before: tuple[int, int], sha
 def create_segment(r: Reservation, *, key: str | None = None) -> Path:
     """Make the new, empty segment file of a reservation (``segments.reserve_segment`` step 2): created through the app's
     factory with the corpus key (SQLCipher gives every new file its own random salt in page 1), the schema of
-    :data:`SEGMENT_DDL` and its identity written in the file's own transaction, then read back with the key and named in
+    :func:`segment_ddl` and its identity written in the file's own transaction, then read back with the key and named in
     the at-rest record while that keyed read is open (R828). Refused unless :data:`SEGMENT_WRITES_ENABLED`."""
     from src.database.at_rest_state import record_segment
     from src.database.connect import connect
@@ -504,7 +519,7 @@ def create_segment(r: Reservation, *, key: str | None = None) -> Path:
             if _identity_of_name(path) != ident:
                 raise SegmentError("the segment's name led to another file while it was being made; nothing was written")
             con.isolation_level = None
-            for ddl in SEGMENT_DDL:
+            for ddl in segment_ddl():
                 if ddl is _SEGMENT_META_DDL:
                     continue
                 con.execute(ddl)
