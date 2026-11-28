@@ -264,7 +264,7 @@ def _primary_subtag(code: Any) -> str | None:
     return c if re.fullmatch(r"[a-z]{2,3}", c) else None
 
 
-def lang_check(catalogue_language: Any, text: Any, *, withheld: bool = False) -> str:
+def lang_check(catalogue_language: Any, text: Any, *, body_withheld: bool = False) -> str:
     """One source's code for :data:`LANG_CHECK_NOTE`. Never raises."""
     try:
         from src.analytics.langdetect import detect_any_language, detector_available
@@ -272,7 +272,7 @@ def lang_check(catalogue_language: Any, text: Any, *, withheld: bool = False) ->
         stated = _primary_subtag(catalogue_language)
         if stated is None:
             return "no_catalogue_language"
-        if withheld:
+        if body_withheld:
             return "withheld"
         if not detector_available():
             return "no_detector"
@@ -391,7 +391,7 @@ def build_sample_zip(
                         row["body_withheld"] = True
                     text = a.get("content")
                     row["catalogue_language"] = _primary_subtag(src.language)
-                    row["lang_check"] = lang_check(src.language, text, withheld=bool(row.get("body_withheld")))
+                    row["lang_check"] = lang_check(src.language, text, body_withheld=bool(row.get("body_withheld")))
                     raw = text.encode("utf-8") if isinstance(text, str) else b""
                     if isinstance(text, str) and len(raw) > _TEXT_MAX_BYTES:
                         # cut by UTF-8 bytes, not characters: 200k CJK characters are 600 KB (the 2026-11-14 read)

@@ -485,6 +485,11 @@ from .source_samples import (
     include_newsletter_text,
     never_collected_in_set,
     source_samples,
+    LANG_CHECK_NOTE,
+    _LANG_PAIRS_MAX,
+    _lang_check_tally,
+    _primary_subtag,
+    lang_check,
 )
 # Every Home card and its evidence, one zip (2026-11-14, Lane X; saved by the Field data button): the same slice position.
 from .field_cards import (
@@ -576,6 +581,11 @@ __all__ = [
     "_last_by_source",
     "_via",
     "never_collected_in_set",
+    "LANG_CHECK_NOTE",
+    "_LANG_PAIRS_MAX",
+    "_lang_check_tally",
+    "_primary_subtag",
+    "lang_check",
     "_newsletter_source_ids",
     "_pick",
     "_plain",

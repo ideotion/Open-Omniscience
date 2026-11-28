@@ -359,7 +359,7 @@ def test_the_language_check_compares_each_sampled_article_with_its_catalogue_lan
 def test_the_language_check_is_never_run_on_a_withheld_newsletter_body():
     from src.api.diagnostics.source_samples import lang_check
 
-    assert lang_check("en", _ES, withheld=True) == "withheld"
+    assert lang_check("en", _ES, body_withheld=True) == "withheld"
     assert lang_check("", _ES) == "no_catalogue_language"
     assert lang_check("not a code!", _ES) == "no_catalogue_language"
 
