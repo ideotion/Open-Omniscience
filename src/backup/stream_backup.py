@@ -182,6 +182,13 @@ def unregister_active_staging(path: Path | str) -> None:
         _ACTIVE_STAGING.discard(key)
 
 
+def any_active_staging() -> bool:
+    """Whether any backup, restore or snapshot job has staging registered right now (row 428: a safety copy is never
+    deleted while one runs)."""
+    with _ACTIVE_LOCK:
+        return bool(_ACTIVE_STAGING)
+
+
 def is_active_staging(path: Path | str) -> bool:
     """True when ``path`` is (or lives inside) a registered live job's staging."""
     s = str(Path(path).resolve())
