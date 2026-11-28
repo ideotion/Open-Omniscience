@@ -82,6 +82,18 @@ _REGISTRY_LOCK = threading.RLock()
 #: The reservations a live :class:`BulkLoad` of this process holds (changed only under :data:`_REGISTRY_LOCK`): settling the
 #: registry leaves them alone, since a file with no identity yet is a load in progress, not a crash's leftover.
 _BULK_LOADING: set[int] = set()
+#: Held across every statement this module runs on the SHARED connection. The writer, a bulk load and the registry steps can
+#: run on different threads over ONE ``shared_con``; without it one thread's BEGIN could meet another's open transaction on
+#: the same connection (refused, or worse, a statement committed inside someone else's transaction), and the reference
+#: check could read another thread's uncommitted rows. A LEAF lock: nothing else is acquired while it is held, so it adds no
+#: lock order to :data:`_REGISTRY_LOCK`, the writer's or a load's.
+_SHARED_LOCK = threading.RLock()
+
+
+def _on_shared(fn: Any, *args: Any, **kwargs: Any) -> Any:
+    """``fn(*args, **kwargs)``, a registry step or a read on the shared connection, under :data:`_SHARED_LOCK`."""
+    with _SHARED_LOCK:
+        return fn(*args, **kwargs)
 
 
 class SegmentFull(SegmentError):
@@ -214,12 +226,15 @@ def check_shared_references(shared_con: Any, table: str, rows: Sequence[Mapping[
             raise SegmentError("a row names a shared-file row by something that is not an id")
         if shared_con is None:
             raise SegmentError("the shared file is needed to check this row's references")
-        if getattr(shared_con, "in_transaction", False):
-            # A shared row inside an open transaction could still roll back after the segment commits; it must be committed.
-            raise SegmentError("the shared rows a segment names must be committed first; nothing was written")
-        missing = shared_con.execute(_MISSING_IN_SHARED[shared_table], (json.dumps(sorted(values)),)).fetchall()
-        if missing:
+        if _on_shared(_missing_in_shared, shared_con, shared_table, values):
             raise SegmentError("a row names a shared-file row that does not exist; nothing was written")
+
+
+def _missing_in_shared(shared_con: Any, shared_table: str, values: set[int]) -> list[Any]:
+    if getattr(shared_con, "in_transaction", False):
+        # A shared row inside an open transaction could still roll back after the segment commits; it must be committed.
+        raise SegmentError("the shared rows a segment names must be committed first; nothing was written")
+    return list(shared_con.execute(_MISSING_IN_SHARED[shared_table], (json.dumps(sorted(values)),)).fetchall())
 
 
 def _still_in_transaction(con: Any) -> None:
@@ -277,7 +292,7 @@ class SegmentWriter:
         if owed is None:
             return
         try:
-            record_generation(self._shared, self.seg.seg_no, owed)
+            _on_shared(record_generation, self._shared, self.seg.seg_no, owed)
         except Exception as exc:  # noqa: BLE001 - see the docstring; the text stays in the debug log
             log_failure(_LOG, "the segment registry's generation could not be raised yet", exc, level=logging.DEBUG)
             return
@@ -370,7 +385,7 @@ def _open_read_write(seg: Segment, key: str | None) -> Any:
 def _settle(shared_con: Any, key: str | None) -> list[Segment]:
     """Settle what a crash may have left: ``reserved`` rows (opened when the file proves its identity, else abandoned) and
     more than one ``open`` row (all but the newest close). Returns the registry afterwards."""
-    by_name = {s.file_name: s for s in registry(shared_con) if s.file_name is not None}
+    by_name = {s.file_name: s for s in _on_shared(registry, shared_con) if s.file_name is not None}
 
     def identity_of(file_name: str | None) -> tuple[int, int, int] | None:
         seg = by_name.get(file_name) if file_name is not None else None
@@ -385,19 +400,19 @@ def _settle(shared_con: Any, key: str | None) -> list[Segment]:
         finally:
             con.close()
 
-    reconcile(shared_con, identity_of, skip=frozenset(_BULK_LOADING))
-    segs = registry(shared_con)
+    _on_shared(reconcile, shared_con, identity_of, skip=frozenset(_BULK_LOADING))
+    segs = _on_shared(registry, shared_con)
     opens = sorted((s for s in segs if not s.implicit and s.seg_no >= 1 and s.state == "open"), key=lambda s: s.seg_no)
     for s in opens[:-1]:
-        mark_closed(shared_con, s.seg_no)
-    return registry(shared_con) if len(opens) > 1 else segs
+        _on_shared(mark_closed, shared_con, s.seg_no)
+    return _on_shared(registry, shared_con) if len(opens) > 1 else segs
 
 
 def _start_segment(shared_con: Any, segs: list[Segment], key: str | None) -> None:
     """Reserve, make and open the next segment (stage 1's three durable steps)."""
-    r = reserve_segment(shared_con, next_segment_size(segs))
+    r = _on_shared(reserve_segment, shared_con, next_segment_size(segs))
     create_segment(r, key=key)
-    mark_open(shared_con, r)
+    _on_shared(mark_open, shared_con, r)
 
 
 def _open_segments(segs: list[Segment]) -> list[Segment]:
@@ -418,7 +433,7 @@ def open_writer(shared_con: Any, *, key: str | None = None) -> SegmentWriter:
         opens = _open_segments(segs)
         if not opens:
             _start_segment(shared_con, segs, key)
-            opens = _open_segments(registry(shared_con))
+            opens = _open_segments(_on_shared(registry, shared_con))
         if len(opens) != 1:
             raise SegmentError("the registry has no single open segment")
         return SegmentWriter.open(shared_con, opens[0], key=key)
@@ -433,7 +448,7 @@ def rollover(writer: SegmentWriter, *, key: str | None = None) -> SegmentWriter:
     with _REGISTRY_LOCK:
         shared_con, seg_no = writer._shared, writer.seg.seg_no
         writer.close()
-        mark_closed(shared_con, seg_no)
+        _on_shared(mark_closed, shared_con, seg_no)
         return open_writer(shared_con, key=key)
 
 
@@ -580,15 +595,15 @@ class BulkLoad:
                     segment_open.open_segment(self.seg, key=self._key).close()  # every reader check, the schema among them
                 if _identity_of_name(self._path) != self._ident:
                     raise SegmentError("the segment's name led to another file while it was checked; it is not sealed")
-                record_generation(self._shared, self._r.seg_no, 1)
-                mark_sealed(self._shared, self._r)
+                _on_shared(record_generation, self._shared, self._r.seg_no, 1)
+                _on_shared(mark_sealed, self._shared, self._r)
             except BaseException:
                 self._give_up()
                 raise
             self._finish()
         finally:
             self._lock.release()
-        return next(s for s in registry(self._shared) if s.seg_no == self._r.seg_no)
+        return next(s for s in _on_shared(registry, self._shared) if s.seg_no == self._r.seg_no)
 
     def abandon(self) -> None:
         """Give the load up: its reservation is abandoned and its file removed. Nothing of it was ever readable."""
@@ -611,14 +626,14 @@ class BulkLoad:
             with contextlib.suppress(Exception):
                 self._con.close()
             try:
-                closed = any(s.seg_no == self._r.seg_no and s.state == "closed" for s in registry(self._shared))
+                closed = any(s.seg_no == self._r.seg_no and s.state == "closed" for s in _on_shared(registry, self._shared))
             except Exception:
                 closed = True
             try:
                 if not closed:
                     _free_failed(corpus_folder(), self._path, self._ident)
             finally:
-                mark_abandoned(self._shared, self._r.seg_no)
+                _on_shared(mark_abandoned, self._shared, self._r.seg_no)
         finally:
             self._finish()
 
@@ -635,14 +650,14 @@ def open_bulk_load(shared_con: Any, *, key: str | None = None, size: int | None 
     writing, and that writer's own open already settled what a crash left."""
     require_writes()
     with _REGISTRY_LOCK:
-        segs = registry(shared_con) if _WRITER_LOCK.locked() else _settle(shared_con, key)
-        r = reserve_segment(shared_con, size if size is not None else next_segment_size(segs))
+        segs = _on_shared(registry, shared_con) if _WRITER_LOCK.locked() else _settle(shared_con, key)
+        r = _on_shared(reserve_segment, shared_con, size if size is not None else next_segment_size(segs))
         _BULK_LOADING.add(r.seg_no)
         try:
             path, ident, con, encrypted = create_bulk_segment(r, key=key)
         except BaseException:
             _BULK_LOADING.discard(r.seg_no)
-            mark_abandoned(shared_con, r.seg_no)
+            _on_shared(mark_abandoned, shared_con, r.seg_no)
             raise
     try:
         con.execute("PRAGMA temp_store = MEMORY")  # R825: never a plaintext temporary file
@@ -661,5 +676,5 @@ def open_bulk_load(shared_con: Any, *, key: str | None = None, size: int | None 
         finally:
             with _REGISTRY_LOCK:
                 _BULK_LOADING.discard(r.seg_no)
-            mark_abandoned(shared_con, r.seg_no)
+            _on_shared(mark_abandoned, shared_con, r.seg_no)
         raise
