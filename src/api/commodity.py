@@ -241,6 +241,18 @@ def correlation(
 
     result = correlate_price_with_counts(price_points, article_counts, method=method)
     out = {"symbol": symbol, "query": query, **result.to_dict()}
+    # Row 459 (R853): the daily counts read published_at alone, so an article whose page gave no date is not in them; say
+    # how many, over exactly the articles those counts would otherwise have drawn on.
+    from sqlalchemy import select
+
+    from src.analytics.quarantine_scope import not_counted
+    from src.analytics.undated import KIND_LEFT_OUT_FIGURE, undated_in_ids, undated_in_select
+    from src.database.models import Article
+
+    if query:
+        out["undated"] = undated_in_ids(db, ids or [], kind=KIND_LEFT_OUT_FIGURE)
+    else:
+        out["undated"] = undated_in_select(db, select(Article.id).where(not_counted(Article.id)), kind=KIND_LEFT_OUT_FIGURE)
     if not_yet is not None:
         out["not_counted_yet"] = not_yet
     return out

@@ -51,6 +51,70 @@
       const why = t("This page gave no date of its own. This is the date the source's feed gave the item, which can be when it was posted or last updated in the feed rather than when it was first published.");
       return `${esc(ooIsoDate(a.feed_entry_published_at, n))} <span class="muted feed-date" title="${esc(why)}">· ${esc(t("the feed's date"))}</span>`;
     }
+    // Row 459 (R853): the line under an article chart saying how many of ITS articles have no date of their
+    // own: drawn at the day the app collected them (kind "collection", the keyword-index charts) or left out
+    // (kind "left_out" / "left_out_figure", the charts and figures read off the publication date alone), and
+    // how many of those carry the feed's date. u is the server's undated block, counted over exactly what the
+    // chart shows. Absent when n is 0; "not counted" when the server could not count, never 0 and never
+    // silence. range = the bucket keys still drawn when the reader narrowed the chart to a time range (null
+    // when it shows the whole series): the count is then summed from the block's by_bucket, or "not counted"
+    // for that range when the block has none.
+    function ooUndatedCounts(u, range) {
+      if (!u || typeof u !== "object") return null;
+      if (typeof u.n !== "number") return {n: null, m: null};
+      if (!range) return {n: u.n, m: (typeof u.feed_dated === "number") ? u.feed_dated : null};
+      if (!Array.isArray(u.by_bucket)) return {n: null, m: null};
+      const keep = new Set(range);
+      let n = 0, m = 0;
+      for (const b of u.by_bucket) {
+        if (keep.has(b.date)) { n += b.n; m += b.feed_dated; }
+      }
+      return {n: n, m: m};
+    }
+    function ooUndatedText(u, range) {
+      const c = ooUndatedCounts(u, range);
+      if (!c || c.n === 0) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => String(x).replace(/\{(\w+)\}/g, (mm, k) => (v[k] == null ? mm : v[k])));
+      if (c.n == null) return t("Articles without a date of their own: not counted");
+      const num = (x) => (typeof fmtNum === "function") ? fmtNum(x, 0) : String(x);
+      const v = {n: num(c.n), m: c.m == null ? "" : num(c.m)};
+      const kind = u.kind;
+      if (kind === "left_out") {
+        return c.m == null ? tf("Articles without a date of their own: {n}, left out of this chart; feed dates not counted", v)
+          : tf("Articles without a date of their own: {n}, left out of this chart; with the feed's date: {m}", v);
+      }
+      if (kind === "left_out_figure") {
+        return c.m == null ? tf("Articles without a date of their own: {n}, left out of this figure; feed dates not counted", v)
+          : tf("Articles without a date of their own: {n}, left out of this figure; with the feed's date: {m}", v);
+      }
+      return c.m == null ? tf("Articles without a date of their own: {n}, drawn at the day the app collected them; feed dates not counted", v)
+        : tf("Articles without a date of their own: {n}, drawn at the day the app collected them; with the feed's date: {m}", v);
+    }
+    function ooUndatedMethod(u) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const kind = u && u.kind;
+      if (kind === "left_out") return t("This chart dates each article by the date its page gives, so an article whose page gave none is not in it. This counts those articles under the same filters, and how many of them carry a date the source's feed gave the item.");
+      if (kind === "left_out_figure") return t("This figure dates each article by the date its page gives, so an article whose page gave none is not in it. This counts those articles under the same filters, and how many of them carry a date the source's feed gave the item.");
+      return t("The app dates each article by the date its page gives. An article whose page gave none is drawn at the day the app collected it, which is not the day it was published. This counts those articles among the ones this chart shows, and how many of them carry a date the source's feed gave the item.");
+    }
+    function ooUndatedLine(u, range) {
+      const text = ooUndatedText(u, range);
+      if (!text) return "";
+      return `<div class="hint undated-line" title="${esc(ooUndatedMethod(u))}">${esc(text)}</div>`;
+    }
+    // R853 condition 4: the short mark on a trending card whose sparkline includes articles drawn at their
+    // collection date, the full line one click away (a <details>, keyboard and touch included).
+    function ooUndatedMark(u) {
+      const text = ooUndatedText(u);
+      if (!text) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => String(x).replace(/\{(\w+)\}/g, (mm, k) => (v[k] == null ? mm : v[k])));
+      const short = (typeof u.n === "number") ? tf("◷ {n} by collection date", {n: (typeof fmtNum === "function") ? fmtNum(u.n, 0) : String(u.n)})
+        : t("◷ dates not counted");
+      return `<details class="undated-mark"><summary title="${esc(ooUndatedMethod(u))}">${esc(short)}</summary>`
+        + `<div class="hint undated-line">${esc(text)}</div></details>`;
+    }
     // Row 286 (R775): the OpenStreetMap surfaces (the picker's lane cell, the map's OSM line, the
     // completeness heads, the object and place cards) state the date of the last daily change file
     // applied in order since the extract, BESIDE the extract's date and never in its place. dd is the

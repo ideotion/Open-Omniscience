@@ -1022,7 +1022,7 @@
               <div style="display:flex;align-items:baseline;gap:6px">
                 <a href="#" data-on-click='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${kwLabelHtml(x, {inLink: true})}</a>${kwQidHtml(x)}
                 <span class="muted" style="font-size:12px">${esc(growthFallback(x) || trendRateText(x, {short: true}))}</span>${enlarge}
-              </div>${spark}</div>`;
+              </div>${spark}${ooUndatedMark(x.undated)}</div>`;
           }).join("");
           return (drawn = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
             + `<div class="hint muted" style="font-size:11px;margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`);
@@ -1050,7 +1050,8 @@
       const x = _homeTrendTerms[i];
       if (!x || !Array.isArray(x.series)) return;   // defensive: nothing to enlarge
       chartEnlarge(x.term, [{label: x.term, labelIsData: true, unit: t("mentions"),
-        points: x.series.map(p => ({t: p.date, v: p.count}))}], _homeTrendCaveat || "", {titleIsData: true});
+        points: x.series.map(p => ({t: p.date, v: p.count}))}],
+        [_homeTrendCaveat || "", ooUndatedText(x.undated)].filter(Boolean).join(" "), {titleIsData: true});  // R853
     }
     // Home severity alert strip (info / watch / urgent) — GET /api/signals/alerts, LOCAL,
     // no network (reads the cached hazard snapshot; a producer NEVER fetches). Compact +

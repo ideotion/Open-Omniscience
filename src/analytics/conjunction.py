@@ -314,10 +314,13 @@ def per_article_intensity(
     }
 
 
-def conditional_trend(session, article_ids: list[int], *, bucket: str = "week") -> dict:
+def conditional_trend(session, article_ids: list[int], *, bucket: str = "week", undated: bool = False) -> dict:
     """The conjunction set's discussion volume over time — distinct articles of the set active on
     each mention date, bucketed by day/week/month (reusing the ``trend`` bucketer). Shows WHEN the
-    N-keyword conjunction was discussed. Counts only, no score."""
+    N-keyword conjunction was discussed. Counts only, no score.
+
+    ``undated=True`` (row 459, R853) adds the ``undated`` block over the articles the points count: the set's articles
+    with a mention date, outside the R830/R831 slice, whose page gave no date of their own (drawn at collection date)."""
     if not article_ids:
         return {"bucket": bucket, "points": [], "total": 0, "method": "", "caveat": ""}
     rows = (
@@ -338,7 +341,7 @@ def conditional_trend(session, article_ids: list[int], *, bucket: str = "week") 
         key = _bucket_key(d, bucket)
         buckets[key] = buckets.get(key, 0) + int(c or 0)
     points = [{"date": k, "count": v} for k, v in sorted(buckets.items())]
-    return {
+    out: dict[str, Any] = {
         "bucket": bucket,
         "points": points,
         "total": sum(p["count"] for p in points),
@@ -348,6 +351,34 @@ def conditional_trend(session, article_ids: list[int], *, bucket: str = "week") 
         ),
         "caveat": "Counts only, never a score. Co-occurrence over time, never causation.",
     }
+    if undated:
+        out["undated"] = _conditional_trend_undated(session, article_ids)
+    return out
+
+
+def _conditional_trend_undated(session, article_ids: list[int]) -> dict:
+    """The undated block over exactly the articles :func:`conditional_trend`'s points count (row 459, R853)."""
+    from sqlalchemy import select
+
+    from src.analytics.undated import KIND_COLLECTION, undated_in_ids
+
+    plotted: set[int] = set()
+    ids = [int(i) for i in article_ids]
+    for i in range(0, len(ids), 900):
+        chunk = ids[i : i + 900]
+        plotted.update(
+            int(r[0])
+            for r in session.execute(
+                select(KeywordMentionRead.article_id)
+                .where(
+                    KeywordMentionRead.article_id.in_(chunk),
+                    KeywordMentionRead.observed_on.isnot(None),
+                    not_counted(KeywordMentionRead.article_id),
+                )
+                .distinct()
+            )
+        )
+    return undated_in_ids(session, plotted, kind=KIND_COLLECTION)
 
 
 def vocabulary_contrast(

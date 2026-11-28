@@ -774,7 +774,7 @@
         // t() text here it froze in the fetch language, so after a live switch the legend,
         // the hover and the data table still said "mentions" under a Chinese caption.
         if (main && main.resolved && (main.points || []).length)
-          series.push({ label: term, labelIsData: true, unitKey: "mentions", color: "var(--accent)", points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
+          series.push({ label: term, labelIsData: true, unitKey: "mentions", color: "var(--accent)", undated: main.undated, points: main.points.map(pt => ({ t: pt.date, v: pt.count })) });
         // Related keywords are corpora too: overlay each one's own coverage series.
         const rel = ((assoc && assoc.nodes) || []).map(n => n.label || n.id)
           .filter(x => x && x.toLowerCase() !== term.toLowerCase()).slice(0, 4);
@@ -784,7 +784,7 @@
         if (_anTrend.key !== key) return;
         relTrends.forEach((rd, i) => {
           if (rd && rd.resolved && (rd.points || []).length)
-            series.push({ label: rel[i], labelIsData: true, unitKey: "mentions", color: palette[i % palette.length], points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
+            series.push({ label: rel[i], labelIsData: true, unitKey: "mentions", color: palette[i % palette.length], undated: rd.undated, points: rd.points.map(pt => ({ t: pt.date, v: pt.count })) });
         });
         _anTrend.counts = series;
         // Q502/Q417: the per-language halves the aggregate already publishes. Captured
@@ -799,6 +799,16 @@
           _anTrend.suggested.unshift(_anCommodity.symbol);
       } catch (e) { if (_anTrend.key !== key) return; host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
       drawAnTrend();
+    }
+    // Row 459 (R853): under the trend chart, one line per drawn keyword whose articles include some with no
+    // date of their own (drawn at their collection date), the keyword named, the method on hover.
+    function _anTrendUndated(chart, counts) {
+      if (!chart) return;
+      const lines = (counts || []).map((s) => {
+        const text = ooUndatedText(s.undated);
+        return text ? `<div class="hint undated-line" title="${esc(ooUndatedMethod(s.undated))}">${esc(s.label)}: ${esc(text)}</div>` : "";
+      }).join("");
+      if (lines) chart.insertAdjacentHTML("afterend", lines);
     }
     function anTrendSetMode(m) { _anTrend.mode = m; _anTrend.autoIndexed = false; drawAnTrend(); }
     async function anTrendPick(sym) {
@@ -899,6 +909,7 @@
         + (_anTrend.mode === "counts" && priced.length ? `<p class="hint muted" style="margin:4px 0 0">${esc(t("Switch to Indexed to overlay commodity prices honestly (different units)."))}</p>` : "")
         + `<div id="an-trend-dual" style="margin-top:10px"></div>`;
       ooChart($("an-trend-chart"), list, { height: 240, indexed: indexed, zeroBase: !indexed });
+      _anTrendUndated($("an-trend-chart"), counts);
       // Precise dual-axis (2 series): the first picked commodity's price × this
       // term's coverage, each on its OWN real-unit scale (the shipped overlay).
       const dual = $("an-trend-dual");
@@ -965,6 +976,7 @@
         + esc(t("Bands are mention counts per language and they overlap: an article carrying two languages' forms of the concept is counted in both, so the stack's height is not the article total beside it."))
         + `</p><div id="an-trend-refusal" class="hint muted"></div>`;
       ooChart($("an-trend-chart"), series, { height: 240, stacked: true, zeroBase: true });
+      _anTrendUndated($("an-trend-chart"), (_anTrend.counts || []).slice(0, 1));
       // A REFUSAL IS REPORTED, never silently swallowed: without this the reader sees an
       // ordinary multi-line chart under a control labelled "By language" and has no way
       // to learn that the stack was declined or why.

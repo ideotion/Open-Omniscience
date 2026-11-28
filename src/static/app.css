@@ -2562,3 +2562,7 @@
     .imp-pill-err, .imp-pill-unread { border-color:color-mix(in srgb, var(--err) 55%, var(--border)); border-style:dashed; }
     .imp-pill-err .imp-ring-fg, .imp-pill-err .imp-pill-arrow,
     .imp-pill-unread .imp-pill-arrow { stroke:var(--err); color:var(--err); }
+
+/* Row 459 (R853): the trending card's undated mark, the full line one click away. */
+.undated-mark { font-size: 12px; margin-top: 2px; }
+.undated-mark summary { cursor: pointer; color: var(--muted); }

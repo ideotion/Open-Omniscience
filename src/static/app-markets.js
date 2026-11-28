@@ -2812,6 +2812,8 @@
         el.innerHTML =
           `<div style="margin:0 0 6px;font-size:13px;color:var(--muted)">${esc(symbol)} vs news${q?` — “${esc(q)}”`:""}</div>` +
           body + `<div class="hint" style="margin-top:6px">${ooSaidHtml(d, "caveat")}</div>`
+          // Row 459 (R853): the daily counts read the publication date alone; say how many articles that leaves out.
+          + ((typeof ooUndatedLine === "function") ? ooUndatedLine(d.undated) : "")
           // R830 group D: search results still queued for screening are left out of the counts; say how many.
           + ((typeof anNotCountedYetHtml === "function") ? anNotCountedYetHtml(d) : "");
       } catch (e) {

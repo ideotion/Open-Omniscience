@@ -1072,8 +1072,13 @@ def trend(
     bucket: str = "week",
     country: str | None = None,
     concept: Any = None,
+    undated: bool = False,
 ) -> dict:
     """Mention volume over time for one keyword — or for its whole RING (Q417).
+
+    ``undated=True`` (row 459, R853; the chart endpoint asks for it, the other callers keep the payload they had) adds
+    an ``undated`` block: how many of the articles behind these points have no date of their own and are therefore drawn
+    at their collection date, and how many of those carry the feed's date (:mod:`src.analytics.undated`).
 
     ``concept`` is the :class:`ConceptKeywords` the caller resolved ONCE for this tab
     (Q501). When it names a ring the corpus actually carries, the series is summed over
@@ -1113,6 +1118,8 @@ def trend(
                 for lang, kids in sorted(concept.by_language.items())
             },
         }
+        if undated:
+            out["undated"] = _trend_undated(session, ids, country=country, bucket=bucket)
         return out
     kw = resolve_keyword(session, term, exact=True)
     if kw is None:
@@ -1130,7 +1137,7 @@ def trend(
         buckets[_bucket_key(d, bucket)] = buckets.get(_bucket_key(d, bucket), 0) + int(c or 0)
     points = [{"date": k, "count": v} for k, v in sorted(buckets.items())]
     articles = _distinct_articles(session, [kw.id])
-    return {
+    single: dict[str, Any] = {
         "term": term,
         "bucket": bucket,
         "resolved": {
@@ -1143,6 +1150,27 @@ def trend(
         "total": sum(p["count"] for p in points),
         "articles": int(articles),
     }
+    if undated:
+        single["undated"] = _trend_undated(session, [kw.id], country=country, bucket=bucket)
+    return single
+
+
+def _trend_undated(session, ids, *, country: str | None, bucket: str) -> dict:
+    """Row 459 (R853): the undated block over EXACTLY the mention rows :func:`trend` sums (the same keyword ids, the
+    same ``observed_on IS NOT NULL``, country and R101/R830 slice). A ring with more forms than one bound-variable chunk
+    is "not counted" rather than counted in part."""
+    from src.analytics.undated import KIND_COLLECTION, not_counted_block, undated_by_bucket
+
+    if not ids or len(ids) > _IN_CHUNK:
+        return not_counted_block(KIND_COLLECTION)
+    sel = select(KeywordMentionRead.observed_on, KeywordMentionRead.article_id).where(
+        KeywordMentionRead.keyword_id.in_(list(ids)),
+        KeywordMentionRead.observed_on.isnot(None),
+        not_counted(KeywordMentionRead.article_id),  # R101 / R830, as the points
+    )
+    if country:
+        sel = sel.where(KeywordMentionRead.country == country.lower())
+    return undated_by_bucket(session, sel, kind=KIND_COLLECTION, bucket_key=lambda d: _bucket_key(d, bucket))
 
 
 # The brush cap. Bounds the id list a selection can hand to the analysis window, which
@@ -2990,6 +3018,72 @@ def _window_daily_series(
     hi = today.isoformat()
     # ISO date strings (YYYY-MM-DD) sort chronologically, so a string range is exact.
     return [p for p in day_keys if lo <= p["date"] <= hi]
+
+
+#: The most (keyword, article) pairs one trending window's undated read may return before its cards say "not counted".
+_TRENDING_UNDATED_PAIR_CAP = 50000
+
+
+def annotate_trending_undated(session, out: dict, *, country: str | None = None) -> dict:
+    """Row 459 (R853, condition 4): each trending card that carries a ``series`` gains an ``undated`` block, counted over
+    exactly what its sparkline draws: the same keyword (each member of a ring), the same ``series_window`` days, the same
+    country and R101/R830 slice as :func:`_window_daily_series`. The card marks itself whenever ``n`` is above 0, so a
+    rise that includes articles drawn at their collection date is never shown as a trend without the mark. One read per
+    window serves every card on it. Mutates and returns ``out``; a window without ``series_window`` is left as it is."""
+    from src.analytics.undated import (
+        KIND_COLLECTION,
+        block_for_undated_set,
+        not_counted_block,
+        undated_pairs,
+    )
+
+    if not isinstance(out, dict):
+        return out
+    for window in out.get("windows") or []:
+        sw = window.get("series_window") or {}
+        try:
+            lo, hi = date.fromisoformat(sw["start"]), date.fromisoformat(sw["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        carded = [t for t in window.get("terms") or [] if "series" in t]
+        if not carded:
+            continue
+        term_ids: list[list[int]] = []
+        for t in carded:
+            forms = [m.get("normalized") for m in t.get("members", [])] if t.get("ring_id") else [t.get("normalized")]
+            ids: list[int] = []
+            for form in forms:
+                kw = resolve_keyword(session, form, exact=True) if form else None
+                if kw is not None:
+                    ids.append(int(kw.id))
+            term_ids.append(ids)
+        every = sorted({i for ids in term_ids for i in ids})
+        pairs = None
+        if every and len(every) <= _IN_CHUNK:
+            sel = select(KeywordMentionRead.keyword_id, KeywordMentionRead.article_id).where(
+                KeywordMentionRead.keyword_id.in_(every),
+                KeywordMentionRead.observed_on.isnot(None),
+                KeywordMentionRead.observed_on >= lo,
+                KeywordMentionRead.observed_on <= hi,
+                not_counted(KeywordMentionRead.article_id),  # R101 / R830, as the series
+            )
+            if country:
+                sel = sel.where(KeywordMentionRead.country == country.lower())
+            pairs = undated_pairs(session, sel, limit=_TRENDING_UNDATED_PAIR_CAP)
+        elif not every:
+            pairs = []
+        by_kw: dict[int, set[int]] = {}
+        for kid, aid in pairs or []:
+            by_kw.setdefault(kid, set()).add(aid)
+        for t, ids in zip(carded, term_ids, strict=True):
+            if pairs is None:
+                t["undated"] = not_counted_block(KIND_COLLECTION)
+                continue
+            found: set[int] = set()
+            for kid in ids:
+                found |= by_kw.get(kid, set())
+            t["undated"] = block_for_undated_set(session, KIND_COLLECTION, found)
+    return out
 
 
 def _merge_daily_series(serieses) -> list[dict]:
