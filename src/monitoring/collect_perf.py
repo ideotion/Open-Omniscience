@@ -553,6 +553,13 @@ class CollectionMonitor:
             lock_stats.reset()
         except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
             log_failure(_LOG, "extraction lock window could not be reset", exc, level=logging.DEBUG)
+        # And the window of the collector's flush phases (see ``collector_flush_block``, row 446).
+        try:
+            from src.ingest import flush_stats
+
+            flush_stats.reset()
+        except Exception as exc:  # noqa: BLE001 - a statistic never blocks a pass
+            log_failure(_LOG, "collector flush window could not be reset", exc, level=logging.DEBUG)
         # So is the window of the encrypted opens (see ``encrypted_opens_block``).
         try:
             from src.database import open_stats
@@ -1278,6 +1285,17 @@ class CollectionMonitor:
             return {"unavailable": type(exc).__name__}
         return open_stats.safe_snapshot()
 
+    @staticmethod
+    def collector_flush_block() -> dict:
+        """Where this pass's collector flushes spent the single-writer gate, phase by phase (``src.ingest.flush_stats``), or the
+        class of the failure that kept it from being read."""
+        try:
+            from src.ingest import flush_stats
+        except Exception as exc:  # noqa: BLE001 - the summary is written without it, saying so
+            log_failure(_LOG, "collector flush statistics unavailable", exc, level=logging.DEBUG)
+            return {"unavailable": type(exc).__name__}
+        return flush_stats.safe_snapshot()
+
     def _write_summary(self, result: dict | None) -> dict | None:
         if self._n == 0:
             return None
@@ -1310,6 +1328,9 @@ class CollectionMonitor:
             # Every open of an encrypted file re-derives its key (163 ms of thread CPU, median of 20 on one pinned core) and
             # nothing keeps the result: this is the count, by file and thread family, of what this pass paid.
             "encrypted_opens": self.encrypted_opens_block(),
+            # Row 446: the collector flushes' hold of the single-writer gate, split into insert, index writes, links and commit,
+            # beside the phases that run outside it. The November field analysis measured 74 s per flush and could not say which.
+            "collector_flush": self.collector_flush_block(),
         }
         if result:
             summary["articles_stored"] = result.get("articles_stored")
