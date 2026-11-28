@@ -2045,12 +2045,17 @@ def run_qualification_pass(
     frozen_early: dict | None = None
     chose_now = False
     recheck_once: dict[str, Any] = recheck_once_counts()
+    # Nothing disqualified = nothing to choose: one indexed EXISTS, so a pass with nothing to judge still never pays
+    # for a whole-corpus freeze (the rule the frozen-cohort tests pin).
     if _recheck_once_owed():
         try:
-            frozen_early = cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
-                session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
-                sample_articles=(QUALIFICATION_SAMPLE_ARTICLES if plan["mode"] == "sample" else None),
-            )
+            from src.database.models import Source as _DqSource
+
+            if session.query(session.query(_DqSource.id).filter(_DqSource.status == STATUS_DISQUALIFIED).exists()).scalar():
+                frozen_early = cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
+                    session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
+                    sample_articles=(QUALIFICATION_SAMPLE_ARTICLES if plan["mode"] == "sample" else None),
+                )
         except Exception as exc:  # noqa: BLE001 - the one-time choice never fails a pass; it waits and is tried later
             # A pause, or any other failure of this extra freeze: before R850 a pass with nothing to judge never froze,
             # so a freeze that cannot run must not stop that pass now. The wait applies either way.
@@ -2062,9 +2067,13 @@ def run_qualification_pass(
             log_failure(_LOG, "the one-time re-check selection waited: the cohort freeze did not run", exc, level=logging.INFO)
         else:
             # Never store a choice made from another baseline: the check below the trial fetches refuses that cut.
-            if frozen_early.get("min_articles") == TRIAL_MIN_ARTICLES:
+            if frozen_early is None:
+                pass  # nothing disqualified, so nothing to choose and no wait: the next pass looks again
+            elif isinstance(frozen_early, dict) and frozen_early.get("min_articles") == TRIAL_MIN_ARTICLES:
                 recheck_once = _select_recheck_once_if_owed(session, frozen_early, should_pause=should_pause, now=now)
                 chose_now = bool(recheck_once.get("selected"))
+            else:
+                _note_recheck_once_paused()  # a cut this choice cannot use waits too, or every pass would freeze again
     # The pass that made the choice says so even when it returns early; any other pass keeps its old result shape.
     # An empty choice (nothing to choose) is not reported, so an install with nothing disqualified keeps it too.
     _once_note: dict[str, Any] = (

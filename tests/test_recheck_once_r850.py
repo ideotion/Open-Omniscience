@@ -364,7 +364,7 @@ def test_the_ride_along_still_freezes_after_its_trial_fetches(db, store, monkeyp
     assert len(freezes) == 2, "one for the choice, one after the trial fetches"
 
 
-def test_a_freeze_that_fails_never_fails_a_pass_with_nothing_to_judge(db, store, monkeypatch):
+def test_a_freeze_that_fails_never_fails_a_pass_with_nothing_to_judge(db, store, monkeypatch, four):
     """Before R850 a pass with no candidates never froze the cohort; the extra freeze for the one-time choice
     must not turn any failure of its own into a failed pass. It waits, like a pause."""
     def broken(*_a, **_kw):
@@ -373,4 +373,22 @@ def test_a_freeze_that_fails_never_fails_a_pass_with_nothing_to_judge(db, store,
     monkeypatch.setattr(sa, "frozen_cohort", broken)
     out = q.run_qualification_pass(db, None, per_pass=1, recheck_per_pass=1, now=NOW)
     assert out == {"enabled": True, "evaluated": 0}
+    assert q._recheck_once_owed() is False and q.RECHECK_ONCE_KEY not in store
+
+
+def test_nothing_disqualified_never_freezes_for_the_choice(db, store, monkeypatch):
+    """A pass with nothing to judge never paid for a whole-corpus freeze before R850; with nothing disqualified there
+    is nothing to choose either, so it still does not, and no wait is set (the next pass looks again)."""
+    freezes = []
+    monkeypatch.setattr(sa, "frozen_cohort", lambda session, **kw: freezes.append(kw) or _frozen())
+    q.run_qualification_pass(db, None, per_pass=1, recheck_per_pass=1, now=NOW)
+    assert freezes == [] and q._recheck_once_owed() is True and q.RECHECK_ONCE_KEY not in store
+
+
+def test_a_cut_this_choice_cannot_use_waits_instead_of_freezing_every_pass(db, store, four):
+    calls = []
+    wrong = lambda: calls.append(1) or {**_frozen(), "min_articles": 20}  # noqa: E731
+    for _ in range(3):
+        q.run_qualification_pass(db, None, per_pass=0, recheck_per_pass=2, now=NOW, cohort_provider=wrong)
+    assert calls == [1], "the unusable cut is asked for once, then the choice waits"
     assert q._recheck_once_owed() is False and q.RECHECK_ONCE_KEY not in store
