@@ -183,7 +183,9 @@ def _newsletter_source_ids(db: Session) -> set[int]:
 #: take it (``enabled``, ``status``), where it came from (its ``via:`` tag), whether it has a feed address to try,
 #: the last qualification verdict recorded for it, and the last HTTP status its feed answered (null = never fetched).
 #: Booleans and short codes only: never an address (R734), never free text, so a row grows by a few bytes.
-CLASS_COLUMNS = ["enabled", "status", "via", "has_feed", "last_qualification", "last_feed_status"]
+#: Row 465 adds ``recent_outcome``: the one code that sums up the feed's last passes (``outcome_history.main_outcome``: the entry
+#: outcome counted most, or ``feed:<code>`` when no entry was counted; null = no pass recorded yet).
+CLASS_COLUMNS = ["enabled", "status", "via", "has_feed", "last_qualification", "last_feed_status", "recent_outcome"]
 _KNOWN_STATUS = ("qualified", "unqualified", "disqualified")
 _VERDICT = re.compile(r"[a-z_]{1,20}")
 #: The whole-set tally lists at most this many classes (about 80 bytes each), so it can never crowd the first zip.
@@ -226,9 +228,11 @@ def _criteria_names(raw: Any) -> list[str] | None:
 
 def _last_by_source(
     db: Session, ids: list[int], failing: dict[int, list[str] | None] | None = None,
+    outcomes: dict[int, str | None] | None = None,
 ) -> tuple[dict[int, str], dict[int, int | None]]:
     """``({source id: last qualification verdict}, {source id: last feed HTTP status})`` for these ids. ``failing``,
-    when given, is filled with each source's last attempt's failing criteria (:func:`_criteria_names`)."""
+    when given, is filled with each source's last attempt's failing criteria (:func:`_criteria_names`); ``outcomes`` with
+    each feed's stored outcome counter as stored (row 465, read only through :mod:`src.ingest.outcome_history`)."""
     verdicts: dict[int, str] = {}
     for sid, verdict, names in db.execute(
         select(SourceQualificationAttempt.source_id, SourceQualificationAttempt.verdict,
@@ -241,21 +245,41 @@ def _last_by_source(
         if failing is not None:
             failing[int(sid)] = _criteria_names(names)
     fetched: dict[int, int | None] = {}
-    for sid, status, checked in db.execute(
-        select(FeedFetchState.source_id, FeedFetchState.last_status, FeedFetchState.last_checked_at)
+    for sid, status, checked, recent in db.execute(
+        select(FeedFetchState.source_id, FeedFetchState.last_status, FeedFetchState.last_checked_at,
+               FeedFetchState.recent_outcomes)
         .where(FeedFetchState.source_id.in_(ids))
     ).all():
         if checked is not None or status is not None:
             fetched[int(sid)] = int(status) if isinstance(status, int) else 0
+        if outcomes is not None:
+            outcomes[int(sid)] = recent
     return verdicts, fetched
 
 
-def _class_of(enabled: Any, status: Any, tags: Any, rss_url: Any, verdict: str | None, feed_status: int | None) -> tuple:
+def _class_of(
+    enabled: Any, status: Any, tags: Any, rss_url: Any, verdict: str | None, feed_status: int | None,
+    recent: Any = None,
+) -> tuple:
+    from src.ingest.outcome_history import main_outcome
+
     st = str(status or "")
     return (
         bool(enabled), st if st in _KNOWN_STATUS else "other", _via(tags),
-        bool(rss_url), verdict, feed_status,
+        bool(rss_url), verdict, feed_status, main_outcome(recent),
     )
+
+
+def _recent_block() -> dict[str, Any]:
+    """How an export row's ``recent_outcomes`` is read (row 465): its positions and the method, written once."""
+    from src.ingest.outcome_history import METHOD, OUTCOME_PASSES, summary_columns
+
+    return {
+        "note": f"what the feed's last {OUTCOME_PASSES} checked passes did, summed; null = no pass recorded yet (or a value "
+                "this version cannot read). feed_* count passes by how the feed answered; the rest count its entries",
+        "columns": summary_columns(),
+        "method": METHOD,
+    }
 
 
 def never_collected_in_set(db: Session) -> dict[str, Any]:
@@ -268,9 +292,10 @@ def never_collected_in_set(db: Session) -> dict[str, Any]:
     counts: dict[tuple, int] = {}
     for start in range(0, len(rows), 900):   # under SQLite's bound-parameter limit
         chunk = rows[start:start + 900]
-        verdicts, fetched = _last_by_source(db, [int(r[0]) for r in chunk])
+        recent: dict[int, str | None] = {}
+        verdicts, fetched = _last_by_source(db, [int(r[0]) for r in chunk], outcomes=recent)
         for sid, enabled, status, tags, rss in chunk:
-            k = _class_of(enabled, status, tags, rss, verdicts.get(int(sid)), fetched.get(int(sid)))
+            k = _class_of(enabled, status, tags, rss, verdicts.get(int(sid)), fetched.get(int(sid)), recent.get(int(sid)))
             counts[k] = counts.get(k, 0) + 1
     ordered = sorted(counts.items(), key=lambda kv: (-kv[1], [str(x) for x in kv[0]]))
     kept, left = ordered[:_TALLY_MAX_CLASSES], ordered[_TALLY_MAX_CLASSES:]
@@ -297,7 +322,8 @@ def build_sample_zip(
     total = db.execute(select(func.count()).select_from(Source)).scalar_one()
     buf = io.BytesIO()
     manifest: list[dict[str, Any]] = []
-    empty: list[list[Any]] = []   # [source_id, domain, feed_key, class, last_failing_criteria] per source with no stored article
+    # [source_id, domain, feed_key, class, last_failing_criteria, recent_outcomes] per source with no stored article
+    empty: list[list[Any]] = []
     classes: dict[tuple, int] = {}   # a never-collected source's class -> its index in the manifest's ``classes``
     class_counts: list[int] = []
     rows_bytes = 0   # the manifest's rows as written, before compression: a bound the compressed manifest stays under
@@ -309,6 +335,8 @@ def build_sample_zip(
     done = False
     full = False
     cursor = after
+    from src.ingest.outcome_history import summary as outcome_summary
+
     shown = _shown_source_columns()
     shown_feed_key = shown["feed_key"]  # the manifest rows write a kept pre-R628 key masked, as the samples do
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
@@ -322,8 +350,9 @@ def build_sample_zip(
             verdicts: dict[int, str] = {}
             fetched: dict[int, int | None] = {}
             failing: dict[int, list[str] | None] = {}
+            recent: dict[int, str | None] = {}
             for start in range(0, len(ids), 900):   # under SQLite's bound-parameter limit
-                v, f = _last_by_source(db, ids[start:start + 900], failing)
+                v, f = _last_by_source(db, ids[start:start + 900], failing, recent)
                 verdicts.update(v)
                 fetched.update(f)
             for sid in ids:
@@ -335,7 +364,8 @@ def build_sample_zip(
                 row: dict[str, Any] | None = None
                 if art is not None:
                     row = {"source_id": sid, "domain": src.domain, "feed_key": shown_feed_key(src.feed_key), "name": src.name, "articles_in_source": n,
-                           "last_qualification": verdicts.get(sid), "last_failing_criteria": failing.get(sid)}
+                           "last_qualification": verdicts.get(sid), "last_failing_criteria": failing.get(sid),
+                           "recent_outcomes": outcome_summary(recent.get(sid))}
                     a = _row_dict(art)
                     if not include_newsletters and (sid in newsletter_sources or art.newsletter_attached_via):
                         for col in _BODY_COLUMNS:
@@ -357,11 +387,15 @@ def build_sample_zip(
                     row["bytes"] = len(data)
                 new_class: tuple | None = None
                 if row is None:
-                    k = _class_of(src.enabled, src.status, src.tags, src.rss_url, verdicts.get(sid), fetched.get(sid))
+                    k = _class_of(src.enabled, src.status, src.tags, src.rss_url, verdicts.get(sid), fetched.get(sid),
+                                  recent.get(sid))
                     idx = classes.get(k)
                     if idx is None:
                         idx, new_class = len(classes), k
                     entry: Any = [sid, src.domain, shown_feed_key(src.feed_key), idx, failing.get(sid)]
+                    summed = outcome_summary(recent.get(sid))
+                    if summed is not None:   # a row with no pass recorded stays five long: 10,000 nulls are 50 KB
+                        entry.append(summed)
                 else:
                     entry = row
                 row_bytes = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")) + 1
@@ -399,12 +433,14 @@ def build_sample_zip(
             "sources_in_set": total,
             "sources": manifest,
             "sources_without_article": {
-                "note": "no stored article for these sources",
+                "note": "no stored article for these sources; a row that stops after last_failing_criteria has no pass recorded yet",
                 # a source id is this instance's own above the shipped catalogue (field report 2026-11-14 5.4):
                 # domain + feed_key is what joins one instance's rows to another's
                 # last_failing_criteria (row 450): the names of the criteria that failed on the newest attempt;
                 # null = that attempt recorded none, [] = it judged and nothing failed
-                "columns": ["source_id", "domain", "feed_key", "class", "last_failing_criteria"],
+                # recent_outcomes (row 465): the feed's last passes summed, positions in ``recent_outcomes`` below;
+                # a row of five has no pass recorded yet (the sixth column is left off rather than written null)
+                "columns": ["source_id", "domain", "feed_key", "class", "last_failing_criteria", "recent_outcomes"],
                 "rows": empty,
                 # ``class`` indexes these rows; why a source has no article is read here, not guessed (row 248)
                 "classes": {
@@ -413,6 +449,7 @@ def build_sample_zip(
                     "rows": [list(k) + [class_counts[i]] for k, i in sorted(classes.items(), key=lambda kv: kv[1])],
                 },
             },
+            "recent_outcomes": _recent_block(),
             **({"never_collected_in_set": in_set} if in_set is not None else {}),
         }, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
     if not done and last is None:

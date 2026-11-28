@@ -87,6 +87,7 @@ from src.ingest import (
     kill_switch_active,
     kill_switch_engaged_since,
     kill_switch_epoch,
+    outcome_history,
 )
 from src.ingest.extract import extract_article
 from src.ingest.feed_entry_date import entry_date
@@ -756,7 +757,8 @@ def ingest_source(
         # is still the person's (never a host's words: the whole sentence at the start, as every writer raises it).
         refused_by_name = record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL)
         # A Crawl-delay deferral is not a check at all: no request was sent (Q1013 = a, CrawlDelayDeferred's own
-        # docstring), so it records nothing and the last real answer stands; the back-off does not move either (row 454).
+        # docstring), so it records nothing and the last real answer stands; the back-off does not move either (row 454), and
+        # it is not one of the feed's passes in the rolling counter (row 465).
         if not (kill_switch_engaged_since(pass_epoch) or refused_by_name or isinstance(exc, CrawlDelayDeferred)):
             # The failure is the feed's own answer, so it is RECORDED (field analysis 2026-11, finding 3): until
             # then a failing feed wrote no state at all, so Coverage's "error" count could never fill and every
@@ -775,6 +777,10 @@ def ingest_source(
             if _failure_answered_by_host(record_text(exc, typed=False), robots_disallowed=isinstance(exc, RobotsDisallowed),
                                          since=pass_epoch) or _network_seen_working():
                 _update_feed_backoff(session, source.id, reset=False)
+            # Row 465: the pass's outcome for the rolling counter. Never for a Stop or the switch's own refusal: nothing was asked.
+            robots = isinstance(exc, (RobotsDisallowed, RobotsUnavailable))
+            _record_outcomes(session, source.id, "robots" if robots else outcome_history.feed_outcome_of_status(
+                feed_failure_status(record_text(exc, typed=False))))
         _commit_feed_bookkeeping(session)
         # A refusal by the kill switch is the person's own setting, not the feed's behaviour:
         # say so (invariant #14e's corollary), by the same classifier the per-article
@@ -792,6 +798,7 @@ def ingest_source(
         _record_feed_state(session, source.id, feed_resp)
         tally["not_modified"] = 1
         _update_feed_backoff(session, source.id, reset=True)
+        _record_outcomes(session, source.id, "not_modified")
         _commit_feed_bookkeeping(session)
         return tally
 
@@ -872,6 +879,8 @@ def ingest_source(
         # the OLD validator, and the dedup step skips what was already stored. The Stop seen by the loop is latched; a Stop pressed after the
         # loop (during the flush) is read here, and so is a Stop pressed and cleared again anywhere in the pass (the epoch, R614): an entry
         # that Stop cut was never stored, and a stored validator would hide it from the next pass.
+        # The rolling counter (row 465) is not written either: a Stop is the person's own setting, not the feed's answer, and
+        # a stopped pass never creates or changes the feed's row (R614's rule).
         _commit_feed_bookkeeping(session)
         return tally
     after_failure = _last_check_failed(session, source.id)
@@ -887,6 +896,7 @@ def ingest_source(
         _update_feed_backoff(session, source.id, reset=True)
     else:
         _update_feed_backoff(session, source.id, reset=False)
+    _record_outcomes(session, source.id, "read", outcome_history.entry_counts(tally))
     _commit_feed_bookkeeping(session)
 
     return tally
@@ -910,6 +920,21 @@ def _commit_feed_bookkeeping(session: Session) -> None:
         import logging
 
         log_failure(logging.getLogger(__name__), "feed bookkeeping commit failed", exc, level=logging.DEBUG)
+
+
+def _record_outcomes(session: Session, source_id: int, feed: str, counts: list[int] | None = None) -> None:
+    """Append this pass to the feed's rolling outcome counter (row 465, :mod:`src.ingest.outcome_history`): ``feed`` is how
+    the feed answered, ``counts`` how its entries ended. Best-effort, as the rest of the feed bookkeeping is: a counter never
+    breaks ingestion. The row is created on demand (a failing feed may have none yet)."""
+    try:
+        state = session.get(FeedFetchState, source_id)
+        if state is None:
+            state = FeedFetchState(source_id=source_id)
+            session.add(state)
+            session.flush()
+        state.recent_outcomes = outcome_history.appended(state.recent_outcomes, feed, counts)
+    except Exception as exc:  # noqa: BLE001 - never let feed bookkeeping break ingestion
+        log_failure(logging.getLogger(__name__), "recording the feed's pass outcomes failed", exc, level=logging.DEBUG)
 
 
 def _feed_conditional_headers(session: Session, source_id: int) -> dict[str, str]:

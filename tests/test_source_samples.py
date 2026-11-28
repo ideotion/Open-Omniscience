@@ -57,7 +57,8 @@ def test_one_article_per_source_and_a_manifest_row_for_an_empty_source(db):
     assert [r["source_id"] for r in man["sources"]] == [1]
     # field report 2026-11-14 5.4: ids above the shipped catalogue differ across instances, so each row carries the join key
     assert man["sources_without_article"]["rows"] == [[2, "s2.example", "", 0, None]]
-    assert man["sources_without_article"]["columns"] == ["source_id", "domain", "feed_key", "class", "last_failing_criteria"]
+    assert man["sources_without_article"]["columns"] == ["source_id", "domain", "feed_key", "class", "last_failing_criteria",
+                                                                "recent_outcomes"]
     assert man["sources"][0]["domain"] == "s1.example" and man["sources"][0]["feed_key"] == ""
     assert man["sources_in_this_zip"] == 2
     from src.paths import instance_tag
@@ -249,7 +250,10 @@ def test_a_never_collected_source_says_why_by_class_and_the_first_zip_counts_the
     db.flush()
     db.add(SourceQualificationAttempt(source_id=3, attempted_at=datetime(2026, 11, 1), verdict="no_evidence",
                                       criteria_version="v"))
-    db.add(FeedFetchState(source_id=4, last_status=404, last_checked_at=datetime(2026, 11, 2)))
+    from src.ingest import outcome_history
+
+    db.add(FeedFetchState(source_id=4, last_status=404, last_checked_at=datetime(2026, 11, 2),
+                          recent_outcomes=outcome_history.appended(None, "http_4xx")))
     db.commit()
 
     data, nxt, _c, _t = build_sample_zip(db, after=0, seed=1, cap=4_000_000)
@@ -259,11 +263,15 @@ def test_a_never_collected_source_says_why_by_class_and_the_first_zip_counts_the
     man = json.loads(raw)
     block = man["sources_without_article"]
     assert block["classes"]["columns"] == ["enabled", "status", "via", "has_feed", "last_qualification",
-                                           "last_feed_status", "sources_in_this_zip"]
+                                           "last_feed_status", "recent_outcome", "sources_in_this_zip"]
     by_id = {r[0]: block["classes"]["rows"][r[3]] for r in block["rows"]}
-    assert by_id[2] == [False, "unqualified", "wikidata-discovery", False, None, None, 1]
-    assert by_id[3] == [False, "unqualified", "wikidata-discovery", False, "no_evidence", None, 1]
-    assert by_id[4] == [True, "qualified", "curated", True, None, 404, 1]
+    assert by_id[2] == [False, "unqualified", "wikidata-discovery", False, None, None, None, 1]
+    assert by_id[3] == [False, "unqualified", "wikidata-discovery", False, "no_evidence", None, None, 1]
+    assert by_id[4] == [True, "qualified", "curated", True, None, 404, "feed:http_4xx", 1]
+    rows = {r[0]: r for r in block["rows"]}
+    assert len(rows[2]) == 5, "no pass recorded: the row stops after last_failing_criteria"
+    summed = dict(zip(man["recent_outcomes"]["columns"], rows[4][5], strict=True))
+    assert summed["passes"] == 1 and summed["feed_http_4xx"] == 1 and summed["stored"] == 0, summed
     tally = man["never_collected_in_set"]
     assert tally["sources"] == 3 and tally["columns"][-1] == "sources"
     assert sorted(tally["rows"], key=str) == sorted([r[:-1] + [1] for r in block["classes"]["rows"]], key=str)
@@ -276,7 +284,7 @@ def test_the_whole_set_tally_rides_in_the_first_zip_only_and_one_class_is_writte
     first, nxt, _c, _t = build_sample_zip(db, after=0, seed=3, cap=6_000)
     assert nxt is not None
     man = json.loads(_open(first).read("manifest.json"))
-    assert man["never_collected_in_set"]["rows"] == [[False, "unqualified", "wikidata-discovery", False, None, None, 300]]
+    assert man["never_collected_in_set"]["rows"] == [[False, "unqualified", "wikidata-discovery", False, None, None, None, 300]]
     assert len(man["sources_without_article"]["classes"]["rows"]) == 1
     assert {r[3] for r in man["sources_without_article"]["rows"]} == {0}
     later, _n, _c, _t = build_sample_zip(db, after=nxt, seed=3, cap=6_000)

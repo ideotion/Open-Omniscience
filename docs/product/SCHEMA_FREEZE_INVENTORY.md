@@ -9,7 +9,7 @@ pending column is declared additive, is the audit's judgement and is not written
 
 ## 1. Main database: the migration chain
 
-Head: `c2f6a8e4d1b7` (91 migrations, base first).
+Head: `d7e3b1a9c4f2` (92 migrations, base first).
 
 | # | revision | after | file |
 |---|---|---|---|
@@ -104,6 +104,7 @@ Head: `c2f6a8e4d1b7` (91 migrations, base first).
 | 89 | `b8d4f2a6c1e9` | `e4c1a7f3b9d2` | `b8d4f2a6c1e9_corpus_segment_generation.py` |
 | 90 | `c4f1a9e27b53` | `b8d4f2a6c1e9` | `c4f1a9e27b53_qualification_attempt_failing_criteria.py` |
 | 91 | `c2f6a8e4d1b7` | `c4f1a9e27b53` | `c2f6a8e4d1b7_article_feed_entry_date.py` |
+| 92 | `d7e3b1a9c4f2` | `c2f6a8e4d1b7` | `d7e3b1a9c4f2_feed_recent_outcomes.py` |
 
 ## 2. Main database: tables (66, from `src/database/models.py`)
 
@@ -433,6 +434,7 @@ Head: `c2f6a8e4d1b7` (91 migrations, base first).
 | `last_checked_at` | DATETIME | yes |  |
 | `consecutive_unchanged` | INTEGER | yes |  |
 | `skip_until` | DATETIME | yes |  |
+| `recent_outcomes` | TEXT | yes |  |
 
 ### `hazard_event_details`
 
