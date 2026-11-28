@@ -1838,6 +1838,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         | frozenset(_ARTICLE_NEWSLETTER_LIST_ID_COLUMN)
         | frozenset(_ARTICLE_NEWSLETTER_ATTACH_COLUMN)
         | frozenset(_ARTICLE_FETCHED_HOST_COLUMN)
+        | frozenset(_ARTICLE_FEED_ENTRY_DATE_COLUMN)
     ),
     "merged_rows": frozenset({"row_key"}),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),

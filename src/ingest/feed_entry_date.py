@@ -50,7 +50,9 @@ def entry_date(entry: Any, *, read_at: datetime | None = None) -> datetime | Non
     more than :data:`FUTURE_SLACK` after ``read_at`` (default: now). ``entry`` is a feedparser entry (a dict), or any
     mapping with the same keys; anything else gives None.
     """
-    limit = (read_at or datetime.now(UTC)).astimezone(UTC).replace(tzinfo=None) + FUTURE_SLACK
+    now = read_at or datetime.now(UTC)
+    # A naive ``read_at`` is taken as UTC, as every timestamp in the store is, never as the machine's local time.
+    limit = (now.astimezone(UTC).replace(tzinfo=None) if now.tzinfo is not None else now) + FUTURE_SLACK
     for field in _ENTRY_FIELDS:
         parts = entry.get(field) if hasattr(entry, "get") else None
         if not parts:

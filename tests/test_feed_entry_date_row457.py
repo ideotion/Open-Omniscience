@@ -175,6 +175,9 @@ def test_an_entry_date_that_is_no_date_or_lies_in_the_future_is_refused():
     assert entry_date({"published_parsed": "nonsense"}, read_at=read_at) is None
     assert entry_date({"published_parsed": _st(datetime(2026, 11, 29, 11, 0))}, read_at=read_at) is not None  # within a day
     assert entry_date({"published_parsed": _st(datetime(2026, 11, 30, 0, 0))}, read_at=read_at) is None  # beyond it
+    naive = read_at.replace(tzinfo=None)  # a naive read time is UTC, never the machine's local time
+    assert entry_date({"published_parsed": _st(datetime(2026, 11, 29, 11, 0))}, read_at=naive) is not None
+    assert entry_date({"published_parsed": _st(datetime(2026, 11, 29, 13, 0))}, read_at=naive) is None
     old = datetime(1999, 1, 1)
     assert entry_date({"published_parsed": _st(old)}, read_at=read_at) == old  # an old date is a claim the flag labels
 
@@ -388,8 +391,10 @@ def test_the_helper_is_declared_once_across_the_spa():
 def test_no_feed_date_is_ever_written_into_published_at():
     """The safe way round, by construction: the write path never puts the feed's date in published_at."""
     src = (ROOT / "src" / "ingest" / "pipeline.py").read_text(encoding="utf-8")
-    assert "published_at=doc.published_at," in src
-    assert not re.search(r"(?<![a-z_])published_at\s*=\s*feed", src)
+    batch = (ROOT / "src" / "ingest" / "batch.py").read_text(encoding="utf-8")
+    assert "published_at=doc.published_at," in src and "published_at=staged.published_at," in batch
+    for text_ in (src, batch):
+        assert not re.search(r"(?<![a-z_])published_at\s*=\s*(feed|staged\.feed)", text_)
     assert "feed_date = feed_entry_date if doc.published_at is None else None" in src
 
 
@@ -500,6 +505,10 @@ def test_a_merge_adopts_the_feed_date_onto_a_duplicate_only_when_neither_has_its
     counts, got = _merge(staged, working)
     assert counts["articles"]["duplicate"] == 1
     assert got == {"H1": after}
+    # The per-group count agrees with what the UPDATE did: the feed's date is counted only where it was adopted.
+    adopted_feed = local[1] is None and local[0] is None and incoming[0] is None and incoming[1] is not None
+    by_column = counts["_article_metadata"]["by_column"]
+    assert by_column.get("feed_entry_published_at", 0) == (1 if adopted_feed else 0), counts["_article_metadata"]
 
 
 def test_a_merge_carries_the_feed_date_of_a_new_article(tmp_path):
