@@ -75,8 +75,9 @@ _LOG = logging.getLogger("catalog.qualification")
 CRITERIA_VERSION = "oo-source-qualification-4"
 # -4 (R844, row 449, 2026-11-28): `link_density_rate` became corroborating only -- it can no
 # longer disqualify a source on its own (alone, or with soft signals only, it is `watch`). A
-# LABEL like the bumps below: nothing re-judges on it, so the sources it disqualified come back
-# at their normal re-check cadence, with no forced sweep and no re-extraction.
+# LABEL like the bumps below: nothing re-judges on it. The sources it disqualified come back on
+# their ladder, and R850/R851 make the ones a recompute from stored articles shows it disqualified
+# alone due ONCE through the ordinary scheduler (RECHECK_ONCE_KEY). No re-extraction.
 # -3 (B6, 2026-09-15): the criteria SET changed -- `link_density_rate` joins `pathology_rate`
 # as a second extraction-failure criterion, so a source can now reach `failing` on two
 # independent extraction signatures rather than one signature plus a soft corroborator. That
@@ -556,6 +557,15 @@ def select_due_disqualified(
 
     if limit <= 0:
         return []
+    # R850: the sources chosen for one re-check come first, due now whatever their ladder says.
+    once_ids = pending_recheck_once(session)[:limit]
+    due: list[Source] = []
+    if once_ids:
+        by_id = {int(x.id): x for x in session.query(Source).filter(Source.id.in_(once_ids)).all()}
+        due = [by_id[i] for i in once_ids if i in by_id]
+    if len(due) >= limit:
+        return due
+    taken = {int(x.id) for x in due}
     pool_size = max(limit * pool_multiplier, limit)
     last_attempt = (
         session.query(
@@ -573,10 +583,11 @@ def select_due_disqualified(
         .limit(pool_size)
         .all()
     )
-    due: list[Source] = []
     for source, last_at in rows:
         if len(due) >= limit:
             break
+        if int(source.id) in taken:
+            continue
         # SQLite/SQLAlchemy round-trips a DateTime as NAIVE even when an aware UTC
         # value was stored -- the coverage.py skip_until convention: re-attach UTC
         # explicitly before comparing against an aware ``now``.
@@ -899,6 +910,143 @@ def pending_forced(session: Session, limit: int | None = None) -> tuple[list[Sou
         for source in session.query(Source).filter(Source.id.in_(chunk)).all():
             by_id[int(source.id)] = source
     return [by_id[sid] for sid in take if sid in by_id], ids
+
+
+# R850 / R851 (row 449, amending R844): ONE re-check, through the ordinary scheduler, for each source
+# that link density alone disqualified. Nothing stored says why a source was disqualified (an attempt
+# row is source, date, verdict and criteria version), so the sources are CHOSEN BY RECOMPUTING the
+# criteria, read-only, from their stored articles with the same ``flag_criteria`` call a re-check
+# runs; a source whose stored articles are too few to recompute is "not determined" and stays on its
+# ladder. A chosen source is made due once: :func:`select_due_disqualified` puts it first, so it is
+# judged in an ordinary pass with that pass's consent, transport, pacing and per-host limits, and
+# nothing runs while qualification is off. The selection itself runs inside a pass, from the cohort
+# that pass froze, once per install (the stored ``selection`` names the rule that chose).
+RECHECK_ONCE_KEY = "qualification.recheck_once"
+RECHECK_ONCE_SELECTION = "r851-link-density-only-recomputed"
+RECHECK_ONCE_LABEL = "chosen by recomputing from stored articles"
+
+
+def _load_recheck_once() -> dict[str, Any] | None:
+    """The stored selection, or None when there is none or it cannot be read (then nothing is made due)."""
+    from src.config.kv_store import kv_get_json
+
+    try:
+        raw = kv_get_json(RECHECK_ONCE_KEY)
+    except Exception:  # noqa: BLE001 - an ordering hint, never a dependency of the pass
+        return None
+    return raw if isinstance(raw, dict) and isinstance(raw.get("entries"), dict) else None
+
+
+def select_link_density_only(
+    session: Session, frozen: dict, *, should_pause: Callable[[], bool] | None = None,
+) -> dict[str, list[int]]:
+    """R851: the disqualified sources whose ONLY failing extraction-failure criterion, recomputed now from
+    their stored articles, is ``link_density_rate``. READ-ONLY: it writes no article, no attempt row and
+    no stamp. ``not_determined`` are the disqualified sources with too few stored articles to recompute
+    (fewer than the criterion's own evidence minimum). May raise ``ScanPaused`` like any scoped read."""
+    from src.analytics import source_audit as sa
+    from src.database.models import Source
+
+    ids = sorted(int(r[0]) for r in session.query(Source.id).filter(Source.status == STATUS_DISQUALIFIED).all())
+    if not ids:
+        return {"chosen": [], "not_determined": []}
+    per = sa.scoped_metrics(
+        session, set(ids), frozen, should_pause=should_pause, per_source_recent=candidate_history_cap(len(ids)),
+    )
+    floor = sa._MIN_PATHOLOGY_ARTICLES
+    readable = {sid: m for sid, m in per.items() if int(m.get("article_count") or 0) >= floor}
+    fails = sa.flag_criteria(readable, min_articles=TRIAL_MIN_ARTICLES, cohort_cut=frozen["cohort_cut"])
+    chosen = [
+        sid for sid in ids if sid in readable
+        and {f["criterion"] for f in fails.get(sid, []) if f["extraction_failure"]} == {"link_density_rate"}
+    ]
+    return {"chosen": chosen, "not_determined": [sid for sid in ids if sid not in readable]}
+
+
+def store_recheck_once(selection: dict[str, list[int]], *, now: datetime) -> dict[str, Any]:
+    """Write the selection (after the pass committed: never inside an ORM write). Once: a source already
+    listed keeps its entry, and a later run of the SAME rule never lists anything again."""
+    from src.config.kv_store import kv_set_json
+
+    stamp = (now if now.tzinfo else now.replace(tzinfo=UTC)).astimezone(UTC).replace(tzinfo=None).isoformat()
+    old = _load_recheck_once() or {}
+    entries = dict(old.get("entries") or {})
+    for sid in selection["chosen"]:
+        entries.setdefault(str(int(sid)), {"tried_at": None})
+    value = {
+        "selection": RECHECK_ONCE_SELECTION, "label": RECHECK_ONCE_LABEL, "selected_at": stamp,
+        "entries": entries, "chosen": len(selection["chosen"]), "not_determined": len(selection["not_determined"]),
+    }
+    kv_set_json(RECHECK_ONCE_KEY, value)
+    return value
+
+
+def pending_recheck_once(session: Session) -> list[int]:
+    """The chosen sources not yet re-checked once that are still disqualified, by id."""
+    from src.database.models import Source
+
+    stored = _load_recheck_once()
+    if not stored:
+        return []
+    want = sorted(int(k) for k, v in stored["entries"].items()
+                  if str(k).isdigit() and not (isinstance(v, dict) and v.get("tried_at")))
+    out: list[int] = []
+    for chunk in _id_chunks(want):
+        out += [int(r[0]) for r in session.query(Source.id).filter(
+            Source.id.in_(chunk), Source.status == STATUS_DISQUALIFIED).all()]
+    return sorted(out)
+
+
+def record_recheck_once_tries(ids: set[int], *, now: datetime) -> None:
+    """Stamp the chosen sources a pass just tried, whatever it decided: each is made due ONCE. After the
+    commit; an unreadable list is left as it was."""
+    from src.config.kv_store import kv_get_json_strict, kv_set_json
+
+    if not ids:
+        return
+    try:
+        raw = dict(kv_get_json_strict(RECHECK_ONCE_KEY) or {})
+        entries = {str(k): (dict(v) if isinstance(v, dict) else {}) for k, v in (raw.get("entries") or {}).items()}
+        stamp = (now if now.tzinfo else now.replace(tzinfo=UTC)).astimezone(UTC).replace(tzinfo=None).isoformat()
+        for sid in ids:
+            if str(sid) in entries and not entries[str(sid)].get("tried_at"):
+                entries[str(sid)]["tried_at"] = stamp
+        raw["entries"] = entries
+        kv_set_json(RECHECK_ONCE_KEY, raw)
+    except Exception as exc:  # noqa: BLE001 - bookkeeping never fails a pass
+        log_failure(_LOG, "could not record the one-time re-check tries", exc, level=logging.WARNING)
+
+
+def _select_recheck_once_if_owed(
+    session: Session, frozen: dict, *, should_pause: Callable[[], bool] | None, now: datetime,
+) -> dict[str, Any]:
+    """Run the R851 selection when this install has not stored one by today's rule; else the stored counts.
+    A paused or failed read stores nothing, so the next pass tries again."""
+    stored = _load_recheck_once()
+    if stored and stored.get("selection") == RECHECK_ONCE_SELECTION:
+        return recheck_once_counts()
+    try:
+        selection = select_link_density_only(session, frozen, should_pause=should_pause)
+        session.rollback()  # the read opened a transaction; nothing was written in it
+        store_recheck_once(selection, now=now)
+    except Exception as exc:  # noqa: BLE001 - a selection that could not run is tried again next pass
+        log_failure(_LOG, "the one-time re-check selection did not run", exc, level=logging.INFO)
+        return {"selected": False, "reason": record_text(exc)}
+    return recheck_once_counts()
+
+
+def recheck_once_counts() -> dict[str, Any]:
+    """The counts the release line and the diagnostics state: chosen, re-checked so far, not determined."""
+    stored = _load_recheck_once()
+    if not stored:
+        return {"selected": False}
+    entries = stored["entries"]
+    return {
+        "selected": True, "selection": stored.get("selection"), "label": stored.get("label"),
+        "selected_at": stored.get("selected_at"), "chosen": len(entries),
+        "rechecked": sum(1 for v in entries.values() if isinstance(v, dict) and v.get("tried_at")),
+        "not_determined": int(stored.get("not_determined") or 0),
+    }
 
 
 def pending_forced_rechecks(session: Session, limit: int | None = None) -> list[Source]:
@@ -2078,6 +2226,10 @@ def run_qualification_pass(
     # and the odd slot of an odd budget changes hands.
     if forced:
         record_forced_tries(forced_tried, now=now, odd_budget=slot_contested)
+    # R850 / R851: the chosen sources this pass tried have had their one re-check, whatever it decided. Then, once per
+    # install, the choice itself, recomputed read-only from the cohort this pass froze (the next passes take them first).
+    record_recheck_once_tries({int(x.id) for x in candidates}, now=now)
+    recheck_once = _select_recheck_once_if_owed(session, frozen, should_pause=should_pause, now=now)
     # R728 B: the reversible mark on a held candidate's off-site articles, after the hold is committed.
     # The hold queued them in its own transaction, so a failure here leaves them owed, never lost.
     off_site_marked = 0
@@ -2106,6 +2258,8 @@ def run_qualification_pass(
         # R728: candidates held because their recent pages came from another site, and the articles marked for it.
         "off_site_held": len(held_off_site),
         "off_site_articles_marked": off_site_marked,
+        # R850 / R851: the one-time re-check of the sources link density alone disqualified (counts only).
+        "recheck_once": recheck_once,
         # Reported apart because they answer different questions: "is the backlog draining"
         # and "is the recurrent verification actually running". One number cannot say both,
         # and it was precisely the absence of the second that hid a ladder that never ran.

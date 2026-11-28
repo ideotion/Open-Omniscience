@@ -12,7 +12,12 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 from src.analytics.source_audit import CRITERIA, derive_status, flag_criteria, should_auto_demote
-from src.catalog.qualification import CRITERIA_VERSION, STATUS_DISQUALIFIED, STATUS_QUALIFIED, decide_verdict
+from src.catalog.qualification import (
+    CRITERIA_VERSION,
+    STATUS_DISQUALIFIED,
+    STATUS_QUALIFIED,
+    decide_verdict,
+)
 
 
 def _f(name: str, ef: bool) -> dict:
@@ -77,3 +82,41 @@ def test_the_criterion_keeps_its_evidence_and_record():
 
 def test_the_criteria_version_moved():
     assert CRITERIA_VERSION == "oo-source-qualification-4"
+
+
+def test_a_source_link_density_disqualified_comes_back_at_its_ladder_time_and_is_qualified():
+    """The other half of R844: no forced sweep. A source disqualified by link density alone under the old rule is picked
+    by ``select_due_disqualified`` when its ladder says, not before, and the re-check under today's rule qualifies it."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy.orm import sessionmaker
+
+    from src.catalog.qualification import (
+        evaluate_and_stamp,
+        reattempt_due_at,
+        select_due_disqualified,
+    )
+    from src.database.models import Base, Source, SourceQualificationAttempt
+    from tests._app_engine import app_sqlite_engine
+
+    engine = app_sqlite_engine(":memory:", future=True)
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, future=True)()
+    judged_at = datetime(2026, 11, 1, tzinfo=UTC)
+    src = Source(name="news.example", domain="news.example", status=STATUS_DISQUALIFIED, enabled=True)
+    db.add(src)
+    db.commit()
+    db.add(SourceQualificationAttempt(source_id=src.id, attempted_at=judged_at, verdict=STATUS_DISQUALIFIED,
+                                      criteria_version="oo-source-qualification-3"))
+    db.commit()
+
+    due_at = reattempt_due_at(judged_at, 1)
+    assert select_due_disqualified(db, now=due_at - timedelta(seconds=1), limit=10) == [], "no forced sweep before its time"
+    due = select_due_disqualified(db, now=due_at, limit=10)
+    assert [s.id for s in due] == [src.id], "picked at its normal ladder time"
+
+    tally = evaluate_and_stamp(db, due, {src.id: [LINK]}, now=due_at)
+    db.commit()
+    assert tally["qualified"] == 1 and tally["disqualified"] == 0
+    db.refresh(src)
+    assert src.status == STATUS_QUALIFIED and src.qualification_criteria_version == CRITERIA_VERSION
