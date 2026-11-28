@@ -475,3 +475,9 @@ def test_every_staging_reader_seals_what_it_stages():
     assert s.count("seal_staged_members(staged") == 1
     assert "sqlcipher_export('snap')" not in s, "the plaintext export of an encrypted member is back"
     assert artifact.seal_staged_members is not None
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")

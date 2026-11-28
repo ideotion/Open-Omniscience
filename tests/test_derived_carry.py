@@ -1502,3 +1502,9 @@ def test_the_carry_reads_the_country_as_the_in_place_conversion_left_it(backup, 
     old_counts, _, old_path = _merge_only(old_variant, old_dir, monkeypatch)
     assert new_counts["_derived_carry"] == old_counts["_derived_carry"]
     assert _snapshot(new_path) == _snapshot(old_path)
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")

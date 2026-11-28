@@ -184,3 +184,9 @@ def test_the_hunt_finds_a_planted_key_when_one_is_there(tmp_path):
     con.set_trace_callback(traced.append)
     con.execute("SELECT ?", (secret,))
     assert _hunt([secret], texts=traced, folder=None), "a traced blob value is not found"
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")

@@ -630,3 +630,9 @@ def test_a_copy_another_program_holds_is_called_in_use(tmp_path, monkeypatch):
     finally:
         holder.execute("ROLLBACK")
         holder.close()
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")

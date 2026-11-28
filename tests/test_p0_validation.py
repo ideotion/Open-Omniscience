@@ -2137,3 +2137,9 @@ def test_a_failed_verify_with_no_lines_says_unknown_even_when_the_key_is_a_piece
     out = p0.run_p0_validation(FakeCtx(), dest_dir=str(tmp_path / "drive" / "dest"), passphrase="nkno", measure_incremental=False)
     verify = out["report"]["checks"]["p0_1_verify"]
     assert verify["reason"] == "verification failed: unknown" and verify["measurements"]["problems"] == [], verify
+
+
+# Row 444: an encrypted merge refuses below the memory it needs (check_memory_for_encrypted_merge), and this file's
+# tests are not about that refusal (tests/test_merge_encrypted_temp.py is). Pin the reading so a loaded runner does not
+# decide the outcome.
+pytestmark = pytest.mark.usefixtures("roomy_memory")

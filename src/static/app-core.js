@@ -3509,6 +3509,13 @@
         `<div class="cap-fill" style="width:${fp}%"></div>` +
         `<span class="cap-txt">${reach}/${total} · ${rp}%</span></div>`;
     }
+    function _covFailedHover(r) {
+      // R848: a failed check shows its REASON CLASS (the record keeps the HTTP status it named, or none), never an address.
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x, v) => x.replace(/\{(\w+)\}/g, (m, k) => (v[k] == null ? m : v[k])));
+      const v = r || {};
+      return tf("{http_4xx} HTTP 4xx · {http_5xx} HTTP 5xx · {none} no HTTP status (a network error or a refusal) · {other} other",
+        {http_4xx: v.http_4xx || 0, http_5xx: v.http_5xx || 0, none: v.no_http_status || 0, other: v.other || 0});
+    }
     function _renderCoverage() {
       const el = $("cov-tm-body");
       if (!el) return;
@@ -3529,13 +3536,15 @@
         `<div class="vr"><span>${esc(t("Tags with any coverage"))}</span><b>${reachedTags}/${tags.length}</b></div>` +
         `<div class="vr"><span>${esc(t("RSS sources reached"))}</span><b>${tot.reached || 0}/${tot.total || 0} · ${Math.round(100 * (tot.reach_pct || 0))}%</b></div>` +
         `<div class="vr"><span>${esc(t("Fresh in the last N hours"))}</span><b title="${esc(ooLabelText(t("Freshness window (hours)"), d.fresh_window_hours))}">${tot.fresh || 0} · ${Math.round(100 * (tot.fresh_pct || 0))}%</b></div>` +
+        (tot.failed ? `<div class="vr"><span>${esc(t("Failed on their last check"))}</span><b title="${esc(_covFailedHover(tot.failed_by_reason))}">${tot.failed}</b></div>` : "") +
         (tot.backed_off ? `<div class="vr"><span>${esc(t("Backed off (de-churn, not failures)"))}</span><b>${tot.backed_off}</b></div>` : "") +
         (d.crawl_sources ? `<div class="vr"><span>${esc(t("Crawl sources (reach not tracked)"))}</span><b>${d.crawl_sources}</b></div>` : "");
       // Per-tag rows, least-reached first (the backend already sorts them so —
       // the honest worklist of what still needs a pass).
       const rows = tags.map(x => {
         const badges = [];
-        if (x.never_reached) badges.push(`<span class="muted">${x.never_reached} ${esc(t("not yet reached"))}</span>`);
+        if (x.failed) badges.push(`<span class="muted" title="${esc(_covFailedHover(x.failed_by_reason))}">${x.failed} ${esc(t("failed"))}</span>`);
+        if (x.not_read) badges.push(`<span class="muted">${x.not_read} ${esc(t("not read"))}</span>`);
         if (x.backed_off) badges.push(`<span class="muted">${x.backed_off} ${esc(t("backed off"))}</span>`);
         if (x.crawl) badges.push(`<span class="muted">${x.crawl} ${esc(t("crawl"))}</span>`);
         return `<div class="cov-row" style="padding:4px 0">` +
