@@ -27,3 +27,4 @@ untrusted input.
    `catalogue_evidence.py`, `catalogue_lists.py` and `catalogue_language.py` (catalogue.md)
 10. `qualification_checks.py DATA_ROOT INSTANCES_JSON "Linux A" "Linux C"`, `candidates_eval.py`,
     `freshness_rule.py` (source-qualification.md, catalogue.md §4)
+11. `apply_language_fixes.py REPO FIXES.json`: applies reviewed catalogue language fixes line-exact (used for PR #2421)

@@ -94,9 +94,9 @@ No catalogue removals are proposed. The appendix lists are evidence for one quar
 
 (kept up to date in the report PR description)
 
-- PR 1: record failed feed fetches. Pending.
-- PR 2: candidate export leaves out non-web channels. Pending.
-- PR 3: catalogue language fixes, 23 entries. Pending.
+- **#2419** (PR 1): record failed feed fetches in `FeedFetchState` (finding 3)
+- **#2420** (PR 2): the candidate-sources export leaves out the app's own non-web channels (catalogue.md §4)
+- **#2421** (PR 3): catalogue, the declared language of 23 sources corrected (finding 9)
 
 ## Files
 
