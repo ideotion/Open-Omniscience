@@ -56,7 +56,7 @@ sources only.
 9. **23 catalogue entries declare the wrong language**, on up to 12 of 12 snapshots. Examples: RIA Novosti and
    Meduza as `en`, Independent Arabia as `ar`. Articles inherit the source language (`src/ingest/pipeline.py:297`),
    so all of their articles are mislabelled. → catalogue.md §3, PR 3
-10. **Publishers refuse, Linux VMs fail DNS, and discovery loses most candidates to robots.txt.**
+10. **Publishers refuse, Linux instances fail DNS, and discovery loses most candidates to robots.txt.**
     - HTTP 403 is 36–70% of article fetch failures everywhere.
     - DNS is 17–48% on the Linux instances but 2% on Windows, which is likely local.
     - In the 2026-09-11 discovery verification, 42.8% of 37,079 candidates were lost because robots.txt could not
