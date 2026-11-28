@@ -440,7 +440,7 @@ class _FeedRecorder:
 def _ingest(db, source, monkeypatch, feed_url):
     from src.ingest import FetchFailed, pipeline
 
-    def fake_ingest_url(session, src, url, *, fetcher, batch=None):
+    def fake_ingest_url(session, src, url, *, fetcher, batch=None, **_kw):
         try:
             fetcher.fetch(url)
         except FetchFailed:
