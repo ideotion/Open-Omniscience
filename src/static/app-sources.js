@@ -659,7 +659,11 @@
           ? t("Verdict adopted from a backup or the shipped overlay, not measured on this instance. It is re-checked on the three-month clock.")
           : "");
       const basisAttr = basisTitle ? ` title="${esc(basisTitle)}"` : "";
-      let html = `<div><span class="pill ${qsClass}"${basisAttr}>${esc(qsLabel)}${esc(basisSuffix)}</span></div>`;
+      // R845: the newest attempt gave no verdict for lack of data; the status beside it is kept.
+      const nedNote = prov.qualification_latest_attempt === "not_enough_data"
+        ? ` <span class="pill" title="${esc(t("Fewer than 5 articles, or none in the last 180 days: no pass or fail is given until there are."))}">${esc(t("not enough data yet"))}</span>`
+        : "";
+      let html = `<div><span class="pill ${qsClass}"${basisAttr}>${esc(qsLabel)}${esc(basisSuffix)}</span>${nedNote}</div>`;
       html += `<div style="margin-top:6px">${ooLabelHtml(`<strong>${esc(t("Discovery"))}</strong>`,
         `${esc(prov.channel || "—")} <span class="muted">— ${esc(prov.detail || "")}</span>`)}</div>`;
       if (prov.citing_trail) {

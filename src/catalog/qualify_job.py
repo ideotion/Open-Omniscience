@@ -131,6 +131,8 @@ def run_bulk_qualification(
     totals = {
         "batches_run": 0, "evaluated": 0, "qualified": 0, "disqualified": 0,
         "no_evidence": 0, "trial_fetch_errors": 0,
+        # R845: sources not judged on too little or too old evidence, and of them how many have no dated article.
+        "not_enough_data": 0, "not_enough_data_undated": 0,
     }
     consecutive_no_progress = 0
     # Every line below is a Framed string: the English sentence exactly as before, plus
@@ -229,6 +231,8 @@ def run_bulk_qualification(
         totals["qualified"] += qualified
         totals["disqualified"] += disqualified
         totals["no_evidence"] += int(result.get("no_evidence", 0))
+        totals["not_enough_data"] += int(result.get("not_enough_data", 0))
+        totals["not_enough_data_undated"] += int(result.get("not_enough_data_undated", 0))
         totals["trial_fetch_errors"] += int(result.get("trial_fetch_errors", 0))
 
         progressed = qualified + disqualified
@@ -244,6 +248,15 @@ def run_bulk_qualification(
             detail=Framed(_tally(totals) + " so far", "so far: {qualified} · {disqualified} · {no_evidence}",
                           **_tally_vars(totals)),
         )
+        _ned = int(result.get("not_enough_data", 0))
+        if consecutive_no_progress >= _MAX_CONSECUTIVE_NO_PROGRESS and evaluated and _ned >= evaluated:
+            # R845: the last batch was all judged-for-nothing on too little or too old evidence, which is not
+            # "no reachable feed / no prior articles": it says what did happen.
+            paused_reason = _fixed(
+                "Stopped: every source in the last batch has not enough data yet "
+                "(fewer than 5 articles, or none in the last 180 days)."
+            )
+            break
         if consecutive_no_progress >= _MAX_CONSECUTIVE_NO_PROGRESS:
             paused_reason = Framed(
                 f"stopped after {consecutive_no_progress} consecutive batches with no "
