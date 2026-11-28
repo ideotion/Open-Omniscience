@@ -947,7 +947,9 @@ def run_scrape_once(
                 states = (
                     {
                         st.source_id: st
-                        for st in session.query(FeedFetchState.source_id, FeedFetchState.last_checked_at).filter(
+                        for st in session.query(
+                            FeedFetchState.source_id, FeedFetchState.last_checked_at, FeedFetchState.last_status
+                        ).filter(
                             FeedFetchState.source_id.in_(feed_ids)
                         )
                     }

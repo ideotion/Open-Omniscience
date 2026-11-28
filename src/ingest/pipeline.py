@@ -45,8 +45,10 @@ if TYPE_CHECKING:
 # This is a transport DE-CHURN, never an exclusion (maintainer: "no source
 # starved, no selection made; ordering != exclusion"). The cap guarantees the
 # feed is ALWAYS re-checked within ``BACKOFF_CAP_S`` (~6 h); ANY new article, a
-# 304 (the server says unchanged honestly), or a fetch error resets the counter
-# and clears the skip deadline immediately. The state is stored (never hidden)
+# 304 (the server says unchanged honestly), or the first read after failed checks
+# resets the counter and clears the skip deadline immediately. A FAILED fetch
+# advances it like a quiet 200 (row 454): a feed that fails every pass is asked
+# again on the same capped schedule, never dropped and never hammered. The state is stored (never hidden)
 # so the task manager / diagnostics can show "backed off until T".
 #
 # delay = min(BACKOFF_BASE_S * 2 ** consecutive_unchanged, BACKOFF_CAP_S)
@@ -733,8 +735,8 @@ def ingest_source(
         )
     except FetchError as exc:
         # Feed itself blocked/unavailable: nothing to ingest, but not an article
-        # failure. A transient error is NOT a "feed is quiet" signal — reset any
-        # backoff so a recovered feed is re-checked at the normal cadence.
+        # failure. A failure advances the backoff (row 454, below): the cap keeps
+        # the feed asked again within 6 h, and its first read resets the count.
         #
         # A STOP is neither: the person's own setting says nothing about the feed, so while the switch is engaged the backoff history is
         # left as it was (a refusal used to erase a quiet feed's climb, so its next checks came back at the normal cadence). The decision is
@@ -742,16 +744,18 @@ def ingest_source(
         # refusal BY NAME: it is written before any request, so a switch engaged before the epoch was taken and cleared before this read
         # is still the person's (never a host's words: the whole sentence at the start, as every writer raises it).
         refused_by_name = record_text(exc, typed=False).startswith(KILL_SWITCH_REFUSAL)
-        if not (kill_switch_engaged_since(pass_epoch) or refused_by_name):
-            # A Crawl-delay deferral is not a check at all: no request was sent (Q1013 = a, CrawlDelayDeferred's own
-            # docstring), so it records nothing and the last real answer stands.
-            if not isinstance(exc, CrawlDelayDeferred):
-                # The failure is the feed's own answer, so it is RECORDED (field analysis 2026-11, finding 3): until
-                # then a failing feed wrote no state at all, so Coverage's "error" count could never fill and every
-                # export read a feed that failed every pass as "never checked".
-                _record_feed_failure(session, source.id, feed_failure_status(
-                    record_text(exc, typed=False), robots=isinstance(exc, (RobotsDisallowed, RobotsUnavailable))))
-            _update_feed_backoff(session, source.id, reset=True)
+        # A Crawl-delay deferral is not a check at all: no request was sent (Q1013 = a, CrawlDelayDeferred's own
+        # docstring), so it records nothing and the last real answer stands; the back-off does not move either (row 454).
+        if not (kill_switch_engaged_since(pass_epoch) or refused_by_name or isinstance(exc, CrawlDelayDeferred)):
+            # The failure is the feed's own answer, so it is RECORDED (field analysis 2026-11, finding 3): until
+            # then a failing feed wrote no state at all, so Coverage's "error" count could never fill and every
+            # export read a feed that failed every pass as "never checked".
+            _record_feed_failure(session, source.id, feed_failure_status(
+                record_text(exc, typed=False), robots=isinstance(exc, (RobotsDisallowed, RobotsUnavailable))))
+            # A failure ADVANCES the back-off (row 454): a feed that fails every pass is asked again after 5 min, 10, 20 ...
+            # up to the same 6 h cap as a quiet feed, never dropped. It used to RESET it, so a dead feed was asked at the full
+            # cadence forever. The first read (a 200 or a 304) resets it again.
+            _update_feed_backoff(session, source.id, reset=False)
         _commit_feed_bookkeeping(session)
         # A refusal by the kill switch is the person's own setting, not the feed's behaviour:
         # say so (invariant #14e's corollary), by the same classifier the per-article
@@ -840,7 +844,12 @@ def ingest_source(
         # that Stop cut was never stored, and a stored validator would hide it from the next pass.
         _commit_feed_bookkeeping(session)
         return tally
+    after_failure = _last_check_failed(session, source.id)
     _record_feed_state(session, source.id, feed_resp)
+    if after_failure:
+        # The first READ after a run of failures (row 454): the failures' climb ends here, so a quiet 200 starts the
+        # de-churn count again from one instead of carrying the failures' count on.
+        _update_feed_backoff(session, source.id, reset=True)
     if tally[IngestResult.STORED.value] > 0 or tally.get("errors", 0) > 0:
         # New content stored — or OUR store errored (skeptic finding D2): a
         # store failure is NOT a "feed is quiet" signal, and a prompt re-fetch
@@ -957,13 +966,39 @@ def _record_feed_failure(session: Session, source_id: int, status: int) -> None:
         log_failure(logging.getLogger(__name__), "recording a feed fetch failure failed", exc, level=logging.DEBUG)
 
 
+#: The statuses a feed is READ on: the collector parses a 200 and honours a 304; every other status is a failed check
+#: (``_record_feed_failure``), and ``0`` means the failure named none. The same split as Coverage's (R848).
+FEED_READ_STATUSES = frozenset({200, 304})
+
+
+def feed_check_was_read(state: FeedFetchState | Row | None) -> bool:
+    """Whether ``state`` records a check on which the feed was READ (a 200 or a 304). ``False`` with no state, no
+    check time, or a failed check: a check time alone is not evidence of a read (R848). Pure."""
+    if state is None or getattr(state, "last_checked_at", None) is None:
+        return False
+    return getattr(state, "last_status", None) in FEED_READ_STATUSES
+
+
+def _last_check_failed(session: Session, source_id: int) -> bool:
+    """Whether the feed's last check on record FAILED (a status that is neither 200 nor 304, ``0`` included). Best-effort:
+    an unreadable row reads as "not failed", which leaves the de-churn count as it was."""
+    try:
+        state = session.get(FeedFetchState, source_id)
+        if state is None or state.last_checked_at is None or state.last_status is None:
+            return False
+        return state.last_status not in FEED_READ_STATUSES
+    except Exception as exc:  # noqa: BLE001 - bookkeeping is auxiliary, never fatal
+        log_failure(logging.getLogger(__name__), "reading the feed's last check failed", exc, level=logging.DEBUG)
+        return False
+
+
 def _update_feed_backoff(session: Session, source_id: int, *, reset: bool) -> None:
     """Advance or clear the per-feed de-churn backoff (field log finding F).
 
-    ``reset=True`` (new article stored, a 304, or a fetch error): zero the
+    ``reset=True`` (new article stored, a 304, our own store error, or the first read after failures): zero the
     counter and clear the skip deadline — the feed is behaving / changing.
 
-    ``reset=False`` (a 200 that yielded zero new articles): increment the
+    ``reset=False`` (a 200 that yielded zero new articles, or a failed fetch, row 454): increment the
     consecutive-unchanged counter and push the skip deadline out exponentially,
     CLAMPED to :data:`BACKOFF_CAP_S` so the feed is always re-checked soon
     enough — never starved. When the backoff is disabled (``OO_FEED_BACKOFF=0``)

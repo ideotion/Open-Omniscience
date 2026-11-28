@@ -218,11 +218,13 @@ def test_304_does_not_penalize(db):
     assert st.skip_until is None  # an honest "unchanged" is not a penalty
 
 
-def test_fetch_error_resets_backoff(db):
+def test_fetch_error_advances_backoff(db):
+    """Row 454: a failed fetch ADVANCES the back-off like a quiet 200 (it used to reset it, so a dead feed was asked at the
+    full cadence forever). Still capped, so the feed is asked again within BACKOFF_CAP_S."""
     src = _make_source(db)
     db.add(FeedFetchState(
         source_id=src.id, consecutive_unchanged=4,
-        skip_until=datetime.now(UTC) + timedelta(hours=2),
+        skip_until=datetime.now(UTC) - timedelta(minutes=1),
     ))
     db.commit()
 
@@ -230,12 +232,98 @@ def test_fetch_error_resets_backoff(db):
         def fetch(self, *a, **k):
             raise FetchError("feed unreachable")
 
+    before = datetime.now(UTC)
     tally = P.ingest_source(db, src, fetcher=_Boom())
     db.commit()
     assert tally["stored"] == 0
     st = db.get(FeedFetchState, src.id)
-    assert st.consecutive_unchanged == 0
-    assert st.skip_until is None
+    assert st.consecutive_unchanged == 5
+    assert st.skip_until is not None and not P.feed_is_due(st)
+    _skip_if_clock_inconclusive(before, 5.0)
+    delay = (st.skip_until.replace(tzinfo=UTC) - before).total_seconds()
+    assert delay <= P.BACKOFF_CAP_S + 5  # capped: never dropped
+
+
+def test_consecutive_failures_climb_from_a_fresh_feed(db):
+    """Three failures in a row on a feed with no history: 1, 2, 3, each with a later deadline (5, 10, 20 min by default)."""
+    src = _make_source(db)
+
+    class _Boom:
+        def fetch(self, *a, **k):
+            raise FetchError("HTTP 503 for https://feed.example/rss")
+
+    deadlines = []
+    for want in (1, 2, 3):
+        P.ingest_source(db, src, fetcher=_Boom())
+        db.commit()
+        st = db.get(FeedFetchState, src.id)
+        assert st.consecutive_unchanged == want
+        assert st.last_status == 503
+        deadlines.append(st.skip_until)
+    assert deadlines[0] < deadlines[1] < deadlines[2]
+
+
+def test_a_single_read_after_failures_resets_the_climb(db):
+    """The first READ ends the failures' climb (row 454): a 304 clears it, as before."""
+    src = _make_source(db)
+    db.add(FeedFetchState(
+        source_id=src.id, consecutive_unchanged=6, last_status=0, last_checked_at=datetime.now(UTC),
+        skip_until=datetime.now(UTC) - timedelta(minutes=1),
+    ))
+    db.commit()
+    P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(304)]))
+    db.commit()
+    st = db.get(FeedFetchState, src.id)
+    assert st.consecutive_unchanged == 0 and st.skip_until is None
+
+
+def test_a_quiet_200_after_failures_starts_the_count_at_one(db):
+    """A 200 with nothing new after a run of failures: the failures' count is reset, and the quiet 200 counts as the
+    first of its own run (1, so the 5-minute base wait), never the failures' count plus one."""
+    src = _make_source(db)
+    db.add(FeedFetchState(
+        source_id=src.id, consecutive_unchanged=6, last_status=503, last_checked_at=datetime.now(UTC),
+        skip_until=datetime.now(UTC) - timedelta(minutes=1),
+    ))
+    db.commit()
+    P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(200)]))
+    db.commit()
+    st = db.get(FeedFetchState, src.id)
+    assert st.consecutive_unchanged == 1
+    assert st.last_status == 200
+
+
+def test_a_quiet_200_after_a_quiet_200_still_climbs(db):
+    """The control: with no failure before it, a quiet 200 keeps the de-churn count climbing (unchanged rule)."""
+    src = _make_source(db)
+    db.add(FeedFetchState(
+        source_id=src.id, consecutive_unchanged=3, last_status=200, last_checked_at=datetime.now(UTC),
+        skip_until=datetime.now(UTC) - timedelta(minutes=1),
+    ))
+    db.commit()
+    P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(200)]))
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 4
+
+
+def test_a_crawl_delay_deferral_moves_nothing(db):
+    """No request was sent, so nothing is recorded and the count stays where it was (row 454)."""
+    from src.ingest import CrawlDelayDeferred
+
+    src = _make_source(db)
+    until = datetime.now(UTC) - timedelta(minutes=1)
+    db.add(FeedFetchState(source_id=src.id, consecutive_unchanged=2, last_status=200,
+                          last_checked_at=datetime.now(UTC) - timedelta(hours=1), skip_until=until))
+    db.commit()
+
+    class _Defer:
+        def fetch(self, *a, **k):
+            raise CrawlDelayDeferred("crawl delay not elapsed", netloc="feed.example", delay_s=600.0, not_before=0.0)
+
+    P.ingest_source(db, src, fetcher=_Defer())
+    db.commit()
+    st = db.get(FeedFetchState, src.id)
+    assert st.consecutive_unchanged == 2 and st.last_status == 200
 
 
 # --------------------------------------------------------------------------- #

@@ -170,6 +170,8 @@ def equilibrium_filter(
     """
     if not pace:
         return list(sources), 0
+    from src.ingest.pipeline import feed_check_was_read
+
     chooser = rng or random
     now = now or datetime.now(UTC)
     cap = timedelta(seconds=cap_seconds)
@@ -189,7 +191,9 @@ def equilibrium_filter(
             kept.append(s)
             continue
         st = fetch_state.get(getattr(s, "id", None))
-        checked = getattr(st, "last_checked_at", None) if st else None
+        # Only a check on which the feed was READ (a 200 or a 304) counts (R848, row 454): since row 448 a failed check
+        # is recorded with its time too, and a feed that has only failed has never been read, so it keeps its first reach.
+        checked = getattr(st, "last_checked_at", None) if feed_check_was_read(st) else None
         if checked is not None and checked.tzinfo is None:
             checked = checked.replace(tzinfo=UTC)
         # Hard floor: never starve — a never-fetched or cap-stale source is kept.
