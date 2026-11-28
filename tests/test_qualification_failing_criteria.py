@@ -52,14 +52,21 @@ def db():
 def test_evaluate_and_stamp_writes_the_failing_names(db):
     a = Source(name="A", domain="a.example", enabled=True)
     b = Source(name="B", domain="b.example", enabled=True)
-    db.add_all([a, b])
+    c = Source(name="C", domain="c.example", enabled=True)
+    db.add_all([a, b, c])
     db.flush()
     now = datetime.now(UTC).replace(tzinfo=None)
-    evaluate_and_stamp(db, [a, b], {a.id: [_fail("link_density_rate", ef=True), _fail("furniture_share")]}, now=now)
+    evaluate_and_stamp(db, [a, b, c], {
+        a.id: [_fail("link_density_rate", ef=True), _fail("pathology_rate", ef=True)],
+        # R844: link_density_rate alone only corroborates, so this source qualifies, and the
+        # criterion it failed is still recorded: the names are what failed, not the verdict.
+        c.id: [_fail("link_density_rate", ef=True)],
+    }, now=now)
     db.commit()
     got = {r.source_id: (r.verdict, r.failing_criteria) for r in db.query(SourceQualificationAttempt)}
-    assert got[a.id] == ("disqualified", "furniture_share,link_density_rate")
+    assert got[a.id] == ("disqualified", "link_density_rate,pathology_rate")
     assert got[b.id] == ("qualified", "")  # judged, nothing failed: "", never NULL
+    assert got[c.id] == ("qualified", "link_density_rate")
 
 
 def test_the_self_heal_adds_the_column_to_an_older_store_once(tmp_path):
