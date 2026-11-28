@@ -243,7 +243,7 @@ def test_a_never_collected_source_says_why_by_class_and_the_first_zip_counts_the
     db.add(Source(id=2, name="Cand", domain="cand.example", enabled=False, status="unqualified",
                   tags="news,via:wikidata-discovery"))
     db.add(Source(id=3, name="Cand2", domain="cand2.example", enabled=False, status="unqualified",
-                  tags="via:wikidata-discovery"))
+                  tags="via:wikidata-discovery", last_crawled_at=datetime(2026, 11, 3)))  # row 462 Q7: crawled, no article
     db.add(Source(id=4, name="Dead", domain="dead.example", enabled=True, status="qualified",
                   rss_url="https://alice:hunter2@dead.example/rss?token=abc", tags="via:curated"))
     db.flush()
@@ -259,11 +259,12 @@ def test_a_never_collected_source_says_why_by_class_and_the_first_zip_counts_the
     man = json.loads(raw)
     block = man["sources_without_article"]
     assert block["classes"]["columns"] == ["enabled", "status", "via", "has_feed", "last_qualification",
-                                           "last_feed_status", "sources_in_this_zip"]
+                                           "last_feed_status", "crawled", "sources_in_this_zip"]
     by_id = {r[0]: block["classes"]["rows"][r[3]] for r in block["rows"]}
-    assert by_id[2] == [False, "unqualified", "wikidata-discovery", False, None, None, 1]
-    assert by_id[3] == [False, "unqualified", "wikidata-discovery", False, "no_evidence", None, 1]
-    assert by_id[4] == [True, "qualified", "curated", True, None, 404, 1]
+    assert by_id[2] == [False, "unqualified", "wikidata-discovery", False, None, None, False, 1]
+    assert by_id[3] == [False, "unqualified", "wikidata-discovery", False, "no_evidence", None, True, 1]
+    assert by_id[4] == [True, "qualified", "curated", True, None, 404, False, 1]
+    assert b"2026-11-03" not in raw   # crawled is a boolean: the crawl time does not leave
     tally = man["never_collected_in_set"]
     assert tally["sources"] == 3 and tally["columns"][-1] == "sources"
     assert sorted(tally["rows"], key=str) == sorted([r[:-1] + [1] for r in block["classes"]["rows"]], key=str)
@@ -276,7 +277,7 @@ def test_the_whole_set_tally_rides_in_the_first_zip_only_and_one_class_is_writte
     first, nxt, _c, _t = build_sample_zip(db, after=0, seed=3, cap=6_000)
     assert nxt is not None
     man = json.loads(_open(first).read("manifest.json"))
-    assert man["never_collected_in_set"]["rows"] == [[False, "unqualified", "wikidata-discovery", False, None, None, 300]]
+    assert man["never_collected_in_set"]["rows"] == [[False, "unqualified", "wikidata-discovery", False, None, None, False, 300]]
     assert len(man["sources_without_article"]["classes"]["rows"]) == 1
     assert {r[3] for r in man["sources_without_article"]["rows"]} == {0}
     later, _n, _c, _t = build_sample_zip(db, after=nxt, seed=3, cap=6_000)
@@ -316,3 +317,69 @@ def test_the_whole_set_tally_lists_its_largest_classes_and_counts_the_rest(db, m
     assert [r[-1] for r in tally["rows"]] == [3, 2]
     assert tally["classes_left_out"] == 1 and tally["sources_in_classes_left_out"] == 1
     assert tally["sources"] == 6 and "null = the collector never checked" in tally["feed_status_note"]
+
+
+_ES = ("El ayuntamiento aprobó ayer el presupuesto municipal para el próximo año tras una larga sesión en la que los "
+       "concejales de la oposición criticaron la falta de inversión en los barrios del norte de la ciudad. ") * 4
+_PT = ("A câmara municipal aprovou ontem o orçamento para o próximo ano depois de uma longa sessão em que os vereadores "
+       "da oposição criticaram a falta de investimento nos bairros do norte da cidade. ") * 4
+
+
+def _lang_source(db, sid, language, text):
+    db.add(Source(id=sid, name=f"L{sid}", domain=f"l{sid}.example", language=language))
+    db.flush()
+    db.add(Article(url=f"https://l{sid}.example/a", canonical_url=f"https://l{sid}.example/a", source_id=sid,
+                   title="t", content=text, hash=f"{sid:064d}"))
+    db.commit()
+
+
+def test_the_language_check_compares_each_sampled_article_with_its_catalogue_language(db):
+    """Row 462 (#2418 OPEN-QUESTIONS Q10): a Portuguese text under a Spanish label is a same-script error the script check
+    cannot see. Each source row carries a short code, the zip carries the tally and the pairs; no word of the text is added."""
+    from src.analytics.langdetect import detector_available
+
+    if not detector_available():
+        pytest.skip("the offline detector ([analysis] extra) is not installed here")
+    _lang_source(db, 1, "es", _ES)          # agrees
+    _lang_source(db, 2, "es-ES", _PT)       # a Portuguese article on a Spanish-labelled source
+    _lang_source(db, 3, None, _ES)          # no catalogue language
+    _lang_source(db, 4, "pt", "Curto.")     # too short to tell
+    man = json.loads(_open(build_sample_zip(db, after=0, seed=1, cap=4_000_000)[0]).read("manifest.json"))
+    by_id = {r["source_id"]: r for r in man["sources"]}
+    assert by_id[1]["lang_check"] == "agree" and by_id[1]["catalogue_language"] == "es"
+    assert by_id[2]["lang_check"] == "disagree:pt" and by_id[2]["catalogue_language"] == "es"
+    assert by_id[3]["lang_check"] == "no_catalogue_language"
+    assert by_id[4]["lang_check"] == "undetermined"
+    tally = man["language_check"]
+    assert tally["outcomes"] == {"agree": 1, "disagree": 1, "no_catalogue_language": 1, "undetermined": 1}
+    assert tally["disagreements"] == {"es>pt": 1} and tally["pairs_left_out"] == 0
+    assert "câmara" not in json.dumps(tally, ensure_ascii=False)
+
+
+def test_the_language_check_is_never_run_on_a_withheld_newsletter_body():
+    from src.api.diagnostics.source_samples import lang_check
+
+    assert lang_check("en", _ES, body_withheld=True) == "withheld"
+    assert lang_check("", _ES) == "no_catalogue_language"
+    assert lang_check("not a code!", _ES) == "no_catalogue_language"
+
+
+def test_the_language_check_says_when_there_is_no_detector(monkeypatch):
+    import src.analytics.langdetect as ld
+    from src.api.diagnostics.source_samples import lang_check
+
+    monkeypatch.setattr(ld, "detector_available", lambda: False)
+    assert lang_check("es", _ES) == "no_detector"
+
+
+def test_the_detector_for_the_check_reports_a_language_the_app_cannot_analyse():
+    """detect_any_language is not limited to the supported set: a Belarusian page under a Russian label must read as be."""
+    from src.analytics.langdetect import SUPPORTED, detect_any_language, detector_available
+
+    if not detector_available():
+        pytest.skip("the offline detector ([analysis] extra) is not installed here")
+    be = ("Гарадскі савет учора зацвердзіў бюджэт на наступны год пасля доўгага пасяджэння, на якім дэпутаты апазіцыі "
+          "крытыкавалі недахоп інвестыцый у паўночныя раёны горада. ") * 4
+    assert "be" not in SUPPORTED
+    assert detect_any_language(be) == "be"
+    assert detect_any_language("short") is None

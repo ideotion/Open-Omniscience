@@ -181,9 +181,11 @@ def _newsletter_source_ids(db: Session) -> set[int]:
 #: WHY A SOURCE HAS NO ARTICLE (row 248, from row 39: about 25,000 sources of one press had never stored one, and the
 #: compact list could not say why). Each never-collected row carries an index into ``classes``: whether collection may
 #: take it (``enabled``, ``status``), where it came from (its ``via:`` tag), whether it has a feed address to try,
-#: the last qualification verdict recorded for it, and the last HTTP status its feed answered (null = never fetched).
+#: the last qualification verdict recorded for it, the last HTTP status its feed answered (null = never fetched), and
+#: whether the crawl supplement ever read its pages (``crawled``: ``last_crawled_at`` set; row 462, #2418 OPEN-QUESTIONS
+#: Q7, which could see a crawl only for sources that already had an article).
 #: Booleans and short codes only: never an address (R734), never free text, so a row grows by a few bytes.
-CLASS_COLUMNS = ["enabled", "status", "via", "has_feed", "last_qualification", "last_feed_status"]
+CLASS_COLUMNS = ["enabled", "status", "via", "has_feed", "last_qualification", "last_feed_status", "crawled"]
 _KNOWN_STATUS = ("qualified", "unqualified", "disqualified")
 _VERDICT = re.compile(r"[a-z_]{1,20}")
 #: The whole-set tally lists at most this many classes (about 80 bytes each), so it can never crowd the first zip.
@@ -250,27 +252,92 @@ def _last_by_source(
     return verdicts, fetched
 
 
-def _class_of(enabled: Any, status: Any, tags: Any, rss_url: Any, verdict: str | None, feed_status: int | None) -> tuple:
+def _class_of(enabled: Any, status: Any, tags: Any, rss_url: Any, verdict: str | None, feed_status: int | None,
+              crawled_at: Any = None) -> tuple:
     st = str(status or "")
     return (
         bool(enabled), st if st in _KNOWN_STATUS else "other", _via(tags),
-        bool(rss_url), verdict, feed_status,
+        bool(rss_url), verdict, feed_status, crawled_at is not None,
     )
+
+
+#: Row 462 (#2418 OPEN-QUESTIONS Q10): the offline detector read on each source's sampled article, against the
+#: source's own catalogue language. The script check cannot see a same-script error (es/pt, ru/be, ru/uk); this can.
+#: Per source a short code only (``lang_check``), and the zip's tally beside it; never a word of the text.
+LANG_CHECK_NOTE = (
+    "lang_check: the offline detector (py3langid, full model, p >= 0.90 on the first 5,000 characters, at least 200) "
+    "read on this source's sampled article, against the source's catalogue language (its primary subtag): agree; "
+    "disagree:<detected code>; undetermined = too short or low confidence; no_catalogue_language; withheld = a newsletter "
+    "body not exported; no_detector = the [analysis] extra is not installed here. One article per source: a sample, "
+    "not a verdict on the source"
+)
+
+
+#: At most this many disagreement pairs are listed (about 15 bytes each).
+_LANG_PAIRS_MAX = 80
+
+
+def _primary_subtag(code: Any) -> str | None:
+    c = str(code or "").strip().lower().replace("_", "-").split("-")[0]
+    return c if re.fullmatch(r"[a-z]{2,3}", c) else None
+
+
+def lang_check(catalogue_language: Any, text: Any, *, body_withheld: bool = False) -> str:
+    """One source's code for :data:`LANG_CHECK_NOTE`. Never raises."""
+    try:
+        from src.analytics.langdetect import detect_any_language, detector_available
+
+        stated = _primary_subtag(catalogue_language)
+        if stated is None:
+            return "no_catalogue_language"
+        if body_withheld:
+            return "withheld"
+        if not detector_available():
+            return "no_detector"
+        seen = detect_any_language(text if isinstance(text, str) else None)
+        if seen is None:
+            return "undetermined"
+        # nb/no are one written language under two codes; the detector says "no" for both
+        if seen == stated or {seen, stated} <= {"nb", "no"}:
+            return "agree"
+        return f"disagree:{seen}"
+    except Exception:  # noqa: BLE001 - a diagnostic never fails the export
+        return "undetermined"
+
+
+def _lang_check_tally(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """The zip's counts: outcomes, and each (catalogue -> detected) disagreement pair."""
+    outcomes: dict[str, int] = {}
+    pairs: dict[str, int] = {}
+    for r in rows:
+        code = r.get("lang_check")
+        if not code:
+            continue
+        key = "disagree" if code.startswith("disagree:") else code
+        outcomes[key] = outcomes.get(key, 0) + 1
+        if key == "disagree":
+            pair = f"{r.get('catalogue_language')}>{code.split(':', 1)[1]}"
+            pairs[pair] = pairs.get(pair, 0) + 1
+    ordered = sorted(pairs.items(), key=lambda kv: (-kv[1], kv[0]))
+    kept, left = ordered[:_LANG_PAIRS_MAX], ordered[_LANG_PAIRS_MAX:]
+    return {"note": LANG_CHECK_NOTE, "outcomes": outcomes, "disagreements": dict(kept),
+            # the most frequent pairs are listed and the rest counted, so the block stays well inside the zip's reserve
+            "pairs_left_out": len(left), "sources_in_pairs_left_out": sum(n for _, n in left)}
 
 
 def never_collected_in_set(db: Session) -> dict[str, Any]:
     """Counts only: every source with no stored article, by class, across the whole set (in the first zip)."""
     has_article = select(Article.id).where(Article.source_id == Source.id).exists()
     rows = db.execute(
-        select(Source.id, Source.enabled, Source.status, Source.tags, Source.rss_url)
+        select(Source.id, Source.enabled, Source.status, Source.tags, Source.rss_url, Source.last_crawled_at)
         .where(~has_article).order_by(Source.id)
     ).all()
     counts: dict[tuple, int] = {}
     for start in range(0, len(rows), 900):   # under SQLite's bound-parameter limit
         chunk = rows[start:start + 900]
         verdicts, fetched = _last_by_source(db, [int(r[0]) for r in chunk])
-        for sid, enabled, status, tags, rss in chunk:
-            k = _class_of(enabled, status, tags, rss, verdicts.get(int(sid)), fetched.get(int(sid)))
+        for sid, enabled, status, tags, rss, crawled_at in chunk:
+            k = _class_of(enabled, status, tags, rss, verdicts.get(int(sid)), fetched.get(int(sid)), crawled_at)
             counts[k] = counts.get(k, 0) + 1
     ordered = sorted(counts.items(), key=lambda kv: (-kv[1], [str(x) for x in kv[0]]))
     kept, left = ordered[:_TALLY_MAX_CLASSES], ordered[_TALLY_MAX_CLASSES:]
@@ -343,6 +410,8 @@ def build_sample_zip(
                         a["body_withheld"] = "a newsletter: its body stays on this machine (OO_QUALITY_INCLUDE_NEWSLETTER_TEXT)"
                         row["body_withheld"] = True
                     text = a.get("content")
+                    row["catalogue_language"] = _primary_subtag(src.language)
+                    row["lang_check"] = lang_check(src.language, text, body_withheld=bool(row.get("body_withheld")))
                     raw = text.encode("utf-8") if isinstance(text, str) else b""
                     if isinstance(text, str) and len(raw) > _TEXT_MAX_BYTES:
                         # cut by UTF-8 bytes, not characters: 200k CJK characters are 600 KB (the 2026-11-14 read)
@@ -357,7 +426,8 @@ def build_sample_zip(
                     row["bytes"] = len(data)
                 new_class: tuple | None = None
                 if row is None:
-                    k = _class_of(src.enabled, src.status, src.tags, src.rss_url, verdicts.get(sid), fetched.get(sid))
+                    k = _class_of(src.enabled, src.status, src.tags, src.rss_url, verdicts.get(sid), fetched.get(sid),
+                                  src.last_crawled_at)
                     idx = classes.get(k)
                     if idx is None:
                         idx, new_class = len(classes), k
@@ -398,6 +468,7 @@ def build_sample_zip(
             "sources_in_this_zip": len(manifest) + len(empty),
             "sources_in_set": total,
             "sources": manifest,
+            "language_check": _lang_check_tally(manifest),
             "sources_without_article": {
                 "note": "no stored article for these sources",
                 # a source id is this instance's own above the shipped catalogue (field report 2026-11-14 5.4):

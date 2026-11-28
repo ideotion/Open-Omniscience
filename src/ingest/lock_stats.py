@@ -84,8 +84,14 @@ _EMPTY: dict = {
     "hold_max_s": 0.0,
     "hold_total_s": 0.0,
     "hold_max_html_utf8_bytes": None,
+    # Row 462 (#2418 OPEN-QUESTIONS Q2): how each finished hold's extraction came out, by path (``extract._OUTCOME``).
+    **{f"by_{name}": 0 for name in ("bare", "bare_none", "fallback", "fallback_none", "raised", "other")},
 }
 _state: dict = dict(_EMPTY)
+
+#: The outcomes :func:`record` counts; anything else (``None``, a typo) is counted as ``other`` rather than dropped,
+#: so the counts always sum to ``holds``.
+OUTCOMES = ("bare", "bare_none", "fallback", "fallback_none", "raised")
 
 #: The live gauge's private lock: a leaf. Unlike :data:`_STATS_LOCK` it IS taken inside the extraction lock
 #: (:func:`holding`, :func:`released`), so nothing is called while it is held except the clock, and the
@@ -112,7 +118,8 @@ METHOD = (
     "seconds on a monotonic clock; wait = from asking for the extraction lock to getting it, hold = from "
     "getting it to giving it up; holds = every extraction that took the lock and finished in this pass's "
     "window, whatever it returned; hold_max_html_utf8_bytes = UTF-8 length of the text handed to "
-    "extract_article for the longest hold"
+    "extract_article for the longest hold; by_method = holds by extraction path (bare = one-parse bare_extraction, "
+    "fallback = the two-call extract path after it raised; _none = no article)"
 )
 
 #: What the ``extraction_lock`` block of a collect_perf TICK means. NOT written into the log: on the pass summary it measured
@@ -294,8 +301,9 @@ def _utf8_size(html: str) -> int | None:
         return None
 
 
-def record(*, asked: float, got: float | None, released: float | None, html: str) -> None:
-    """Add one finished hold. ``got``/``released`` are ``None`` when the lock was never taken."""
+def record(*, asked: float, got: float | None, released: float | None, html: str, outcome: str | None = None) -> None:
+    """Add one finished hold. ``got``/``released`` are ``None`` when the lock was never taken. ``outcome`` is which
+    extraction path the hold ended on (:data:`OUTCOMES`; row 462), counted per window in ``by_method``."""
     gave_up()  # idempotent: a thread that asked and never held (the acquire raised), or whose holding() was skipped, stays a waiter otherwise
     if got is None or released is None:
         return
@@ -312,6 +320,7 @@ def record(*, asked: float, got: float | None, released: float | None, html: str
             _state["holds"] += 1
             _state["wait_total_s"] += wait
             _state["hold_total_s"] += hold
+            _state["by_" + (outcome if outcome in OUTCOMES else "other")] += 1
             if wait > _state["wait_max_s"]:
                 _state["wait_max_s"] = wait
             if first or hold > _state["hold_max_s"]:
@@ -338,6 +347,9 @@ def snapshot() -> dict:
             "hold_max_html_utf8_bytes": _state["hold_max_html_utf8_bytes"],
             "method": METHOD,
         }
+        by_method = {name: _state[f"by_{name}"] for name in (*OUTCOMES, "other") if _state[f"by_{name}"]}
+        if by_method:
+            out["by_method"] = by_method
         if out["hold_max_html_utf8_bytes"] is None:
             out["hold_max_html_utf8_bytes_note"] = "not measured: the page's size could not be computed"
         return out
