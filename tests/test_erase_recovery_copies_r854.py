@@ -258,4 +258,17 @@ def test_in_a_shared_folder_a_copy_beside_a_named_segment_is_rewritten(tmp_path,
     assert (shared / "thesis.docx").read_bytes() == b"years of work"
     assert report["corpus_segments"]["recovery_copies"] == 2, report["corpus_segments"]
     assert all(after[i:i + 4096] != kept.before[i:i + 4096] for i in range(0, len(after), 4096))
-    assert not copy.exists()
+    assert not copy.exists() and not copy.parent.exists(), "a copy was the app's: its emptied folder goes too"
+
+
+@posix_only
+@sqlcipher_only
+def test_a_proven_segment_s_log_is_still_destroyed_by_the_settle(tmp_path):
+    """The logs pass now says "overwritten"; the settle raises a log beside a segment with evidence to "destroyed"."""
+    data = tmp_path / "OOS data"
+    s1 = data / "corpus" / "seg-1.db"
+    _encrypted(s1)
+    _segment_entry(data, s1)
+    (s1.parent / "seg-1.db-wal").write_bytes(os.urandom(8192))
+    seg = _erase(data)["corpus_segments"]
+    assert seg["destroyed"] == 2 and seg["overwritten"] == 0 and seg["corpus"] == "destroyed", seg
