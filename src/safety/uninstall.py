@@ -112,6 +112,7 @@ def header_only(name):
 # is in keys or keys/.pending): never written, this name removed, and the log says its contents may still be readable through the other.
 linked = {"keyed": set(), "left": set(), "refused": set(), "key": set(), "written": set()}   # "written": every file whose overwrite completed
 SEG = re.compile(r"seg-[1-9][0-9]{0,3}\.db(-wal|-shm|-journal)?")
+CHK = re.compile(r"seg-[1-9][0-9]{0,3}\.check\.db(-journal)?")   # R854: a torn segment's recovery copy, in corpus/recovery
 def key_path(p):
     return bool(wd) and os.path.relpath(p, wd).replace("\\", "/").startswith("keys/")
 def keyed_path(p):   # the app's own by what it is: a file of its keys folder (verified, R841), or one of its stores (page 1 holds the salt)
@@ -138,7 +139,8 @@ def key_names(ident):   # R841: how many names the file has in keys and keys/.pe
     return n
 def segment_path(p):
     r = os.path.relpath(p, wd).replace("\\", "/").split("/") if wd else []
-    return len(r) == 2 and r[0] == "corpus" and SEG.fullmatch(r[1]) is not None
+    return (len(r) == 2 and r[0] == "corpus" and SEG.fullmatch(r[1]) is not None
+            or len(r) == 3 and r[:2] == ["corpus", "recovery"] and CHK.fullmatch(r[2]) is not None)   # R854: a copy holds articles too
 # R797 (row 332), the panic erase's rule (src/safety/crypto_erase.py _rewrite_fd): a whole rewrite writes only the regions that
 # hold data (SEEK_DATA/SEEK_HOLE), never a hole, and stops before the drive's free space would fall under RESERVE; a stop (the
 # reserve, an error) is logged as "partially overwritten" with bytes done of bytes known, never "destroyed", and the delete goes on.
