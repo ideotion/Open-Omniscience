@@ -181,3 +181,22 @@ def test_a_legal_portal_on_a_real_domain_stays_a_candidate(db):
     doc = cs.build_candidate_sources(db)
     assert [c["domain"] for c in doc["candidates"]] == ["newgazette.example"]
     assert doc["left_out"]["not_a_web_source"] == 1
+
+
+def test_the_evidence_counts_what_the_verdict_reads_and_says_what_it_left_out(db):
+    """Row 467: a quarantined article (junk, another site's page) is never counted as stored, and a published date later
+    than the export is no date (R845's rule), so neither can make a candidate look better evidenced than it was."""
+    _src(db, 1, "new.example")  # one clean article dated WHEN
+    for i, (quarantined, published) in enumerate([
+        (True, datetime(2026, 11, 2)),     # junk: counted apart, never stored, never a date
+        (False, datetime(2099, 1, 1)),     # a future date: stored, but undated
+        (False, None),                     # no date at all: stored, undated
+        (False, datetime(2026, 10, 1)),    # clean and dated: the new first article
+    ]):
+        db.add(Article(url=f"https://new.example/{i}", canonical_url=f"https://new.example/{i}", source_id=1, title="t",
+                       content="x", hash=f"{900 + i:064d}", published_at=published, quarantined=quarantined))
+    db.commit()
+    ev = cs.build_candidate_sources(db, now=datetime(2026, 11, 28, 12, tzinfo=cs.UTC))["candidates"][0]["evidence"]
+    assert ev["articles_stored"] == 4 and ev["articles_quarantined"] == 1 and ev["articles_undated"] == 2
+    assert ev["first_article"].startswith("2026-10-01") and ev["last_article"].startswith("2026-11-01"), (
+        "neither the quarantined 11-02 nor the 2099 date is the source's newest article")

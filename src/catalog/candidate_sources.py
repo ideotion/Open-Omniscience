@@ -158,8 +158,18 @@ def build_candidate_sources(session: Session, *, now: datetime | None = None) ->
             kept.append(s)
     # two grouped reads for all candidates, never one query per source
     attempts: dict[int, dict[str, Any]] = {}
-    articles: dict[int, tuple[int, Any, Any]] = {}
+    articles: dict[int, tuple[int, int, int, Any, Any]] = {}
     ids = [s.id for s in kept]
+    # Row 467: the evidence is what the verdict reads. A quarantined article (junk, another site's page) is counted apart
+    # and never as stored; a published date later than this export is no date (R845's rule), so first and last article
+    # are the source's own dated articles only, and the rest are counted as undated.
+    from sqlalchemy import and_, case
+
+    now_naive = now.astimezone(UTC).replace(tzinfo=None)
+    clean = Article.quarantined.isnot(True)
+    kept_col = case((clean, Article.id), else_=None)
+    quarantined_col = case((Article.quarantined.is_(True), Article.id), else_=None)
+    dated_col = case((and_(clean, Article.published_at <= now_naive), Article.published_at), else_=None)
     for i in range(0, len(ids), 500):
         chunk = ids[i:i + 500]
         A = SourceQualificationAttempt
@@ -171,18 +181,18 @@ def build_candidate_sources(session: Session, *, now: datetime | None = None) ->
             row["attempts"][str(verdict)] = int(n)
             row["first"] = first if row["first"] is None or (first and first < row["first"]) else row["first"]
             row["last"] = last if row["last"] is None or (last and last > row["last"]) else row["last"]
-        for sid, n, first_art, last_art in (
-            session.query(Article.source_id, func.count(Article.id), func.min(Article.published_at),
-                          func.max(Article.published_at))
+        for sid, n, quarantined, dated, first_art, last_art in (
+            session.query(Article.source_id, func.count(kept_col), func.count(quarantined_col), func.count(dated_col),
+                          func.min(dated_col), func.max(dated_col))
             # a newsletter attached to a web source stays out of its counts and dates (R655)
             .filter(Article.source_id.in_(chunk), Article.newsletter_attached_via.is_(None))
             .group_by(Article.source_id).all()
         ):
-            articles[int(sid)] = (int(n or 0), first_art, last_art)
+            articles[int(sid)] = (int(n or 0), int(quarantined or 0), int(dated or 0), first_art, last_art)
     out: list[dict[str, Any]] = []
     for s in kept:
         att = attempts.get(s.id, {"attempts": {}, "first": None, "last": None})
-        n_art, first_art, last_art = articles.get(s.id, (0, None, None))
+        n_art, n_quarantined, n_dated, first_art, last_art = articles.get(s.id, (0, 0, 0, None, None))
         out.append({
             "proposal": PROPOSED,
             "domain": (s.domain or "").lower(),
@@ -200,6 +210,8 @@ def build_candidate_sources(session: Session, *, now: datetime | None = None) ->
                 "first_attempt": _iso(att["first"]),
                 "last_attempt": _iso(att["last"]),
                 "articles_stored": n_art,
+                "articles_undated": n_art - n_dated,
+                "articles_quarantined": n_quarantined,
                 "first_article": _iso(first_art),
                 "last_article": _iso(last_art),
                 "last_crawled_at": _iso(s.last_crawled_at),
