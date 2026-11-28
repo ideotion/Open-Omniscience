@@ -313,9 +313,9 @@
       } catch (_e) { /* status is a courtesy here; never block the action on it */ }
       const ask = paused
         ? t("Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.")
-            .replace("{done}", fmtNum(paused.articles_done || 0, 0))
-            .replace("{total}", fmtNum(paused.articles_total || 0, 0))
-            .replace("{percent}", String(paused.percent || 0))
+            .replace("{done}", () => fmtNum(paused.articles_done || 0, 0))
+            .replace("{total}", () => fmtNum(paused.articles_total || 0, 0))
+            .replace("{percent}", () => String(paused.percent || 0))
         : t("Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.");
       if (!confirm(ask)) return;
       if (btn) btn.disabled = true;
@@ -352,9 +352,9 @@
         const f = report.fold || {};
         const lg = report.language || {};
         return t("Keywords folded: {folded} · mentions moved: {moved} · keywords whose language changed: {relanguaged}")
-          .replace("{folded}", n(f.keywords_folded))
-          .replace("{moved}", n((f.mentions_moved || 0) + (f.mentions_merged || 0)))
-          .replace("{relanguaged}", n(lg.relanguaged));
+          .replace("{folded}", () => n(f.keywords_folded))
+          .replace("{moved}", () => n((f.mentions_moved || 0) + (f.mentions_merged || 0)))
+          .replace("{relanguaged}", () => n(lg.relanguaged));
       }
       const tal = s.tally || {};
       const bits = [];
@@ -362,12 +362,12 @@
         bits.push(t("Setting each keyword's language from its mentions…"));
       } else if (s.keywords_total) {
         bits.push(t("Keywords checked: {done} of {total} ({percent}%)")
-          .replace("{done}", n(s.keywords_done))
-          .replace("{total}", n(s.keywords_total))
-          .replace("{percent}", String(s.percent || 0)));
+          .replace("{done}", () => n(s.keywords_done))
+          .replace("{total}", () => n(s.keywords_total))
+          .replace("{percent}", () => String(s.percent || 0)));
       }
       const moved = (tal.mentions_moved || 0) + (tal.mentions_merged || 0);
-      if (moved) bits.push(t("Mentions moved: {moved}").replace("{moved}", n(moved)));
+      if (moved) bits.push(t("Mentions moved: {moved}").replace("{moved}", () => n(moved)));
       if (s.parked_for_exclusive) bits.push(t("paused for an import"));
       else if (s.state === "paused") bits.push(t("paused"));
       return bits.join(" · ");
@@ -387,8 +387,8 @@
       const paused = s0 && (s0.state === "paused" || s0.state === "error");
       const ask = paused
         ? t("Continue folding keyword forms? It resumes where it stopped. Keywords already checked: {done} of {total}.")
-            .replace("{done}", fmtNum(Number(s0.keywords_done || 0), 0))
-            .replace("{total}", fmtNum(Number(s0.keywords_total || 0), 0))
+            .replace("{done}", () => fmtNum(Number(s0.keywords_done || 0), 0))
+            .replace("{total}", () => fmtNum(Number(s0.keywords_total || 0), 0))
         : t("Fold keyword forms now? Older keywords are filed under the base form new articles already use, so “studies” and “study” become one keyword. Phrases, names and keywords your families or groups use are left as they are. It runs in the background and can be paused from the task manager. A fold cannot be undone.");
       if (!confirm(ask)) return;
       if (btn) btn.disabled = true;
@@ -417,14 +417,14 @@
         if (!report) return t("done");
         const by = report.by_script || {};
         let line = t("Articles checked: {checked} · re-indexed: {reindexed} (Arabic: {arabic} · Chinese: {chinese} · Japanese: {japanese})")
-          .replace("{checked}", n(report.articles_checked))
-          .replace("{reindexed}", n(report.articles_reindexed))
-          .replace("{arabic}", n(by.arabic))
-          .replace("{chinese}", n(by.chinese))
-          .replace("{japanese}", n(by.japanese));
+          .replace("{checked}", () => n(report.articles_checked))
+          .replace("{reindexed}", () => n(report.articles_reindexed))
+          .replace("{arabic}", () => n(by.arabic))
+          .replace("{chinese}", () => n(by.chinese))
+          .replace("{japanese}", () => n(by.japanese));
         if (report.unsegmented_by_a_missing_segmenter) {
           line += " · " + t("Indexed without word splitting, their segmenter is no longer installed: {n}")
-            .replace("{n}", n(report.unsegmented_by_a_missing_segmenter));
+            .replace("{n}", () => n(report.unsegmented_by_a_missing_segmenter));
         }
         return line;
       }
@@ -432,11 +432,11 @@
       const bits = [];
       if (s.articles_total) {
         bits.push(t("Articles checked: {done} of {total} ({percent}%)")
-          .replace("{done}", n(s.articles_checked))
-          .replace("{total}", n(s.articles_total))
-          .replace("{percent}", String(s.percent || 0)));
+          .replace("{done}", () => n(s.articles_checked))
+          .replace("{total}", () => n(s.articles_total))
+          .replace("{percent}", () => String(s.percent || 0)));
       }
-      if (tal.articles_reindexed) bits.push(t("Re-indexed: {n}").replace("{n}", n(tal.articles_reindexed)));
+      if (tal.articles_reindexed) bits.push(t("Re-indexed: {n}").replace("{n}", () => n(tal.articles_reindexed)));
       if (s.parked_for_exclusive) bits.push(t("paused for an import"));
       else if (s.state === "paused") bits.push(t("paused"));
       return bits.join(" · ");
@@ -455,7 +455,7 @@
       const paused = s0 && (s0.state === "paused" || s0.state === "error");
       const ask = paused
         ? t("Continue the search re-index? It resumes where it stopped ({percent}% done).")
-            .replace("{percent}", String(s0.percent || 0))
+            .replace("{percent}", () => String(s0.percent || 0))
         : t("Re-index search for Arabic, Chinese and Japanese now? Articles whose search entry would change are indexed again; nothing else is touched. It runs in the background and can be paused from the task manager.");
       if (!confirm(ask)) return;
       if (btn) btn.disabled = true;
@@ -2413,7 +2413,7 @@
         // R704: numbers measured on ANOTHER model license nothing for this one, and
         // the row says so rather than reading as "never measured" in general.
         const why = cleared ? "" : " — " + (e.model_matches === false && e.measured_model
-          ? t("refused: measured on {model}, not on the model that would extract").replace("{model}", e.measured_model)
+          ? t("refused: measured on {model}, not on the model that would extract").replace("{model}", () => e.measured_model)
           : measured === false
             ? t("refused: the harness failed this language")
             : t("refused: never measured"));
@@ -2456,7 +2456,7 @@
       if (hw && st && st.hardware_default) {
         ooLive(hw, () => st.hardware_default.default_on
           ? "" : t("This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.")
-                   .replace("{r}", String(st.hardware_default.reason || "")));
+                   .replace("{r}", () => String(st.hardware_default.reason || "")));
       }
     }
     function _aiCoordinatorStatusHtml(st, running, t) {
@@ -3441,7 +3441,7 @@
       const d = new Date();
       const p2 = (x) => String(x).padStart(2, "0");
       const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`;
-      const named = (tpl, r) => tpl.replace("{press}", `${stamp}-${r.headers.get("X-OO-Instance") || "p" + (location.port || "80")}`);
+      const named = (tpl, r) => tpl.replace("{press}", () => `${stamp}-${r.headers.get("X-OO-Instance") || "p" + (location.port || "80")}`);
       try {
         for (const ex of FIELD_DATA_EXPORTS) {
           if (ex.kind === "file") {
@@ -3458,7 +3458,7 @@
             const r = await fetch(ex.url + after);
             if (!r.ok) throw new Error("HTTP " + r.status);
             part += 1;
-            files += await _fieldSaveParts(await r.blob(), named(ex.name, r).replace("{n}", String(part).padStart(3, "0")), pause);
+            files += await _fieldSaveParts(await r.blob(), named(ex.name, r).replace("{n}", () => String(part).padStart(3, "0")), pause);
             const nxt = r.headers.get(ex.next);
             if (!nxt || !(Number(nxt) > after)) break;   // a cursor that does not advance can never loop
             after = Number(nxt);

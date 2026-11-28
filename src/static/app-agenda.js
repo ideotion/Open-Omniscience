@@ -1497,7 +1497,7 @@
       _agMentions.date = iso; _agMentions.rows = []; _agMentions.prev = {}; _agMentions.busy = new Set();
       let label = iso;
       try { label = new Intl.DateTimeFormat(agLocale(), { dateStyle: "full", timeZone: "UTC" }).format(new Date(iso + "T00:00:00Z")); } catch (_e) { /* keep the ISO date */ }
-      $("ag-mentions-title").textContent = T("Articles that mention {date}").replace("{date}", label);
+      $("ag-mentions-title").textContent = T("Articles that mention {date}").replace("{date}", () => label);
       $("ag-mentions-body").innerHTML = `<div class="muted">${esc(T("Loading…"))}</div>`;
       if (!dlg.open) dlg.showModal();
       try {

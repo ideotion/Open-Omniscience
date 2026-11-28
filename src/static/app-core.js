@@ -2261,7 +2261,7 @@
     function _sizeText(bytes, decimals, sign) {
       const v0 = Number(bytes);
       if (bytes == null || !isFinite(v0)) return "—";
-      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s.replace("{n}", o.n));
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s.replace("{n}", () => o.n));
       let v = v0, i = 0;
       while (v >= 1024 && i < 4) { v /= 1024; i++; }
       const dec = decimals(i, v);

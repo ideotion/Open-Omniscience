@@ -347,7 +347,7 @@
     // measured -- the log's size, and this machine's own last recovery as the basis of the
     // estimate -- and says so when there is no earlier measurement rather than inventing one.
     function _recSize(bytes) {
-      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s.replace("{n}", o.n));
+      const TF = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, o) => s.replace("{n}", () => o.n));
       let v = Number(bytes), i = 0;
       if (bytes == null || !isFinite(v)) return "\u2014";
       while (v >= 1024 && i < 3) { v /= 1024; i++; }
