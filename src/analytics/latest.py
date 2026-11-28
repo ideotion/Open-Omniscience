@@ -53,6 +53,7 @@ from sqlalchemy.orm import Session
 from src.analytics.managed import UNSEGMENTED
 from src.database.models import Article, ArticleLink, Source
 from src.database.source_names import shown_source_name
+from src.ingest.feed_entry_date import feed_date_fields
 from src.utils.url_utils import fetched_host_fields
 
 _SQL_IN_CHUNK = 900  # stay under the SQLite bound-variable limit
@@ -168,7 +169,8 @@ def latest_articles(
     cols: list[Any] = [
         Article.id, Article.source_id, Article.title,
         Article.created_at, Article.published_at, Article.language, Article.word_count,
-        Article.fetched_host,  # queue item 61: where the page was fetched from (the last column; word_count already reads past content)
+        Article.fetched_host,  # queue item 61: where the page was fetched from (word_count already reads past content)
+        Article.feed_entry_published_at,  # row 457 (R847): the feed's date, for a page with none of its own (the last column)
     ]
     if want_prefix:
         cols.append(func.substr(Article.content, 1, prefix_chars))
@@ -200,8 +202,8 @@ def latest_articles(
     # Apply the two transparent gates, preserving recency order.
     candidates: list[dict] = []
     for row in rows:
-        aid, sid, title, created, published, lang, wc, fetched = row[:8]
-        body_prefix = row[8] if want_prefix else None  # the folded near-dup prefix, or None
+        aid, sid, title, created, published, lang, wc, fetched, feed_date = row[:9]
+        body_prefix = row[9] if want_prefix else None  # the folded near-dup prefix, or None
         base = (lang or "").split("-", 1)[0].strip().lower()
         unseg = base in UNSEGMENTED
         cited = link_count.get(aid, 0)
@@ -219,6 +221,7 @@ def latest_articles(
                 "url": f"/api/articles/{aid}/view",  # the LOCAL reader (invariant #6)
                 "created_at": _iso(created),
                 "published_at": _iso(published),
+                **feed_date_fields(published, feed_date),
                 "language": lang,
                 "unsegmented": unseg,
                 "word_count": wc,

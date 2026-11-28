@@ -246,6 +246,17 @@
     // fallback this replaces (`((x) => x)`) returns the template unchanged, so a surface
     // rendered before i18n loads shows the reader a literal `{n}` -- a broken frame, which
     // is the one thing the composite-string discipline exists to prevent.
+    // R845: "{n} sources with not enough data yet", saying how many of them have no dated article at all.
+    function _qualNotEnough(nRaw, undatedRaw) {
+      const n = Number(nRaw) || 0, m = Number(undatedRaw) || 0;
+      if (n === 1) {
+        return m > 0 ? _qualTf("{n} source with not enough data yet (it has no dated articles)", {n: fmtNum(n, 0)})
+          : _qualTf("{n} source with not enough data yet", {n: fmtNum(n, 0)});
+      }
+      return m > 0
+        ? _qualTf("{n} sources with not enough data yet ({m} of them have no dated articles)", {n: fmtNum(n, 0), m: fmtNum(m, 0)})
+        : _qualTf("{n} sources with not enough data yet", {n: fmtNum(n, 0)});
+    }
     function _qualTf(str, vars) {
       return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(str, vars)
         : String(str).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m);
@@ -935,6 +946,8 @@
           end(() => tally(r.qualified, "{n} source qualified", "{n} sources qualified") + " · "
             + tally(r.disqualified, "{n} source disqualified", "{n} sources disqualified") + " · "
             + tally(r.no_evidence, "{n} source with no evidence yet", "{n} sources with no evidence yet")
+            // R845: judged nothing until a source has 5 articles and one published in the last 180 days.
+            + ((Number(r.not_enough_data) || 0) > 0 ? " · " + _qualNotEnough(r.not_enough_data, r.not_enough_data_undated) : "")
             + (r.paused_reason
               ? " — " + _framedText(r.paused_reason, r.paused_reason_i18n, r.paused_reason_vars, t) : ""));
         }

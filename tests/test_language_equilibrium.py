@@ -49,7 +49,7 @@ def test_language_pace_over_under_and_floor():
 # --- pure: equilibrium_filter (never starves) ------------------------------- #
 
 def _src(i, lang, checked, *, rss=True):
-    st = SimpleNamespace(last_checked_at=checked) if checked is not None else None
+    st = SimpleNamespace(last_checked_at=checked, last_status=200) if checked is not None else None
     return SimpleNamespace(id=i, language=lang, rss_url="x" if rss else None), st
 
 
@@ -293,6 +293,7 @@ def test_the_pace_actually_reaches_a_region_tagged_source(db):
 
     class _St:
         last_checked_at = datetime.now(UTC) - timedelta(minutes=5)   # fresh: pace applies
+        last_status = 200  # a read check (row 454: a failed one keeps its first reach)
 
     class _S:
         def __init__(self, sid, lang):
@@ -325,6 +326,7 @@ def test_an_untargeted_language_is_still_never_paced(db):
 
     class _St:
         last_checked_at = datetime.now(UTC) - timedelta(minutes=5)
+        last_status = 200
 
     class _S:
         def __init__(self, sid, lang):
@@ -338,3 +340,24 @@ def test_an_untargeted_language_is_still_never_paced(db):
             sources, pace={"en": 0.1}, fetch_state=state, rng=rng
         )
         assert deferred == 0 and len(kept) == 3, "only the targeted language may be paced"
+
+
+def test_a_feed_that_has_only_failed_keeps_its_first_reach():
+    """Row 454 (the LOW #2425 recorded): a failed check is recorded with its time since row 448, so the filter used to
+    read a feed that had only ever failed as recently read and pace it. Only a READ check (200 or 304) counts; a failed
+    one (an HTTP error, or 0 for none) leaves the feed unread, so it is kept like any first reach."""
+    import random
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime(2026, 11, 28, 12, 0, tzinfo=UTC)
+    recent = now - timedelta(minutes=5)
+    srcs = [SimpleNamespace(id=i, language="en", rss_url="x") for i in (1, 2, 3, 4)]
+    state = {
+        1: SimpleNamespace(last_checked_at=recent, last_status=0),
+        2: SimpleNamespace(last_checked_at=recent, last_status=503),
+        3: SimpleNamespace(last_checked_at=recent, last_status=200),
+        4: SimpleNamespace(last_checked_at=recent, last_status=304),
+    }
+    kept, deferred = EQ.equilibrium_filter(srcs, pace={"en": 0.0}, fetch_state=state, now=now, rng=random.Random(0))
+    assert [s.id for s in kept] == [1, 2]
+    assert deferred == 2

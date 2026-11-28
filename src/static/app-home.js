@@ -404,7 +404,7 @@
         `<button type="button" class="an-facet" data-on-click="openAnalysisFor(${esc(JSON.stringify(k.term))})" `
         + `title="${esc(t("Mentions in this article — open this keyword's corpus."))}">`
         + `<span translate="no">${esc(k.term)}</span> <span class="muted">${k.count}</span></button>`).join(" ");
-      const when = ooIsoDate(a.published_at);
+      const when = ooArticleDateHtml(a);  // row 457: escaped HTML, the feed's date flagged as such
       const lang = a.language || a.detected_language || "";
       // Ruling 12: expanding is a class toggle over text ALREADY in the payload -- a feed
       // that fetches on every "read more" stutters, and a reader who opened one card has
@@ -414,7 +414,7 @@
         + `<h3 class="feed-t"><a href="${esc(a.reader_url)}" target="_blank" rel="noopener">`
         + `${esc(a.title) || `<span class="muted">${esc(t("(untitled)"))}</span>`}</a></h3>`
         + `<div class="feed-meta muted">${esc(a.source || "")}${ooFetchedOffSiteNote(a)}`
-        + (when ? ` · ${esc(when)}` : "")
+        + (when ? ` · ${when}` : "")
         + (lang ? ` · ${ooLangCell(lang)}` : "")
         // The tone this article ALREADY carries (scored at ingest, stored on the row).
         // _toneChip, not _anToneChip: the language segment is right there, so the
@@ -925,7 +925,7 @@
       if (!panel || !box || !rows) return;
       if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
       box.innerHTML = rows.map(a => {
-        const meta = [esc(a.source || "") + ooFetchedOffSiteNote(a), esc(ooIsoDate(a.published_at))].filter(Boolean).join(" · ");
+        const meta = [esc(a.source || "") + ooFetchedOffSiteNote(a), ooArticleDateHtml(a)].filter(Boolean).join(" · ");
         return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
           + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
       }).join("");

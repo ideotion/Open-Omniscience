@@ -212,16 +212,34 @@ def _via(tags: str | None) -> str | None:
     return known[0] if known else "other"
 
 
-def _last_by_source(db: Session, ids: list[int]) -> tuple[dict[int, str], dict[int, int | None]]:
-    """``({source id: last qualification verdict}, {source id: last feed HTTP status})`` for these ids."""
+def _criteria_names(raw: Any) -> list[str] | None:
+    """The last attempt's failing criteria as a list of KNOWN criterion names (row 450): None when the attempt recorded
+    none (an attempt from before the column, or one that judged nothing), [] when it judged and nothing failed. A name
+    the criteria registry does not know is dropped, so nothing but a name can leave."""
+    if raw is None:
+        return None
+    from src.analytics.source_audit import CRITERIA
+
+    known = {c["name"] for c in CRITERIA}
+    return sorted({n for n in str(raw).split(",") if n in known})
+
+
+def _last_by_source(
+    db: Session, ids: list[int], failing: dict[int, list[str] | None] | None = None,
+) -> tuple[dict[int, str], dict[int, int | None]]:
+    """``({source id: last qualification verdict}, {source id: last feed HTTP status})`` for these ids. ``failing``,
+    when given, is filled with each source's last attempt's failing criteria (:func:`_criteria_names`)."""
     verdicts: dict[int, str] = {}
-    for sid, verdict in db.execute(
-        select(SourceQualificationAttempt.source_id, SourceQualificationAttempt.verdict)
+    for sid, verdict, names in db.execute(
+        select(SourceQualificationAttempt.source_id, SourceQualificationAttempt.verdict,
+               SourceQualificationAttempt.failing_criteria)
         .where(SourceQualificationAttempt.source_id.in_(ids))
         .order_by(SourceQualificationAttempt.attempted_at, SourceQualificationAttempt.id)
     ).all():
         v = str(verdict or "")
         verdicts[int(sid)] = v if _VERDICT.fullmatch(v) else "other"
+        if failing is not None:
+            failing[int(sid)] = _criteria_names(names)
     fetched: dict[int, int | None] = {}
     for sid, status, checked in db.execute(
         select(FeedFetchState.source_id, FeedFetchState.last_status, FeedFetchState.last_checked_at)
@@ -279,7 +297,7 @@ def build_sample_zip(
     total = db.execute(select(func.count()).select_from(Source)).scalar_one()
     buf = io.BytesIO()
     manifest: list[dict[str, Any]] = []
-    empty: list[list[Any]] = []   # [source_id, domain, feed_key, class] for each source with no stored article
+    empty: list[list[Any]] = []   # [source_id, domain, feed_key, class, last_failing_criteria] per source with no stored article
     classes: dict[tuple, int] = {}   # a never-collected source's class -> its index in the manifest's ``classes``
     class_counts: list[int] = []
     rows_bytes = 0   # the manifest's rows as written, before compression: a bound the compressed manifest stays under
@@ -303,8 +321,9 @@ def build_sample_zip(
                 break
             verdicts: dict[int, str] = {}
             fetched: dict[int, int | None] = {}
+            failing: dict[int, list[str] | None] = {}
             for start in range(0, len(ids), 900):   # under SQLite's bound-parameter limit
-                v, f = _last_by_source(db, ids[start:start + 900])
+                v, f = _last_by_source(db, ids[start:start + 900], failing)
                 verdicts.update(v)
                 fetched.update(f)
             for sid in ids:
@@ -315,7 +334,8 @@ def build_sample_zip(
                 data = None
                 row: dict[str, Any] | None = None
                 if art is not None:
-                    row = {"source_id": sid, "domain": src.domain, "feed_key": shown_feed_key(src.feed_key), "name": src.name, "articles_in_source": n}
+                    row = {"source_id": sid, "domain": src.domain, "feed_key": shown_feed_key(src.feed_key), "name": src.name, "articles_in_source": n,
+                           "last_qualification": verdicts.get(sid), "last_failing_criteria": failing.get(sid)}
                     a = _row_dict(art)
                     if not include_newsletters and (sid in newsletter_sources or art.newsletter_attached_via):
                         for col in _BODY_COLUMNS:
@@ -341,7 +361,7 @@ def build_sample_zip(
                     idx = classes.get(k)
                     if idx is None:
                         idx, new_class = len(classes), k
-                    entry: Any = [sid, src.domain, shown_feed_key(src.feed_key), idx]
+                    entry: Any = [sid, src.domain, shown_feed_key(src.feed_key), idx, failing.get(sid)]
                 else:
                     entry = row
                 row_bytes = len(json.dumps(entry, ensure_ascii=False, separators=(",", ":"), default=str).encode("utf-8")) + 1
@@ -382,7 +402,9 @@ def build_sample_zip(
                 "note": "no stored article for these sources",
                 # a source id is this instance's own above the shipped catalogue (field report 2026-11-14 5.4):
                 # domain + feed_key is what joins one instance's rows to another's
-                "columns": ["source_id", "domain", "feed_key", "class"],
+                # last_failing_criteria (row 450): the names of the criteria that failed on the newest attempt;
+                # null = that attempt recorded none, [] = it judged and nothing failed
+                "columns": ["source_id", "domain", "feed_key", "class", "last_failing_criteria"],
                 "rows": empty,
                 # ``class`` indexes these rows; why a source has no article is read here, not guessed (row 248)
                 "classes": {

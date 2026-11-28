@@ -167,6 +167,8 @@ def source_provenance(session, source_id: int) -> dict:
         "citing_trail": citing_trail,
         "qualification_status": source.status,
         "qualification_basis": _qualification_basis(session, source),
+        # R845: the newest attempt's verdict when it judged nothing for lack of data (the status above is kept).
+        "qualification_latest_attempt": _latest_attempt_note(session, source),
         # True when the repair record could not be read in full: a withdrawn row may then read
         # `measured` although its verdict came from an imported history (the export says the same).
         "qualification_basis_unverified": _repair_record_unverified(),
@@ -181,6 +183,19 @@ def _repair_record_unverified() -> bool:
         return bool(repaired_rows()[1])
     except Exception:  # noqa: BLE001 - the answer IS "could not be read"
         return True
+
+
+def _latest_attempt_note(session, source) -> str | None:
+    """``"not_enough_data"`` when the source's newest qualification attempt gave no verdict for too
+    little or too old evidence (R845), else ``None``. Shown beside the status, which it leaves as it was."""
+    from src.catalog.qualification import VERDICT_NOT_ENOUGH_DATA
+    from src.database.models import SourceQualificationAttempt as A
+
+    row = (
+        session.query(A.verdict).filter(A.source_id == source.id)
+        .order_by(A.attempted_at.desc(), A.id.desc()).first()
+    )
+    return VERDICT_NOT_ENOUGH_DATA if row is not None and row[0] == VERDICT_NOT_ENOUGH_DATA else None
 
 
 def _qualification_basis(session, source) -> str | None:

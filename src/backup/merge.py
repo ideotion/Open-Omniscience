@@ -4405,13 +4405,26 @@ def _merge_sources(con, batch_id, results) -> None:
     # nothing, while two DIFFERENT instances' attempts on the same domain are genuinely
     # distinct attempts at distinct times and both survive. That predicate is served by
     # the table's own idx_qual_attempt_source_time index.
-    q = DomainResult()
-    q.new = _insert_tracked(
-        con, batch_id, "source_qualification_attempts",
+    # Row 450: the failing criteria's NAMES travel with the attempt when the backup has the column and the main
+    # store has it too (an older backup has none: those rows arrive NULL, "not recorded", never guessed). A value is
+    # copied only when it is made of lower-case letters, underscores and commas and fits the column, so another
+    # instance's file can put nothing but criterion names into this one.
+    carry_failing = (_has_column(con, "inc", "source_qualification_attempts", "failing_criteria")
+                     and _has_column(con, "main", "source_qualification_attempts", "failing_criteria"))
+    head = (
+        "INSERT INTO main.source_qualification_attempts"
+        " (source_id, attempted_at, verdict, criteria_version, failing_criteria)"
+        " SELECT ms.new, i.attempted_at, i.verdict, i.criteria_version, " + _FAILING_CRITERIA_COPY
+    ) if carry_failing else (
         "INSERT INTO main.source_qualification_attempts"
         " (source_id, attempted_at, verdict, criteria_version)"
         " SELECT ms.new, i.attempted_at, i.verdict, i.criteria_version"
-        " FROM inc.source_qualification_attempts i"
+    )
+    q = DomainResult()
+    q.new = _insert_tracked(
+        con, batch_id, "source_qualification_attempts",
+        head  # nosec B608 # module-local literals only
+        + " FROM inc.source_qualification_attempts i"
         " JOIN temp.map_sources ms ON ms.old = i.source_id"
         " WHERE NOT EXISTS ("
         "   SELECT 1 FROM source_qualification_attempts m2"
@@ -4470,7 +4483,19 @@ _ADOPTABLE_ARTICLE_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # other way: the header lives in a .eml this app does not keep, so an instance that
     # lost it cannot re-derive it from anything it stored.
     ("newsletter_list_id", ("newsletter_list_id",)),
+    # THE FEED ENTRY'S OWN DATE (row 457, R847). Adoptable on the same argument as published_at: a duplicate matches on
+    # HASH, so it is the same item, and the date its feed gave it is a property of the item, not of the machine that read
+    # it. It is kept only for an article with no date of its own, so it moves only when NEITHER side has one (the extra
+    # guard in _ADOPTION_EXTRA_GUARD); a local article that holds a feed date and adopts its own date from the incoming row
+    # keeps both, and src.ingest.feed_entry_date.article_date always prefers its own.
+    ("feed_entry_published_at", ("feed_entry_published_at",)),
 )
+
+#: An extra condition a group must meet besides its anchor's NULL, for a group that is meaningful only in one state of
+#: another column. Read with ``m`` = the local row and ``i`` = the incoming one, as the UPDATE below names them.
+_ADOPTION_EXTRA_GUARD: dict[str, str] = {
+    "feed_entry_published_at": 'm."published_at" IS NULL AND i."published_at" IS NULL',
+}
 
 #: Every other Article column, and why it is NOT adoptable. This exists because the
 #: 2026-08-03 AST column diff found fourteen columns silently dropped by an explicit
@@ -4572,13 +4597,15 @@ def _adopt_article_metadata(con) -> dict:
     """
     sets, guards, counts_sql = [], [], []
     for anchor, cols in _ADOPTABLE_ARTICLE_COLUMNS:
+        extra = _ADOPTION_EXTRA_GUARD.get(anchor)
+        local_open = f'm."{anchor}" IS NULL' + (f" AND {extra}" if extra else "")
         for c in cols:
             # The anchor decides the whole group, so a pair moves together or not at all. A country is read as step 1 converted
             # it (row 439); the guards below only test it for NULL, which the conversion never changes.
             value = _cc(con, "articles", c) if c == "country" else f'i."{c}"'
-            sets.append(f'"{c}" = CASE WHEN m."{anchor}" IS NULL THEN {value} ELSE m."{c}" END')
-        guards.append(f'(m."{anchor}" IS NULL AND i."{anchor}" IS NOT NULL)')
-        counts_sql.append(f'SUM(m."{anchor}" IS NULL AND i."{anchor}" IS NOT NULL)')
+            sets.append(f'"{c}" = CASE WHEN {local_open} THEN {value} ELSE m."{c}" END')
+        guards.append(f'({local_open} AND i."{anchor}" IS NOT NULL)')
+        counts_sql.append(f'SUM({local_open} AND i."{anchor}" IS NOT NULL)')
 
     where = (
         " FROM inc.articles i WHERE i.hash = m.hash"
@@ -4771,6 +4798,9 @@ def _merge_articles(con, batch_id, results) -> None:
         # 2026-08-03 lesson exactly -- a dropped column arrives as a plausible NULL that
         # nothing reports.
         " source_revision, newsletter_list_id, newsletter_attached_via,"
+        # Row 457 (R847): the feed entry's own date, for an article whose page gave none. The feed entry is gone after
+        # the fetch, so a merge that dropped it would lose it for good (the 2026-08-03 lesson).
+        " feed_entry_published_at,"
         # R24: the article's own top keyword, for an article whose derived rows are
         # being CARRIED -- computed by `_plan_derived_carry` from the incoming mentions
         # over LOCAL keyword ids, exactly as index_article would. NULL for every other
@@ -4789,6 +4819,7 @@ def _merge_articles(con, batch_id, results) -> None:
         " i.content_multihash, i.canon_version,"
         " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at,"
         " i.source_revision, i.newsletter_list_id, i.newsletter_attached_via,"
+        " i.feed_entry_published_at,"
         " cp.top_keyword_id, cp.top_keyword_count, cp.top_keyword_tied_n,"
         " i.fetched_host"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
@@ -5146,6 +5177,18 @@ def _inc_has_table(con: sqlite3.Connection, name: str) -> bool:
             "SELECT 1 FROM inc.sqlite_master WHERE type = 'table' AND name = ?", (name,)
         ).fetchone()
     )
+
+
+#: What a merge copies of an incoming attempt's ``failing_criteria`` (row 450): the value only when it is made of
+#: lower-case letters, underscores and commas and fits the column, else NULL ("not recorded"). SQLite's GLOB and a
+#: TEXT ``length()`` both stop at the first NUL, so the size and the NUL are measured on the BYTES, and a value that
+#: is not TEXT at all (a BLOB keeps its type in a TEXT column) is refused before either.
+_FAILING_CRITERIA_COPY = (
+    "CASE WHEN i.failing_criteria IS NULL OR typeof(i.failing_criteria) <> 'text'"
+    " OR length(CAST(i.failing_criteria AS BLOB)) > 400"
+    " OR instr(CAST(i.failing_criteria AS BLOB), x'00') > 0"
+    " OR i.failing_criteria GLOB '*[^a-z_,]*' THEN NULL ELSE i.failing_criteria END"
+)
 
 
 def _has_column(con: sqlite3.Connection, schema: str, table: str, column: str) -> bool:
@@ -10851,7 +10894,57 @@ def reindex_collecting_hold_target_s() -> float:
     return min(value, general)
 
 
-def reindex_flush_policy(target_s: float | None = None) -> Callable[[int, float], bool] | None:
+#: Row 446 (R852's P1, 2026-11-28): the hold target while nothing else should be writing, that is while an import owns the machine
+#: (the exclusive window) or while the backlog drain runs with the collector stopped and no window open. Measured on a 150k encrypted
+#: store (16 KiB pages): a commit writes about 3.6 MB of WAL per article, because the article's mention rows land at random places in
+#: ten indexes, so fewer and wider commits are the lever; batches of 500 instead of about 160 cut commit time by 51 % and writer time
+#: by 15 %. WHY 30 AND NOT MORE: a hold is the target, plus the article in flight, plus the commit (about 7 s at width 500 there, and
+#: the longest hold seen was 37.8 s), so 30 s keeps the worst case near 41 s, well under the write-gate watchdog's 60 s. The queued
+#: writer's 1 s rule is unchanged, so a UI save still waits about a second. ``OO_REINDEX_OWNED_HOLD_TARGET_S`` may LOWER it, never
+#: raise it past this cap; an explicit ``OO_REINDEX_HOLD_TARGET_S`` is the operator's word and applies here too.
+REINDEX_OWNED_HOLD_TARGET_S = 30.0
+
+#: Row 446: the batch width while the machine is owned (see above). The re-index's precompute window is 500 articles and a window's
+#: end always commits, so 500 lets the window be the batch. ``OO_IMPORT_REINDEX_COMMIT_BATCH``, when set, is the operator's width
+#: and wins; the owned width is never narrower than :func:`import_reindex_commit_batch`.
+REINDEX_OWNED_COMMIT_BATCH = 500
+
+
+def reindex_owned_hold_target_s() -> float:
+    """The hold target while the machine is owned (row 446): :data:`REINDEX_OWNED_HOLD_TARGET_S`, lowered by
+    ``OO_REINDEX_OWNED_HOLD_TARGET_S`` (never raised past the cap), and the general target whenever the operator set
+    ``OO_REINDEX_HOLD_TARGET_S`` (0 there is count-only everywhere). An unreadable override falls back to the cap's default, for
+    :func:`reindex_hold_target_s`'s reason; an override of 0 means "no owned target", that is the general one."""
+    general = reindex_hold_target_s()
+    if general <= 0 or os.getenv("OO_REINDEX_HOLD_TARGET_S", "").strip():
+        return general
+    value = REINDEX_OWNED_HOLD_TARGET_S
+    raw = os.getenv("OO_REINDEX_OWNED_HOLD_TARGET_S", "").strip()
+    if raw:
+        try:
+            parsed = float(raw)
+        except ValueError:
+            parsed = REINDEX_OWNED_HOLD_TARGET_S
+        if math.isfinite(parsed) and parsed >= 0:
+            value = parsed if parsed > 0 else general
+    return min(value, REINDEX_OWNED_HOLD_TARGET_S)
+
+
+def reindex_owned_commit_batch() -> int:
+    """The batch width while the machine is owned (row 446): ``OO_IMPORT_REINDEX_COMMIT_BATCH`` when the operator set it, else
+    :data:`REINDEX_OWNED_COMMIT_BATCH`, never narrower than :func:`import_reindex_commit_batch`."""
+    base = import_reindex_commit_batch()
+    if os.getenv("OO_IMPORT_REINDEX_COMMIT_BATCH", "").strip():
+        return base
+    return max(base, REINDEX_OWNED_COMMIT_BATCH)
+
+
+def reindex_flush_policy(
+    target_s: float | None = None,
+    *,
+    owned_target_s: float | None = None,
+    owned: Callable[[], bool] | None = None,
+) -> Callable[[int, float], bool] | None:
     """The drain's early-commit policy for :func:`~src.analytics.store.reindex_articles`' ``should_flush``.
 
     A batch commits at the next article after it has held the gate for ``target_s`` seconds, OR once it has held it for at least
@@ -10859,16 +10952,33 @@ def reindex_flush_policy(target_s: float | None = None) -> Callable[[int, float]
     the ceiling on its size. The question is only asked of a batch holding at least one article, so the floor is one article and a
     pass always makes progress however slow a single article is.
 
+    Row 446: with ``owned_target_s`` and ``owned``, the target is ``owned_target_s`` while ``owned()`` answers True, read again AT
+    EVERY QUESTION, so the batch falls back to ``target_s`` the moment the window ends or the collector starts (a collector that
+    starts is also a queued writer, under the same 1 s rule). An ``owned()`` that raises answers False: unknown ownership is never
+    assumed ownership.
+
     ``None`` when the target is 0 (the operator's way back to the count-only rule): the caller then passes no policy at all."""
     target = reindex_hold_target_s() if target_s is None else target_s
     if target <= 0:
         return None
     from src.database.writer import write_gate_waiters
 
+    wide = owned_target_s if owned is not None and owned_target_s is not None and owned_target_s > target else None
+
+    def _owned_now() -> bool:
+        try:
+            return bool(owned())  # type: ignore[misc]
+        except Exception:  # noqa: BLE001 - unknown ownership is never ownership
+            return False
+
     def _should_flush(staged: int, held_s: float) -> bool:
-        if held_s >= target:
+        if held_s >= REINDEX_QUEUED_WRITER_MIN_HOLD_S and write_gate_waiters() > 0:
             return True
-        return held_s >= REINDEX_QUEUED_WRITER_MIN_HOLD_S and write_gate_waiters() > 0
+        if held_s < target:
+            return False
+        if wide is None or held_s >= wide:
+            return True
+        return not _owned_now()
 
     return _should_flush
 
@@ -10882,7 +10992,18 @@ def _restore_reindex_policy(stats: dict) -> Callable[[int, float], bool] | None:
     ``OO_REINDEX_HOLD_TARGET_S`` is 0 (the count-only rule); ``stats["hold_target_s"]`` says which rule ran."""
     target = reindex_hold_target_s()
     stats["hold_target_s"] = target
+    owned_target = reindex_owned_hold_target_s()
+    if owned_target > target and _import_owns_the_machine():
+        # Row 446: the higher target while the import owns the machine, re-read at every question.
+        stats["owned_hold_target_s"] = owned_target
+        return reindex_flush_policy(target, owned_target_s=owned_target, owned=_import_owns_the_machine)
     return reindex_flush_policy(target)
+
+
+def _import_owns_the_machine() -> bool:
+    from src.shared import import_owns_the_machine
+
+    return import_owns_the_machine()
 
 
 class WriterJobsRefused(RestoreRefused):
@@ -11244,7 +11365,8 @@ def run_restore(
     _owned = exclusive or owns_the_machine()
     if _owned:
         if reindex_commit_batch is None:
-            reindex_commit_batch = import_reindex_commit_batch()
+            # Row 446: the owned width (500, the precompute window), bounded by the owned hold target's policy below.
+            reindex_commit_batch = reindex_owned_commit_batch()
         if reindex_workers is None:
             from src.analytics.reindex_parallel import all_cores_worker_count
 
