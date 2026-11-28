@@ -243,6 +243,70 @@ def _class_of(enabled: Any, status: Any, tags: Any, rss_url: Any, verdict: str |
     )
 
 
+#: Row 462 (#2418 OPEN-QUESTIONS Q10): the offline detector read on each source's sampled article, against the
+#: source's own catalogue language. The script check cannot see a same-script error (es/pt, ru/be, ru/uk); this can.
+#: Per source a short code only (``lang_check``), and the zip's tally beside it; never a word of the text.
+LANG_CHECK_NOTE = (
+    "lang_check: the offline detector (py3langid, full model, p >= 0.90 on the first 5,000 characters, at least 200) "
+    "read on this source's sampled article, against the source's catalogue language (its primary subtag): agree; "
+    "disagree:<detected code>; undetermined = too short or low confidence; no_catalogue_language; withheld = a newsletter "
+    "body not exported; no_detector = the [analysis] extra is not installed here. One article per source: a sample, "
+    "not a verdict on the source"
+)
+
+
+#: At most this many disagreement pairs are listed (about 15 bytes each).
+_LANG_PAIRS_MAX = 80
+
+
+def _primary_subtag(code: Any) -> str | None:
+    c = str(code or "").strip().lower().replace("_", "-").split("-")[0]
+    return c if re.fullmatch(r"[a-z]{2,3}", c) else None
+
+
+def lang_check(catalogue_language: Any, text: Any, *, withheld: bool = False) -> str:
+    """One source's code for :data:`LANG_CHECK_NOTE`. Never raises."""
+    try:
+        from src.analytics.langdetect import detect_any_language, detector_available
+
+        stated = _primary_subtag(catalogue_language)
+        if stated is None:
+            return "no_catalogue_language"
+        if withheld:
+            return "withheld"
+        if not detector_available():
+            return "no_detector"
+        seen = detect_any_language(text if isinstance(text, str) else None)
+        if seen is None:
+            return "undetermined"
+        # nb/no are one written language under two codes; the detector says "no" for both
+        if seen == stated or {seen, stated} <= {"nb", "no"}:
+            return "agree"
+        return f"disagree:{seen}"
+    except Exception:  # noqa: BLE001 - a diagnostic never fails the export
+        return "undetermined"
+
+
+def _lang_check_tally(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """The zip's counts: outcomes, and each (catalogue -> detected) disagreement pair."""
+    outcomes: dict[str, int] = {}
+    pairs: dict[str, int] = {}
+    for r in rows:
+        code = r.get("lang_check")
+        if not code:
+            continue
+        key = "disagree" if code.startswith("disagree:") else code
+        outcomes[key] = outcomes.get(key, 0) + 1
+        if key == "disagree":
+            pair = f"{r.get('catalogue_language')}>{code.split(':', 1)[1]}"
+            pairs[pair] = pairs.get(pair, 0) + 1
+    ordered = sorted(pairs.items(), key=lambda kv: (-kv[1], kv[0]))
+    kept, left = ordered[:_LANG_PAIRS_MAX], ordered[_LANG_PAIRS_MAX:]
+    return {"note": LANG_CHECK_NOTE, "outcomes": outcomes, "disagreements": dict(kept),
+            # the most frequent pairs are listed and the rest counted, so the block stays well inside the zip's reserve
+            "pairs_left_out": len(left), "sources_in_pairs_left_out": sum(n for _, n in left)}
+
+
 def never_collected_in_set(db: Session) -> dict[str, Any]:
     """Counts only: every source with no stored article, by class, across the whole set (in the first zip)."""
     has_article = select(Article.id).where(Article.source_id == Source.id).exists()
@@ -326,6 +390,8 @@ def build_sample_zip(
                         a["body_withheld"] = "a newsletter: its body stays on this machine (OO_QUALITY_INCLUDE_NEWSLETTER_TEXT)"
                         row["body_withheld"] = True
                     text = a.get("content")
+                    row["catalogue_language"] = _primary_subtag(src.language)
+                    row["lang_check"] = lang_check(src.language, text, withheld=bool(row.get("body_withheld")))
                     raw = text.encode("utf-8") if isinstance(text, str) else b""
                     if isinstance(text, str) and len(raw) > _TEXT_MAX_BYTES:
                         # cut by UTF-8 bytes, not characters: 200k CJK characters are 600 KB (the 2026-11-14 read)
@@ -382,6 +448,7 @@ def build_sample_zip(
             "sources_in_this_zip": len(manifest) + len(empty),
             "sources_in_set": total,
             "sources": manifest,
+            "language_check": _lang_check_tally(manifest),
             "sources_without_article": {
                 "note": "no stored article for these sources",
                 # a source id is this instance's own above the shipped catalogue (field report 2026-11-14 5.4):

@@ -317,3 +317,69 @@ def test_the_whole_set_tally_lists_its_largest_classes_and_counts_the_rest(db, m
     assert [r[-1] for r in tally["rows"]] == [3, 2]
     assert tally["classes_left_out"] == 1 and tally["sources_in_classes_left_out"] == 1
     assert tally["sources"] == 6 and "null = the collector never checked" in tally["feed_status_note"]
+
+
+_ES = ("El ayuntamiento aprobó ayer el presupuesto municipal para el próximo año tras una larga sesión en la que los "
+       "concejales de la oposición criticaron la falta de inversión en los barrios del norte de la ciudad. ") * 4
+_PT = ("A câmara municipal aprovou ontem o orçamento para o próximo ano depois de uma longa sessão em que os vereadores "
+       "da oposição criticaram a falta de investimento nos bairros do norte da cidade. ") * 4
+
+
+def _lang_source(db, sid, language, text):
+    db.add(Source(id=sid, name=f"L{sid}", domain=f"l{sid}.example", language=language))
+    db.flush()
+    db.add(Article(url=f"https://l{sid}.example/a", canonical_url=f"https://l{sid}.example/a", source_id=sid,
+                   title="t", content=text, hash=f"{sid:064d}"))
+    db.commit()
+
+
+def test_the_language_check_compares_each_sampled_article_with_its_catalogue_language(db):
+    """Row 462 (#2418 OPEN-QUESTIONS Q10): a Portuguese text under a Spanish label is a same-script error the script check
+    cannot see. Each source row carries a short code, the zip carries the tally and the pairs; no word of the text is added."""
+    from src.analytics.langdetect import detector_available
+
+    if not detector_available():
+        pytest.skip("the offline detector ([analysis] extra) is not installed here")
+    _lang_source(db, 1, "es", _ES)          # agrees
+    _lang_source(db, 2, "es-ES", _PT)       # a Portuguese article on a Spanish-labelled source
+    _lang_source(db, 3, None, _ES)          # no catalogue language
+    _lang_source(db, 4, "pt", "Curto.")     # too short to tell
+    man = json.loads(_open(build_sample_zip(db, after=0, seed=1, cap=4_000_000)[0]).read("manifest.json"))
+    by_id = {r["source_id"]: r for r in man["sources"]}
+    assert by_id[1]["lang_check"] == "agree" and by_id[1]["catalogue_language"] == "es"
+    assert by_id[2]["lang_check"] == "disagree:pt" and by_id[2]["catalogue_language"] == "es"
+    assert by_id[3]["lang_check"] == "no_catalogue_language"
+    assert by_id[4]["lang_check"] == "undetermined"
+    tally = man["language_check"]
+    assert tally["outcomes"] == {"agree": 1, "disagree": 1, "no_catalogue_language": 1, "undetermined": 1}
+    assert tally["disagreements"] == {"es>pt": 1} and tally["pairs_left_out"] == 0
+    assert "câmara" not in json.dumps(tally, ensure_ascii=False)
+
+
+def test_the_language_check_is_never_run_on_a_withheld_newsletter_body():
+    from src.api.diagnostics.source_samples import lang_check
+
+    assert lang_check("en", _ES, withheld=True) == "withheld"
+    assert lang_check("", _ES) == "no_catalogue_language"
+    assert lang_check("not a code!", _ES) == "no_catalogue_language"
+
+
+def test_the_language_check_says_when_there_is_no_detector(monkeypatch):
+    import src.analytics.langdetect as ld
+    from src.api.diagnostics.source_samples import lang_check
+
+    monkeypatch.setattr(ld, "detector_available", lambda: False)
+    assert lang_check("es", _ES) == "no_detector"
+
+
+def test_the_detector_for_the_check_reports_a_language_the_app_cannot_analyse():
+    """detect_any_language is not limited to the supported set: a Belarusian page under a Russian label must read as be."""
+    from src.analytics.langdetect import SUPPORTED, detect_any_language, detector_available
+
+    if not detector_available():
+        pytest.skip("the offline detector ([analysis] extra) is not installed here")
+    be = ("Гарадскі савет учора зацвердзіў бюджэт на наступны год пасля доўгага пасяджэння, на якім дэпутаты апазіцыі "
+          "крытыкавалі недахоп інвестыцый у паўночныя раёны горада. ") * 4
+    assert "be" not in SUPPORTED
+    assert detect_any_language(be) == "be"
+    assert detect_any_language("short") is None
