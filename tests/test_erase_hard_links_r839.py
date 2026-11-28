@@ -506,6 +506,19 @@ def test_the_watcher_says_a_segment_with_a_second_name_was_left(tmp_path):
 
 
 @posix_only
+def test_the_watcher_says_a_recovery_copy_with_a_second_name_was_left(tmp_path):
+    """R854: a torn segment's recovery copy holds the segment's articles and its salt, so it is refused as a segment is."""
+    data = _own(tmp_path)
+    (data / "corpus" / "recovery").mkdir(parents=True)
+    outside = _outside(tmp_path)
+    before = outside.read_bytes()
+    os.link(outside, data / "corpus" / "recovery" / "seg-1.check.db")
+    log = _run_watcher(tmp_path, data)
+    assert outside.read_bytes() == before
+    assert "copies that may hold articles and the salt of their key were left" in log and "(count: 1)" in log
+
+
+@posix_only
 def test_a_link_in_the_keys_folder_is_never_followed_and_is_could_not_check(tmp_path):
     """Row 380 (R810 (1)): a link in the keys folder is never written through, and the result is never clean (the folder then
     holds something the app did not write: R806's exact-name pass, which leaves it; one that appears during the walk by the
