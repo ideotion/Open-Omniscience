@@ -626,7 +626,9 @@ def select_due_disqualified(
 UNMEASURED_MIN_STORED = 10
 
 
-def select_unmeasured_qualified(session: Session, *, limit: int, exclude: set[int] | None = None) -> list[Source]:
+def select_unmeasured_qualified(
+    session: Session, *, limit: int, exclude: set[int] | None = None, now: datetime | None = None,
+) -> list[Source]:
     """R728 C: enabled qualified sources that were NEVER judged here (no ``JUDGING_VERDICTS`` attempt:
     a curated or inherited stamp, never measured) and have at least ``UNMEASURED_MIN_STORED`` stored
     articles, least-recently-attempted first (the same rotation as :func:`select_unqualified`, so one
@@ -660,11 +662,14 @@ def select_unmeasured_qualified(session: Session, *, limit: int, exclude: set[in
         .limit(1).offset(UNMEASURED_MIN_STORED - 1).exists()
     )
     skip = ~Source.id.in_(sorted(exclude)) if exclude else true()
+    # R845: one found short of evidence waits its 30 days here too, or it would take a spare slot on every pass.
+    short_wait = _recent_not_enough_data_subquery(session, now=now or datetime.now(UTC))
     return (
         session.query(Source)
         .outerjoin(last_attempt, last_attempt.c.source_id == Source.id)
+        .outerjoin(short_wait, short_wait.c.source_id == Source.id)
         .filter(Source.status == STATUS_QUALIFIED, Source.enabled.is_(True), ~judged, enough, skip,
-                not_a_stand_in_source())
+                not_a_stand_in_source(), short_wait.c.source_id.is_(None))
         .order_by(last_attempt.c.last_at.asc().nullsfirst(), Source.id.asc())
         .limit(limit)
         .all()
@@ -2234,7 +2239,7 @@ def run_qualification_pass(
     unmeasured: list[Source] = []
     if reserved > 0 and total > len(rechecks):
         taken = {int(x.id) for x in [*new_candidates, *rechecks]}
-        unmeasured = select_unmeasured_qualified(session, limit=total - len(rechecks), exclude=taken)
+        unmeasured = select_unmeasured_qualified(session, limit=total - len(rechecks), exclude=taken, now=now)
         rechecks = [*rechecks, *unmeasured]
     offline_ids = {int(x.id) for x in unmeasured}
 

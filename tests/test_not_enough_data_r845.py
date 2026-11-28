@@ -190,6 +190,22 @@ def test_a_stale_qualified_source_stays_qualified_and_its_clock_does_not_move(db
     assert [x.id for x in q.select_due_qualified(db, now=later, limit=5)] == [s.id]
 
 
+def test_a_never_measured_qualified_source_waits_its_30_days_too(db, judge_clean):
+    """R728 C's pool (curated or inherited, never judged here) fills spare re-check slots; without the wait a stale one
+    took a slot and wrote a fresh attempt on every pass."""
+    s = _source(db, "curated.example", status=q.STATUS_QUALIFIED, enabled=True)
+    _articles(db, s, 12, days_old=300)
+    assert [x.id for x in q.select_unmeasured_qualified(db, limit=5, now=NOW)] == [s.id]
+    counts = [_pass(db, per_pass=0, recheck_per_pass=2)["not_enough_data"]]
+    for days in (1, 2):
+        counts.append(q.run_qualification_pass(db, None, now=NOW + timedelta(days=days), cohort_provider=_frozen,
+                                               per_pass=0, recheck_per_pass=2).get("not_enough_data", 0))
+    assert counts == [1, 0, 0]
+    assert db.query(SourceQualificationAttempt).filter_by(source_id=s.id).count() == 1
+    later = NOW + timedelta(days=q.EVIDENCE_RETRY_DAYS + 1)
+    assert [x.id for x in q.select_unmeasured_qualified(db, limit=5, now=later)] == [s.id]
+
+
 def test_a_disqualified_source_keeps_its_ladder_place(db, judge_clean):
     s = _source(db, "dq.example", status=q.STATUS_DISQUALIFIED, enabled=True)
     _attempt(db, s, q.STATUS_DISQUALIFIED, days_ago=70)
