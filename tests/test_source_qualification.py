@@ -817,3 +817,13 @@ def test_the_history_restore_sql_verdict_list_cannot_drift_from_JUDGING_VERDICTS
     # JUDGING_VERDICTS, so "verdicts that reset the clock" must never be confused for
     # "verdicts that decide status".
     assert set(JUDGING_VERDICTS) < set(CLOCK_VERDICTS)
+
+
+@pytest.fixture(autouse=True)
+def _judged_without_the_r845_evidence_gate(monkeypatch):
+    """These tests pin how a source is JUDGED, on fixtures of a few undated articles. R845's gate (no verdict
+    below 5 articles or without one published in the last 180 days) is pinned on its own in
+    tests/test_not_enough_data_r845.py, so it is lifted here rather than every fixture being re-dated."""
+    from src.catalog import qualification as _q
+
+    monkeypatch.setattr(_q, "evidence_shortfall", lambda session, source_ids, *, now: {})

@@ -998,3 +998,13 @@ def test_classify_failed_check_reads_the_window_when_given_one_and_the_switch_ot
     assert classify_failed_check(cut, since=kill_switch_epoch())[0] != "offline", "a window that saw no Stop is the host's"
     status = FetchFailed(f"HTTP 503 for {_CSV}")
     assert classify_failed_check(status, since=epoch)[0] == "http-error", "a status line is the host's answer whatever the window saw"
+
+
+@pytest.fixture(autouse=True)
+def _judged_without_the_r845_evidence_gate(monkeypatch):
+    """These tests pin how a source is JUDGED, on fixtures of a few undated articles. R845's gate (no verdict
+    below 5 articles or without one published in the last 180 days) is pinned on its own in
+    tests/test_not_enough_data_r845.py, so it is lifted here rather than every fixture being re-dated."""
+    from src.catalog import qualification as _q
+
+    monkeypatch.setattr(_q, "evidence_shortfall", lambda session, source_ids, *, now: {})

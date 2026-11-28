@@ -420,7 +420,7 @@ def test_the_staleness_rides_the_result_and_the_criteria_version_is_bumped():
     #       independent extraction signatures rather than one plus a soft corroborator
     #   -4  `link_density_rate` becomes corroborating only and can never disqualify a source
     #       on its own (R844, row 449, 2026-11-28)
-    assert CRITERIA_VERSION == "oo-source-qualification-4", (
+    assert CRITERIA_VERSION == "oo-source-qualification-5", (
         "the criteria set or the cohort machinery changed, so an attempt row must not read "
         "as though it were judged the old way -- bump the version and record why"
     )
@@ -726,3 +726,13 @@ def test_the_bulk_job_freezes_the_cohort_once_across_several_batches():
         f"the whole-corpus cohort was frozen {len(freezes)} times for one run of "
         f"{out['batches_run']} batches"
     )
+
+
+@pytest.fixture(autouse=True)
+def _judged_without_the_r845_evidence_gate(monkeypatch):
+    """These tests pin how a source is JUDGED, on fixtures of a few undated articles. R845's gate (no verdict
+    below 5 articles or without one published in the last 180 days) is pinned on its own in
+    tests/test_not_enough_data_r845.py, so it is lifted here rather than every fixture being re-dated."""
+    from src.catalog import qualification as _q
+
+    monkeypatch.setattr(_q, "evidence_shortfall", lambda session, source_ids, *, now: {})
