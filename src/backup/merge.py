@@ -12044,6 +12044,17 @@ def run_restore(
         # counters yet, stated explicitly in the persisted report's own rendering).
         # Best-effort; never blocks a committed restore.
         with timings.stage("work_induced_tally"):
+            # R832 / R830 Q3 (row 421): the import report says how many articles of the corpus the re-index has not
+            # finished, read fresh after the swap (a cached count predates this import). Unread is said, never 0.
+            try:
+                from src.analytics.quarantine_scope import not_analysed_count
+                from src.database.session import session_scope as _na_session_scope
+
+                with _na_session_scope() as _na_sess:
+                    report["analysis"] = {"not_analysed_in_your_corpus": not_analysed_count(_na_sess, fresh=True)}
+            except Exception as exc:  # noqa: BLE001 - never undo a committed, additive restore
+                report["analysis"] = {"not_analysed_unread": True}
+                log_failure(_LOG, "post-restore not-analysed tally failed", exc, level=logging.WARNING)
             try:
                 from sqlalchemy import func as _func
 

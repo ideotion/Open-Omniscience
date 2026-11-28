@@ -120,10 +120,12 @@ def _not_analysed_params() -> dict[str, str]:
     return {"engine": engine, "kw_legacy": legacy, "www_engine": _backlog_www_engine(), "s": _STATUS_MERGED}
 
 
-def not_analysed_count(session: Session) -> int:
+def not_analysed_count(session: Session, *, fresh: bool = False) -> int:
     """How many articles of the corpus the re-index has not finished (R832), disjoint from the quarantined and the not-screened
     ones. Raises when the store cannot be read (the caller says nothing then, never 0). Reused for ``_NOT_ANALYSED_TTL_S``,
-    and so is a failure: a read that failed is not tried again by every poll inside that time (it raises again, never 0)."""
+    and so is a failure: a read that failed is not tried again by every poll inside that time (it raises again, never 0).
+    ``fresh`` reads the store whatever the cache holds (an import report states the count as it was when it was written, and
+    the import has just changed it); the read refreshes the cache for the polls after it."""
     import time
 
     from sqlalchemy import text
@@ -142,11 +144,11 @@ def not_analysed_count(session: Session) -> int:
             raise RuntimeError("the not-analysed count could not be read")
         return None if _not_analysed_cache["value"] is None else int(_not_analysed_cache["value"])
 
-    hit = _cached()
+    hit = None if fresh else _cached()
     if hit is not None:
         return hit
     with _not_analysed_lock:
-        hit = _cached()  # another poll may have filled it while this one waited
+        hit = None if fresh else _cached()  # another poll may have filled it while this one waited
         if hit is not None:
             return hit
         try:

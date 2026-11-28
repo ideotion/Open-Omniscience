@@ -268,6 +268,12 @@ def test_the_standalone_reindex_precomputes_in_the_pool_not_on_one_core(tmp_path
     # The pool is memory-aware (row 416): on a runner with little free memory at that moment it rightly computes serially,
     # which is not what this test is about. Hold the memory figure steady so the path is the code's, not the runner's.
     monkeypatch.setattr(cgroup_memory, "effective_memory", lambda *a, **k: {"available_mb": 64_000.0})
+    # The CPU count is the pool's other input (row 444): on a one-core runner all_cores_worker_count() is 1, which is the
+    # serial path by design. Hold it at four so the path is the code's at any core count.
+    import src.analytics.reindex_parallel as reindex_parallel
+    from tests.os_scope import scope_os
+
+    scope_os(monkeypatch, reindex_parallel, cpu_count=lambda: 4)
 
     engine = app_sqlite_engine(
         ":memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True

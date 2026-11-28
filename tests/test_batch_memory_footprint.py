@@ -62,7 +62,7 @@ def test_exactly_at_the_floor_is_still_healthy():
     assert staged_text_cap_bytes(mem_avail_mb=_MEM_PRESSURE_FLOOR_MB) == _BATCH_MAX_TEXT_BYTES
 
 
-def test_an_unreadable_machine_never_assumes_pressure_from_silence():
+def test_an_unreadable_machine_never_assumes_pressure_from_silence(monkeypatch):
     """No psutil / a sandbox -- honesty rule (mirrors memguard): a missing
     reading must NEVER trip a pressure response. Simulated by NOT injecting
     mem_avail_mb and forcing the real psutil call to fail."""
@@ -81,8 +81,18 @@ def test_an_unreadable_machine_never_assumes_pressure_from_silence():
 
     # staged_text_cap_bytes itself must not propagate a reading failure --
     # _available_mem_mb() already catches internally and returns None; prove
-    # the cap function's OWN handling of an explicit None (the "no reading"
-    # case) falls back to the healthy default, never a fabricated pressure cut.
+    # the cap function's OWN handling of "no reading" falls back to the healthy
+    # default, never a fabricated pressure cut. An explicit mem_avail_mb=None
+    # means "read it now", so the reading itself is made to fail here (row 444:
+    # without that, the real psutil figure decided this assertion, and a runner
+    # with under _MEM_PRESSURE_FLOOR_MB free got the pressure cap).
+    import psutil
+
+    def _psutil_boom():
+        raise RuntimeError("no reading here")
+
+    monkeypatch.setattr(psutil, "virtual_memory", _psutil_boom)
+    assert batch_mod._available_mem_mb() is None
     assert staged_text_cap_bytes(mem_avail_mb=None) == _BATCH_MAX_TEXT_BYTES
 
 
