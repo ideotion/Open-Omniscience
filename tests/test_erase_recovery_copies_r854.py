@@ -200,3 +200,62 @@ _REACHES_CORPUS = re.compile(r"SEGMENT_DIR|CORPUS_DIR|corpus_folder\(|[\"']corpu
 @pytest.mark.parametrize("path", _CARRIERS, ids=lambda p: p.name)
 def test_no_backup_export_or_bundle_reaches_the_corpus_folder(path):
     assert not _REACHES_CORPUS.search(path.read_text(encoding="utf-8")), path.name
+
+
+# ---------------------------------------------------------------- security reads on #2443
+
+
+@posix_only
+def test_a_copy_s_journal_is_never_destroyed_even_when_the_settle_never_runs(tmp_path):
+    """The logs pass says "overwritten"; only the settle, beside a proven segment, says "destroyed", and never for a copy."""
+    data = tmp_path / "OOS data"
+    rec = data / "corpus" / "recovery"
+    rec.mkdir(parents=True)
+    (rec / "seg-1.check.db").write_bytes(os.urandom(8192))
+    (rec / "seg-1.check.db-journal").write_bytes(os.urandom(8192))
+    sweep = crypto_erase._corpus_open(data, 901)
+    try:
+        crypto_erase._corpus_logs(sweep)
+        report = crypto_erase._corpus_report(sweep)
+    finally:
+        for fd, _kind, _cap in crypto_erase._HELD.pop(901, []):
+            os.close(fd)
+        for key in ("recovery_dfd", "dfd"):
+            if sweep.get(key) is not None:
+                os.close(sweep[key])
+    assert report["destroyed"] == 0 and report["recovery_copies"] == 2, report
+
+
+@posix_only
+def test_in_a_shared_folder_an_empty_recovery_folder_is_left(tmp_path, monkeypatch):
+    shared = tmp_path / "home"
+    rec = shared / "corpus" / "recovery"
+    rec.mkdir(parents=True)
+    (shared / "corpus" / "theirs.txt").write_bytes(b"theirs")
+    monkeypatch.setenv("OO_DATA_DIR", str(shared))
+    report = _erase(shared)
+    assert report["scope"] == "app-only"
+    assert rec.is_dir(), "never shown to be the app's: an operator's empty folder stays"
+
+
+@posix_only
+@sqlcipher_only
+def test_in_a_shared_folder_a_copy_beside_a_named_segment_is_rewritten(tmp_path, monkeypatch):
+    shared = tmp_path / "home"
+    s1 = shared / "corpus" / "seg-1.db"
+    _encrypted(s1)
+    _segment_entry(shared, s1)
+    copy = _copy_of(s1)
+    monkeypatch.setenv("OO_DATA_DIR", str(shared))
+    (shared / "thesis.docx").write_bytes(b"years of work")
+    kept = _Kept(copy)
+    try:
+        report = _erase(shared)
+        after = kept.read()
+    finally:
+        kept.close()
+    assert report["scope"] == "app-only"
+    assert (shared / "thesis.docx").read_bytes() == b"years of work"
+    assert report["corpus_segments"]["recovery_copies"] == 2, report["corpus_segments"]
+    assert all(after[i:i + 4096] != kept.before[i:i + 4096] for i in range(0, len(after), 4096))
+    assert not copy.exists()

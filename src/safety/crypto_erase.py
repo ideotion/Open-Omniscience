@@ -2445,7 +2445,7 @@ def _corpus_open(base: Path, generation: int, named_by: list[bytes] | None = Non
         if RECOVERY_DIR in names:
             # R854: the recovery copies' folder, looked at by path here as the rest is; a link or a file at its name is foreign
             try:
-                if os.path.isdir(folder / RECOVERY_DIR) and not os.path.islink(folder / RECOVERY_DIR):
+                if _kind(folder / RECOVERY_DIR) == "dir":   # a junction is a link here (security reads, R854)
                     inner = os.listdir(folder / RECOVERY_DIR)
                     copies = sum(1 for n in inner if _RECOVERY_RE.match(n) is not None)
                     foreign += len(inner) - copies
@@ -2586,6 +2586,8 @@ def _recovery_open(out: dict, dfd: int, generation: int, named: set[str] | None)
             out["foreign"] += 1  # swapped between the look and the open
             return
         names = sorted(os.listdir(rfd))
+        # R711: in app-only scope the folder is the app's only once a copy in it is; an operator's empty folder is left alone
+        out["recovery_ours"] = named is None
     except (OSError, NotImplementedError):
         with contextlib.suppress(OSError):
             os.close(rfd)
@@ -2646,6 +2648,7 @@ def _recovery_open(out: dict, dfd: int, generation: int, named: set[str] | None)
         out["files"].append({"name": name, "seg": "recovery:" + m.group(1), "fd": fd, "kind": kind,
                              "ident": (fs.st_dev, fs.st_ino), "head16": b"", "head_ok": head_ok, "dir_fd": rfd,
                              "rel": f"{RECOVERY_DIR}/{name}", "copy": True})
+        out["recovery_ours"] = True
 
 
 def _records_before(base: Path, main_db: Path | None) -> list[bytes]:
@@ -2669,7 +2672,9 @@ def _corpus_logs(sweep: dict) -> None:
     for f in sweep["files"]:
         if f["kind"] == "whole":
             written, _total, stop = _rewrite_fd(f["fd"], capped=False)  # R797 (a): a log holds copies of the salt page
-            f["state"] = "destroyed" if stop is None else ("partially_overwritten" if written else "not_overwritten")
+            # "Overwritten" until :func:`_corpus_settle` finds its segment proven: a settle that never runs (the drive changed)
+            # never leaves a log, or a recovery copy's journal, said "destroyed" (security reads, R854)
+            f["state"] = "overwritten" if stop is None else ("partially_overwritten" if written else "not_overwritten")
         if f["kind"] != "head":
             _corpus_unlink(f, dfd)
 
@@ -2711,6 +2716,8 @@ def _corpus_settle(sweep: dict, raws: list[bytes]) -> None:
                 f["state"] = "destroyed" if f["head_ok"] else "not_overwritten"
             if f.get("state") == "destroyed" and f["seg"] not in proven:
                 f["state"] = "overwritten"
+            elif f["kind"] == "whole" and f.get("state") == "overwritten" and f["seg"] in proven:
+                f["state"] = "destroyed"   # a log rewritten whole beside a segment with evidence (never a copy's: R854)
             continue
         if f["seg"] in proven:
             f["state"] = "destroyed"
@@ -4357,7 +4364,7 @@ def _quick_crypto_erase(*, data_dir: Path | None, generation: int, missed: list[
         with contextlib.suppress(OSError):
             os.close(corpus_sweep["recovery_dfd"])  # R854: its copies' own handles stay with this wipe's kept descriptors (R789)
         corpus_sweep["recovery_dfd"] = None
-        if corpus_sweep.get("dfd") is not None:
+        if corpus_sweep.get("dfd") is not None and corpus_sweep.get("recovery_ours"):
             with contextlib.suppress(OSError):
                 os.rmdir(RECOVERY_DIR, dir_fd=corpus_sweep["dfd"])  # only when empty: what is left in it is not the app's
     if corpus_sweep.get("dfd") is not None:
