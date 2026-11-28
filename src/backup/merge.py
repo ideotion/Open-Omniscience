@@ -4405,13 +4405,26 @@ def _merge_sources(con, batch_id, results) -> None:
     # nothing, while two DIFFERENT instances' attempts on the same domain are genuinely
     # distinct attempts at distinct times and both survive. That predicate is served by
     # the table's own idx_qual_attempt_source_time index.
-    q = DomainResult()
-    q.new = _insert_tracked(
-        con, batch_id, "source_qualification_attempts",
+    # Row 450: the failing criteria's NAMES travel with the attempt when the backup has the column and the main
+    # store has it too (an older backup has none: those rows arrive NULL, "not recorded", never guessed). A value is
+    # copied only when it is made of lower-case letters, underscores and commas and fits the column, so another
+    # instance's file can put nothing but criterion names into this one.
+    carry_failing = (_has_column(con, "inc", "source_qualification_attempts", "failing_criteria")
+                     and _has_column(con, "main", "source_qualification_attempts", "failing_criteria"))
+    head = (
+        "INSERT INTO main.source_qualification_attempts"
+        " (source_id, attempted_at, verdict, criteria_version, failing_criteria)"
+        " SELECT ms.new, i.attempted_at, i.verdict, i.criteria_version, " + _FAILING_CRITERIA_COPY
+    ) if carry_failing else (
         "INSERT INTO main.source_qualification_attempts"
         " (source_id, attempted_at, verdict, criteria_version)"
         " SELECT ms.new, i.attempted_at, i.verdict, i.criteria_version"
-        " FROM inc.source_qualification_attempts i"
+    )
+    q = DomainResult()
+    q.new = _insert_tracked(
+        con, batch_id, "source_qualification_attempts",
+        head  # nosec B608 # module-local literals only
+        + " FROM inc.source_qualification_attempts i"
         " JOIN temp.map_sources ms ON ms.old = i.source_id"
         " WHERE NOT EXISTS ("
         "   SELECT 1 FROM source_qualification_attempts m2"
@@ -5146,6 +5159,18 @@ def _inc_has_table(con: sqlite3.Connection, name: str) -> bool:
             "SELECT 1 FROM inc.sqlite_master WHERE type = 'table' AND name = ?", (name,)
         ).fetchone()
     )
+
+
+#: What a merge copies of an incoming attempt's ``failing_criteria`` (row 450): the value only when it is made of
+#: lower-case letters, underscores and commas and fits the column, else NULL ("not recorded"). SQLite's GLOB and a
+#: TEXT ``length()`` both stop at the first NUL, so the size and the NUL are measured on the BYTES, and a value that
+#: is not TEXT at all (a BLOB keeps its type in a TEXT column) is refused before either.
+_FAILING_CRITERIA_COPY = (
+    "CASE WHEN i.failing_criteria IS NULL OR typeof(i.failing_criteria) <> 'text'"
+    " OR length(CAST(i.failing_criteria AS BLOB)) > 400"
+    " OR instr(CAST(i.failing_criteria AS BLOB), x'00') > 0"
+    " OR i.failing_criteria GLOB '*[^a-z_,]*' THEN NULL ELSE i.failing_criteria END"
+)
 
 
 def _has_column(con: sqlite3.Connection, schema: str, table: str, column: str) -> bool:
