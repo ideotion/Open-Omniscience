@@ -113,7 +113,8 @@ def test_failure_keeps_validators_and_still_resets_backoff(db):
     ("", 0),
 ])
 def test_feed_failure_status(text, status):
-    assert P.feed_failure_status(FetchError(text)) == status
+    assert P.feed_failure_status(text) == status
+    assert P.feed_failure_status(text, robots=True) == 0
 
 
 def test_recorded_failures_land_in_coverage_error_bucket():
