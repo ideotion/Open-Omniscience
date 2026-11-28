@@ -7,7 +7,7 @@ Field log 2026-06-13: some servers IGNORE conditional-GET headers and return a
 full 200 every pass even when nothing changed (~93% duplicate rate at 1-minute
 intervals). When a 200 fetch yields ZERO new articles we delay this ONE feed's
 next re-check by a CAPPED, TEMPORARY, SELF-RESETTING amount — a transport
-de-churn, NEVER an exclusion. ANY new article, a 304, or a fetch error resets it.
+de-churn, NEVER an exclusion. ANY new article or a 304 resets it; a fetch error advances it (row 454).
 
 These tests cover the state machine (increment / reset / cap) and the collect
 loop's additive due-check (a backed-off feed is skipped THIS pass, counted
@@ -174,7 +174,7 @@ def test_cap_is_never_exceeded(db):
     assert delay <= P.BACKOFF_CAP_S + 1  # clamped, never unbounded
 
 
-# --------------------------------------------------------------------------- #
+# Reset conditions: new content / 304 clear the backoff; a fetch error advances it (row 454)
 # Reset conditions: new content / 304 / fetch error all clear the backoff
 # --------------------------------------------------------------------------- #
 
@@ -232,6 +232,7 @@ def test_fetch_error_advances_backoff(db):
         def fetch(self, *a, **k):
             raise FetchError("feed unreachable")
 
+    P._note_feed_read()  # another feed was just read: the network is up, so a no-answer failure is this feed's own
     before = datetime.now(UTC)
     tally = P.ingest_source(db, src, fetcher=_Boom())
     db.commit()
@@ -398,3 +399,66 @@ def test_collect_loop_runs_all_when_none_backed_off(db):
     # Both now carry a backoff window from their all-duplicate 200.
     assert not P.feed_is_due(db.get(FeedFetchState, a.id))
     assert not P.feed_is_due(db.get(FeedFetchState, b.id))
+
+
+def _seed_climb(db, n=4):
+    src = _make_source(db)
+    db.add(FeedFetchState(source_id=src.id, consecutive_unchanged=n, skip_until=datetime.now(UTC) - timedelta(minutes=1)))
+    db.commit()
+    return src
+
+
+class _NoAnswer:
+    def fetch(self, *a, **k):
+        raise FetchError("connection failed: name or service not known")
+
+
+def test_a_no_answer_failure_with_no_recent_read_leaves_the_climb(db):
+    """Row 454: when no feed has been read lately, a failure that never reached the host (DNS, connect) may be this machine's
+    network (Wi-Fi or a Tor circuit down fails every feed alike), so the back-off is left where it was: the failure is still
+    RECORDED, and the whole catalogue is not held back for hours after the network returns."""
+    src = _seed_climb(db)
+    P.ingest_source(db, src, fetcher=_NoAnswer())
+    db.commit()
+    st = db.get(FeedFetchState, src.id)
+    assert st.consecutive_unchanged == 4
+    assert st.last_status == 0 and st.last_checked_at is not None  # still recorded as a failed check
+
+
+def test_a_no_answer_failure_after_a_recent_read_advances(db):
+    src = _seed_climb(db)
+    P._note_feed_read()
+    P.ingest_source(db, src, fetcher=_NoAnswer())
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 5
+
+
+def test_a_stale_read_is_not_evidence_the_network_is_up(db, monkeypatch):
+    src = _seed_climb(db)
+    P._note_feed_read()
+    monkeypatch.setattr(P, "NETWORK_SEEN_WORKING_S", -1.0)  # the read is older than the window
+    P.ingest_source(db, src, fetcher=_NoAnswer())
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 4
+
+
+def test_a_host_answer_advances_with_no_recent_read(db):
+    """An HTTP status is the host's own answer, whatever the rest of the network did: it always advances."""
+    src = _seed_climb(db)
+
+    class _Http:
+        def fetch(self, *a, **k):
+            raise FetchError("HTTP 503 for https://feed.example/rss")
+
+    P.ingest_source(db, src, fetcher=_Http())
+    db.commit()
+    assert db.get(FeedFetchState, src.id).consecutive_unchanged == 5
+
+
+def test_a_read_is_noted_as_evidence(db):
+    """A 304 (or a 200) is what marks the network as seen working."""
+    src = _seed_climb(db)
+
+    assert not P._network_seen_working()
+    P.ingest_source(db, src, fetcher=_StubFetcher([_feed_result(304, etag='"v1"')]))
+    assert P._network_seen_working()

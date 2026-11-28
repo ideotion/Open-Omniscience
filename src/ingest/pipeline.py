@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 # again on the same capped schedule, never dropped and never hammered. The state is stored (never hidden)
 # so the task manager / diagnostics can show "backed off until T".
 #
-# delay = min(BACKOFF_BASE_S * 2 ** consecutive_unchanged, BACKOFF_CAP_S)
+# delay = min(BACKOFF_BASE_S * 2 ** (consecutive_unchanged - 1), BACKOFF_CAP_S)
 # so the 1st no-new-content 200 waits BASE, then 2*BASE, 4*BASE, ... up to CAP.
 #
 # Both bounds are overridable by env so an operator can widen, narrow, or disable
@@ -755,7 +755,15 @@ def ingest_source(
             # A failure ADVANCES the back-off (row 454): a feed that fails every pass is asked again after 5 min, 10, 20 ...
             # up to the same 6 h cap as a quiet feed, never dropped. It used to RESET it, so a dead feed was asked at the full
             # cadence forever. The first read (a 200 or a 304) resets it again.
-            _update_feed_backoff(session, source.id, reset=False)
+            # A failure that never reached the host (``dns``/``connect``/``other``: no answer arrived) can be THIS machine's
+            # network as well as the feed's: Wi-Fi or a Tor circuit down fails every feed alike, and climbing them all would hold the
+            # whole catalogue back for up to 6 h after the network returns. So such a failure advances only when another feed was
+            # READ recently (``_network_seen_working``), the evidence that the network itself was up; otherwise the history is left
+            # as it was, the pre-row-454 cadence. An answer from the host (an HTTP status, a content verdict, a robots refusal) is
+            # the feed's own and always advances.
+            if _failure_answered_by_host(record_text(exc, typed=False), robots_disallowed=isinstance(exc, RobotsDisallowed),
+                                         since=pass_epoch) or _network_seen_working():
+                _update_feed_backoff(session, source.id, reset=False)
         _commit_feed_bookkeeping(session)
         # A refusal by the kill switch is the person's own setting, not the feed's behaviour:
         # say so (invariant #14e's corollary), by the same classifier the per-article
@@ -764,6 +772,8 @@ def ingest_source(
             tally["skipped_offline"] = 1
         return tally
 
+    if feed_resp.status_code in FEED_READ_STATUSES:
+        _note_feed_read()
     if feed_resp.status_code == 304:
         # Unchanged since last pass — nothing new to parse or ingest. The server
         # answered honestly, so this is NOT penalised: clear any backoff. No
@@ -969,6 +979,34 @@ def _record_feed_failure(session: Session, source_id: int, status: int) -> None:
 #: The statuses a feed is READ on: the collector parses a 200 and honours a 304; every other status is a failed check
 #: (``_record_feed_failure``), and ``0`` means the failure named none. The same split as Coverage's (R848).
 FEED_READ_STATUSES = frozenset({200, 304})
+
+# Row 454: how recently another feed must have been READ for a no-answer failure (dns/connect/other) to count as the feed's own.
+# Process memory only, never stored: after a restart the first no-answer failures leave the back-off as it was until a read lands.
+NETWORK_SEEN_WORKING_S: float = _env_float("OO_FEED_NETWORK_SEEN_WORKING_S", 900.0)
+_LAST_FEED_READ_AT: list[float] = []  # monotonic time of the last 200/304 feed read, one slot (a list so tests can reset it)
+
+
+def _note_feed_read() -> None:
+    """Remember that a feed was just read (a 200 or a 304): the network was up a moment ago."""
+    import time
+
+    _LAST_FEED_READ_AT[:] = [time.monotonic()]
+
+
+def _network_seen_working() -> bool:
+    """True when some feed was read within :data:`NETWORK_SEEN_WORKING_S` (row 454)."""
+    import time
+
+    return bool(_LAST_FEED_READ_AT) and time.monotonic() - _LAST_FEED_READ_AT[0] <= NETWORK_SEEN_WORKING_S
+
+
+def _failure_answered_by_host(detail: str, *, robots_disallowed: bool, since: int | None) -> bool:
+    """A failure carrying the HOST's answer (an HTTP status, a content or URL verdict, a robots refusal), as against one where
+    nothing came back (``dns``, ``connect``, ``other``), which this machine's own network can cause as well as the feed."""
+    if robots_disallowed:  # the host's robots.txt answered; an UNREACHABLE robots.txt is classified like any failure
+        return True
+    reason = _failure_reason(detail, since=since)
+    return reason.startswith("http_") or reason in _RESPONSE_ANSWERS
 
 
 def feed_check_was_read(state: FeedFetchState | Row | None) -> bool:

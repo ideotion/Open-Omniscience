@@ -283,7 +283,11 @@ def test_a_feed_pass_with_no_stop_records_the_feed_as_before_the_control(db, tmp
 
 def test_a_host_failure_of_the_feed_get_advances_the_backoff_the_control(db, tmp_path):
     """The control for the Stop tests above: the same failure with no Stop is the feed's own answer, so it moves the
-    history (row 454: a failure advances the back-off, 4 -> 5), where a Stop leaves it at 4."""
+    history (row 454: a failure advances the back-off, 4 -> 5), where a Stop leaves it at 4. A connect failure counts as the
+    feed's only once another feed was read recently (the network was up), so the test says so first."""
+    from src.ingest import pipeline
+
+    pipeline._note_feed_read()
     row = _source(db, seed=True)
     tally = ingest_source(db, row, fetcher=_fetcher(tmp_path, [], feed=True, down_on="/feed.xml", retries=0))
     st = _state(db, row.id)
