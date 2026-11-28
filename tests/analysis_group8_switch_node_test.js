@@ -39,6 +39,7 @@ const SRC = [
   "const ooLabelText = (a, b) => a + ': ' + b;",
   "const ooLangCell = (l) => '<i>' + esc(l) + '</i>';",
   "const ooIsoDate = (s) => s ? String(s).slice(0, 10) : '';",
+  "const ooArticleDateHtml = (a) => (a && a.published_at) ? ooIsoDate(a.published_at) : '';",
   "const ooFetchedOffSiteNote = () => '';",
   "const ooSaidHtml = (o, f) => '<said>' + esc(o[f]) + '</said>';",
   "const els = {}; const $ = (id) => els[id] || null;",

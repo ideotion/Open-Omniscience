@@ -2471,7 +2471,7 @@
         // The file name is isolated (<bdi translate="no">) so a right-to-left line cannot reorder it and no translator rewrites it.
         corpusCheckLine = `<div class="card-caveat">${cc.safety_net
           ? esc(tf("The check of your whole corpus after this import found a problem, so the import is not complete. The safety copy of your corpus from before the import is kept in your data folder as {name}.", { name: "\u0001name\u0002" }))
-            .replace("\u0001name\u0002", `<bdi translate="no" dir="ltr">${esc(String(cc.safety_net))}</bdi>`)
+            .replace("\u0001name\u0002", () => `<bdi translate="no" dir="ltr">${esc(String(cc.safety_net))}</bdi>`)
           : esc(t("The check of your whole corpus after this import found a problem, so the import is not complete."))}</div>`;
       } else if (cc && cc.state === "unchecked") {
         corpusCheckLine = `<div class="card-caveat">${esc(t("The check of your whole corpus after this import did not finish, so the import is not complete. It runs again the next time the app starts."))}</div>`;
@@ -4926,6 +4926,9 @@
         // R806 (5) never follows a keys folder that is a link; the app's own keys may be where it points, so the result is never clean.
         const keysLink = r.keys_link === true;
         // Anything of the app's whose removal failed (a key file in a kept keys folder, an entry in a folder it does not own) is never clean.
+        // Row 458: a list field that is not an array (a string, an object) reads as empty, never as .join on it.
+        const _list = (v) => (Array.isArray(v) ? v.map(String) : []);
+        const keysLeftNames = _list(r.keys_left_names), leftUntouched = _list(r.left_untouched), leftCommon = _list(r.left_common_names);
         const keysLeft = Number(r.keys_left) || 0;  // the app's own key files still in keys (their unlink failed): a count only
         const leftOver = (r.not_removed || []).length > 0 || keysLeft > 0;
         // R809: the marked data drive was not there (nothing on it touched: a FAILURE, never "removed", never clean), or it went away
@@ -5053,10 +5056,10 @@
             : (r.removed === true ? `<div class="hint">${esc(t("The data folder was removed."))}</div>` : "")) +
           // R836 Q2 (row 378): items left in the app's shaped folders may be the operator's or the app's own under an older name,
           // so the erase of the data folder is said to be not complete; the folders by the app's own names, a count only.
-          (shapedN ? `<div class="card-caveat">${esc(tfw("Items were left in the app’s {folders} folders, because the app did not create them or wrote them under an older name: the erase of the data folder is not complete (count: {n}).", { folders: "\u0001folders\u0002", n: fmtNum(shapedN, 0) })).replace("\u0001folders\u0002", `<bdi translate="no" dir="ltr">${esc(shapedFolders.join(", "))}</bdi>`)}</div>` : "") +
+          (shapedN ? `<div class="card-caveat">${esc(tfw("Items were left in the app’s {folders} folders, because the app did not create them or wrote them under an older name: the erase of the data folder is not complete (count: {n}).", { folders: "\u0001folders\u0002", n: fmtNum(shapedN, 0) })).replace("\u0001folders\u0002", () => `<bdi translate="no" dir="ltr">${esc(shapedFolders.join(", "))}</bdi>`)}</div>` : "") +
           // Row 378 (coordinator's ruling amending R837): a Hugging Face sign-in token the erase saw and left, or could not overwrite
           // and remove: a credential only the operator can revoke, said in plain words (the app's own folder names only).
-          (hfTokenLeft.length ? `<div class="card-caveat">${esc(tfw("A Hugging Face sign-in token may remain in {folders}: you can revoke it in your Hugging Face account.", { folders: "\u0001folders\u0002" })).replace("\u0001folders\u0002", `<bdi translate="no" dir="ltr">${esc(hfTokenLeft.join(", "))}</bdi>`)}</div>` : "") +
+          (hfTokenLeft.length ? `<div class="card-caveat">${esc(tfw("A Hugging Face sign-in token may remain in {folders}: you can revoke it in your Hugging Face account.", { folders: "\u0001folders\u0002" })).replace("\u0001folders\u0002", () => `<bdi translate="no" dir="ltr">${esc(hfTokenLeft.join(", "))}</bdi>`)}</div>` : "") +
           // R839 / R840 (row 438): a file with another name elsewhere: the app's own written all the same; any other not written
           // (contents may remain under that name); a possible copy of the corpus not shown to be the app's left whole. Counts only.
           (linkedRefused ? `<div class="card-caveat">${esc(tfw("Some copies that may hold articles and the salt of their key were left, because they also had another name elsewhere on the disk and could not be shown to be the app’s own: the erase is not complete (count: {n}).", { n: fmtNum(linkedRefused, 0) }))}</div>` : "") +
@@ -5070,7 +5073,7 @@
           (recordLeft ? `<div class="card-caveat">${esc(t("The app’s at-rest record could not be overwritten and removed, so key material may remain on the disk: the erase may be incomplete."))}</div>` : "") +
           (keysLeft ? `<div class="card-caveat">${esc(tfw("Some of the app’s own key files could not be removed from the {folder} folder, so the erase may be incomplete: remove them by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}` +
             // the app's own exact file names only (never another entry of the folder), so the operator knows which to remove
-            ((r.keys_left_names || []).length ? ` <bdi translate="no" dir="ltr">${esc(r.keys_left_names.join(", "))}</bdi>` : "") + `</div>` : "") +
+            (keysLeftNames.length ? ` <bdi translate="no" dir="ltr">${esc(keysLeftNames.join(", "))}</bdi>` : "") + `</div>` : "") +
           (keysLink ? `<div class="card-caveat">${esc(tfw("The {folder} folder in the data folder is a link, which the erase never follows: the app’s signing keys may be where it points, and they were not destroyed. Remove them there by hand.", { folder: "\u0001folder\u0002" })).replace("\u0001folder\u0002", `<bdi translate="no">keys</bdi>`)}</div>` : "") +
           (notRemoved ? `<div class="card-caveat">${esc(t("The data folder itself could not be removed, so something may be left in it: check it and remove it by hand."))}</div>` : "") +
           (back ? `<div class="card-caveat">${esc(t("The data folder existed again when the erase ended, although the erase had removed it: something recreated it afterwards, so the erase may be incomplete. Restart the app, run the wipe again, then run the full free-space overwrite below."))}</div>` : "") +
@@ -5079,9 +5082,9 @@
           (unlisted ? `<div class="card-caveat">${esc(tfw("The erase could not list {n} of the folders it was to erase, so it could not check the files in them: the erase may be incomplete. Make those folders readable (the app log names them), then run the wipe again and a full overwrite of free disk space below.", { n: fmtNum(unlisted, 0) }))}</div>` : "") +
           // R711: in a folder the app does not own, only its files went; the folder and the rest stayed, and the names are in the report.
           (r.scope === "app-only"
-            ? `<div class="card-caveat" title="${esc((r.left_untouched || []).join(", "))}">${esc(tfw("Your data folder is not the app’s own: only the app’s files were removed, and {n} other entries were left untouched.", { n: fmtNum((r.left_untouched || []).length, 0) }))}</div>` +
-              ((r.left_common_names || []).length
-                ? `<div class="card-caveat">${esc(tfw("Also left, because the name is common and may be yours: {names}. Check them and remove what is the app’s.", { names: r.left_common_names.join(", ") }))}</div>`
+            ? `<div class="card-caveat" title="${esc(leftUntouched.join(", "))}">${esc(tfw("Your data folder is not the app’s own: only the app’s files were removed, and {n} other entries were left untouched.", { n: fmtNum(leftUntouched.length, 0) }))}</div>` +
+              (leftCommon.length
+                ? `<div class="card-caveat">${esc(tfw("Also left, because the name is common and may be yours: {names}. Check them and remove what is the app’s.", { names: leftCommon.join(", ") }))}</div>`
                 : "")
             : "") +
           // R809 / R812: no free-space overwrite is offered for a drive that is not there, or that went away during the erase: it
@@ -5128,10 +5131,10 @@
         `${esc(String(r.passes))}× — ${esc(_fmtBytes(r.bytes_written || 0))}. <span class="muted">${esc(r.limit)}</span></div>` +
         // R805 (c)4: the folder is now outside the data folder, so it is shown as the plain path it is.
         (r.scrub_folder_left
-          ? `<div class="card-caveat">${esc(tfw("The overwrite could not remove all its temporary files from {path}: remove that folder by hand.", { path: "\u0001path\u0002" })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder_left))}</bdi>`)}</div>`
+          ? `<div class="card-caveat">${esc(tfw("The overwrite could not remove all its temporary files from {path}: remove that folder by hand.", { path: "\u0001path\u0002" })).replace("\u0001path\u0002", () => `<bdi translate="no">${esc(String(r.scrub_folder_left))}</bdi>`)}</div>`
           : "") +
         (r.scrub_folder
-          ? `<div class="hint">${esc(tfw("The overwrite wrote its temporary files in {path} and removed them. It left {reserve} of free space unwritten so the disk would not fill completely; anything in that part was not overwritten.", { path: "\u0001path\u0002", reserve: _fmtBytes(r.reserve_bytes || 0) })).replace("\u0001path\u0002", `<bdi translate="no">${esc(String(r.scrub_folder))}</bdi>`)}</div>`
+          ? `<div class="hint">${esc(tfw("The overwrite wrote its temporary files in {path} and removed them. It left {reserve} of free space unwritten so the disk would not fill completely; anything in that part was not overwritten.", { path: "\u0001path\u0002", reserve: _fmtBytes(r.reserve_bytes || 0) })).replace("\u0001path\u0002", () => `<bdi translate="no">${esc(String(r.scrub_folder))}</bdi>`)}</div>`
           : "");
     }
 

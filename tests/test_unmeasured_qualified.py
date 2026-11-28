@@ -150,3 +150,13 @@ def test_one_with_no_evidence_rotates_to_the_back(Session):
         s.commit()
         assert [int(x.id) for x in q.select_unmeasured_qualified(s, limit=1)] == [second]
         assert {int(x.id) for x in q.select_unmeasured_qualified(s, limit=2)} == {first, second}
+
+
+@pytest.fixture(autouse=True)
+def _judged_without_the_r845_evidence_gate(monkeypatch):
+    """These tests pin how a source is JUDGED, on fixtures of a few undated articles. R845's gate (no verdict
+    below 5 articles or without one published in the last 180 days) is pinned on its own in
+    tests/test_not_enough_data_r845.py, so it is lifted here rather than every fixture being re-dated."""
+    from src.catalog import qualification as _q
+
+    monkeypatch.setattr(_q, "evidence_shortfall", lambda session, source_ids, *, now: {})

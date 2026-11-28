@@ -23,6 +23,7 @@ HONESTY by construction:
 
 from __future__ import annotations
 
+import re
 import threading
 
 from src.analytics.managed import MANAGED_LANGUAGES, UNSEGMENTED
@@ -119,5 +120,36 @@ def detect_language(
     except Exception:  # noqa: BLE001 - any classify failure -> honest unknown
         return None
     if lang in SUPPORTED and float(prob) >= min_prob:
+        return lang
+    return None
+
+
+_CODE = re.compile(r"[a-z]{2,3}")
+
+
+def detect_any_language(
+    text: str | None, *, min_chars: int = _MIN_CHARS, min_prob: float = _MIN_PROB
+) -> str | None:
+    """The same offline, confidence-gated detection, WITHOUT the restriction to :data:`SUPPORTED`.
+
+    For a diagnostic that compares a source's stated language with its text (row 462, #2418 OPEN-QUESTIONS Q10): a
+    Belarusian page under a Russian label must read as ``be``, not as "unknown" because the app cannot analyse
+    Belarusian. Never used to SET a language. ``None`` as in :func:`detect_language` (too short, low confidence, no
+    model); the answer is always one of the model's own short codes, never free text.
+    """
+    if not text:
+        return None
+    s = text.strip()
+    if len(s) < min_chars:
+        return None
+    ident = _get_identifier()
+    if ident is None:
+        return None
+    try:
+        lang, prob = ident.classify(s[:_MAX_CHARS])
+    except Exception:  # noqa: BLE001 - any classify failure -> honest unknown
+        return None
+    lang = str(lang)
+    if float(prob) >= min_prob and _CODE.fullmatch(lang):
         return lang
     return None

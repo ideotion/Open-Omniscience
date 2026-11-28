@@ -4483,7 +4483,19 @@ _ADOPTABLE_ARTICLE_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # other way: the header lives in a .eml this app does not keep, so an instance that
     # lost it cannot re-derive it from anything it stored.
     ("newsletter_list_id", ("newsletter_list_id",)),
+    # THE FEED ENTRY'S OWN DATE (row 457, R847). Adoptable on the same argument as published_at: a duplicate matches on
+    # HASH, so it is the same item, and the date its feed gave it is a property of the item, not of the machine that read
+    # it. It is kept only for an article with no date of its own, so it moves only when NEITHER side has one (the extra
+    # guard in _ADOPTION_EXTRA_GUARD); a local article that holds a feed date and adopts its own date from the incoming row
+    # keeps both, and src.ingest.feed_entry_date.article_date always prefers its own.
+    ("feed_entry_published_at", ("feed_entry_published_at",)),
 )
+
+#: An extra condition a group must meet besides its anchor's NULL, for a group that is meaningful only in one state of
+#: another column. Read with ``m`` = the local row and ``i`` = the incoming one, as the UPDATE below names them.
+_ADOPTION_EXTRA_GUARD: dict[str, str] = {
+    "feed_entry_published_at": 'm."published_at" IS NULL AND i."published_at" IS NULL',
+}
 
 #: Every other Article column, and why it is NOT adoptable. This exists because the
 #: 2026-08-03 AST column diff found fourteen columns silently dropped by an explicit
@@ -4585,13 +4597,15 @@ def _adopt_article_metadata(con) -> dict:
     """
     sets, guards, counts_sql = [], [], []
     for anchor, cols in _ADOPTABLE_ARTICLE_COLUMNS:
+        extra = _ADOPTION_EXTRA_GUARD.get(anchor)
+        local_open = f'm."{anchor}" IS NULL' + (f" AND {extra}" if extra else "")
         for c in cols:
             # The anchor decides the whole group, so a pair moves together or not at all. A country is read as step 1 converted
             # it (row 439); the guards below only test it for NULL, which the conversion never changes.
             value = _cc(con, "articles", c) if c == "country" else f'i."{c}"'
-            sets.append(f'"{c}" = CASE WHEN m."{anchor}" IS NULL THEN {value} ELSE m."{c}" END')
-        guards.append(f'(m."{anchor}" IS NULL AND i."{anchor}" IS NOT NULL)')
-        counts_sql.append(f'SUM(m."{anchor}" IS NULL AND i."{anchor}" IS NOT NULL)')
+            sets.append(f'"{c}" = CASE WHEN {local_open} THEN {value} ELSE m."{c}" END')
+        guards.append(f'({local_open} AND i."{anchor}" IS NOT NULL)')
+        counts_sql.append(f'SUM({local_open} AND i."{anchor}" IS NOT NULL)')
 
     where = (
         " FROM inc.articles i WHERE i.hash = m.hash"
@@ -4784,6 +4798,9 @@ def _merge_articles(con, batch_id, results) -> None:
         # 2026-08-03 lesson exactly -- a dropped column arrives as a plausible NULL that
         # nothing reports.
         " source_revision, newsletter_list_id, newsletter_attached_via,"
+        # Row 457 (R847): the feed entry's own date, for an article whose page gave none. The feed entry is gone after
+        # the fetch, so a merge that dropped it would lose it for good (the 2026-08-03 lesson).
+        " feed_entry_published_at,"
         # R24: the article's own top keyword, for an article whose derived rows are
         # being CARRIED -- computed by `_plan_derived_carry` from the incoming mentions
         # over LOCAL keyword ids, exactly as index_article would. NULL for every other
@@ -4802,6 +4819,7 @@ def _merge_articles(con, batch_id, results) -> None:
         " i.content_multihash, i.canon_version,"
         " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at,"
         " i.source_revision, i.newsletter_list_id, i.newsletter_attached_via,"
+        " i.feed_entry_published_at,"
         " cp.top_keyword_id, cp.top_keyword_count, cp.top_keyword_tied_n,"
         " i.fetched_host"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"

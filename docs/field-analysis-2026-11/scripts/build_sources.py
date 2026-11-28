@@ -48,7 +48,7 @@ for folder, label in labels.items():
             rec.update({'domain': d.get('domain'), 'feed_key': d.get('feed_key'), 'has_article': False})
             if 'class' in d and cls_rows:
                 c = dict(zip(cls_cols, cls_rows[d['class']]))
-                for k in ('enabled', 'status', 'via', 'has_feed', 'last_qualification', 'last_feed_status'):
+                for k in ('enabled', 'status', 'via', 'has_feed', 'last_qualification', 'last_feed_status', 'crawled'):
                     rec[k] = c.get(k)
         for f in glob.glob(z + '/samples/*.json'):
             s = json.load(open(f))

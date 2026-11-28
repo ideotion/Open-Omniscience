@@ -2112,7 +2112,7 @@ sources:
 - name: RIA Novosti
   domain: ria.ru
   rss_url: https://ria.ru/export/rss2/index.xml
-  language: en
+  language: ru
   rate_limit_ms: 2000
   enabled: true
   verified: false
@@ -10693,7 +10693,7 @@ sources:
 - name: Meduza
   domain: meduza.io
   rss_url: https://meduza.io/rss/all
-  language: en
+  language: ru
   rate_limit_ms: 2000
   enabled: true
   verified: true
@@ -17252,7 +17252,7 @@ sources:
 - name: Hankyoreh (South Korea)
   domain: english.hani.co.kr
   rss_url: https://english.hani.co.kr/rss/
-  language: en
+  language: ko
   region: asia
   country: KOR
   rate_limit_ms: 2000
@@ -17547,7 +17547,7 @@ sources:
 - name: Ukrainska Pravda (Ukraine)
   domain: pravda.com.ua
   rss_url: https://www.pravda.com.ua/rss/
-  language: en
+  language: uk
   region: europe
   country: UKR
   rate_limit_ms: 2000
@@ -21092,7 +21092,7 @@ sources:
 - name: Roya News (Jordan)
   domain: en.royanews.tv
   rss_url: https://en.royanews.tv/rss
-  language: en
+  language: ar
   region: middle-east
   country: JOR
   rate_limit_ms: 2000
@@ -25648,7 +25648,7 @@ sources:
 - name: Independent Arabia
   domain: independentarabia.com
   rss_url: https://www.independentarabia.com/rss.xml
-  language: ar
+  language: en
   region: middle-east
   country: SAU
   rate_limit_ms: 2000
@@ -39619,7 +39619,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: hy
   country: ARM
   region: asia
   source_type: news
@@ -40693,7 +40693,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: ky
   country: KGZ
   region: asia
   source_type: wire-agency
@@ -40753,7 +40753,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: zh
   country: KGZ
   region: asia
   source_type: wire-agency
@@ -40784,7 +40784,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: km
   country: KHM
   region: asia
   source_type: news
@@ -40800,7 +40800,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: km
   country: KHM
   region: asia
   source_type: news
@@ -44480,7 +44480,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: bn
+  language: en
   country: IND
   region: asia
   source_type: news
@@ -49027,7 +49027,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: te
   country: IND
   region: asia
   source_type: broadcaster
@@ -61252,7 +61252,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: ru
+  language: tk
   country: CZE
   region: europe
   source_type: wire-agency
@@ -64163,7 +64163,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: he
   country: ISR
   region: asia
   source_type: news
@@ -64278,7 +64278,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: ml
   country: IND
   region: asia
   source_type: news
@@ -64975,7 +64975,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: ar
+  language: it
   country: ITA
   region: europe
   source_type: news
@@ -67086,7 +67086,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: ru
+  language: lv
   country: LVA
   region: europe
   source_type: news
@@ -68188,7 +68188,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: zh
+  language: ta
   country: MYS
   region: asia
   source_type: news
@@ -68740,7 +68740,7 @@ sources:
   enabled: true
   verified: true
   last_verified: '2026-09-10'
-  language: en
+  language: bn
   country: 'NOR'
   region: europe
   source_type: magazine

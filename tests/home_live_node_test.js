@@ -154,7 +154,7 @@ function harness(answers) {
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     $: (id) => nodes[id] || null, api, toast() {}, confirm: () => true, ensureOnline: async () => true,
     ooSaidText: (o, f) => String(o[f] || ""), ooSaidHtml: (o, f) => esc(o[f] || ""),
-    ooCountryCell: (c) => esc(c), ooCountryTitle: () => "", ooIsoDate: (d) => d, ooIsoDateTime: (d) => d, fmtAgo: (d) => d,
+    ooCountryCell: (c) => esc(c), ooCountryTitle: () => "", ooIsoDate: (d) => d, ooArticleDateHtml: (a) => esc((a && a.published_at) || ""), ooIsoDateTime: (d) => d, fmtAgo: (d) => d,
     ooFetchedOffSiteNote: () => "", safeUrl: (u) => u, uiLangCode: () => lang, tgtLangParam: () => "",
     kwLabelHtml: (x) => esc(x.term), kwQidHtml: () => "", growthIsRatio: () => true, growthFallback: () => "",
     trendRateText: () => "", dashChartSvg: () => "", ooSubtabs() {}, ooCardDismissedUndo() {},

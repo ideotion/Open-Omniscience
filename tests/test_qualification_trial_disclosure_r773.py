@@ -90,7 +90,7 @@ def db():
 def articles(monkeypatch):
     """The article step is the fetch of the article's own address; the extraction behind it is not what is pinned."""
 
-    def fake_ingest_url(session, source, url, *, fetcher, batch=None):
+    def fake_ingest_url(session, source, url, *, fetcher, batch=None, feed_entry_date=None):
         try:
             fetcher.fetch(url)
         except FetchFailed as exc:

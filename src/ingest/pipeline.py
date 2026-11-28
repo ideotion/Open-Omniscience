@@ -89,6 +89,7 @@ from src.ingest import (
     kill_switch_epoch,
 )
 from src.ingest.extract import extract_article
+from src.ingest.feed_entry_date import entry_date
 from src.ingest.fetch_verdict import (
     KILL_SWITCH_REFUSAL,
     classify_fetch_failure,
@@ -149,6 +150,7 @@ def ingest_url(
     *,
     fetcher: EthicalFetcher,
     batch=None,
+    feed_entry_date: datetime | None = None,
 ) -> IngestOutcome:
     """Fetch, extract, dedup and store a single article URL.
 
@@ -156,6 +158,7 @@ def ingest_url(
     (post-extract, catches the same article served at different URLs).
     ``batch`` (an :class:`~src.ingest.batch.ArticleBatch`, P1.8) buffers the
     store for a batched commit instead of committing per article.
+    ``feed_entry_date`` (row 457, R847) is the date the feed entry gave this item, kept only if the page has none of its own.
     """
     canonical = canonicalize_url(url)
 
@@ -178,10 +181,12 @@ def ingest_url(
     except FetchError as exc:
         return IngestOutcome(url, IngestResult.FETCH_FAILED, detail=record_text(exc, typed=False))
 
-    return store_fetched(session, source, fetched, batch=batch)
+    return store_fetched(session, source, fetched, batch=batch, feed_entry_date=feed_entry_date)
 
 
-def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> IngestOutcome:
+def store_fetched(
+    session: Session, source: Source, fetched, *, batch=None, feed_entry_date: datetime | None = None
+) -> IngestOutcome:
     """Extract, dedup and store an already-fetched page.
 
     Split out of :func:`ingest_url` so callers that have *already* fetched a page
@@ -195,6 +200,9 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
     the final disposition (stored/duplicate) lands in ``batch.tally`` at
     flush. ``None`` (every non-collector caller) keeps the legacy per-article
     path byte-identical.
+
+    ``feed_entry_date`` (row 457, R847): the date the feed entry that listed this page gave it. Kept, in its own column, only
+    when the page has no date of its own; it never becomes ``published_at``.
     """
     doc = extract_article(fetched.content, url=fetched.final_url)
     if doc is None:
@@ -284,8 +292,10 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
 
     # Prefer the page's declared canonical link; fall back to the final fetched URL.
     canonical_final = canonicalize_url(doc.canonical_url or fetched.final_url)
+    # The feed's date for this item, only for a page that gave none of its own (R847: a fallback, never a second opinion).
+    feed_date = feed_entry_date if doc.published_at is None else None
     if batch is not None:
-        batch.stage(fetched, doc, canonical_final, content_hash)
+        batch.stage(fetched, doc, canonical_final, content_hash, feed_entry_published_at=feed_date)
         return IngestOutcome(
             fetched.requested_url, IngestResult.STAGED, detail="buffered for a batched commit"
         )
@@ -297,6 +307,7 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
         title=doc.title,
         content=doc.text,
         published_at=doc.published_at,
+        feed_entry_published_at=feed_date,
         language=doc.language or source.language,
         hash=content_hash,
         author=doc.author,
@@ -786,6 +797,13 @@ def ingest_source(
 
     parsed = feedparser.parse(feed_resp.content)
     links = [e.link for e in parsed.entries if getattr(e, "link", None)]
+    # Each item's own date in the feed (row 457, R847), by link; the first entry wins when a feed lists a link twice, as
+    # the first is the one the walk below reaches. Kept only for a page that turns out to have no date of its own.
+    read_at = datetime.now(UTC)
+    entry_dates: dict[str, datetime | None] = {}
+    for e in parsed.entries:
+        if getattr(e, "link", None):
+            entry_dates.setdefault(e.link, entry_date(e, read_at=read_at))
     if entry_site:
         from src.ingest.feed_find import same_site
 
@@ -815,7 +833,9 @@ def ingest_source(
                 # reads it as "nothing was fetched"), and some of these entries would have been answered as duplicates without a request.
                 tally["stopped_unwalked"] = len(links) - done
                 break
-            outcome = ingest_url(session, source, link, fetcher=fetcher, batch=batch)
+            outcome = ingest_url(
+                session, source, link, fetcher=fetcher, batch=batch, feed_entry_date=entry_dates.get(link)
+            )
             if outcome.result is IngestResult.STAGED:
                 continue  # resolved at flush; merged from batch.tally below
             tally[outcome.result.value] += 1

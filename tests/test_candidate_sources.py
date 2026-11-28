@@ -63,7 +63,8 @@ def test_only_measured_qualified_sources_outside_every_catalogue_are_proposed(db
     assert row["proposal"] == "proposed" and row["tags"] == ["via:wikidata-discovery", "news", "fr"]
     assert row["feed"] == "https://new.example/feed.xml", "no user, password, query or fragment"
     assert row["evidence"]["articles_stored"] == 1 and row["evidence"]["attempts"] == {"qualified": 1}
-    assert doc["left_out"] == {"in_a_shipped_catalogue": 1, "inherited_not_measured": 1, "newsletter_or_mailbox": 3}
+    assert doc["left_out"] == {"in_a_shipped_catalogue": 1, "inherited_not_measured": 1, "newsletter_or_mailbox": 3,
+                               "not_a_web_source": 0}
     assert row["evidence"]["last_article"].startswith("2026-11-01"), "an attached newsletter stays out of the dates"
     assert "SECRET" not in json.dumps(doc) and "pw@" not in json.dumps(doc)
 
@@ -146,3 +147,37 @@ def test_the_script_groups_by_domain_across_instances_and_adds_nothing(tmp_path,
     docs, bad = psa.collect([tmp_path / "oo-two-part-001-of-002.zip", tmp_path / "oo-two-part-002-of-002.zip"])
     assert len(docs) == 1 and not bad, "pieces named one by one (a shell glob) are one set, read once"
     assert "Proposed source additions" in (out / "proposed-sources.md").read_text(encoding="utf-8")
+
+
+def test_the_apps_own_channels_are_not_candidates(db):
+    # Field analysis 2026-11: Wikipedia-edition rows and a hazard row were the top "candidates" on all four instances.
+    _src(db, 1, "new.example")
+    _src(db, 2, "fr.wikipedia.org", tags="")
+    _src(db, 3, "hazard.usgs.local", tags="")
+    _src(db, 4, "stats.example", tags="")
+    db.query(Source).filter(Source.id == 4).update({"source_type": "statistics"})
+    _src(db, 5, "cited.example", tags="")
+    db.query(Source).filter(Source.id == 5).update({"source_type": "cited"})
+    db.commit()
+    doc = cs.build_candidate_sources(db)
+    assert [c["domain"] for c in doc["candidates"]] == ["cited.example", "new.example"], "cited outlets are web sources"
+    assert doc["left_out"]["not_a_web_source"] == 3
+
+
+def test_the_left_out_channels_are_the_source_quality_exports_exempt_set():
+    """Row 455: the candidate export and the source-quality export name the same non-web classes, so neither drifts."""
+    from src.analytics.source_quality import _AUDIT_EXEMPT_CLASSES
+    from src.catalog.candidate_sources import NOT_WEB_SOURCES
+
+    assert NOT_WEB_SOURCES == _AUDIT_EXEMPT_CLASSES
+
+
+def test_a_legal_portal_on_a_real_domain_stays_a_candidate(db):
+    """Row 455: ``provenance_of`` classes any ``legal`` row as law; only the app's own law.*.local stores are left out."""
+    _src(db, 1, "newgazette.example", tags="")
+    _src(db, 2, "law.fr.local", tags="")
+    db.query(Source).filter(Source.id.in_([1, 2])).update({"source_type": "legal"}, synchronize_session=False)
+    db.commit()
+    doc = cs.build_candidate_sources(db)
+    assert [c["domain"] for c in doc["candidates"]] == ["newgazette.example"]
+    assert doc["left_out"]["not_a_web_source"] == 1

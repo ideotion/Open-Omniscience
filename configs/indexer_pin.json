@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "digest": "1fe18fa23a7f236836a7875047a6c5b072fd9f11834767a07adef0a6c3338e93",
+  "digest": "62acd67c45797541c7d8fc1ba4d69d080204a6b86e66bcee2b60010262b34649",
   "log": [
     {
       "version": 1,
@@ -163,6 +163,12 @@
       "digest": "1fe18fa23a7f236836a7875047a6c5b072fd9f11834767a07adef0a6c3338e93",
       "kind": "same",
       "note": "Row 434: index_article reads an article's stored keywords as columns (_prefetch_keyword_rows) instead of Keyword objects, choosing the same row by the same lowest-id and language rules, and writes an entity upgrade of a row it read that way as one UPDATE of the same three columns; the rows an article gets are identical (golden output digest equal, tests/test_keyword_prefetch_core_row434.py)"
+    },
+    {
+      "version": 3,
+      "digest": "62acd67c45797541c7d8fc1ba4d69d080204a6b86e66bcee2b60010262b34649",
+      "kind": "same",
+      "note": "Row 462 adds an outcome counter in extract.py (a thread-local label read by lock_stats, never by the extraction) and a new function detect_any_language in langdetect.py that index_article never calls; detect_language and every row index_article writes are unchanged"
     }
   ]
 }
